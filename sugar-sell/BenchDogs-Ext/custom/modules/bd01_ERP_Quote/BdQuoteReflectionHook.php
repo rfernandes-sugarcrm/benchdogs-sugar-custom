@@ -9,7 +9,10 @@
  * Sugar Quote: bd_erp_total / bd_erp_stage / bd_priced_at / bd_reason_code
  * are updated (only when a value actually changed), and if the Quote is the
  * primary quote of its Opportunity (erp_is_primary_quote, owned by ERP-Core),
- * the Opportunity amount is refreshed from quote_total.
+ * the Opportunity amount is refreshed from the rollup amount: the governing
+ * line's extended price when one of the quote's lines is marked governing
+ * (Bench Dogs REQ-5/REQ-6 - see BdGoverningLineHook, which keeps the flag
+ * unique per quote), else the whole quote_total (v0.1 behavior, unchanged).
  *
  * When sugar_quote_id is empty the hook does nothing - v0.1 policy; the
  * quote-matching/policy hook lands in a later version.
@@ -139,17 +142,47 @@ class BdQuoteReflectionHook
     }
 
     /**
+     * Re-run just the Opportunity amount rollup for an ERP quote, outside a
+     * bd01_ERP_Quote save. BdGoverningLineHook calls this after a governing
+     * flag changes hands so the governing line's extended price lands on the
+     * Opportunity immediately - same code path, same gates (sugar_quote_id
+     * on the ERP quote, erp_is_primary_quote on the Sugar Quote).
+     */
+    public function refreshOpportunityAmount(SugarBean $bean): void
+    {
+        if (self::$inProgress || empty($bean->sugar_quote_id)) {
+            return;
+        }
+
+        self::$inProgress = true;
+        try {
+            $quote = BeanFactory::retrieveBean('Quotes', $bean->sugar_quote_id);
+            if ($quote && !empty($quote->id)) {
+                $this->maybeUpdateOpportunity($bean, $quote);
+            }
+        } catch (Throwable $e) {
+            $GLOBALS['log']->error(
+                'BdQuoteReflectionHook: failed refreshing opportunity amount for bd01_ERP_Quote '
+                . $bean->id . ': ' . $e->getMessage()
+            );
+        } finally {
+            self::$inProgress = false;
+        }
+    }
+
+    /**
      * If the reflected Quote is its Opportunity's primary quote
      * (erp_is_primary_quote is owned by ERP-Core and set by the connector),
-     * keep the Opportunity amount in step with the ERP quote total.
+     * keep the Opportunity amount in step with the rollup amount (governing
+     * line's extended price, else the whole quote total - see rollupAmount).
      */
     private function maybeUpdateOpportunity(SugarBean $bean, SugarBean $quote): void
     {
         if (empty($quote->erp_is_primary_quote)) {
             return;
         }
-        $total = $bean->quote_total;
-        if ($total === null || $total === '') {
+        $total = $this->rollupAmount($bean);
+        if ($total === null) {
             return;
         }
 
@@ -178,6 +211,50 @@ class BdQuoteReflectionHook
             'BdQuoteReflectionHook: opportunity ' . $oppId . ' amount set to ' . (float) $total
             . ' from bd01_ERP_Quote ' . $bean->id . ' (primary quote ' . $quote->id . ')'
         );
+    }
+
+    /**
+     * The amount to roll up onto the Opportunity (Bench Dogs REQ-5/REQ-6):
+     * when one of the ERP quote's lines is marked governing, that line's
+     * extended price governs the deal value; otherwise the whole quote_total
+     * (v0.1 behavior) applies. Null when no usable amount exists.
+     */
+    private function rollupAmount(SugarBean $bean): ?float
+    {
+        $governing = $this->findGoverningLine($bean);
+        if ($governing !== null) {
+            $GLOBALS['log']->info(
+                'BdQuoteReflectionHook: bd01_ERP_Quote ' . $bean->id
+                . ' rollup governed by line ' . $governing->id
+                . ' (doc_ext_price=' . (float) $governing->doc_ext_price . ')'
+            );
+            return (float) $governing->doc_ext_price;
+        }
+        $total = $bean->quote_total;
+        if ($total === null || $total === '') {
+            return null;
+        }
+        return (float) $total;
+    }
+
+    /**
+     * The quote's governing bd01_ERP_Quote_Line, if any. BdGoverningLineHook
+     * keeps the flag unique per quote; if legacy data still carries several,
+     * the first one the relationship returns wins (deterministic enough
+     * until the next save re-enforces uniqueness).
+     */
+    private function findGoverningLine(SugarBean $bean): ?SugarBean
+    {
+        $bean->load_relationship('bd01_erp_quote_lines');
+        if (!$bean->bd01_erp_quote_lines || !is_object($bean->bd01_erp_quote_lines)) {
+            return null;
+        }
+        foreach ($bean->bd01_erp_quote_lines->getBeans() as $line) {
+            if (!empty($line->governing)) {
+                return $line;
+            }
+        }
+        return null;
     }
 
     /**

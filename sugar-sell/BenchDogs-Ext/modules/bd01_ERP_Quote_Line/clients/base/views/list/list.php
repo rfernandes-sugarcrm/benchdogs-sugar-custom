@@ -44,6 +44,15 @@ $viewdefs[$module_name]['base']['view']['list'] = [
                 'enabled' => true,
             ],
             [
+                // Editable in place (REQ-5/REQ-6): marking a line governing
+                // fires BdGoverningLineHook, which un-marks its siblings and
+                // refreshes the Opportunity amount rollup.
+                'name' => 'governing',
+                'label' => 'LBL_GOVERNING',
+                'default' => true,
+                'enabled' => true,
+            ],
+            [
                 'name' => 'date_modified',
                 'label' => 'LBL_DATE_MODIFIED',
                 'default' => true,

@@ -38,6 +38,15 @@ $viewdefs[$module_name]['base']['view']['subpanel-list'] = [
                     'name' => 'doc_ext_price',
                 ],
                 [
+                    // Editable in place (REQ-5/REQ-6) - the lines subpanel
+                    // under bd01_ERP_Quote is where the flag is actually
+                    // toggled; BdGoverningLineHook keeps it unique per quote.
+                    'label' => 'LBL_GOVERNING',
+                    'enabled' => true,
+                    'default' => true,
+                    'name' => 'governing',
+                ],
+                [
                     'label' => 'LBL_DATE_MODIFIED',
                     'enabled' => true,
                     'default' => true,
