@@ -1,0 +1,41 @@
+<?php
+$dictionary["bd01_ERP_Quote_Cost"]["fields"]["bd01_erp_line_costs"] = array (
+  'name' => 'bd01_erp_line_costs',
+  'type' => 'link',
+  'relationship' => 'bd01_erp_line_costs',
+  'source' => 'non-db',
+  'module' => 'bd01_ERP_Quote_Line',
+  'bean_name' => 'bd01_ERP_Quote_Line',
+  'side' => 'right',
+  'vname' => 'LBL_BD01_ERP_LINE_COSTS_FROM_BD01_ERP_QUOTE_COST_TITLE',
+  'id_name' => 'bd01_erp_line_costsbd01_erp_quote_line_ida',
+  'link-type' => 'one',
+);
+$dictionary["bd01_ERP_Quote_Cost"]["fields"]["bd01_erp_line_costs_name"] = array (
+  'name' => 'bd01_erp_line_costs_name',
+  'type' => 'relate',
+  'source' => 'non-db',
+  'vname' => 'LBL_BD01_ERP_LINE_COSTS_FROM_BD01_ERP_QUOTE_LINE_TITLE',
+  'save' => true,
+  'id_name' => 'bd01_erp_line_costsbd01_erp_quote_line_ida',
+  'link' => 'bd01_erp_line_costs',
+  'table' => 'bd01_erp_quote_line',
+  'module' => 'bd01_ERP_Quote_Line',
+  'rname' => 'name',
+);
+$dictionary["bd01_ERP_Quote_Cost"]["fields"]["bd01_erp_line_costsbd01_erp_quote_line_ida"] = array (
+  'name' => 'bd01_erp_line_costsbd01_erp_quote_line_ida',
+  'type' => 'id',
+  'source' => 'non-db',
+  'vname' => 'LBL_BD01_ERP_LINE_COSTS_FROM_BD01_ERP_QUOTE_COST_TITLE_ID',
+  'id_name' => 'bd01_erp_line_costsbd01_erp_quote_line_ida',
+  'link' => 'bd01_erp_line_costs',
+  'table' => 'bd01_erp_quote_line',
+  'module' => 'bd01_ERP_Quote_Line',
+  'rname' => 'id',
+  'reportable' => false,
+  'side' => 'right',
+  'massupdate' => false,
+  'duplicate_merge' => 'disabled',
+  'hideacl' => true,
+);
