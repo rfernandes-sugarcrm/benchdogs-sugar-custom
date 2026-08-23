@@ -62,6 +62,51 @@ class BdRliRefreshHook
     }
 
     /**
+     * after_relationship_add on bd01_ERP_Quote_Line: the line just became
+     * part of its ERP quote, so re-materialize the deliverables.
+     *
+     * This is the moment refreshDeliverables() cannot catch. The connector
+     * does not create a line WITH its parent link - it creates the row, then
+     * links it in a separate call (POST /integrate/{module}/link, see
+     * connector-core's sugar_sell.link_by_sync_keys). So at the line's
+     * after_save there is no parent yet, parentErpQuote() answers null, and
+     * the refresh silently does nothing; the link that completes the picture
+     * arrives later and fires no save hook at all.
+     *
+     * The consequence, measured live on 23 Aug 2026: the header reflection
+     * had already run against a line-less quote and claimed the whole
+     * quote_total as the production deliverable, and nothing re-valued it -
+     * opportunity 49a23488 sat at $24,500 for a $23,750 quote until a human
+     * touched a line. "Correct only after someone nudges the record" is not
+     * correct.
+     *
+     * Idempotent by construction: the materialization is an upsert, so the
+     * four link events of a four-line quote converge on one answer, and the
+     * last one - the only one that sees every line - is the one that decides.
+     */
+    public function refreshOnLink(SugarBean $bean, string $event, array $arguments): void
+    {
+        $link = (string) ($arguments['link_name'] ?? $arguments['link'] ?? '');
+        $relationship = (string) ($arguments['relationship'] ?? '');
+        if ($link !== 'bd01_erp_quote_lines' && $relationship !== 'bd01_erp_quote_lines') {
+            return;
+        }
+
+        try {
+            $erpQuote = $this->parentErpQuote($bean);
+            if ($erpQuote === null) {
+                return;
+            }
+            (new BdQuoteReflectionHook())->refreshOpportunityAmount($erpQuote);
+        } catch (Throwable $e) {
+            $GLOBALS['log']->error(
+                'BdRliRefreshHook: failed refreshing deliverable RLIs on link of line '
+                . $bean->id . ': ' . $e->getMessage()
+            );
+        }
+    }
+
+    /**
      * The parent bd01_ERP_Quote of this line - same resolution as
      * BdGoverningLineHook::parentErpQuote.
      */

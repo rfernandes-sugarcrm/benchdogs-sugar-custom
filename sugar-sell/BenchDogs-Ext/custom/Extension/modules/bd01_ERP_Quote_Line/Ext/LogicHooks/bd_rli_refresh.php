@@ -18,3 +18,20 @@ $hook_array['after_save'][] = array(
     'BdRliRefreshHook',
     'refreshDeliverables',
 );
+
+/**
+ * Same materialization, fired by the LINK rather than the save.
+ *
+ * The connector creates a quote line and links it to its ERP quote in two
+ * separate calls, so the after_save above runs before the line has a parent
+ * and can do nothing. Without this second registration the deliverable RLIs
+ * stay at whatever the header reflection guessed from a line-less quote -
+ * see BdRliRefreshHook::refreshOnLink for the live account.
+ */
+$hook_array['after_relationship_add'][] = array(
+    2,
+    'Refresh deliverable revenue line items when a line is linked to its ERP quote',
+    'custom/modules/bd01_ERP_Quote_Line/BdRliRefreshHook.php',
+    'BdRliRefreshHook',
+    'refreshOnLink',
+);

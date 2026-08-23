@@ -13,6 +13,13 @@
  * order_stage_opportunity_cascade.php for the full story).
  */
 $hook_array['before_save'][] = array(
+    1,
+    'Sticky bd_erp_synced flag: set on connector success stamp, never cleared',
+    'custom/modules/Contacts/BdContactSyncHook.php',
+    'BdContactSyncHook',
+    'stickySyncedFlag',
+);
+$hook_array['before_save'][] = array(
     2,
     'Stamp Contacts of ERP-linked accounts for the Epicor contact sync',
     'custom/modules/Contacts/BdContactSyncHook.php',

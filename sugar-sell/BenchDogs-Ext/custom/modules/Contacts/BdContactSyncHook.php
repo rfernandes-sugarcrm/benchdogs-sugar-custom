@@ -25,9 +25,53 @@ class BdContactSyncHook
         'first_name', 'last_name', 'phone_work', 'title', 'account_id',
     ];
 
+    /**
+     * before_save, priority 1 (runs BEFORE stampSyncRequest): maintain the
+     * sticky bd_erp_synced flag.
+     *
+     * Set it the moment the connector's success stamp lands
+     * (erp_writeback_status = 'success' arrives as a REST PUT, and hooks
+     * fire on those sync PUTs - the proven BdQuoteReflectionHook pattern).
+     * Once true it is NEVER cleared here: core's container route turns a
+     * deliberate transform skip into an empty POST that Epicor rejects, and
+     * the resulting 'error' stamp overwrites 'success' (measured live
+     * 23 Aug 2026). The sticky flag is what survives that false error.
+     * Clearing it is an explicit admin action (mass update / SQL), on
+     * purpose.
+     *
+     * before_save, so the flag rides the same UPDATE as the stamp that set
+     * it - no second save, no recursion to guard.
+     */
+    public function stickySyncedFlag(SugarBean $bean, string $event, array $arguments): void
+    {
+        try {
+            if (!empty($bean->fetched_row['bd_erp_synced'])) {
+                $bean->bd_erp_synced = true;   // sticky: refuse any clear
+                return;
+            }
+            if ((string) ($bean->erp_writeback_status ?? '') === 'success') {
+                $bean->bd_erp_synced = true;
+            }
+        } catch (Throwable $e) {
+            $GLOBALS['log']->error('BdContactSyncHook::stickySyncedFlag: ' . $e->getMessage());
+        }
+    }
+
     public function stampSyncRequest(SugarBean $bean, string $event, array $arguments): void
     {
         try {
+            // Create-only sync: field updates deliberately do not propagate,
+            // so re-stamping a contact that already EXISTS in Epicor can only
+            // produce a duplicate or a false error (the container's skip is
+            // mangled into an empty POST by core - see stickySyncedFlag).
+            // bd_erp_synced, not erp_writeback_status, is the authority: the
+            // status field gets overwritten by that same false error. A
+            // contact whose create genuinely FAILED (bd_erp_synced false)
+            // stays retryable on its next relevant edit.
+            if (!empty($bean->bd_erp_synced) || !empty($bean->fetched_row['bd_erp_synced'])) {
+                return;
+            }
+
             $accountId = (string) ($bean->account_id ?? '');
             if ($accountId === '') {
                 return;   // no account - no Epicor customer to attach to

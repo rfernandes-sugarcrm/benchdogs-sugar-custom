@@ -291,7 +291,7 @@ class BdQuoteReflectionHook
             return;
         }
 
-        $this->upsertDeliverableRlis($quote, $opportunity, $deliverables);
+        $this->upsertDeliverableRlis($bean, $quote, $opportunity, $deliverables);
     }
 
     /**
@@ -405,6 +405,19 @@ class BdQuoteReflectionHook
                     'name' => trim((string) $bean->name) !== ''
                         ? trim((string) $bean->name)
                         : 'Quoted deal value',
+                    // RESIDUAL: this figure is the whole quote MINUS the
+                    // slices this pass could see. Any deliverable already
+                    // materialized that this pass could NOT see (the
+                    // prototype line has not synced yet, or arrived on a
+                    // later generation) is still real money on the
+                    // opportunity, and upsertDeliverableRlis() subtracts it
+                    // too - see the residual block there. Without that,
+                    // "quote total" plus a surviving prototype RLI adds up
+                    // to MORE than the quote (measured live 23 Aug 2026:
+                    // opportunity 49a23488 read $24,500 for a $23,750
+                    // quote), which is the exact double-count REQ-6
+                    // promises cannot happen.
+                    'residual' => true,
                 ];
             }
         }
@@ -427,7 +440,12 @@ class BdQuoteReflectionHook
      * stage the closure machinery gave it (the partial-win lane in
      * BdBenchDogsActionsApi owns closing the won slice; REQ-1 hinges on it).
      */
-    private function upsertDeliverableRlis(SugarBean $quote, SugarBean $opportunity, array $deliverables): void
+    private function upsertDeliverableRlis(
+        SugarBean $bean,
+        SugarBean $quote,
+        SugarBean $opportunity,
+        array $deliverables
+    ): void
     {
         if (!$opportunity->load_relationship('revenuelineitems')
             || !$opportunity->revenuelineitems
@@ -451,6 +469,8 @@ class BdQuoteReflectionHook
                 $placeholder = $rli;
             }
         }
+
+        $deliverables = $this->applyResidual($bean, $quote, $deliverables, $byKey);
 
         foreach ($deliverables as $role => $spec) {
             // Keyed on the SUGAR quote (the deal), not the ERP quote row: a
@@ -541,6 +561,77 @@ class BdQuoteReflectionHook
                 );
             }
         }
+    }
+
+    /**
+     * Keep the deliverable RLIs summing to the QUOTE TOTAL, not to more.
+     *
+     * The production deliverable has two sources: a marked governing line
+     * (an exact figure - nothing to reconcile) or, when no line is marked,
+     * the whole quote_total minus the slices this pass could see. Only the
+     * second is flagged 'residual', and only the second can double-count.
+     *
+     * It double-counts whenever a deliverable is ALREADY materialized on the
+     * opportunity but is NOT visible to this pass. That is not hypothetical:
+     * the connector creates a bd01_ERP_Quote header and links its lines in a
+     * SEPARATE call afterwards (POST /integrate/{module}/link - see
+     * connector-core's sugar_sell.link_by_sync_keys), so the header's
+     * after_save reflection runs against a quote with ZERO lines. It finds no
+     * prototype line, claims the entire quote_total as production, and the
+     * $750 prototype RLI from the previous generation survives beside it:
+     * $23,750 + $750 = $24,500 on a $23,750 quote (measured live on
+     * opportunity 49a23488, 23 Aug 2026).
+     *
+     * So a residual production figure gives up every dollar already carried
+     * by a keyed sibling deliverable this pass is not itself re-valuing.
+     * Roles this pass DOES value are skipped - deliverables() already
+     * subtracted those lines, and subtracting them twice would understate
+     * the deal by exactly the prototype.
+     *
+     * Only keys belonging to this deal are considered: the Sugar quote's own
+     * key prefix, plus the ERP quote row's (the pre-0.8.6 key shape, still
+     * on records that have not been re-keyed yet).
+     *
+     * @param array<string, array> $byKey RLIs on the opportunity, by deliverable key.
+     */
+    private function applyResidual(
+        SugarBean $bean,
+        SugarBean $quote,
+        array $deliverables,
+        array $byKey
+    ): array {
+        if (empty($deliverables['production']['residual'])) {
+            return $deliverables;
+        }
+
+        $prefixes = [$quote->id . ':', $bean->id . ':'];
+        $residual = (float) $deliverables['production']['amount'];
+
+        foreach ($byKey as $key => $rli) {
+            $role = substr($key, strrpos($key, ':') + 1);
+            if ($role === 'production' || isset($deliverables[$role])) {
+                continue;   // being written now, or already netted off above
+            }
+            $mine = false;
+            foreach ($prefixes as $prefix) {
+                if (strpos($key, $prefix) === 0) {
+                    $mine = true;
+                    break;
+                }
+            }
+            if (!$mine) {
+                continue;   // another deal's deliverable sharing this opportunity
+            }
+            $residual -= (float) $rli->likely_case;
+            $GLOBALS['log']->info(
+                'BdQuoteReflectionHook: residual production for quote ' . $quote->id
+                . ' nets off already-materialized deliverable ' . $key
+                . ' (' . (float) $rli->likely_case . ')'
+            );
+        }
+
+        $deliverables['production']['amount'] = max(0.0, $residual);
+        return $deliverables;
     }
 
     /**

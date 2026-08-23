@@ -93,3 +93,26 @@ $dictionary['Contact']['fields']['erp_writeback_msg'] = array(
     'importable' => false,
     'duplicate_merge' => 'disabled',
 );
+
+// Sticky "this contact exists in Epicor" flag, set by BdContactSyncHook
+// (before_save, priority 1) the moment the connector stamps
+// erp_writeback_status = 'success', and never cleared afterwards. It exists
+// because erp_writeback_status alone is NOT a reliable guard: core's
+// container write-back route turns a deliberate transform skip into an empty
+// POST that Epicor 400s, and the resulting 'error' stamp OVERWRITES the
+// earlier 'success' (measured live 23 Aug 2026 - core defect "container
+// write-back cannot express skip-this-row"). Without a sticky flag, that
+// false error re-arms the sync and the next edit DUPLICATES the contact in
+// Epicor. bd_erp_synced survives the false stamp, so the trigger hook can
+// refuse to re-queue a contact that was ever created ERP-side.
+$dictionary['Contact']['fields']['bd_erp_synced'] = array(
+    'name' => 'bd_erp_synced',
+    'vname' => 'LBL_BD_ERP_SYNCED',
+    'type' => 'bool',
+    'default' => false,
+    'comment' => 'Set once the Epicor contact was created; sticky - survives later false error stamps',
+    'reportable' => true,
+    'audited' => true,
+    'importable' => false,
+    'duplicate_merge' => false,
+);
