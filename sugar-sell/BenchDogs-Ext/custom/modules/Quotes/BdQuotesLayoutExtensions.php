@@ -55,6 +55,77 @@ class BdQuotesLayoutExtensions
         $deploy->deploy($viewdefs);
     }
 
+
+    /**
+     * Appends the two Bench Dogs quote-action buttons to the Quotes record
+     * view, before main_dropdown so they sit next to Edit - the exact
+     * insertion BaseErpLayout::addButtonsToRecordView performs for the
+     * product's own buttons, cloned here (self-contained, same reasoning as
+     * the panel above). Idempotent by button name. If the deployed view has
+     * no buttons array at all (never seen on an instance that has ERP-Epicor
+     * installed, which always deploys one), this logs and skips rather than
+     * guessing at the stock set.
+     */
+    public static function writeButtons(): void
+    {
+        require_once 'modules/ModuleBuilder/parsers/constants.php';
+        require_once 'modules/ModuleBuilder/parsers/views/DeployedMetaDataImplementation.php';
+
+        $deploy = new DeployedMetaDataImplementation(MB_RECORDVIEW, 'Quotes', 'base');
+        $viewdefs = $deploy->getViewdefs();
+
+        if (empty($viewdefs['base']['view']['record']['buttons'])
+            || !is_array($viewdefs['base']['view']['record']['buttons'])
+        ) {
+            $GLOBALS['log']->error('BenchDogs-Ext: Quotes record view has no deployed buttons array; skipping button injection');
+            return;
+        }
+
+        $buttons =& $viewdefs['base']['view']['record']['buttons'];
+        $existing = array_column($buttons, 'name');
+
+        $wanted = [
+            [
+                'type' => 'bd-send-estimating',
+                'event' => 'button:bd_send_estimating_button:click',
+                'name' => 'bd_send_estimating_button',
+                'label' => 'LBL_BD_SEND_ESTIMATING_BUTTON',
+                'css_class' => 'rowaction actionbuttons actionbuttons-button btn btn-primary ml-2',
+                'showOn' => 'view',
+                'acl_action' => 'edit',
+            ],
+            [
+                'type' => 'bd-order-winning',
+                'event' => 'button:bd_order_winning_button:click',
+                'name' => 'bd_order_winning_button',
+                'label' => 'LBL_BD_ORDER_WINNING_BUTTON',
+                'css_class' => 'rowaction actionbuttons actionbuttons-button btn btn-primary ml-2',
+                'showOn' => 'view',
+                'acl_action' => 'edit',
+            ],
+        ];
+
+        $new = [];
+        foreach ($wanted as $button) {
+            if (!in_array($button['name'], $existing, true)) {
+                $new[] = $button;
+            }
+        }
+        if (empty($new)) {
+            return;
+        }
+
+        $at = array_search('main_dropdown', array_column($buttons, 'name'), true);
+        if ($at !== false) {
+            array_splice($buttons, $at, 0, $new);
+        } else {
+            array_push($buttons, ...$new);
+        }
+
+        $deploy->setViewdefs($viewdefs);
+        $deploy->deploy($viewdefs);
+    }
+
     private static function benchDogsPanel(): array
     {
         return [

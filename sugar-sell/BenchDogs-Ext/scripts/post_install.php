@@ -30,6 +30,59 @@ if (function_exists('post_execute') === false) {
             $GLOBALS['log']->error('BenchDogs-Ext: layout extensions failed: ' . $e->getMessage());
         }
 
+
+        // Bench Dogs action buttons (Quotes: Send to Estimating / Order
+        // Winning Line; Accounts: Create Opportunity & Quote) - same
+        // DeployedMetaDataImplementation mechanism as the panel above,
+        // idempotent by button name, so safe in both builds.
+        try {
+            if (class_exists('BdQuotesLayoutExtensions')) {
+                BdQuotesLayoutExtensions::writeButtons();
+            }
+        } catch (Throwable $e) {
+            $GLOBALS['log']->error('BenchDogs-Ext: Quotes buttons failed: ' . $e->getMessage());
+        }
+        try {
+            $accountsHelper = 'custom/modules/Accounts/BdAccountsLayoutExtensions.php';
+            if (file_exists($accountsHelper)) {
+                require_once $accountsHelper;
+                if (class_exists('BdAccountsLayoutExtensions')) {
+                    BdAccountsLayoutExtensions::writeButtons();
+                }
+            }
+        } catch (Throwable $e) {
+            $GLOBALS['log']->error('BenchDogs-Ext: Accounts button failed: ' . $e->getMessage());
+        }
+
+        // Stage dropdown keys (quote_stage_dom 'Partially Fulfilled',
+        // sales_stage_dom 'Prototype Closed'/'Partial Production Closed') via
+        // ModuleInstaller::install_languages() - the scanner-safe route
+        // ERP-Core's BaseErpDropdown documents. Append-only either build.
+        try {
+            $tpl = 'custom/dropdowntemplates/bd_stage_doms.append.php';
+            if (file_exists($tpl)) {
+                require_once 'ModuleInstall/ModuleInstaller.php';
+                $mi = new ModuleInstaller();
+                $mi->silent = true;
+                $mi->id_name = 'zz_bd_stage_doms';
+                $mi->base_dir = getcwd();
+                $mi->installdefs = array(
+                    'language' => array(
+                        array(
+                            'from' => $tpl,
+                            'to_module' => 'application',
+                            'language' => 'en_us',
+                        ),
+                    ),
+                );
+                $mi->install_languages();
+            } else {
+                $GLOBALS['log']->error('BenchDogs-Ext: stage dom template missing, skipping dropdown install');
+            }
+        } catch (Throwable $e) {
+            $GLOBALS['log']->error('BenchDogs-Ext: stage dropdowns failed: ' . $e->getMessage());
+        }
+
         // Pin the Accounts focus drawer and the Home dashboard. Runs in BOTH
         // builds, unlike the record view above: these are default TEMPLATES, and
         // a user who has rearranged their own drawer has a separate per-user
@@ -50,7 +103,7 @@ if (function_exists('post_execute') === false) {
 
         try {
             SugarAutoLoader::load('modules/Administration/QuickRepairAndRebuild.php');
-            $modules = ['Quotes', 'Opportunities', 'bd01_ERP_Quote', 'bd01_ERP_Quote_Line', 'bd01_ERP_Quote_Cost'];
+            $modules = ['Quotes', 'Opportunities', 'RevenueLineItems', 'Accounts', 'bd01_ERP_Quote', 'bd01_ERP_Quote_Line', 'bd01_ERP_Quote_Cost'];
             $rac = new RepairAndClear();
             $rac->show_output = false;
             $rac->module_list = $modules;
@@ -60,5 +113,26 @@ if (function_exists('post_execute') === false) {
         } catch (Throwable $e) {
             $GLOBALS['log']->error('BenchDogs-Ext: repair/rebuild failed: ' . $e->getMessage());
         }
+        // quotes_erp_orders cardinality override (see the TableDictionary
+        // extension file): the changed definition only takes effect after
+        // the TableDictionary ext recompiles and the relationship cache
+        // rebuilds - neither is covered by rebuildExtensions($modules)
+        // above, which is module-scoped.
+        try {
+            require_once 'ModuleInstall/ModuleInstaller.php';
+            $mi = new ModuleInstaller();
+            $mi->silent = true;
+            $mi->rebuild_tabledictionary();
+            if (class_exists('SugarRelationshipFactory')) {
+                SugarRelationshipFactory::deleteCache();
+                SugarRelationshipFactory::rebuildCache();
+            }
+            VardefManager::clearVardef('Quotes', 'Quote');
+            VardefManager::clearVardef('ERP_Orders', 'ERP_Order');
+            MetaDataManager::refreshModulesCache(array('Quotes', 'ERP_Orders'));
+        } catch (Throwable $e) {
+            $GLOBALS['log']->error('BenchDogs-Ext: relationship rebuild failed: ' . $e->getMessage());
+        }
+
     }
 }
