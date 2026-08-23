@@ -147,7 +147,7 @@ if ($scriptsReal) {
 // Relationships (Studio-style metadata) - block shapes from ERP-Epicor/pack.php
 // ---------------------------------------------------------------------------
 
-$knownModules = array('bd01_ERP_Quote_Line', 'bd01_ERP_Quote_Cost', 'bd01_ERP_Quote', 'Quotes');
+$knownModules = array('bd01_ERP_Quote_Line', 'bd01_ERP_Quote_Cost', 'bd01_ERP_Quote', 'Quotes', 'Accounts');
 usort($knownModules, function ($a, $b) { return strlen($b) - strlen($a); });
 
 $extractTrailing = function (string $base) use ($knownModules) {

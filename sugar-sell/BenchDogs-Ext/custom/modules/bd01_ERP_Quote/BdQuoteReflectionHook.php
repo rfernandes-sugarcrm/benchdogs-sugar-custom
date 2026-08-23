@@ -99,7 +99,8 @@ class BdQuoteReflectionHook
         $stage = $this->mapStage(
             (string) ($bean->current_stage ?? ''),
             !empty($bean->quote_closed),
-            (string) ($bean->reason_code ?? '')
+            (string) ($bean->reason_code ?? ''),
+            $this->hasLinkedOrder($quote)
         );
 
         $dirty = false;
@@ -139,6 +140,35 @@ class BdQuoteReflectionHook
         }
 
         $this->maybeUpdateOpportunity($bean, $quote);
+    }
+
+    /**
+     * Has an ERP sales order been raised from this Sugar Quote?
+     *
+     * Read off the quotes_erp_orders relationship, which is ERP-Core's own
+     * link and the only order signal that reaches Sugar: Epicor's
+     * QuoteHed.Ordered is dropped by connector-epicor's normalize_quote before
+     * a container extension ever sees the row (see mapStage).
+     *
+     * Failure is answered false, never fatal. A missing relationship (an
+     * ERP-Core version without it) must degrade to "no order known" and leave
+     * the closed-quote mapping to decide - not abort the reflection and lose
+     * the total and reason with it.
+     */
+    private function hasLinkedOrder(SugarBean $quote): bool
+    {
+        try {
+            if (!$quote->load_relationship('quotes_erp_orders')) {
+                return false;
+            }
+            return $quote->quotes_erp_orders->get() !== [];
+        } catch (Throwable $e) {
+            $GLOBALS['log']->warn(
+                'BdQuoteReflectionHook: could not read quotes_erp_orders on Quote '
+                . $quote->id . ': ' . $e->getMessage()
+            );
+            return false;
+        }
     }
 
     /**
@@ -261,16 +291,54 @@ class BdQuoteReflectionHook
      * Map the ERP quote's current_stage + quote_closed + reason_code onto a
      * bd_erp_stage_list key (draft, in_estimating, priced, revision,
      * accepted, ordered, lost).
+     *
+     * A REASON CODE DOES NOT MEAN THE QUOTE WAS LOST. Epicor stamps
+     * QuoteHed.ReasonCode when a quote closes EITHER way and records which way
+     * in the separate ReasonType ('W' won / 'L' lost) - verified live on quote
+     * 1190, which closed ReasonType 'W', ReasonCode 'PRICE'. This used to read
+     * `if ($reasonCode !== '') return 'lost';`, so every won deal reflected
+     * into Sugar as Lost, on the record the rep looks at.
+     *
+     * Won/lost is taken from the STAGE LABEL, which the connector guarantees:
+     * transformers.quotes.map_stage() writes exactly 'Closed', 'Closed (Won)'
+     * or 'Closed (Lost)' for a closed quote. reason_code is only a fallback
+     * and deliberately not the oracle - today it happens to carry the word
+     * 'Won'/'Lost', but its documented preference order is
+     * description -> mnemonic -> W/L word, so once core stops dropping
+     * ReasonDescription it will read 'Couldn't meet delivery date' and any
+     * test on it would quietly start failing open.
+     *
+     * @param bool $hasOrder A Sugar ERP_Orders record is linked to the Quote.
+     *   Outranks everything: the quote demonstrably became an order. Epicor's
+     *   own QuoteHed.Ordered flag would be the better source and is NOT
+     *   available here - connector-epicor's normalize_quote emits 15 canonical
+     *   fields and Ordered is not one of them, so it never reaches Sugar.
      */
-    private function mapStage(string $currentStage, bool $closed, string $reasonCode): string
-    {
+    private function mapStage(
+        string $currentStage,
+        bool $closed,
+        string $reasonCode,
+        bool $hasOrder = false
+    ): string {
         $stage = strtolower(trim($currentStage));
+
+        if ($hasOrder) {
+            return 'ordered';
+        }
 
         if ($closed) {
             if (strpos($stage, 'order') !== false) {
                 return 'ordered';
             }
-            if ($reasonCode !== '') {
+            if (strpos($stage, '(lost)') !== false) {
+                return 'lost';
+            }
+            if (strpos($stage, '(won)') !== false) {
+                return 'accepted';
+            }
+            // No marker in the label: fall back to the bare W/L word, and only
+            // to that word. Anything else is a reason, not an outcome.
+            if (strtolower(trim($reasonCode)) === 'lost') {
                 return 'lost';
             }
             return 'accepted';

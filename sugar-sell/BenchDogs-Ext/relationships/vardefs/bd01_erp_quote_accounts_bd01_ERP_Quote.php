@@ -1,0 +1,41 @@
+<?php
+$dictionary["bd01_ERP_Quote"]["fields"]["bd01_erp_quote_accounts"] = array (
+  'name' => 'bd01_erp_quote_accounts',
+  'type' => 'link',
+  'relationship' => 'bd01_erp_quote_accounts',
+  'source' => 'non-db',
+  'module' => 'Accounts',
+  'bean_name' => 'Account',
+  'side' => 'right',
+  'vname' => 'LBL_BD01_ERP_QUOTE_ACCOUNTS_FROM_BD01_ERP_QUOTE_TITLE',
+  'id_name' => 'bd01_erp_quote_accountsaccounts_ida',
+  'link-type' => 'one',
+);
+$dictionary["bd01_ERP_Quote"]["fields"]["bd01_erp_quote_accounts_name"] = array (
+  'name' => 'bd01_erp_quote_accounts_name',
+  'type' => 'relate',
+  'source' => 'non-db',
+  'vname' => 'LBL_BD01_ERP_QUOTE_ACCOUNTS_FROM_ACCOUNTS_TITLE',
+  'save' => true,
+  'id_name' => 'bd01_erp_quote_accountsaccounts_ida',
+  'link' => 'bd01_erp_quote_accounts',
+  'table' => 'accounts',
+  'module' => 'Accounts',
+  'rname' => 'name',
+);
+$dictionary["bd01_ERP_Quote"]["fields"]["bd01_erp_quote_accountsaccounts_ida"] = array (
+  'name' => 'bd01_erp_quote_accountsaccounts_ida',
+  'type' => 'id',
+  'source' => 'non-db',
+  'vname' => 'LBL_BD01_ERP_QUOTE_ACCOUNTS_FROM_BD01_ERP_QUOTE_TITLE_ID',
+  'id_name' => 'bd01_erp_quote_accountsaccounts_ida',
+  'link' => 'bd01_erp_quote_accounts',
+  'table' => 'accounts',
+  'module' => 'Accounts',
+  'rname' => 'id',
+  'reportable' => false,
+  'side' => 'right',
+  'massupdate' => false,
+  'duplicate_merge' => 'disabled',
+  'hideacl' => true,
+);

@@ -1,0 +1,3 @@
+<?php
+$mod_strings['LBL_BD01_ERP_QUOTE_ACCOUNTS_FROM_BD01_ERP_QUOTE_TITLE'] = 'ERP Quotes';
+$mod_strings['LBL_BD01_ERP_QUOTE_ACCOUNTS_FROM_ACCOUNTS_TITLE'] = 'Customer';
