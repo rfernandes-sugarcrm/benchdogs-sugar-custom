@@ -42,6 +42,18 @@ if (function_exists('post_execute') === false) {
         } catch (Throwable $e) {
             $GLOBALS['log']->error('BenchDogs-Ext: Quotes buttons failed: ' . $e->getMessage());
         }
+        // Native-line ordering columns on the quoted-line-items grid.
+        try {
+            $qliHelper = 'custom/modules/Quotes/BdQliColumnsLayout.php';
+            if (file_exists($qliHelper)) {
+                require_once $qliHelper;
+                if (class_exists('BdQliColumnsLayout')) {
+                    (new BdQliColumnsLayout())->install();
+                }
+            }
+        } catch (Throwable $e) {
+            $GLOBALS['log']->error('BenchDogs-Ext: QLI columns failed: ' . $e->getMessage());
+        }
         try {
             $accountsHelper = 'custom/modules/Accounts/BdAccountsLayoutExtensions.php';
             if (file_exists($accountsHelper)) {
@@ -103,7 +115,7 @@ if (function_exists('post_execute') === false) {
 
         try {
             SugarAutoLoader::load('modules/Administration/QuickRepairAndRebuild.php');
-            $modules = ['Quotes', 'Opportunities', 'RevenueLineItems', 'Accounts', 'bd01_ERP_Quote', 'bd01_ERP_Quote_Line', 'bd01_ERP_Quote_Cost'];
+            $modules = ['Quotes', 'Products', 'Opportunities', 'RevenueLineItems', 'Accounts', 'bd01_ERP_Quote', 'bd01_ERP_Quote_Line', 'bd01_ERP_Quote_Cost'];
             $rac = new RepairAndClear();
             $rac->show_output = false;
             $rac->module_list = $modules;
@@ -128,8 +140,9 @@ if (function_exists('post_execute') === false) {
                 SugarRelationshipFactory::rebuildCache();
             }
             VardefManager::clearVardef('Quotes', 'Quote');
+            VardefManager::clearVardef('Products', 'Product');
             VardefManager::clearVardef('ERP_Orders', 'ERP_Order');
-            MetaDataManager::refreshModulesCache(array('Quotes', 'ERP_Orders'));
+            MetaDataManager::refreshModulesCache(array('Quotes', 'Products', 'ERP_Orders'));
         } catch (Throwable $e) {
             $GLOBALS['log']->error('BenchDogs-Ext: relationship rebuild failed: ' . $e->getMessage());
         }

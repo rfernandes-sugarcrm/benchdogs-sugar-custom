@@ -1,5 +1,7 @@
 <?php
 
+use Sugarcrm\Sugarcrm\Security\HttpClient\ExternalResourceClient;
+
 // phpcs:disable PSR1.Classes.ClassDeclaration.MissingNamespace
 
 /**
@@ -94,6 +96,30 @@ class BdBenchDogsActionsApi extends BaseErpActionsApi
                 'pathVars' => array('module', 'record', ''),
                 'method' => 'orderWinningLine',
                 'shortHelp' => 'Raises an Epicor sales order from the winning (governing) quote line only; the quote stays open.',
+                'exceptions' => array(
+                    'SugarApiExceptionNotAuthorized',
+                    'SugarApiExceptionInvalidParameter',
+                    'SugarApiExceptionNotFound',
+                ),
+            ),
+            'bdOrderSelectedLines' => array(
+                'reqType' => 'POST',
+                'path' => array('Quotes', '?', 'bd-order-selected-lines'),
+                'pathVars' => array('module', 'record', ''),
+                'method' => 'orderSelectedLines',
+                'shortHelp' => 'Raises an Epicor sales order from the line items ticked To Order; untouched lines stay on the quote.',
+                'exceptions' => array(
+                    'SugarApiExceptionNotAuthorized',
+                    'SugarApiExceptionInvalidParameter',
+                    'SugarApiExceptionNotFound',
+                ),
+            ),
+            'bdBestPricing' => array(
+                'reqType' => 'POST',
+                'path' => array('Quotes', '?', 'bd-best-pricing'),
+                'pathVars' => array('module', 'record', ''),
+                'method' => 'bestPricingFromCatalog',
+                'shortHelp' => 'Reprices catalog-linked line items from the live Epicor price lists; non-catalog lines are skipped and reported by name.',
                 'exceptions' => array(
                     'SugarApiExceptionNotAuthorized',
                     'SugarApiExceptionInvalidParameter',
@@ -613,6 +639,239 @@ class BdBenchDogsActionsApi extends BaseErpActionsApi
     }
 
     /**
+     * REQ-1/REQ-2/REQ-22 expressed on the quote's OWN line items (1:1 CRM
+     * quote to ERP quote): raise an Epicor sales order from ONLY the quoted
+     * line items ticked bd_to_order that are not yet bd_ordered. Nothing is
+     * copied and nothing is deleted - the connector's quote_to_order handler
+     * orders exactly the lines the payload names, so the untouched rows stay
+     * on the quote, the quote moves to 'Partially Fulfilled' while lines
+     * remain, and every row keeps its history (bd_ordered).
+     */
+    public function orderSelectedLines(ServiceBase $api, array $args)
+    {
+        if (empty($args['record'])) {
+            throw new SugarApiExceptionInvalidParameter('Missing record id');
+        }
+        $bean = BeanFactory::retrieveBean('Quotes', $args['record']);
+        if ($bean === null || empty($bean->id)) {
+            throw new SugarApiExceptionNotFound('Quote not found: ' . $args['record']);
+        }
+        if (!$bean->ACLAccess('edit')) {
+            throw new SugarApiExceptionNotAuthorized('No edit access to this quote');
+        }
+        if (($bean->quote_stage ?? '') === 'Closed Lost') {
+            return array('status' => 'error', 'message' => 'This quote is Closed Lost - reopen it before ordering.');
+        }
+        if (($bean->order_stage ?? '') === 'Pending') {
+            return array('status' => 'error', 'message' => 'An order for this quote is already in flight (order stage Pending).');
+        }
+        if (empty($bean->erp_display_sync_key)) {
+            return array('status' => 'error', 'message' => 'No Kinetic quote is linked to this quote yet - send it to estimating first.');
+        }
+
+        $all = array();
+        if ($bean->load_relationship('products')) {
+            $all = $bean->products->getBeans(array('order_by' => 'position'));
+        }
+        $rows = array();
+        foreach ($all as $p) {
+            if (empty($p->deleted)) {
+                $rows[] = $p;
+            }
+        }
+        if (count($rows) === 0) {
+            return array('status' => 'error', 'message' => 'This quote has no line items yet.');
+        }
+
+        $selected = array();
+        $unordered = 0;
+        foreach ($rows as $p) {
+            $isOrdered = !empty($p->bd_ordered);
+            if (!$isOrdered) {
+                $unordered++;
+            }
+            if (!empty($p->bd_to_order) && !$isOrdered) {
+                $selected[] = $p;
+            }
+        }
+        if (count($selected) === 0) {
+            return array('status' => 'error', 'message' => 'Tick "To Order" on the line item(s) the customer committed to, then try again.');
+        }
+
+        $cfg = $this->loadOrchestratorConfig();
+        if ($cfg['url'] === '' || $cfg['token'] === '' || $cfg['tenant'] === '') {
+            return array('status' => 'error', 'message' => 'ERP integration not configured. Contact administrator.');
+        }
+
+        // Same pre-step the product's performWriteback runs: a quote against
+        // an unprovisioned billing account provisions it first.
+        if (!empty($bean->billing_account_id)) {
+            $account = BeanFactory::retrieveBean('Accounts', $bean->billing_account_id);
+            if ($account && empty($account->erp_sync_key)) {
+                $provisionResult = $this->provisionAccount($account, $cfg);
+                if (($provisionResult['status'] ?? '') !== 'success') {
+                    return $provisionResult;
+                }
+            }
+        }
+
+        // The product getQuoteRecord's shape, with line_items filtered to
+        // the ticked rows only - the payload IS the order.
+        $lineItems = array();
+        foreach ($selected as $p) {
+            $lineItems[] = array(
+                'id' => $p->id,
+                'quote_id' => $p->quote_id,
+                'product_id' => $p->product_template_id ?? '',
+                'part_num' => ($p->mft_part_num ?? '') !== '' ? $p->mft_part_num : ($p->name ?? ''),
+                'name' => $p->name ?? '',
+                'description' => ($p->description ?? '') !== '' ? $p->description : ($p->name ?? ''),
+                'quantity' => $p->quantity ?? 0,
+                'unit_of_measure' => $p->unit_of_measure ?? '',
+                'list_price' => $p->list_price ?? '0',
+                'discount_amount' => $p->discount_amount ?? '',
+                'discount_select' => (bool) ($p->discount_select ?? true),
+                'tax_class' => $p->tax_class ?? '',
+            );
+        }
+        $record = array(
+            'id' => $bean->id,
+            'billing_account_id' => $bean->billing_account_id ?? '',
+            'purchase_order_num' => $bean->purchase_order_num ?? '',
+            'quote_num' => $bean->quote_num ?? '',
+            'date_quote_expected_closed' => $bean->date_quote_expected_closed ?? '',
+            'currency_id' => $bean->currency_id ?? '',
+            'erp_terms_code' => $bean->erp_terms_code ?? '',
+            'erp_ship_via_code' => $bean->erp_ship_via_code ?? '',
+            'line_count' => count($lineItems),
+            'line_items' => $lineItems,
+        );
+
+        // The connector resolves the Epicor customer from
+        // account_erp_sync_key (the raw CustNum, erp_display_sync_key) -
+        // same resolution the product's getQuoteRecord performs.
+        if (!empty($bean->billing_account_id)) {
+            $billingAccount = BeanFactory::retrieveBean('Accounts', $bean->billing_account_id, array('use_cache' => false));
+            if ($billingAccount) {
+                $record['account_erp_sync_key'] = $billingAccount->erp_display_sync_key ?? '';
+            }
+        }
+        if (!empty($bean->shipping_address_id)) {
+            $shippingAddress = BeanFactory::retrieveBean('ShippingAddresses', $bean->shipping_address_id);
+            if ($shippingAddress) {
+                $record['shipping_address_erp_sync_key'] = $shippingAddress->erp_display_sync_key ?? '';
+            }
+        }
+
+        // Sweep parity with orderWinningLine: stamp BEFORE triggering so the
+        // polling sweep can pick the row up if the synchronous trigger dies.
+        $now = TimeDate::getInstance()->nowDb();
+        $bean->bd_order_requested_at = $now;
+        $bean->save();
+
+        $payload = array('tenant' => $cfg['tenant'], 'record' => $record);
+        $result = $this->postWritebackSync(
+            'quote_to_order',
+            $payload,
+            $cfg['url'],
+            $cfg['token'],
+            'create_order',
+            'Quote write-back completed.'
+        );
+        if (($result['status'] ?? '') !== 'success') {
+            return $result;
+        }
+
+        // Mark the ordered rows - they STAY on the quote as history.
+        $prototypeWin = false;
+        $orderedParts = array();
+        foreach ($selected as $p) {
+            $p->bd_ordered = 1;
+            $p->save();
+            if (preg_match('/(^|[-_])PROTO/i', (string) ($p->mft_part_num ?? ''))) {
+                $prototypeWin = true;
+            }
+            $orderedParts[] = sprintf(
+                '%s x%s @ %s',
+                ($p->mft_part_num ?? '') !== '' ? $p->mft_part_num : $p->name,
+                rtrim(rtrim(number_format((float) ($p->quantity ?? 0), 2, '.', ''), '0'), '.'),
+                rtrim(rtrim(number_format((float) ($p->list_price ?? 0), 2, '.', ''), '0'), '.')
+            );
+        }
+
+        // Best-effort mirror onto the Kinetic reflection when exactly one
+        // line was ordered: keeps the bd01 subpanel's governing tick
+        // truthful without fighting BdGoverningLineHook's single winner.
+        if (count($selected) === 1 && !empty($selected[0]->bd_erp_line_num)) {
+            $erpQuote = $this->pickErpQuote($bean);
+            if ($erpQuote !== null && $erpQuote->load_relationship('bd01_erp_quote_lines')) {
+                foreach ($erpQuote->bd01_erp_quote_lines->getBeans() as $line) {
+                    if ((int) $line->line_num === (int) $selected[0]->bd_erp_line_num
+                        && empty($line->governing)
+                    ) {
+                        $line->governing = 1;
+                        $line->save();
+                    }
+                }
+            }
+        }
+
+        $fresh = BeanFactory::retrieveBean('Quotes', $bean->id, array('use_cache' => false));
+        if ($fresh === null) {
+            return $result;
+        }
+
+        $partial = ($unordered - count($selected)) > 0;
+        if ($partial) {
+            // THE REQ-1 BEHAVIOUR on native lines: a subset order leaves the
+            // quote OPEN with the remaining line items still live.
+            $fresh->quote_stage = 'Partially Fulfilled';
+        } else {
+            $fresh->quote_stage = 'Closed Accepted';
+        }
+        $fresh->save();
+
+        // REQ-22: the opportunity stays open and its stage names the slice.
+        if ($partial && $fresh->load_relationship('opportunities')) {
+            $newStage = $prototypeWin ? 'Prototype Closed' : 'Partial Production Closed';
+            foreach ($fresh->opportunities->getBeans() as $opp) {
+                if (in_array($opp->sales_stage, array('Closed Won', 'Closed Lost'), true)) {
+                    continue;
+                }
+                $opp->sales_stage = $newStage;
+                $opp->probability = $prototypeWin ? 80 : 90;
+                $opp->save();
+                if ($opp->load_relationship('revenuelineitems')) {
+                    foreach ($opp->revenuelineitems->getBeans() as $rliBean) {
+                        if (in_array($rliBean->sales_stage, array('Closed Won', 'Closed Lost'), true)) {
+                            continue;
+                        }
+                        $rliBean->sales_stage = $newStage;
+                        $rliBean->probability = $prototypeWin ? 80 : 90;
+                        $rliBean->save();
+                    }
+                }
+            }
+        }
+
+        $result['message'] = sprintf(
+            '%s Ordered %d of %d open quote lines (%s) at the quoted price. %s',
+            $result['message'],
+            count($selected),
+            $unordered,
+            implode('; ', $orderedParts),
+            $partial
+                ? 'The quote stays open - the remaining line items are still live.'
+                : 'All open lines ordered - the quote is closed accepted.'
+        );
+        $result['partial'] = $partial;
+        $result['lines_ordered'] = count($selected);
+        $result['lines_total'] = $unordered;
+
+        return $result;
+    }
+
+    /**
      * Re-runs the post_install UI deploy steps with NOTHING swallowed: every
      * step's exception text comes back in the response. post_install logs
      * failures to sugarcrm.log, which SugarCloud keeps out of reach - this
@@ -633,6 +892,8 @@ class BdBenchDogsActionsApi extends BaseErpActionsApi
             $helper = 'custom/modules/Quotes/BdQuotesLayoutExtensions.php';
             require_once $helper;
             BdQuotesLayoutExtensions::writeButtons();
+                require_once 'custom/modules/Quotes/BdQliColumnsLayout.php';
+                (new BdQliColumnsLayout())->install();
             $steps['quotes_buttons'] = 'ok';
         } catch (Throwable $e) {
             $steps['quotes_buttons'] = get_class($e) . ': ' . $e->getMessage();
@@ -719,6 +980,193 @@ class BdBenchDogsActionsApi extends BaseErpActionsApi
      * ETO placeholder) is updated in place, further winners append, and
      * surplus rows are removed. Returns an error string, or null on success.
      */
+    /**
+     * "Get Best Pricing from Catalog" (REQ-5's live-pricing half).
+     *
+     * The catalog boundary is Sugar's Product Catalog: a line item counts as
+     * IN the catalog only when it is linked to a ProductTemplate that
+     * carries an ERP part key. Everything else - engineered/free-text lines
+     * like the Bench Dogs prototypes - is deliberately SKIPPED and reported
+     * back by name, never errored: custom work has no list price and
+     * repricing it from a price list would be wrong by construction.
+     *
+     * Catalog lines go to the product's own orchestrator route
+     * (/v1/quotes/{id}/refresh-price-availability -> Epicor
+     * GetPriceListInquiry per customer+part+qty), so quantity breaks and
+     * customer price lists resolve exactly as Epicor's own order entry
+     * would. Lines that come back degraded, or with no price on file
+     * (net_price <= 0 means "no list entry", not "free"), keep their
+     * current price and are reported in their own bucket.
+     */
+    public function bestPricingFromCatalog(ServiceBase $api, array $args)
+    {
+        if (empty($args['record'])) {
+            throw new SugarApiExceptionInvalidParameter('Missing record id');
+        }
+        $bean = BeanFactory::retrieveBean('Quotes', $args['record']);
+        if ($bean === null || empty($bean->id)) {
+            throw new SugarApiExceptionNotFound('Quote not found: ' . $args['record']);
+        }
+        if (!$bean->ACLAccess('edit')) {
+            throw new SugarApiExceptionNotAuthorized('No edit access to this quote');
+        }
+
+        if (in_array($bean->quote_stage, array('Closed Lost', 'Closed Accepted'), true)) {
+            return array('status' => 'error', 'message' => 'This quote is closed - pricing is locked.');
+        }
+
+        $bean->load_relationship('products');
+        $lineItems = ($bean->products && is_object($bean->products))
+            ? $bean->products->getBeans(array('order_by' => 'line_num', 'limit' => 100))
+            : array();
+        if (empty($lineItems)) {
+            return array('status' => 'error', 'message' => 'This quote has no line items to price.');
+        }
+
+        $candidates = array();      // id => bean, catalog-linked
+        $payloadLines = array();
+        $skippedNames = array();    // not in catalog
+        foreach ($lineItems as $li) {
+            $partNum = '';
+            if (!empty($li->product_template_id)) {
+                $tpl = BeanFactory::retrieveBean('ProductTemplates', $li->product_template_id);
+                if ($tpl) {
+                    $partNum = $tpl->erp_display_sync_key ?: '';
+                    if ($partNum === '' && !empty($tpl->erp_sync_key)) {
+                        // scoped key "EPIC06__BD-DISPLAY-01" -> raw part num
+                        $parts = explode('__', (string) $tpl->erp_sync_key, 2);
+                        $partNum = end($parts) ?: '';
+                    }
+                }
+            }
+            if ($partNum === '') {
+                $skippedNames[] = $li->mft_part_num ?: ($li->name ?: 'Unnamed line');
+                continue;
+            }
+            $candidates[$li->id] = array('bean' => $li, 'part' => $partNum);
+            $payloadLines[] = array(
+                'id' => $li->id,
+                'part_num' => $partNum,
+                'quantity' => (float) ($li->quantity ?? 0),
+                'unit_of_measure' => 'EA',
+            );
+        }
+
+        $skippedLabel = $skippedNames
+            ? ' Skipped (not in catalog): ' . implode(', ', array_unique($skippedNames)) . '.'
+            : '';
+
+        if (empty($candidates)) {
+            return array(
+                'status' => 'success',
+                'message' => 'No catalog-linked line items on this quote - nothing was repriced.' . $skippedLabel,
+                'lines_repriced' => 0,
+            );
+        }
+
+        $custNum = 0;
+        $custId = '';
+        $currency = 'USD';
+        if (!empty($bean->billing_account_id)) {
+            $account = BeanFactory::retrieveBean('Accounts', $bean->billing_account_id);
+            if ($account) {
+                $custNum = (int) ($account->erp_display_sync_key ?? 0);
+                $custId = (string) ($account->erp_account_id ?? '');
+                $currency = $this->resolveCurrencyIsoCode($account->erp_currency_id ?? null);
+            }
+        }
+        if ($custNum <= 0) {
+            return array(
+                'status' => 'error',
+                'message' => 'The billing account is not linked to an ERP customer yet - provision it first.',
+            );
+        }
+
+        $cfg = $this->loadOrchestratorConfig();
+        if ($cfg['url'] === '' || $cfg['token'] === '') {
+            return array('status' => 'error', 'message' => 'ERP integration is not configured.');
+        }
+
+        $payload = json_encode(array(
+            'cust_num' => $custNum,
+            'cust_id' => $custId,
+            'currency_code' => $currency,
+            'line_count' => count($payloadLines),
+            'line_items' => $payloadLines,
+        ));
+        $url = rtrim($cfg['url'], '/') . '/v1/quotes/' . $bean->id . '/refresh-price-availability';
+
+        try {
+            $client = new ExternalResourceClient(120);
+            $client = $client->trustTo('host.docker.internal');
+            $response = $client->post($url, $payload, array(
+                'Authorization' => 'Bearer ' . $cfg['token'],
+                'Content-Type' => 'application/json',
+            ));
+            $statusCode = $response->getStatusCode();
+            $body = json_decode((string) $response->getBody(), true) ?? array();
+            if ($statusCode < 200 || $statusCode >= 300) {
+                $err = $body['error'] ?? ('ERP pricing service returned HTTP ' . $statusCode);
+                return array('status' => 'error', 'message' => $err);
+            }
+        } catch (Throwable $e) {
+            return array('status' => 'error', 'message' => 'Could not reach the ERP pricing service: ' . $e->getMessage());
+        }
+
+        $repriced = array();
+        $noPriceNames = array();
+        foreach (($body['lines'] ?? array()) as $lineResult) {
+            $entry = $candidates[$lineResult['line_id'] ?? ''] ?? null;
+            if ($entry === null) {
+                continue;
+            }
+            $li = $entry['bean'];
+            $netPrice = (float) (($lineResult['price'] ?? array())['net_price'] ?? 0);
+            if (!empty($lineResult['degraded']) || $netPrice <= 0) {
+                $noPriceNames[] = $entry['part'];
+                continue;
+            }
+            $old = (float) ($li->discount_price ?? 0);
+            $li->discount_price = $netPrice;
+            $availability = $lineResult['availability'] ?? array();
+            $availableQty = 0.0;
+            foreach ($availability as $wh) {
+                $availableQty += (float) ($wh['available_qty'] ?? 0);
+            }
+            $li->erp_available_qty = $availableQty;
+            $li->erp_price_availability_synced_at = TimeDate::getInstance()->nowDb();
+            $li->save();
+            $repriced[] = sprintf(
+                '%s x%d ($%s -> $%s)',
+                $entry['part'],
+                (int) ($li->quantity ?? 0),
+                number_format($old, 2),
+                number_format($netPrice, 2)
+            );
+        }
+
+        $msgParts = array();
+        if ($repriced) {
+            $msgParts[] = 'Best catalog pricing applied to ' . count($repriced) . ' line(s): ' . implode('; ', $repriced) . '.';
+        } else {
+            $msgParts[] = 'No lines were repriced.';
+        }
+        if ($noPriceNames) {
+            $msgParts[] = 'No catalog price on file (left unchanged): ' . implode(', ', array_unique($noPriceNames)) . '.';
+        }
+        if ($skippedLabel !== '') {
+            $msgParts[] = trim($skippedLabel);
+        }
+
+        return array(
+            'status' => 'success',
+            'message' => implode(' ', $msgParts),
+            'lines_repriced' => count($repriced),
+            'lines_skipped_not_catalog' => count($skippedNames),
+            'lines_no_price' => count($noPriceNames),
+        );
+    }
+
     private function copyWinningLinesToQuote(SugarBean $quote, array $winning): ?string
     {
         if (!$quote->load_relationship('product_bundles')) {

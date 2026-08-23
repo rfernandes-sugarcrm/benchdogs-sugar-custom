@@ -84,6 +84,17 @@ class BdQuotesLayoutExtensions
         $buttons =& $viewdefs['base']['view']['record']['buttons'];
         $existing = array_column($buttons, 'name');
 
+        // Bench Dogs owns the quote header: ONE entry point per action.
+        // The product's whole-quote buttons (Advanced Quote / Submit Order /
+        // Refresh Price & Availability) and the superseded winning-line
+        // button are REMOVED below - the per-line model replaces them.
+        $unwanted = [
+            'advanced_quote_button',
+            'create_erp_order_button',
+            'refresh_price_availability_button',
+            'bd_order_winning_button',
+        ];
+
         $wanted = [
             [
                 'type' => 'bd-send-estimating',
@@ -95,15 +106,36 @@ class BdQuotesLayoutExtensions
                 'acl_action' => 'edit',
             ],
             [
-                'type' => 'bd-order-winning',
-                'event' => 'button:bd_order_winning_button:click',
-                'name' => 'bd_order_winning_button',
-                'label' => 'LBL_BD_ORDER_WINNING_BUTTON',
+                'type' => 'bd-best-pricing',
+                'event' => 'button:bd_best_pricing_button:click',
+                'name' => 'bd_best_pricing_button',
+                'label' => 'LBL_BD_BEST_PRICING_BUTTON',
+                'css_class' => 'rowaction actionbuttons actionbuttons-button btn btn-secondary ml-2',
+                'showOn' => 'view',
+                'acl_action' => 'edit',
+            ],
+            [
+                'type' => 'bd-order-selected',
+                'event' => 'button:bd_order_selected_button:click',
+                'name' => 'bd_order_selected_button',
+                'label' => 'LBL_BD_ORDER_SELECTED_BUTTON',
                 'css_class' => 'rowaction actionbuttons actionbuttons-button btn btn-primary ml-2',
                 'showOn' => 'view',
                 'acl_action' => 'edit',
             ],
         ];
+
+        $kept = [];
+        $removed = 0;
+        foreach ($buttons as $b) {
+            if (is_array($b) && in_array($b['name'] ?? '', $unwanted, true)) {
+                $removed++;
+                continue;
+            }
+            $kept[] = $b;
+        }
+        $buttons = $kept;
+        $existing = array_column($buttons, 'name');
 
         $new = [];
         foreach ($wanted as $button) {
@@ -111,15 +143,17 @@ class BdQuotesLayoutExtensions
                 $new[] = $button;
             }
         }
-        if (empty($new)) {
+        if (empty($new) && $removed === 0) {
             return;
         }
 
-        $at = array_search('main_dropdown', array_column($buttons, 'name'), true);
-        if ($at !== false) {
-            array_splice($buttons, $at, 0, $new);
-        } else {
-            array_push($buttons, ...$new);
+        if (!empty($new)) {
+            $at = array_search('main_dropdown', array_column($buttons, 'name'), true);
+            if ($at !== false) {
+                array_splice($buttons, $at, 0, $new);
+            } else {
+                array_push($buttons, ...$new);
+            }
         }
 
         $deploy->setViewdefs($viewdefs);
