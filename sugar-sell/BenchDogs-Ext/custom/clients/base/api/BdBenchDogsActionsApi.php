@@ -599,8 +599,21 @@ class BdBenchDogsActionsApi extends BaseErpActionsApi
                 // line items are in play - align them or the next RLI save
                 // silently reverts the opportunity.
                 if ($opp->load_relationship('revenuelineitems')) {
+                    $wonRoleSuffix = $prototypeWin ? ':prototype' : ':production';
                     foreach ($opp->revenuelineitems->getBeans() as $rliBean) {
                         if (in_array($rliBean->sales_stage, array('Closed Won', 'Closed Lost'), true)) {
+                            continue;
+                        }
+                        // Deliverable-keyed RLIs (the REQ-6 materialization,
+                        // BdQuoteReflectionHook) close INDEPENDENTLY: only
+                        // the slice that actually won takes the stage - a
+                        // prototype win must not relabel the production RLI
+                        // (REQ-1: winning one part never closes the rest).
+                        // Unkeyed RLIs keep the pre-0.8.6 blanket behaviour.
+                        $deliverableKey = (string) ($rliBean->bd_deliverable_key ?? '');
+                        if ($deliverableKey !== ''
+                            && substr($deliverableKey, -strlen($wonRoleSuffix)) !== $wonRoleSuffix
+                        ) {
                             continue;
                         }
                         $rliBean->sales_stage = $newStage;

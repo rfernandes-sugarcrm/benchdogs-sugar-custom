@@ -9,10 +9,15 @@
  * Sugar Quote: bd_erp_total / bd_erp_stage / bd_priced_at / bd_reason_code
  * are updated (only when a value actually changed), and if the Quote is the
  * primary quote of its Opportunity (erp_is_primary_quote, owned by ERP-Core),
- * the Opportunity amount is refreshed from the rollup amount: the governing
- * line's extended price when one of the quote's lines is marked governing
- * (Bench Dogs REQ-5/REQ-6 - see BdGoverningLineHook, which keeps the flag
- * unique per quote), else the whole quote_total (v0.1 behavior, unchanged).
+ * the Opportunity's REVENUE LINE ITEMS are materialized and maintained from
+ * the quote's deliverables (Bench Dogs REQ-6): the prototype-flagged line
+ * feeds the prototype RLI, the governing line (see BdGoverningLineHook,
+ * which keeps that flag unique per quote) feeds the production RLI, each
+ * upserted by bd_deliverable_key with replace semantics. Sugar's own RLI
+ * arithmetic then carries the value up to Opportunity.amount - this
+ * instance runs opps_view_by = RevenueLineItems, where a directly written
+ * amount does not durably stick (pre-0.8.6 wrote the amount here; the
+ * write is now re-targeted at the RLIs).
  *
  * When sugar_quote_id is empty the hook does nothing - v0.1 policy; the
  * quote-matching/policy hook lands in a later version.
@@ -217,11 +222,12 @@ class BdQuoteReflectionHook
     }
 
     /**
-     * Re-run just the Opportunity amount rollup for an ERP quote, outside a
-     * bd01_ERP_Quote save. BdGoverningLineHook calls this after a governing
-     * flag changes hands so the governing line's extended price lands on the
-     * Opportunity immediately - same code path, same gates (sugar_quote_id
-     * on the ERP quote, erp_is_primary_quote on the Sugar Quote).
+     * Re-run just the deliverable-RLI materialization for an ERP quote,
+     * outside a bd01_ERP_Quote save. BdGoverningLineHook calls this after a
+     * governing flag changes hands (so the production RLI re-values
+     * immediately), BdRliRefreshHook after a line's price or role changes -
+     * same code path, same gates (sugar_quote_id on the ERP quote,
+     * erp_is_primary_quote on the Sugar Quote).
      */
     public function refreshOpportunityAmount(SugarBean $bean): void
     {
@@ -246,90 +252,333 @@ class BdQuoteReflectionHook
     }
 
     /**
-     * If the reflected Quote is its Opportunity's primary quote
+     * REQ-6: if the reflected Quote is its Opportunity's primary quote
      * (erp_is_primary_quote is owned by ERP-Core and set by the connector),
-     * keep the Opportunity amount in step with the rollup amount (governing
-     * line's extended price, else the whole quote total - see rollupAmount).
+     * materialize and maintain the Opportunity's revenue line items from the
+     * quote's deliverables, and let Sugar's own RLI arithmetic carry the
+     * value up to Opportunity.amount.
+     *
+     * Deliverables, not ladder rows: the quantity-break ladder's lines are
+     * alternative quantities of ONE item - mirroring every line into an RLI
+     * would multiply the deal value inside a single revision. So the
+     * prototype-flagged line feeds the prototype RLI, the governing line
+     * feeds the production RLI (no governing line: the quote total minus the
+     * prototype slice, keeping the v0.1 whole-quote fallback), and each is
+     * upserted by bd_deliverable_key with REPLACE semantics: five or six
+     * Kinetic revisions re-value the same rows, never add to them.
      */
     private function maybeUpdateOpportunity(SugarBean $bean, SugarBean $quote): void
     {
         if (empty($quote->erp_is_primary_quote)) {
             return;
         }
-        $total = $this->rollupAmount($bean);
-        if ($total === null) {
+
+        $opportunity = $this->linkedOpportunity($quote);
+        if ($opportunity === null) {
             return;
         }
 
+        if ($this->isStaleGeneration($bean, $quote)) {
+            // Bench Dogs revisions arrive as NEW Kinetic quotes carrying the
+            // same sugar_quote_id (1194 -> 1195 measured live). Only the
+            // newest generation may value the deal - a late save of an old
+            // generation must not drag the RLIs backwards.
+            return;
+        }
+
+        $deliverables = $this->deliverables($bean);
+        if ($deliverables === []) {
+            return;
+        }
+
+        $this->upsertDeliverableRlis($quote, $opportunity, $deliverables);
+    }
+
+    /**
+     * Is a NEWER Kinetic generation of this deal already reflected? Compared
+     * by quote_num across the Sugar quote's bd01_erp_quote_quotes siblings.
+     * Fails open: better a maintained RLI than a frozen one.
+     */
+    private function isStaleGeneration(SugarBean $bean, SugarBean $quote): bool
+    {
+        try {
+            if (!$quote->load_relationship('bd01_erp_quote_quotes')
+                || !$quote->bd01_erp_quote_quotes
+                || !is_object($quote->bd01_erp_quote_quotes)
+            ) {
+                return false;
+            }
+            foreach ($quote->bd01_erp_quote_quotes->getBeans() as $sibling) {
+                if ($sibling->id !== $bean->id
+                    && (int) $sibling->quote_num > (int) $bean->quote_num
+                ) {
+                    return true;
+                }
+            }
+        } catch (Throwable $e) {
+            return false;
+        }
+        return false;
+    }
+
+    /**
+     * The Opportunity the Quote belongs to, via the quotes->opportunities
+     * relationship (first linked opportunity wins, as before 0.8.6).
+     */
+    private function linkedOpportunity(SugarBean $quote): ?SugarBean
+    {
         $quote->load_relationship('opportunities');
         if (!$quote->opportunities || !is_object($quote->opportunities)) {
-            return;
+            return null;
         }
         $oppIds = $quote->opportunities->get();
         $oppId = $oppIds[0] ?? '';
         if ($oppId === '') {
-            return;
+            return null;
         }
-
         $opportunity = BeanFactory::retrieveBean('Opportunities', $oppId);
         if (!$opportunity || empty($opportunity->id)) {
-            return;
-        }
-
-        if ((float) $opportunity->amount === (float) $total) {
-            return;
-        }
-
-        $opportunity->amount = (float) $total;
-        $opportunity->save();
-        $GLOBALS['log']->info(
-            'BdQuoteReflectionHook: opportunity ' . $oppId . ' amount set to ' . (float) $total
-            . ' from bd01_ERP_Quote ' . $bean->id . ' (primary quote ' . $quote->id . ')'
-        );
-    }
-
-    /**
-     * The amount to roll up onto the Opportunity (Bench Dogs REQ-5/REQ-6):
-     * when one of the ERP quote's lines is marked governing, that line's
-     * extended price governs the deal value; otherwise the whole quote_total
-     * (v0.1 behavior) applies. Null when no usable amount exists.
-     */
-    private function rollupAmount(SugarBean $bean): ?float
-    {
-        $governing = $this->findGoverningLine($bean);
-        if ($governing !== null) {
-            $GLOBALS['log']->info(
-                'BdQuoteReflectionHook: bd01_ERP_Quote ' . $bean->id
-                . ' rollup governed by line ' . $governing->id
-                . ' (doc_ext_price=' . (float) $governing->doc_ext_price . ')'
-            );
-            return (float) $governing->doc_ext_price;
-        }
-        $total = $bean->quote_total;
-        if ($total === null || $total === '') {
             return null;
         }
-        return (float) $total;
+        return $opportunity;
     }
 
     /**
-     * The quote's governing bd01_ERP_Quote_Line, if any. BdGoverningLineHook
-     * keeps the flag unique per quote; if legacy data still carries several,
-     * the first one the relationship returns wins (deterministic enough
-     * until the next save re-enforces uniqueness).
+     * The quote's deliverables, keyed by role ('prototype' / 'production').
+     *
+     * prototype   - the line flagged prototype (BdGoverningLineHook's sibling
+     *               flag, set by the reflection): its extended price.
+     * production  - the governing line's extended price when one is marked
+     *               (BdGoverningLineHook keeps the flag unique per quote);
+     *               otherwise the whole quote_total minus the prototype
+     *               slice, so the two RLIs never double-count the same
+     *               dollars (v0.1 whole-quote fallback, REQ-6-safe).
+     *
+     * Empty array when the quote has no usable value at all - the caller
+     * then leaves the opportunity's RLIs alone.
      */
-    private function findGoverningLine(SugarBean $bean): ?SugarBean
+    private function deliverables(SugarBean $bean): array
     {
+        $proto = null;
+        $governing = null;
         $bean->load_relationship('bd01_erp_quote_lines');
-        if (!$bean->bd01_erp_quote_lines || !is_object($bean->bd01_erp_quote_lines)) {
-            return null;
-        }
-        foreach ($bean->bd01_erp_quote_lines->getBeans() as $line) {
-            if (!empty($line->governing)) {
-                return $line;
+        if ($bean->bd01_erp_quote_lines && is_object($bean->bd01_erp_quote_lines)) {
+            foreach ($bean->bd01_erp_quote_lines->getBeans() as $line) {
+                if ($proto === null && !empty($line->prototype)) {
+                    $proto = $line;
+                }
+                if ($governing === null && !empty($line->governing)) {
+                    $governing = $line;
+                }
             }
         }
-        return null;
+
+        $out = [];
+        if ($proto !== null) {
+            $out['prototype'] = [
+                'amount' => (float) $proto->doc_ext_price,
+                'quantity' => (float) $proto->selling_qty,
+                'name' => trim((string) $proto->part_num) !== ''
+                    ? trim((string) $proto->part_num) . ' (prototype)'
+                    : 'Prototype run',
+            ];
+        }
+
+        if ($governing !== null) {
+            $out['production'] = [
+                'amount' => (float) $governing->doc_ext_price,
+                'quantity' => (float) $governing->selling_qty,
+                'name' => trim((string) $governing->part_num) !== ''
+                    ? trim((string) $governing->part_num) . ' (production run)'
+                    : 'Production run',
+            ];
+        } else {
+            $total = $bean->quote_total;
+            if ($total !== null && $total !== '') {
+                $amount = (float) $total;
+                if ($proto !== null) {
+                    $amount = max(0.0, $amount - (float) $proto->doc_ext_price);
+                }
+                $out['production'] = [
+                    'amount' => $amount,
+                    'quantity' => 1.0,
+                    'name' => trim((string) $bean->name) !== ''
+                        ? trim((string) $bean->name)
+                        : 'Quoted deal value',
+                ];
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Upsert one RLI per deliverable, keyed on bd_deliverable_key
+     * ("<bd01_ERP_Quote id>:<role>").
+     *
+     * Replace semantics: an existing keyed RLI is re-valued in place, never
+     * duplicated. The $0 placeholder RLI that the account-level action
+     * inserts at opportunity birth (unkeyed, likely_case 0) is claimed for
+     * the first missing deliverable instead of being left as an orphan row.
+     * Human-created RLIs (unkeyed, non-zero) are never touched.
+     *
+     * sales_stage is only set on rows this pass brings INTO the deliverable
+     * model (created or adopted) - an existing keyed RLI keeps whatever
+     * stage the closure machinery gave it (the partial-win lane in
+     * BdBenchDogsActionsApi owns closing the won slice; REQ-1 hinges on it).
+     */
+    private function upsertDeliverableRlis(SugarBean $quote, SugarBean $opportunity, array $deliverables): void
+    {
+        if (!$opportunity->load_relationship('revenuelineitems')
+            || !$opportunity->revenuelineitems
+            || !is_object($opportunity->revenuelineitems)
+        ) {
+            return;
+        }
+
+        $byKey = [];
+        $byRole = [];
+        $placeholder = null;
+        foreach ($opportunity->revenuelineitems->getBeans() as $rli) {
+            $key = (string) ($rli->bd_deliverable_key ?? '');
+            if ($key !== '') {
+                if (!isset($byKey[$key])) {
+                    $byKey[$key] = $rli;
+                }
+                $rolePart = substr($key, strrpos($key, ':') + 1);
+                $byRole[$rolePart][] = $rli;
+            } elseif ($placeholder === null && (float) $rli->likely_case === 0.0) {
+                $placeholder = $rli;
+            }
+        }
+
+        foreach ($deliverables as $role => $spec) {
+            // Keyed on the SUGAR quote (the deal), not the ERP quote row: a
+            // Bench Dogs revision arrives as a NEW Kinetic quote for the same
+            // deal, and it must land on the SAME RLIs (replace, never add).
+            $key = $quote->id . ':' . $role;
+            $rli = $byKey[$key] ?? null;
+            $created = false;
+            $adopted = false;
+
+            if ($rli === null && !empty($byRole[$role])) {
+                // A connector-owned RLI of this role under an older key
+                // (an earlier package version keyed on the ERP quote row, or
+                // an earlier Kinetic generation): re-key it in place.
+                $rli = array_shift($byRole[$role]);
+            }
+            if ($rli === null && $placeholder !== null) {
+                $rli = $placeholder;
+                $placeholder = null;
+                $adopted = true;
+            }
+            if ($rli === null) {
+                $rli = BeanFactory::newBean('RevenueLineItems');
+                $rli->opportunity_id = $opportunity->id;
+                $rli->account_id = (string) ($opportunity->account_id ?? '');
+                $rli->assigned_user_id = (string) ($opportunity->assigned_user_id ?? '');
+                $rli->currency_id = '-99';
+                $rli->base_rate = 1;
+                $rli->date_closed = !empty($opportunity->date_closed)
+                    ? $opportunity->date_closed
+                    : date('Y-m-d', strtotime('+30 days'));
+                $created = true;
+            }
+
+            $dirty = $created;
+            if ((string) ($rli->bd_deliverable_key ?? '') !== $key) {
+                $rli->bd_deliverable_key = $key;
+                $dirty = true;
+            }
+            if ((string) $rli->name !== $spec['name']) {
+                $rli->name = $spec['name'];
+                $dirty = true;
+            }
+            foreach (['likely_case', 'best_case', 'worst_case'] as $field) {
+                if ((float) $rli->$field !== $spec['amount']) {
+                    $rli->$field = $spec['amount'];
+                    $dirty = true;
+                }
+            }
+            if ($spec['quantity'] > 0 && (float) $rli->quantity !== $spec['quantity']) {
+                $rli->quantity = $spec['quantity'];
+                $dirty = true;
+            }
+
+            if ($created || $adopted) {
+                [$stage, $probability] = $this->deliverableStage($role, $opportunity);
+                if ($stage !== '' && (string) $rli->sales_stage !== $stage) {
+                    $rli->sales_stage = $stage;
+                    $rli->probability = $probability;
+                    $dirty = true;
+                }
+            }
+
+            if ($dirty) {
+                $rli->save();
+                $GLOBALS['log']->info(
+                    'BdQuoteReflectionHook: RLI ' . $rli->id . ' (' . $key . ') '
+                    . ($created ? 'created' : ($adopted ? 'adopted from placeholder' : 'updated'))
+                    . ' likely_case=' . $spec['amount'] . ' on opportunity ' . $opportunity->id
+                );
+            }
+
+            // Stale generations of this role (keyed rows that lost the
+            // upsert) are connector-owned by definition - remove them so a
+            // re-quoted deal never double-counts. Closed rows are history
+            // and stay.
+            foreach ($byRole[$role] ?? [] as $stale) {
+                if ($stale->id === $rli->id) {
+                    continue;
+                }
+                if (in_array((string) $stale->sales_stage, ['Closed Won', 'Closed Lost'], true)) {
+                    continue;
+                }
+                $stale->mark_deleted($stale->id);
+                $GLOBALS['log']->info(
+                    'BdQuoteReflectionHook: stale deliverable RLI ' . $stale->id
+                    . ' (' . $stale->bd_deliverable_key . ') removed - superseded by ' . $key
+                );
+            }
+        }
+    }
+
+    /**
+     * The stage a deliverable RLI is BORN with (create/adopt only - updates
+     * never touch stage). Derived from the opportunity's own stage so the
+     * materialization slots into whatever state the deal is already in:
+     * a prototype that already closed keeps its closure; the production
+     * slice of a partially-closed deal is the quoted proposal still in play.
+     *
+     * @return array{0: string, 1: int}
+     */
+    private function deliverableStage(string $role, SugarBean $opportunity): array
+    {
+        $oppStage = (string) ($opportunity->sales_stage ?? '');
+
+        if ($role === 'prototype') {
+            if ($oppStage === 'Prototype Closed' || $oppStage === 'Partial Production Closed') {
+                return ['Prototype Closed', 80];
+            }
+            return [
+                $oppStage !== '' ? $oppStage : 'Prospecting',
+                (int) ($opportunity->probability ?? 10),
+            ];
+        }
+
+        if ($oppStage === 'Closed Won') {
+            return ['Closed Won', 100];
+        }
+        if ($oppStage === 'Closed Lost') {
+            return ['Closed Lost', 0];
+        }
+        if ($oppStage === ''
+            || $oppStage === 'Prototype Closed'
+            || $oppStage === 'Partial Production Closed'
+        ) {
+            return ['Proposal/Price Quote', 65];
+        }
+        return [$oppStage, (int) ($opportunity->probability ?? 50)];
     }
 
     /**

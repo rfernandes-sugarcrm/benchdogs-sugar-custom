@@ -43,6 +43,10 @@ class BdContactSyncHook
                 return;   // account not ERP-linked - sync it first
             }
 
+            // CustNum travels WITH the contact so the extension's transform
+            // needs no account lookup through core (see bd_erp_custnum
+            // vardef for why callbacks are off the table on the CLI path).
+            $bean->bd_erp_custnum = (string) $account->erp_display_sync_key;
             $bean->bd_erp_sync_requested_at = TimeDate::getInstance()->nowDb();
         } catch (Throwable $e) {
             // A broken stamp must never block saving a contact.
