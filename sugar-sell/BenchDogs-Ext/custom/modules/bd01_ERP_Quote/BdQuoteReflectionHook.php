@@ -96,6 +96,8 @@ class BdQuoteReflectionHook
             return;
         }
 
+        $this->linkToSugarQuote($bean, $quote);
+
         $stage = $this->mapStage(
             (string) ($bean->current_stage ?? ''),
             !empty($bean->quote_closed),
@@ -140,6 +142,49 @@ class BdQuoteReflectionHook
         }
 
         $this->maybeUpdateOpportunity($bean, $quote);
+    }
+
+    /**
+     * Make sugar_quote_id visible as an actual Sugar relationship.
+     *
+     * sugar_quote_id is a bare id column: it is what the connector writes and
+     * what this hook navigates by, but Sugar's UI cannot see through it. The
+     * "Bench Dogs ERP Quotes" subpanel on the Quote record reads the
+     * bd01_erp_quote_quotes link, and nothing in the pipeline ever asserted
+     * it - so on a live instance every ERP quote carried its sugar_quote_id
+     * and the subpanel on EVERY Quote read "No data available" (verified:
+     * 110 ERP quotes, 13 with sugar_quote_id, 0 with the relationship).
+     * The reflected fields landed and the record the rep opens still looked
+     * unconnected.
+     *
+     * The sibling links do not have this problem because they are written
+     * relationally to begin with - quote lines to their ERP quote (184/184),
+     * costs to their line (420/420), ERP quotes to their Account (110/110).
+     * This one link was the gap.
+     *
+     * Idempotent: add() on an existing row is a no-op, and this runs on every
+     * reflection, so pre-existing records heal on their next sync rather than
+     * needing a backfill. Failure is logged, never fatal - a subpanel that
+     * stays empty is worth strictly less than the stage, total and reason this
+     * hook is here to write, so it must not be able to abort them.
+     */
+    private function linkToSugarQuote(SugarBean $bean, SugarBean $quote): void
+    {
+        try {
+            if (!$bean->load_relationship('bd01_erp_quote_quotes')) {
+                $GLOBALS['log']->warn(
+                    'BdQuoteReflectionHook: bd01_erp_quote_quotes link not available on '
+                    . 'bd01_ERP_Quote ' . $bean->id . '; subpanel will stay empty'
+                );
+                return;
+            }
+            $bean->bd01_erp_quote_quotes->add($quote->id);
+        } catch (Throwable $e) {
+            $GLOBALS['log']->warn(
+                'BdQuoteReflectionHook: could not link bd01_ERP_Quote ' . $bean->id
+                . ' to Quote ' . $quote->id . ': ' . $e->getMessage()
+            );
+        }
     }
 
     /**

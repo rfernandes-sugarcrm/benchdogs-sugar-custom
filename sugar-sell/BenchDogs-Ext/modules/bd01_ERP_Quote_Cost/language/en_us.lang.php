@@ -55,6 +55,11 @@ $mod_strings['LBL_MISC_COST'] = 'Misc Cost';
 $mod_strings['LBL_PROFIT'] = 'Profit';
 $mod_strings['LBL_GROSS_MARGIN_PCT'] = 'Gross Margin %';
 $mod_strings['LBL_HOURS'] = 'Hours';
+$mod_strings['LBL_TOTAL_COST'] = 'Total Cost';
+$mod_strings['LBL_UNIT_PRICE'] = 'Unit Price';
+$mod_strings['LBL_TOTAL_QUOTED_PRICE'] = 'Total Quoted Price';
+$mod_strings['LBL_QUOTED_MARKUP_PCT'] = 'Quoted Markup %';
+$mod_strings['LBL_ROLLED_UP'] = 'Costed in ERP';
 $mod_strings['LBL_ERP_SYNC_KEY'] = 'Internal ERP ID';
 
 // --- Panel titles used by the recorddashlet view ---
