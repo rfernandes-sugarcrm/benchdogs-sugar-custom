@@ -51,3 +51,6 @@ $mod_strings['LBL_DOC_EXT_PRICE'] = 'Doc Extended Price';
 $mod_strings['LBL_GOVERNING'] = 'Governing Line';
 $mod_strings['LBL_PROTOTYPE'] = 'Prototype';
 $mod_strings['LBL_ERP_SYNC_KEY'] = 'Internal ERP ID';
+
+// --- Panel titles used by the recorddashlet view ---
+$mod_strings['LBL_RECORDVIEW_PANEL_LINE_DETAIL'] = 'Line Detail';

@@ -52,3 +52,6 @@ $mod_strings['LBL_DUE_DATE'] = 'Due Date';
 $mod_strings['LBL_SUGAR_QUOTE_ID'] = 'Sugar Quote ID';
 $mod_strings['LBL_ENGINEERED'] = 'Engineered';
 $mod_strings['LBL_ERP_SYNC_KEY'] = 'Internal ERP ID';
+
+// --- Panel titles used by the recorddashlet view ---
+$mod_strings['LBL_RECORDVIEW_PANEL_QUOTE_TOTALS'] = 'Pricing';

@@ -56,3 +56,6 @@ $mod_strings['LBL_PROFIT'] = 'Profit';
 $mod_strings['LBL_GROSS_MARGIN_PCT'] = 'Gross Margin %';
 $mod_strings['LBL_HOURS'] = 'Hours';
 $mod_strings['LBL_ERP_SYNC_KEY'] = 'Internal ERP ID';
+
+// --- Panel titles used by the recorddashlet view ---
+$mod_strings['LBL_RECORDVIEW_PANEL_COST_BREAKDOWN'] = 'Cost Breakdown';

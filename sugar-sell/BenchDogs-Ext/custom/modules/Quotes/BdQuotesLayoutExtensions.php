@@ -24,7 +24,15 @@ class BdQuotesLayoutExtensions
 {
     private const PANEL_NAME = 'LBL_RECORDVIEW_PANEL_BENCHDOGS';
 
-    public static function write(): void
+    /**
+     * @param bool $replace Rewrite the panel's field list even when it is
+     *   already deployed. Only the replace-layouts build passes true: on an
+     *   existing tenant that has since edited the panel in Studio, rewriting it
+     *   discards their work, which is exactly what the append-only build exists
+     *   to avoid. Fresh installs have nothing to lose and want the packaged
+     *   definition to be authoritative.
+     */
+    public static function write(bool $replace = false): void
     {
         require_once 'modules/ModuleBuilder/parsers/constants.php';
         require_once 'modules/ModuleBuilder/parsers/views/DeployedMetaDataImplementation.php';
@@ -33,11 +41,15 @@ class BdQuotesLayoutExtensions
         $viewdefs = $deploy->getViewdefs();
         $panels =& $viewdefs['base']['view']['record']['panels'];
 
-        if (in_array(self::PANEL_NAME, array_column($panels, 'name'), true)) {
-            return; // already deployed - keep whatever the admin has done since
+        $at = array_search(self::PANEL_NAME, array_column($panels, 'name'), true);
+        if ($at !== false) {
+            if (!$replace) {
+                return; // already deployed - keep whatever the admin has done since
+            }
+            $panels[$at] = self::benchDogsPanel();
+        } else {
+            $panels[] = self::benchDogsPanel();
         }
-
-        $panels[] = self::benchDogsPanel();
 
         $deploy->setViewdefs($viewdefs);
         $deploy->deploy($viewdefs);

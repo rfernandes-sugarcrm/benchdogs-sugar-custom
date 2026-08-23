@@ -1,0 +1,224 @@
+<?php
+$module_name = 'bd01_ERP_Quote_Line';
+$viewdefs[$module_name] =
+array (
+  'base' =>
+  array (
+    'view' =>
+    array (
+      'recorddashlet' =>
+      array (
+        'buttons' =>
+        array (
+          0 =>
+          array (
+            'type' => 'button',
+            'name' => 'cancel_button',
+            'label' => 'LBL_CANCEL_BUTTON_LABEL',
+            'css_class' => 'btn-invisible btn-link',
+            'showOn' => 'edit',
+            'events' =>
+            array (
+              'click' => 'button:cancel_button:click',
+            ),
+          ),
+          1 =>
+          array (
+            'type' => 'rowaction',
+            'event' => 'button:save_button:click',
+            'name' => 'save_button',
+            'label' => 'LBL_SAVE_BUTTON_LABEL',
+            'css_class' => 'btn btn-primary',
+            'showOn' => 'edit',
+            'acl_action' => 'edit',
+          ),
+          2 =>
+          array (
+            'type' => 'actiondropdown',
+            'name' => 'main_dropdown',
+            'primary' => true,
+            'showOn' => 'view',
+            'buttons' =>
+            array (
+              0 =>
+              array (
+                'type' => 'rowaction',
+                'event' => 'button:edit_button:click',
+                'name' => 'edit_button',
+                'label' => 'LBL_EDIT_BUTTON_LABEL',
+                'acl_action' => 'edit',
+              ),
+            ),
+          ),
+          3 =>
+          array (
+            'name' => 'sidebar_toggle',
+            'type' => 'sidebartoggle',
+          ),
+        ),
+        'panels' =>
+        array (
+          0 =>
+          array (
+            'name' => 'panel_header',
+            'label' => 'LBL_RECORD_HEADER',
+            'header' => true,
+            'fields' =>
+            array (
+              0 =>
+              array (
+                'name' => 'picture',
+                'type' => 'avatar',
+                'width' => 32,
+                'height' => 32,
+                'dismiss_label' => true,
+                'readonly' => true,
+                'size' => 'medium',
+              ),
+              1 => 'name',
+            ),
+          ),
+          1 =>
+          array (
+            'name' => 'panel_body',
+            'label' => 'LBL_RECORD_BODY',
+            'columns' => 2,
+            'placeholders' => true,
+            'newTab' => true,
+            'panelDefault' => 'expanded',
+            'fields' =>
+            array (
+              0 =>
+              array (
+                'name' => 'bd01_erp_quote_lines_name',
+              ),
+              1 => 'quote_num',
+              2 =>
+              array (
+                'name' => 'currency_id',
+                'type' => 'currency_id',
+                'label' => 'LBL_CURRENCY',
+                'related_fields' =>
+                array (
+                  0 => 'currency_id',
+                  1 => 'base_rate',
+                ),
+              ),
+              3 =>
+              array (
+              ),
+            ),
+          ),
+          2 =>
+          array (
+            'newTab' => false,
+            'panelDefault' => 'expanded',
+            'name' => 'LBL_RECORDVIEW_PANEL_LINE_DETAIL',
+            'label' => 'LBL_RECORDVIEW_PANEL_LINE_DETAIL',
+            'columns' => 2,
+            'placeholders' => 1,
+            'fields' =>
+            array (
+              0 => 'line_num',
+              1 => 'part_num',
+              2 => 'selling_qty',
+              3 => 'doc_unit_price',
+              4 =>
+              array (
+                'name' => 'doc_ext_price',
+                'readonly' => true,
+              ),
+              5 =>
+              array (
+              ),
+              6 =>
+              array (
+                // Editable here on purpose: BdGoverningLineHook un-marks the
+                // sibling lines and refreshes the Opportunity rollup, so the
+                // flag has to stay writable wherever a line is shown.
+                'name' => 'governing',
+              ),
+              7 => 'prototype',
+              8 =>
+              array (
+                'name' => 'description',
+                'span' => 12,
+              ),
+            ),
+          ),
+          3 =>
+          array (
+            'name' => 'panel_hidden',
+            'label' => 'LBL_SHOW_MORE',
+            'hide' => true,
+            'columns' => 2,
+            'placeholders' => true,
+            'newTab' => true,
+            'panelDefault' => 'expanded',
+            'fields' =>
+            array (
+              0 =>
+              array (
+                'name' => 'erp_sync_key',
+                'readonly' => true,
+              ),
+              1 =>
+              array (
+              ),
+              2 => 'team_name',
+              3 => 'assigned_user_name',
+              4 =>
+              array (
+                'name' => 'date_entered_by',
+                'readonly' => true,
+                'inline' => true,
+                'type' => 'fieldset',
+                'label' => 'LBL_DATE_ENTERED',
+                'fields' =>
+                array (
+                  0 =>
+                  array (
+                    'name' => 'date_entered',
+                  ),
+                  1 =>
+                  array (
+                    'type' => 'label',
+                    'default_value' => 'LBL_BY',
+                  ),
+                  2 =>
+                  array (
+                    'name' => 'created_by_name',
+                  ),
+                ),
+              ),
+              5 =>
+              array (
+                'name' => 'date_modified_by',
+                'readonly' => true,
+                'inline' => true,
+                'type' => 'fieldset',
+                'label' => 'LBL_DATE_MODIFIED',
+                'fields' =>
+                array (
+                  0 =>
+                  array (
+                    'name' => 'date_modified',
+                  ),
+                  1 =>
+                  array (
+                    'type' => 'label',
+                    'default_value' => 'LBL_BY',
+                  ),
+                  2 =>
+                  array (
+                    'name' => 'modified_by_name',
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  ),
+);

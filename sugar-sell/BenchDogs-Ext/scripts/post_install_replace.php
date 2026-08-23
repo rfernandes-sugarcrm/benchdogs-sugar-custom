@@ -1,17 +1,21 @@
 <?php
 
 /**
- * Append-only build (existing tenants).
+ * Replace build (fresh installs / demo instances).
  *
- * Registered under installdefs['post_execute'], so Sugar calls post_execute().
- * Everything here is best-effort: an exception raised during a Module Loader
- * step aborts the install and leaves the package half-applied, so each stage is
- * guarded and failures are logged rather than thrown.
+ * Identical to post_install.php except for one line: the Quotes record view
+ * panel is rewritten from the packaged definition even when it is already
+ * deployed. That is the seam the layout plan asks for - baking makes the package
+ * authoritative for a view, which on an existing tenant that has customised it
+ * would discard their work, so the authoritative rewrite belongs in this build
+ * and NOT in the append-only one.
  *
- * The Quotes record view is only ever EXTENDED here - if the Bench Dogs panel is
- * already deployed it is left exactly as the admin has it. The replace-layouts
- * build (post_install_replace.php) is the one that makes the packaged definition
- * authoritative; see that file.
+ * The Accounts record view is deliberately not touched by either build. Its ERP
+ * panels (LBL_RECORDVIEW_PANEL_ERP, _BILLING_DETAIL, _CREDIT_DETAIL,
+ * _SYNC_STATUS) are built by ERP-Epicor's AccountsLayout, which already runs in
+ * replace mode and owns every field in them; this package ships no Accounts
+ * fields at all, so writing that layout from here would place fields it does not
+ * declare and fight the package that does.
  */
 if (function_exists('post_execute') === false) {
     function post_execute()
@@ -21,7 +25,7 @@ if (function_exists('post_execute') === false) {
             if (file_exists($layoutHelper)) {
                 require_once $layoutHelper;
                 if (class_exists('BdQuotesLayoutExtensions')) {
-                    BdQuotesLayoutExtensions::write();
+                    BdQuotesLayoutExtensions::write(true);
                 }
             } else {
                 $GLOBALS['log']->error("BenchDogs-Ext: {$layoutHelper} missing, skipping layout extensions");
@@ -30,17 +34,9 @@ if (function_exists('post_execute') === false) {
             $GLOBALS['log']->error('BenchDogs-Ext: layout extensions failed: ' . $e->getMessage());
         }
 
-        // Pin the Accounts focus drawer and the Home dashboard. Runs in BOTH
-        // builds, unlike the record view above: these are default TEMPLATES, and
-        // a user who has rearranged their own drawer has a separate per-user
-        // Dashboards row that this never touches - so there is no customisation
-        // for the append-only build to protect here.
-        //
-        // Loaded via __DIR__ rather than the custom/include/bd_scripts/ copy.
-        // That copy only exists once install_copy has run, and uninstall_copy
-        // removes it again on every uninstall, so a path-based load would skip
-        // this on the ordinary uninstall/reinstall cycle. This file ships inside
-        // the same package zip right next to it.
+        // Pin the Accounts focus drawer and the Home dashboard - see the note in
+        // post_install.php for why this runs in both builds and why it loads via
+        // __DIR__.
         try {
             require_once __DIR__ . '/BdDemoDashboards.php';
             (new BdDemoDashboards())->install();
