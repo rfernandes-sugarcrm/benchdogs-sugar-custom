@@ -44,6 +44,13 @@ class BdQuoteReflectionHook
      * hook can fire further logic hooks; nothing in that cascade should run
      * this reflection again.
      */
+    /**
+     * ERP stages at which the Kinetic quote, not the rep, owns the priced
+     * lines. Same list bd_priced_at is stamped on, deliberately: "estimating
+     * has handed this back" is one fact, not two.
+     */
+    private const PRICED_STAGES = ['priced', 'revision', 'accepted', 'ordered'];
+
     private static bool $inProgress = false;
 
     public function reflect(SugarBean $bean, string $event, array $arguments): void
@@ -122,7 +129,7 @@ class BdQuoteReflectionHook
         }
 
         $this->linkToSugarQuote($bean, $quote);
-        if ($this->syncMaterializedQuoteLines($bean, $quote->id)) {
+        if ($this->syncQuoteLines($bean, $quote->id)) {
             // The line sync just wrote new totals straight to the database.
             // The bean in hand predates them, and everything below ends in
             // $quote->save() - which would put the stale totals back.
@@ -298,7 +305,7 @@ class BdQuoteReflectionHook
             // them there, so a line change in Kinetic has to be copied again
             // before the deliverables are recomputed - otherwise the
             // opportunity would be re-valued from a stale quote.
-            $this->syncMaterializedQuoteLines($bean, $sugarQuoteId);
+            $this->syncQuoteLines($bean, $sugarQuoteId);
             $quote = BeanFactory::retrieveBean('Quotes', $sugarQuoteId, ['use_cache' => false]);
             if ($quote && !empty($quote->id)) {
                 $this->maybeUpdateOpportunity($bean, $quote);
@@ -362,7 +369,16 @@ class BdQuoteReflectionHook
             return;
         }
 
-        $this->upsertDeliverableRlis($bean, $quote, $opportunity, $deliverables);
+        if ($this->instanceUsesRlis()) {
+            $this->upsertDeliverableRlis($bean, $quote, $opportunity, $deliverables);
+        } else {
+            // RLIs disabled: value the opportunity directly. Safe precisely
+            // BECAUSE they are off - the amount field is only discarded and
+            // re-derived when opps_view_by is RevenueLineItems (measured
+            // 24 Aug 2026, see the note below), so with the instance in
+            // Opportunities mode a written amount is the value of record.
+            $this->valueOpportunityDirectly($opportunity, $deliverables);
+        }
 
         // The opportunity's OWN sales_stage is deliberately not written here,
         // and cannot be: with RevenueLineItems enabled Sugar derives it from
@@ -1911,7 +1927,7 @@ class BdQuoteReflectionHook
                 $this->materializeFromKinetic($bean);
                 return;
             }
-            $this->syncMaterializedQuoteLines($bean, $materializedId);
+            $this->syncQuoteLines($bean, $materializedId);
             $this->reflectOntoQuote($bean, $materializedId);
         } catch (Throwable $e) {
             $GLOBALS['log']->error(
@@ -1924,17 +1940,30 @@ class BdQuoteReflectionHook
     }
 
     /**
-     * Re-copy the mirror's lines onto a quote THIS package materialized.
+     * Copy the mirror's lines onto the Sugar Quote's own line items.
      *
-     * Silently does nothing for a Sugar-born quote, which is the point: that
-     * quote's lines are the customer's own work and the ERP is downstream of
-     * them, so overwriting them from the mirror would be destroying data.
-     * Only a REQ-28 quote - one that exists solely as a copy of a Kinetic
-     * quote - may be re-copied.
+     * This used to run ONLY for a quote this package had materialized from
+     * Kinetic, on the reasoning that a Sugar-born quote's lines are the
+     * rep's own work and the ERP is downstream of them. That reasoning holds
+     * right up until estimating prices the quote - and Bench Dogs' whole
+     * flow is that it does. The rep raises a quote, sends it to estimating,
+     * and Kinetic comes back with the real engineered ladder; from that
+     * moment the ERP IS the pricing authority and the rep's placeholder is
+     * stale. Leaving it in place is what produced the reported symptom:
+     * Kinetic 1203 priced at $24,850 while its Sugar quote read $0.00, its
+     * only line still the "scope to be defined in estimating" placeholder,
+     * with the real ladder visible only in the bd01_ERP_Quote_Line mirror.
+     *
+     * So the gate is the PRICING STATE, not the quote's origin - see
+     * erpOwnsPricing(). Before estimating hands it back the rep's lines are
+     * untouched, exactly as before.
      */
-    private function syncMaterializedQuoteLines(SugarBean $bean, string $quoteId): bool
+    private function syncQuoteLines(SugarBean $bean, string $quoteId): bool
     {
-        if ($quoteId === '' || (string) ($bean->bd_materialized_quote_id ?? '') !== $quoteId) {
+        if ($quoteId === '') {
+            return false;
+        }
+        if (!$this->ownsQuoteLines($bean, $quoteId)) {
             return false;
         }
         $lines = $this->orderedLines($bean);
@@ -1943,6 +1972,9 @@ class BdQuoteReflectionHook
         }
         $quote = BeanFactory::retrieveBean('Quotes', $quoteId, ['use_cache' => false]);
         if (!$quote || empty($quote->id)) {
+            return false;
+        }
+        if (!$this->erpOwnsPricing($bean, $quote, $quoteId)) {
             return false;
         }
         $bundle = $this->defaultBundle($quote);
@@ -1957,6 +1989,116 @@ class BdQuoteReflectionHook
             (string) ($quote->assigned_user_id ?? '')
         );
         return true;
+    }
+
+    /**
+     * May this ERP quote write the Sugar Quote's line items?
+     *
+     * Only when it is the ONLY ERP quote pointing at that Sugar Quote.
+     * syncLinesToQuote() deletes the rows it does not own, so two ERP quotes
+     * sharing one Sugar Quote would each delete the other's lines on every
+     * sync - the quote would flip between two ladders forever. Bench Dogs is
+     * 1:1 by design; where it is not, leaving the lines alone and saying so
+     * in the log beats thrashing them.
+     */
+    /**
+     * Is this instance running Revenue Line Items at all?
+     *
+     * Bench Dogs is a pure quote play - the priced ladder belongs on the
+     * quote, not mirrored into RLIs on the opportunity - so the instance is
+     * expected to run opps_view_by = Opportunities and this answers false.
+     * Kept as a live question rather than a deleted code path because the
+     * RLI maintenance below is correct for an instance that DOES use them,
+     * and a Sugar admin can flip that setting without touching this package.
+     * Same guard BdBenchDogsActionsApi already applies for the same reason.
+     */
+    private function instanceUsesRlis(): bool
+    {
+        return class_exists('Opportunity')
+            && method_exists('Opportunity', 'usingRevenueLineItems')
+            && Opportunity::usingRevenueLineItems();
+    }
+
+    /**
+     * Value the opportunity from the quote's deliverables, no RLIs involved.
+     */
+    private function valueOpportunityDirectly(SugarBean $opportunity, array $deliverables): void
+    {
+        $sum = 0.0;
+        foreach ($deliverables as $spec) {
+            $sum += (float) ($spec['amount'] ?? 0);
+        }
+
+        if (abs((float) $opportunity->amount - $sum) < 0.005) {
+            return;
+        }
+
+        $opportunity->amount = $sum;
+        $opportunity->currency_id = $opportunity->currency_id ?: '-99';
+        $opportunity->base_rate = $opportunity->base_rate ?: 1;
+        $opportunity->save();
+
+        $GLOBALS['log']->info(
+            'BdQuoteReflectionHook: valued Opportunity ' . $opportunity->id
+            . ' at ' . $sum . ' directly (RevenueLineItems disabled)'
+        );
+    }
+
+    /**
+     * Has the ERP earned the right to write this quote's line items?
+     *
+     * Yes for a quote this package materialized - it exists only as a copy
+     * of a Kinetic quote, so there is no rep work to protect. Otherwise only
+     * once the ERP quote has actually been priced: the same stage list
+     * bd_priced_at is stamped on. A quote still sitting in draft or
+     * in_estimating is one the rep is still authoring, and its lines stay
+     * theirs.
+     */
+    private function erpOwnsPricing(SugarBean $bean, SugarBean $quote, string $quoteId): bool
+    {
+        if ((string) ($bean->bd_materialized_quote_id ?? '') === $quoteId) {
+            return true;
+        }
+
+        $stage = $this->mapStage(
+            (string) ($bean->current_stage ?? ''),
+            !empty($bean->quote_closed),
+            (string) ($bean->reason_code ?? ''),
+            $this->hasLinkedOrder($quote)
+        );
+
+        return in_array($stage, self::PRICED_STAGES, true);
+    }
+
+    private function ownsQuoteLines(SugarBean $bean, string $quoteId): bool
+    {
+        try {
+            $query = new SugarQuery();
+            $query->select(['id']);
+            $query->from(BeanFactory::newBean('bd01_ERP_Quote'));
+            $query->where()->queryOr()
+                ->equals('sugar_quote_id', $quoteId)
+                ->equals('bd_materialized_quote_id', $quoteId);
+            $rows = $query->execute();
+        } catch (Throwable $e) {
+            // Fail closed: an unreadable ownership answer must not licence a
+            // delete-and-rewrite of a rep's quote lines.
+            $GLOBALS['log']->error(
+                'BdQuoteReflectionHook: could not establish line ownership for Quote '
+                . $quoteId . ': ' . $e->getMessage()
+            );
+            return false;
+        }
+
+        if (count($rows) <= 1) {
+            return true;
+        }
+
+        $GLOBALS['log']->warn(
+            'BdQuoteReflectionHook: ' . count($rows) . ' ERP quotes point at Quote ' . $quoteId
+            . ' - leaving its line items alone. Bench Dogs expects one ERP quote per Sugar quote.'
+        );
+        return false;
     }
 
     /** The quote's first (default) product bundle, or null. */
