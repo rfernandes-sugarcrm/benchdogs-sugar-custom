@@ -823,10 +823,28 @@ class BdBenchDogsActionsApi extends BaseErpActionsApi
         // The connector resolves the Epicor customer from
         // account_erp_sync_key (the raw CustNum, erp_display_sync_key) -
         // same resolution the product's getQuoteRecord performs.
+        //
+        // Send the SCOPED key (EPIC06__10269), not the raw display key.
+        // SellQuoteCRM.account_erp_sync_key is typed str and is documented as
+        // scoped_key(Company, CustNum); the connector splits it to recover an
+        // integer CustNum for Epicor's OrderHed, which is Edm.Int32. Handing
+        // it the bare "10269" leaves nothing to split, so the whole string
+        // reaches CustNum and the schema check refuses the order with
+        // "CustNum (type_mismatch)" before it ever gets to Epicor.
+        // orderWinningLine() never hit this because it delegates to the
+        // product's own runErpAction, which reads and types the quote itself;
+        // this method hand-builds the payload, so the typing is ours.
         if (!empty($bean->billing_account_id)) {
             $billingAccount = BeanFactory::retrieveBean('Accounts', $bean->billing_account_id, array('use_cache' => false));
             if ($billingAccount) {
-                $record['account_erp_sync_key'] = $billingAccount->erp_display_sync_key ?? '';
+                $custNum = (int) ($billingAccount->erp_display_sync_key ?? 0);
+                if ($custNum <= 0) {
+                    return array(
+                        'status' => 'error',
+                        'message' => 'The billing account is not linked to an ERP customer yet - provision it first.',
+                    );
+                }
+                $record['account_erp_sync_key'] = (string) ($billingAccount->erp_sync_key ?? '');
             }
         }
         if (!empty($bean->shipping_address_id)) {
