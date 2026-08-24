@@ -44,6 +44,20 @@ $viewdefs[$module_name]['base']['view']['list'] = [
                 'enabled' => true,
             ],
             [
+                // REQ-13 turnaround pair, on the list so the KPI is visible
+                // without building a report first.
+                'name' => 'bd_sent_to_estimating_at',
+                'label' => 'LBL_BD_SENT_TO_ESTIMATING_AT',
+                'default' => true,
+                'enabled' => true,
+            ],
+            [
+                'name' => 'bd_priced_back_at',
+                'label' => 'LBL_BD_PRICED_BACK_AT',
+                'default' => true,
+                'enabled' => true,
+            ],
+            [
                 'name' => 'date_modified',
                 'label' => 'LBL_DATE_MODIFIED',
                 'default' => true,

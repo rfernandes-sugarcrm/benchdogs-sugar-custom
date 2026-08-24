@@ -113,6 +113,7 @@ if (function_exists('post_execute') === false) {
             $GLOBALS['log']->error('BenchDogs-Ext: demo dashboards failed: ' . $e->getMessage());
         }
 
+
         try {
             SugarAutoLoader::load('modules/Administration/QuickRepairAndRebuild.php');
             $modules = ['Quotes', 'Products', 'Opportunities', 'RevenueLineItems', 'Accounts', 'bd01_ERP_Quote', 'bd01_ERP_Quote_Line', 'bd01_ERP_Quote_Cost'];

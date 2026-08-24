@@ -151,6 +151,11 @@ array (
               8 => 'sugar_quote_id',
               9 => 'erp_sync_key',
               10 => 'bd01_erp_quote_quotes_name',
+              11 => 'bd_sent_to_estimating_at',
+              12 => 'bd_priced_back_at',
+              13 => 'bd_materialized_quote_id',
+              14 => 'bd_materialize_status',
+              15 => 'bd_materialize_msg',
             ),
           ),
           2 =>

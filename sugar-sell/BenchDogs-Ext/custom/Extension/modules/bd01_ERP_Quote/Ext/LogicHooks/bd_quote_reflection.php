@@ -19,3 +19,18 @@ $hook_array['after_save'][] = array(
     'BdQuoteReflectionHook',
     'reflect',
 );
+
+/**
+ * REQ-28 retry seam. The connector attaches an ERP quote's account and its
+ * lines in calls SEPARATE from the row's create, and none of those fire a
+ * save hook on the header - so without this a Kinetic-born quote would wait
+ * for an unrelated field to change before it could be materialized. See
+ * BdQuoteReflectionHook::retryMaterializeOnLink.
+ */
+$hook_array['after_relationship_add'][] = array(
+    2,
+    'Materialize (or top up) a Kinetic-born quote when its account or lines arrive',
+    'custom/modules/bd01_ERP_Quote/BdQuoteReflectionHook.php',
+    'BdQuoteReflectionHook',
+    'retryMaterializeOnLink',
+);

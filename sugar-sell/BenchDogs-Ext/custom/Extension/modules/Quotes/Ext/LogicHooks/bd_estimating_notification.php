@@ -20,3 +20,15 @@ $hook_array['after_save'][] = array(
     'BdEstimatingNotificationHook',
     'notifyEstimating',
 );
+
+/**
+ * REQ-13's other direction: notify sales when estimating hands the quote
+ * back priced. Registration only, same reason as above.
+ */
+$hook_array['after_save'][] = array(
+    3,
+    'Notify sales when estimating returns a priced Quote',
+    'custom/modules/Quotes/BdEstimatingNotificationHook.php',
+    'BdEstimatingNotificationHook',
+    'notifyPricingReturned',
+);

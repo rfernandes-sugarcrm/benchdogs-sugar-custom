@@ -371,6 +371,11 @@ class BdBenchDogsActionsApi extends BaseErpActionsApi
                 if ($dirty) {
                     $fresh->save();
                 }
+                // REQ-13 turnaround, the opening half. Stamped on the ERP
+                // QUOTE ROW, not on the Sugar quote: the ERP quote is the
+                // unit of work estimating actually picks up, and a
+                // re-estimate arrives as a whole new row.
+                $this->stampSentToEstimating($fresh);
             }
             $result['message'] = ($result['message'] ?? 'Sent to estimating.')
                 . ' Estimating has been notified - the job is in their Kinetic queue.';
@@ -1251,6 +1256,102 @@ class BdBenchDogsActionsApi extends BaseErpActionsApi
             $requote->save();
         }
         return null;
+    }
+
+    /**
+     * Start the REQ-13 turnaround clock on the ERP quote row this send just
+     * raised in Kinetic.
+     *
+     * The mirror row usually does not exist yet - the quote is seconds old
+     * in Kinetic and the connector has not swept since - so this
+     * resolve-or-CREATES it, keyed on the sync key the connector will use
+     * ('<COMPANY>__<QuoteNum>', verified live: EPIC06__1196). Creating it
+     * with that exact key means the next sync UPSERTS onto this row and
+     * fills in the rest; it is not a second record racing the real one. The
+     * company prefix is read off an existing mirror rather than hard-coded,
+     * and if no mirror exists to read it from, this does nothing rather than
+     * guess a key that would fork the record.
+     *
+     * bd_sent_to_estimating_at is in no container payload, so the sync that
+     * arrives moments later cannot blank it.
+     */
+    private function stampSentToEstimating(SugarBean $quote): void
+    {
+        try {
+            $quoteNum = trim((string) ($quote->erp_display_sync_key ?? ''));
+            if ($quoteNum === '' || !ctype_digit($quoteNum)) {
+                return;   // the delegate did not come back with a Kinetic number
+            }
+
+            $erpQuote = $this->findErpQuoteByNumber((int) $quoteNum);
+            if ($erpQuote === null) {
+                $prefix = $this->erpSyncKeyPrefix();
+                if ($prefix === '') {
+                    $GLOBALS['log']->warn(
+                        'BdBenchDogsActionsApi: no existing bd01_ERP_Quote to read the sync-key '
+                        . 'prefix from - not creating a mirror row for Kinetic quote ' . $quoteNum
+                    );
+                    return;
+                }
+                $erpQuote = BeanFactory::newBean('bd01_ERP_Quote');
+                $erpQuote->name = 'Quote ' . $quoteNum;
+                $erpQuote->quote_num = (int) $quoteNum;
+                $erpQuote->erp_sync_key = $prefix . '__' . $quoteNum;
+                $erpQuote->sugar_quote_id = $quote->id;
+            }
+
+            if (!empty($erpQuote->bd_sent_to_estimating_at)) {
+                return;   // already clocked - a re-send must not restart it
+            }
+            $erpQuote->bd_sent_to_estimating_at = TimeDate::getInstance()->nowDb();
+            $erpQuote->save();
+
+            $GLOBALS['log']->info(
+                'BdBenchDogsActionsApi: bd_sent_to_estimating_at stamped on bd01_ERP_Quote '
+                . $erpQuote->id . ' for Kinetic quote ' . $quoteNum
+            );
+        } catch (Throwable $e) {
+            // A missing KPI stamp must never fail the hand-off itself.
+            $GLOBALS['log']->error(
+                'BdBenchDogsActionsApi: could not stamp bd_sent_to_estimating_at: ' . $e->getMessage()
+            );
+        }
+    }
+
+    /** The bd01_ERP_Quote mirror for a Kinetic quote number, or null. */
+    private function findErpQuoteByNumber(int $quoteNum): ?SugarBean
+    {
+        $query = new SugarQuery();
+        $query->select(['id']);
+        $query->from(BeanFactory::newBean('bd01_ERP_Quote'));
+        $query->where()->equals('quote_num', $quoteNum);
+        $query->limit(1);
+        $rows = $query->execute();
+        $id = $rows[0]['id'] ?? '';
+        if ($id === '') {
+            return null;
+        }
+        $bean = BeanFactory::retrieveBean('bd01_ERP_Quote', $id);
+        return ($bean && !empty($bean->id)) ? $bean : null;
+    }
+
+    /**
+     * The company prefix the connector puts in front of every ERP sync key,
+     * read from a mirror row that already has one ('EPIC06__1196' ->
+     * 'EPIC06'). Empty when there is nothing to read it from.
+     */
+    private function erpSyncKeyPrefix(): string
+    {
+        $query = new SugarQuery();
+        $query->select(['erp_sync_key']);
+        $query->from(BeanFactory::newBean('bd01_ERP_Quote'));
+        $query->where()->notEquals('erp_sync_key', '');
+        $query->orderBy('quote_num', 'DESC');
+        $query->limit(1);
+        $rows = $query->execute();
+        $key = (string) ($rows[0]['erp_sync_key'] ?? '');
+        $pos = strpos($key, '__');
+        return $pos === false ? '' : substr($key, 0, $pos);
     }
 
     /**
