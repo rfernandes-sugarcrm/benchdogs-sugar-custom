@@ -1781,6 +1781,30 @@ class BdQuoteReflectionHook
      *
      * @return int the number of lines written
      */
+    /**
+     * The text the customer reads on a quoted line item.
+     *
+     * The ERP's own LineDesc, which the mirror carries in `description`.
+     * Falls back to the part number, then to the mirror row's synthetic
+     * name, so a line with no description still renders as something.
+     */
+    private function lineDescription(SugarBean $line): string
+    {
+        $candidates = [
+            (string) ($line->description ?? ''),
+            (string) ($line->part_num ?? ''),
+            (string) ($line->name ?? ''),
+        ];
+        foreach ($candidates as $candidate) {
+            $candidate = trim($candidate);
+            if ($candidate !== '') {
+                return $candidate;
+            }
+        }
+
+        return '';
+    }
+
     private function syncLinesToQuote(
         SugarBean $quote,
         SugarBean $bundle,
@@ -1795,10 +1819,24 @@ class BdQuoteReflectionHook
         // values on the next pass. The name is derived from the mirror line
         // and is stable and unique per Kinetic line ("Quote 1199 Line 1"),
         // which makes it a real identity to upsert on.
+        // Identity is the Kinetic line NUMBER, not the line's text. A
+        // quantity ladder repeats one description across every break
+        // ("Machined aluminium end cap - production" on all three of them),
+        // so keying on the name collapses three breaks into one row.
+        // bd_erp_line_num exists for exactly this xref.
         $existing = [];
+        $legacy = [];
         if ($bundle->load_relationship('products')) {
             foreach ($bundle->products->getBeans() as $product) {
-                $existing[(string) $product->name] = $product;
+                $key = (int) ($product->bd_erp_line_num ?? 0);
+                if ($key > 0) {
+                    $existing[$key] = $product;
+                } else {
+                    // Rows that predate bd_erp_line_num, plus the rep's own
+                    // placeholder line. Matched by name once and adopted onto
+                    // the numeric key below; anything left over is removed.
+                    $legacy[(string) $product->name] = $product;
+                }
             }
         }
 
@@ -1813,13 +1851,39 @@ class BdQuoteReflectionHook
             // 1199 read $259 in Sugar against $0 in Kinetic before this).
             $qty = (float) $line->selling_qty;
             $price = (string) ($line->doc_unit_price ?? '0');
-            $name = trim((string) $line->name) !== ''
-                ? (string) $line->name
-                : (string) $line->part_num;
+            $lineNum = (int) ($line->line_num ?? 0);
 
-            $isNew = !isset($existing[$name]);
-            $row = $isNew ? BeanFactory::newBean('Products') : $existing[$name];
+            // What the customer reads is the ERP's own line description.
+            // The mirror record's name is a synthetic id ("Quote 1203 Line
+            // 2"); putting that on a customer-facing quote makes the
+            // breakdown unreadable, and this method's own docblock has
+            // always said the name IS the description.
+            $name = $this->lineDescription($line);
+
+            $row = $existing[$lineNum]
+                ?? $legacy[$name]
+                ?? $legacy[(string) $line->name]
+                ?? null;
+            $isNew = $row === null;
+            if ($isNew) {
+                $row = BeanFactory::newBean('Products');
+            }
+
+            // An ordered line is history. Epicor has already built against
+            // it, so its quantity and price must not move underneath the
+            // order on the next sync - the row stays, stays counted, and
+            // nothing on it changes. This is the data half of the lock the
+            // grid renders; without it a re-price in Kinetic would silently
+            // rewrite what the customer already bought.
+            if (!$isNew && !empty($row->bd_ordered)) {
+                $kept[$lineNum] = true;
+                $sum += (float) $row->quantity * (float) $row->discount_price;
+                $position++;
+                continue;
+            }
+
             $row->name = $name;
+            $row->bd_erp_line_num = $lineNum;
             $row->mft_part_num = (string) $line->part_num;
             $row->quantity = $qty;
             $row->discount_price = $price;
@@ -1837,15 +1901,23 @@ class BdQuoteReflectionHook
             if ($isNew && $bundle->load_relationship('products')) {
                 $bundle->products->add($row, ['position' => $position]);
             }
-            $kept[$name] = true;
+            $kept[$lineNum] = true;
             $sum += $qty * (float) $price;
             $position++;
         }
 
         // A line deleted in Kinetic is deleted here. Only rows this method
         // owns are candidates, and it owns every row on a REQ-28 quote.
-        foreach ($existing as $name => $row) {
-            if (!isset($kept[$name])) {
+        foreach ($existing as $key => $row) {
+            if (!isset($kept[$key]) && empty($row->bd_ordered)) {
+                $row->mark_deleted($row->id);
+            }
+        }
+        // Whatever the ladder did not adopt: the placeholder line the rep
+        // sent to estimating, and any pre-xref leftover. An ordered row is
+        // never removed - it is the record of what Epicor built.
+        foreach ($legacy as $row) {
+            if (empty($row->bd_ordered) && empty($row->bd_erp_line_num)) {
                 $row->mark_deleted($row->id);
             }
         }
