@@ -222,6 +222,14 @@ class BdBenchDogsActionsApi extends BaseErpActionsApi
         $quote->billing_account_name = $account->name;
         $quote->shipping_account_id = $account->id;
         $quote->shipping_account_name = $account->name;
+        $quote->erp_is_primary_quote = true;
+        // REQ-6's RLI materialization is gated on this flag, and nothing else
+        // sets it on a quote Sugar raised itself - measured live: two quotes
+        // created here reached 'priced' in Kinetic and their opportunities
+        // still read $0, because the gate had never opened. We create the
+        // opportunity and the quote in the same call, so there is no other
+        // candidate to be primary; saying so is a statement of fact, not a
+        // guess.
         $quote->subtotal = 0;
         $quote->new_sub = 0;
         $quote->total = 0;

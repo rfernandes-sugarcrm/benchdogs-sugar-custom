@@ -85,7 +85,7 @@ class BdEstimatingNotificationHook
             $notification = BeanFactory::newBean('Notifications');
             $notification->name = 'Quote ready for estimating: ' . mb_substr((string) $bean->name, 0, 200);
             $notification->description = 'Quote "' . $bean->name . '" ('
-                . ($bean->quote_num ?? $bean->id) . ') has entered the estimating stage'
+                . $this->quoteReference($bean) . ') has entered the estimating stage'
                 . ' and is ready to be worked.';
             $notification->severity = 'information';
             $notification->is_read = 0;
@@ -164,7 +164,7 @@ class BdEstimatingNotificationHook
             $notification = BeanFactory::newBean('Notifications');
             $notification->name = 'Quote priced by estimating: ' . mb_substr((string) $bean->name, 0, 200);
             $notification->description = 'Estimating has finished pricing quote "' . $bean->name . '" ('
-                . ($bean->quote_num ?? $bean->id) . ') and handed it back to sales.' . $priced;
+                . $this->quoteReference($bean) . ') and handed it back to sales.' . $priced;
             $notification->severity = 'information';
             $notification->is_read = 0;
             $notification->assigned_user_id = $recipientId;
@@ -184,6 +184,24 @@ class BdEstimatingNotificationHook
                 . $bean->id . ': ' . $e->getMessage()
             );
         }
+    }
+
+    /**
+     * How to name this quote to a human reading the notification.
+     *
+     * The Kinetic quote number if there is one, said as such. Quotes.quote_num
+     * is SUGAR's own counter, and printing it bare next to the words
+     * "estimating" and "priced" invites the reader to go and look for that
+     * number in Kinetic - measured on the live proof, where Sugar quote 13
+     * was Kinetic quote 1201 and the notification said "(13)".
+     */
+    private function quoteReference(SugarBean $bean): string
+    {
+        $kinetic = trim((string) ($bean->erp_display_sync_key ?? ''));
+        if ($kinetic !== '') {
+            return 'Kinetic quote ' . $kinetic;
+        }
+        return 'Sugar quote ' . ($bean->quote_num ?? $bean->id);
     }
 
     /**
