@@ -1020,6 +1020,15 @@ class BdBenchDogsActionsApi extends BaseErpActionsApi
         }
 
         try {
+            $helper = 'custom/modules/Accounts/BdAccountsLayoutExtensions.php';
+            require_once $helper;
+            BdAccountsLayoutExtensions::writeCustomerGroupField();
+            $steps['accounts_group_field'] = 'ok';
+        } catch (Throwable $e) {
+            $steps['accounts_group_field'] = get_class($e) . ': ' . $e->getMessage();
+        }
+
+        try {
             $tpl = 'custom/dropdowntemplates/bd_stage_doms.append.php';
             if (!file_exists($tpl)) {
                 $steps['stage_dropdowns'] = 'template missing: ' . $tpl;

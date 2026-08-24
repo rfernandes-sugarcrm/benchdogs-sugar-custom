@@ -71,23 +71,6 @@ $viewdefs['bd01_ERP_Quote_Line']['base']['view']['subpanel-for-bd01_erp_quote-bd
           'currency_format' => true,
           'default' => true,
         ),
-        7 =>
-        array (
-          // Editable in place (REQ-5/REQ-6) - this subpanel under
-          // bd01_ERP_Quote is where the flag is actually toggled, and
-          // BdGoverningLineHook keeps it unique per quote.
-          'name' => 'governing',
-          'label' => 'LBL_GOVERNING',
-          'enabled' => true,
-          'default' => true,
-        ),
-        8 =>
-        array (
-          'name' => 'prototype',
-          'label' => 'LBL_PROTOTYPE',
-          'enabled' => true,
-          'default' => true,
-        ),
         9 =>
         array (
           'label' => 'LBL_DATE_MODIFIED',

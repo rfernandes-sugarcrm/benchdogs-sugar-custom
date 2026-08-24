@@ -147,9 +147,7 @@ array (
               4 => 'selling_qty',
               5 => 'doc_unit_price',
               6 => 'doc_ext_price',
-              7 => 'governing',
-              8 => 'prototype',
-              9 => 'erp_sync_key',
+              7 => 'erp_sync_key',
             ),
           ),
           2 =>

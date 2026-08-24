@@ -133,14 +133,6 @@ array (
               ),
               6 =>
               array (
-                // Editable here on purpose: BdGoverningLineHook un-marks the
-                // sibling lines and refreshes the Opportunity rollup, so the
-                // flag has to stay writable wherever a line is shown.
-                'name' => 'governing',
-              ),
-              7 => 'prototype',
-              8 =>
-              array (
                 'name' => 'description',
                 'span' => 12,
               ),
