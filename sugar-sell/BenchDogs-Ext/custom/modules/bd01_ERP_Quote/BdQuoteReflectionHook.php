@@ -362,28 +362,35 @@ class BdQuoteReflectionHook
             return;
         }
 
-        // The deliverable line items are maintained in BOTH modes, always.
-        // They are the audit trail this project promised in writing - "an
-        // opportunity without revenue line items is invisible to the numbers
-        // leadership uses" - so leaving them unmaintained when the opportunity
-        // carries the value directly is not a saving, it is a second set of
-        // books. Measured on the live sandbox 24 Aug 2026, after 0.9.25 shipped
-        // the direct-write path: three opportunities each held two
-        // contradictory values at once - the direct amount, and a frozen
-        // line-item sum still expressing the superseded exclusive model
-        // (Northgate End-Cap $24,850 against $16,450; Harbor Lane $23,750
-        // against $4,850; quote 1199 $7,600 against $4,840). Every report over
-        // RevenueLineItems returned the stale figure, and flipping
-        // opps.view_by back would have reverted all three deals silently.
-        // One arithmetic, expressed in both shapes, on every pass.
-        $this->upsertDeliverableRlis($bean, $quote, $opportunity, $deliverables);
-
         if (!self::rliModeEnabled()) {
             // Opportunities mode: bd_amount_direct.php has stripped the
-            // rollup formula from amount, so the line items above are a record
-            // rather than a source and the deal value has to be written onto
-            // the opportunity itself. Re-read first - saving line items can
-            // leave the in-memory bean behind the row it was loaded from.
+            // rollup formula from amount, so the deal value is written onto
+            // the opportunity itself and nothing needs a line item to carry
+            // it.
+            //
+            // 0.9.29 maintained the RLIs here anyway, as an audit trail -
+            // "an opportunity without revenue line items is invisible to the
+            // numbers leadership uses". That reasoning holds on an instance
+            // that REPORTS over RevenueLineItems. On this one the module is
+            // off the record entirely, so the rows are not a second view of
+            // the deal that anyone reads - they are an unread second set of
+            // books, and an unread book only ever drifts. The three
+            // contradictions 0.9.29's own comment records (Northgate End-Cap
+            // $24,850 against $16,450; Harbor Lane $23,750 against $4,850;
+            // quote 1199 $7,600 against $4,840) ARE that drift: maintaining
+            // both shapes at once was the mechanism producing them, not the
+            // guard against them. One shape, the one the instance can read.
+            //
+            // The purge is deliberately unconditional rather than limited to
+            // rows this pass would have written. Rows can predate this
+            // version - every build from 0.9.25 to 0.9.29 created them - and
+            // a guard alone would leave those sitting beside a freshly
+            // direct-written amount, reproducing the exact contradiction
+            // above at the moment the fix lands.
+            $this->purgeDeliverableRlis($opportunity);
+
+            // Re-read before valuing: the purge above can leave the
+            // in-memory bean behind the row it was loaded from.
             $fresh = BeanFactory::retrieveBean(
                 'Opportunities',
                 $opportunity->id,
@@ -397,6 +404,13 @@ class BdQuoteReflectionHook
             );
             return;
         }
+
+        // RevenueLineItems mode ONLY. Here amount IS a rollup of these rows
+        // and a direct write to it is silently discarded, so the line items
+        // are the only vehicle the deal value has. Same arithmetic as the
+        // branch above - both read the same deliverables() map - expressed in
+        // whichever single shape the instance can actually read.
+        $this->upsertDeliverableRlis($bean, $quote, $opportunity, $deliverables);
 
         // In RevenueLineItems mode ONLY, the opportunity's own sales_stage is
         // deliberately not written here, and cannot be: Sugar derives it from
@@ -1101,6 +1115,45 @@ class BdQuoteReflectionHook
         // right one.
 
         return $out;
+    }
+
+    /**
+     * Remove the line items this package created, leaving every other row
+     * alone.
+     *
+     * Ownership is read from bd_deliverable_key - the same field
+     * upsertDeliverableRlis() writes, adopts and re-keys by, so a non-empty
+     * value means this hook minted or claimed the row. A row without one was
+     * never ours and is not ours to delete: the requirement is that the
+     * CONNECTOR stops using revenue line items, not that the module gets
+     * emptied out from under whoever else is using it. That is the same
+     * ownership line upsertDeliverableRlis() already draws when it spares
+     * unkeyed human-created rows.
+     *
+     * Returns silently on a missing relationship for the same reason
+     * upsertDeliverableRlis() does: where the RLI module is off the record
+     * there is nothing to load, and nothing to clear.
+     */
+    private function purgeDeliverableRlis(SugarBean $opportunity): void
+    {
+        if (!$opportunity->load_relationship('revenuelineitems')
+            || !$opportunity->revenuelineitems
+            || !is_object($opportunity->revenuelineitems)
+        ) {
+            return;
+        }
+
+        foreach ($opportunity->revenuelineitems->getBeans() as $rli) {
+            if ((string) ($rli->bd_deliverable_key ?? '') === '') {
+                continue;
+            }
+            $GLOBALS['log']->info(
+                'BdQuoteReflectionHook: removing connector-owned RLI ' . $rli->id
+                . ' (' . $rli->bd_deliverable_key . ') - opportunities mode'
+                . ' values the deal on the opportunity itself'
+            );
+            $rli->mark_deleted($rli->id);
+        }
     }
 
     /**
