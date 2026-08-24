@@ -37,7 +37,6 @@
 
         app.api.call('create', url, {}, {
             success: function(data) {
-                app.alert.dismiss('bd-best-pricing');
                 app.alert.show('bd-best-pricing-done', {
                     level: (data && data.status === 'success') ? 'success' : 'error',
                     messages: (data && data.message) || 'Catalog pricing failed.',
@@ -46,12 +45,18 @@
                 self.model.fetch();
             },
             error: function(err) {
-                app.alert.dismiss('bd-best-pricing');
                 app.alert.show('bd-best-pricing-done', {
                     level: 'error',
                     messages: (err && err.message) || 'Catalog pricing failed.',
                     autoClose: true
                 });
+            },
+            // Dismissed here rather than in each branch: an exception inside
+            // a success handler used to leave the spinner on screen with no
+            // way back, which reads as a hung server even though the request
+            // had already returned.
+            complete: function() {
+                app.alert.dismiss('bd-best-pricing');
             }
         });
     },

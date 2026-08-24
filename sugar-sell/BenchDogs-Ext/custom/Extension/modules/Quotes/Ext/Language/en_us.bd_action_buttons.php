@@ -8,3 +8,5 @@ $mod_strings['LBL_BD_ORDER_SELECTED_BUTTON'] = 'Order Selected Lines';
 $mod_strings['LBL_BD_ORDER_SELECTED_RUNNING'] = 'Raising the Epicor sales order from the selected line items...';
 $mod_strings['LBL_BD_BEST_PRICING_BUTTON'] = 'Get Best Pricing from Catalog';
 $mod_strings['LBL_BD_BEST_PRICING_RUNNING'] = 'Checking the ERP catalog for the best prices...';
+$mod_strings['LBL_BD_ORDER_SELECTED_NONE'] = 'Tick the line items the customer has committed to, then press Order Selected Lines. Lines already ordered are locked and cannot be selected again.';
+$mod_strings['LBL_BD_LINE_ALREADY_ORDERED'] = 'Already ordered - this line is locked and stays on the quote as history.';

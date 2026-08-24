@@ -46,6 +46,18 @@ if (function_exists('post_execute') === false) {
         } catch (Throwable $e) {
             $GLOBALS['log']->error('BenchDogs-Ext: Quotes buttons failed: ' . $e->getMessage());
         }
+        // Native-line ordering columns on the quoted-line-items grid.
+        try {
+            $qliHelper = 'custom/modules/Quotes/BdQliColumnsLayout.php';
+            if (file_exists($qliHelper)) {
+                require_once $qliHelper;
+                if (class_exists('BdQliColumnsLayout')) {
+                    (new BdQliColumnsLayout())->install();
+                }
+            }
+        } catch (Throwable $e) {
+            $GLOBALS['log']->error('BenchDogs-Ext: QLI columns failed: ' . $e->getMessage());
+        }
         try {
             $accountsHelper = 'custom/modules/Accounts/BdAccountsLayoutExtensions.php';
             if (file_exists($accountsHelper)) {

@@ -107,7 +107,7 @@ class BdBenchDogsActionsApi extends BaseErpActionsApi
                 'path' => array('Quotes', '?', 'bd-order-selected-lines'),
                 'pathVars' => array('module', 'record', ''),
                 'method' => 'orderSelectedLines',
-                'shortHelp' => 'Raises an Epicor sales order from the line items ticked To Order; untouched lines stay on the quote.',
+                'shortHelp' => 'Raises an Epicor sales order from the line items named in line_ids (the rows ticked in the grid); untouched lines stay on the quote.',
                 'exceptions' => array(
                     'SugarApiExceptionNotAuthorized',
                     'SugarApiExceptionInvalidParameter',
@@ -131,7 +131,7 @@ class BdBenchDogsActionsApi extends BaseErpActionsApi
                 'path' => array('Quotes', '?', 'bd-best-pricing'),
                 'pathVars' => array('module', 'record', ''),
                 'method' => 'bestPricingFromCatalog',
-                'shortHelp' => 'Reprices catalog-linked line items from the live Epicor price lists; non-catalog lines are skipped and reported by name.',
+                'shortHelp' => 'Reprices OPEN catalog-linked line items from the live Epicor price lists; already-ordered lines are left untouched, and non-catalog lines are skipped - both reported by name.',
                 'exceptions' => array(
                     'SugarApiExceptionNotAuthorized',
                     'SugarApiExceptionInvalidParameter',
@@ -721,19 +721,54 @@ class BdBenchDogsActionsApi extends BaseErpActionsApi
             return array('status' => 'error', 'message' => 'This quote has no line items yet.');
         }
 
+        // WHICH LINES TO ORDER (0.9.21).
+        //
+        // The client sends the ids of the rows ticked in the grid. Before
+        // 0.9.21 the selection was a STORED bd_to_order flag, which meant the
+        // tick had to be saved before this route could see it - a user who
+        // ticked and pressed straight away was told to "tick To Order first"
+        // on rows that visibly had it ticked. bd_to_order is still honoured
+        // when the request names no ids, so a pre-0.9.21 client and any row
+        // flagged by a script keep working.
+        $requestedIds = array();
+        if (!empty($args['line_ids']) && is_array($args['line_ids'])) {
+            foreach ($args['line_ids'] as $rawId) {
+                if (is_scalar($rawId) && (string) $rawId !== '') {
+                    $requestedIds[(string) $rawId] = true;
+                }
+            }
+        }
+
         $selected = array();
         $unordered = 0;
+        $rejectedAsOrdered = 0;
         foreach ($rows as $p) {
             $isOrdered = !empty($p->bd_ordered);
             if (!$isOrdered) {
                 $unordered++;
             }
-            if (!empty($p->bd_to_order) && !$isOrdered) {
-                $selected[] = $p;
+            $picked = $requestedIds
+                ? isset($requestedIds[(string) $p->id])
+                : !empty($p->bd_to_order);
+            if (!$picked) {
+                continue;
             }
+            if ($isOrdered) {
+                // Belt and braces: the grid disables the checkbox on an
+                // ordered row, but a stale page must not be able to order
+                // the same line twice.
+                $rejectedAsOrdered++;
+                continue;
+            }
+            $selected[] = $p;
         }
         if (count($selected) === 0) {
-            return array('status' => 'error', 'message' => 'Tick "To Order" on the line item(s) the customer committed to, then try again.');
+            return array(
+                'status' => 'error',
+                'message' => $rejectedAsOrdered > 0
+                    ? 'Every line you selected has already been ordered. Ordered lines stay on the quote as history and cannot be ordered again - select one of the remaining lines.'
+                    : 'Select the line item(s) the customer has committed to, then press Order Selected Lines again.',
+            );
         }
 
         $cfg = $this->loadOrchestratorConfig();
@@ -1057,6 +1092,48 @@ class BdBenchDogsActionsApi extends BaseErpActionsApi
      * surplus rows are removed. Returns an error string, or null on success.
      */
     /**
+     * The Epicor part number a Product Catalog record stands for, or ''.
+     * erp_display_sync_key is the raw part num; erp_sync_key is the scoped
+     * form ("EPIC06__BD-DISPLAY-01") and is unscoped here.
+     */
+    private function erpPartNumFromTemplate(SugarBean $tpl): string
+    {
+        $partNum = $tpl->erp_display_sync_key ?: '';
+        if ($partNum === '' && !empty($tpl->erp_sync_key)) {
+            $parts = explode('__', (string) $tpl->erp_sync_key, 2);
+            $partNum = end($parts) ?: '';
+        }
+        return (string) $partNum;
+    }
+
+    /**
+     * The catalog record for a part number typed onto an unlinked line.
+     * Matched on the catalog's OWN part number field, so a typo does not
+     * silently reprice a line from some other part: no match means the line
+     * is reported as not-in-catalog exactly as before.
+     */
+    private function findTemplateByPartNum(string $partNum): ?SugarBean
+    {
+        $partNum = trim($partNum);
+        if ($partNum === '') {
+            return null;
+        }
+        $query = new SugarQuery();
+        $seed = BeanFactory::newBean('ProductTemplates');
+        $query->from($seed);
+        $query->select(array('id'));
+        $query->where()->equals('mft_part_num', $partNum);
+        $query->limit(1);
+        $rows = $query->execute();
+        foreach ($rows as $row) {
+            if (!empty($row['id'])) {
+                return BeanFactory::retrieveBean('ProductTemplates', $row['id']);
+            }
+        }
+        return null;
+    }
+
+    /**
      * "Get Best Pricing from Catalog" (REQ-5's live-pricing half).
      *
      * The catalog boundary is Sugar's Product Catalog: a line item counts as
@@ -1073,6 +1150,18 @@ class BdBenchDogsActionsApi extends BaseErpActionsApi
      * would. Lines that come back degraded, or with no price on file
      * (net_price <= 0 means "no list entry", not "free"), keep their
      * current price and are reported in their own bucket.
+     *
+     * ALREADY-ORDERED LINES ARE NEVER REPRICED. A released line's price is
+     * already on an Epicor sales order; moving it here would leave the quote
+     * disagreeing with the order that was actually placed, and nothing
+     * downstream would notice - the order is not rewritten, only the quote
+     * line would be. Those lines are reported as left unchanged, which
+     * matches what the grid shows: an ordered row is greyed and locked.
+     * Catalog repricing is for the lines still open.
+     *
+     * A line not LINKED to a catalog record but carrying a real part number
+     * is still repriced - the part number in the grid is what the person
+     * looking at it means by "in the catalog". See findTemplateByPartNum.
      */
     public function bestPricingFromCatalog(ServiceBase $api, array $args)
     {
@@ -1099,20 +1188,44 @@ class BdBenchDogsActionsApi extends BaseErpActionsApi
             return array('status' => 'error', 'message' => 'This quote has no line items to price.');
         }
 
-        $candidates = array();      // id => bean, catalog-linked
+        $candidates = array();      // id => bean, catalog-linked and still open
         $payloadLines = array();
         $skippedNames = array();    // not in catalog
+        $lockedNames = array();     // already ordered - price must not move
         foreach ($lineItems as $li) {
+            // AN ORDERED LINE IS NOT REPRICEABLE.
+            //
+            // Its price is already on an Epicor sales order. Repricing it here
+            // would leave the quote disagreeing with the order that was
+            // actually placed, and nothing downstream would notice - the
+            // order is not rewritten, only the quote line is. So a line that
+            // has been released is reported and left exactly as it was, the
+            // same lock the grid shows: an ordered row is greyed and cannot
+            // be selected. Catalog repricing is for the lines still open.
+            if (!empty($li->bd_ordered)) {
+                $lockedNames[] = $li->mft_part_num ?: ($li->name ?: 'Unnamed line');
+                continue;
+            }
             $partNum = '';
             if (!empty($li->product_template_id)) {
                 $tpl = BeanFactory::retrieveBean('ProductTemplates', $li->product_template_id);
                 if ($tpl) {
-                    $partNum = $tpl->erp_display_sync_key ?: '';
-                    if ($partNum === '' && !empty($tpl->erp_sync_key)) {
-                        // scoped key "EPIC06__BD-DISPLAY-01" -> raw part num
-                        $parts = explode('__', (string) $tpl->erp_sync_key, 2);
-                        $partNum = end($parts) ?: '';
-                    }
+                    $partNum = $this->erpPartNumFromTemplate($tpl);
+                }
+            }
+            if ($partNum === '' && !empty($li->mft_part_num)) {
+                // A line typed with a real part number but never linked to a
+                // catalog record is still a catalog line to the person
+                // looking at it: the part number is right there in the grid.
+                // Before this fallback such a line was reported as "not in
+                // catalog" and silently left at its typed price, which made
+                // the button look broken on exactly the quotes it was built
+                // for - Bench Dogs production runs are entered by part number
+                // against a free-text line, and the demo quote's three
+                // BD-DISPLAY-01 rows all took this path (24 Aug 2026).
+                $tpl = $this->findTemplateByPartNum((string) $li->mft_part_num);
+                if ($tpl !== null) {
+                    $partNum = $this->erpPartNumFromTemplate($tpl);
                 }
             }
             if ($partNum === '') {
@@ -1132,11 +1245,17 @@ class BdBenchDogsActionsApi extends BaseErpActionsApi
             ? ' Skipped (not in catalog): ' . implode(', ', array_unique($skippedNames)) . '.'
             : '';
 
+        $lockedLabel = $lockedNames
+            ? ' Left unchanged (already ordered): ' . implode(', ', array_unique($lockedNames)) . '.'
+            : '';
+
         if (empty($candidates)) {
             return array(
                 'status' => 'success',
-                'message' => 'No catalog-linked line items on this quote - nothing was repriced.' . $skippedLabel,
+                'message' => 'No open catalog-linked line items on this quote - nothing was repriced.'
+                    . $skippedLabel . $lockedLabel,
                 'lines_repriced' => 0,
+                'lines_locked_ordered' => count($lockedNames),
             );
         }
 
@@ -1230,6 +1349,9 @@ class BdBenchDogsActionsApi extends BaseErpActionsApi
         if ($noPriceNames) {
             $msgParts[] = 'No catalog price on file (left unchanged): ' . implode(', ', array_unique($noPriceNames)) . '.';
         }
+        if ($lockedLabel !== '') {
+            $msgParts[] = trim($lockedLabel);
+        }
         if ($skippedLabel !== '') {
             $msgParts[] = trim($skippedLabel);
         }
@@ -1240,6 +1362,7 @@ class BdBenchDogsActionsApi extends BaseErpActionsApi
             'lines_repriced' => count($repriced),
             'lines_skipped_not_catalog' => count($skippedNames),
             'lines_no_price' => count($noPriceNames),
+            'lines_locked_ordered' => count($lockedNames),
         );
     }
 

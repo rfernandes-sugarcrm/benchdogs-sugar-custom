@@ -3,22 +3,24 @@
 /**
  * Quoted line items grid - column order, authored explicitly.
  *
- * REQ-1's two controls (To Order, Ordered) have to be visible the moment the
- * quote opens: ticking "To Order" is the first step of the ordering flow, and
- * "Ordered" is the lock that shows a release has already been placed.
+ * The order is stated as a file rather than negotiated at runtime through
+ * ModuleBuilder. Two attempts to position columns through
+ * DeployedMetaDataImplementation (the mechanism ERP-Core uses to append its
+ * own columns) left the grid untouched - 0.9.17 removed and re-inserted, and
+ * 0.9.19 rewrote the field list in a single read-modify-deploy. Both times
+ * the rendered header was unchanged (confirmed in the live DOM, 24 Aug 2026).
+ * That mechanism reliably APPENDS a new column and does not reliably REORDER
+ * an existing one. A file also means the order is reviewable in the package
+ * rather than being an emergent property of install sequence.
  *
- * They are declared HERE, as a shipped viewdef, rather than injected into the
- * deployed metadata at install time. Two attempts to position them through
- * ModuleBuilder (DeployedMetaDataImplementation, the mechanism ERP-Core uses
- * to append its own columns) left the grid untouched - 0.9.17 removed and
- * re-inserted them, 0.9.19 rewrote the field list in a single read-modify-
- * deploy, and both times the rendered header still read
- * "... | Actions | Subtotal | To Order | Ordered" with the two controls off
- * the right edge at 1355px (confirmed in the live DOM, 24 Aug 2026). That
- * mechanism reliably APPENDS a new column and does not reliably REORDER an
- * existing one, so the order is stated as a file instead of negotiated at
- * runtime. A file also means the order is reviewable in the package rather
- * than being an emergent property of install sequence.
+ * REQ-1's ordering controls are NOT columns here. "To Order" and "Ordered"
+ * used to be two checkbox columns, which put three checkboxes on every row
+ * next to the grid's own multi-select box. The flow now rides that stock
+ * checkbox instead: tick the lines to release, press "Order Selected Lines",
+ * and ordered rows render greyed and locked. See
+ * custom/modules/ProductBundles/clients/base/views/quote-data-group-list/
+ * quote-data-group-list.js for the row treatment, and BdQliColumnsLayout for
+ * the field allowlist that still carries bd_ordered onto each row.
  *
  * Two stock columns are deliberately absent:
  *   - base_rate ("Currency Rate"), a display of the conversion rate. Both
@@ -26,10 +28,8 @@
  *     still fetched and conversion still works; only the column is gone.
  *   - erp_available_qty, ERP-Core's availability readout, which is not part
  *     of any Bench Dogs flow.
- * Between them they were costing four columns' width ahead of the controls
- * this grid exists to expose. Discount is kept: it is an editing surface, not
- * just a readout, and dropping it would take the discount-select widget with
- * it.
+ * Discount is kept: it is an editing surface, not just a readout, and
+ * dropping it would take the discount-select widget with it.
  *
  * Adding a column later: add it to this array. Do not add it by calling the
  * ModuleBuilder helpers as well, or the two definitions will disagree and the
@@ -79,19 +79,6 @@ $viewdefs['Products']['base']['view']['quote-data-group-list'] = array(
                     'label' => 'LBL_MFT_PART_NUM',
                     'labelModule' => 'Products',
                     'type' => 'base',
-                ),
-                array(
-                    'name' => 'bd_to_order',
-                    'label' => 'LBL_BD_TO_ORDER',
-                    'labelModule' => 'Products',
-                    'type' => 'bool',
-                ),
-                array(
-                    'name' => 'bd_ordered',
-                    'label' => 'LBL_BD_ORDERED',
-                    'labelModule' => 'Products',
-                    'type' => 'bool',
-                    'readonly' => true,
                 ),
                 array(
                     'name' => 'discount_price',
