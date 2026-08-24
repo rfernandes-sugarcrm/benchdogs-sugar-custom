@@ -114,6 +114,18 @@ class BdBenchDogsActionsApi extends BaseErpActionsApi
                     'SugarApiExceptionNotFound',
                 ),
             ),
+            'bdSyncQuoteTiers' => array(
+                'reqType' => 'POST',
+                'path' => array('Quotes', '?', 'bd-sync-quote-tiers'),
+                'pathVars' => array('module', 'record', ''),
+                'method' => 'syncQuoteTiers',
+                'shortHelp' => 'Adds a line item for every Kinetic quantity break this quote is missing, and marks the breaks Kinetic has already ordered. Never edits or removes an existing line.',
+                'exceptions' => array(
+                    'SugarApiExceptionNotAuthorized',
+                    'SugarApiExceptionInvalidParameter',
+                    'SugarApiExceptionNotFound',
+                ),
+            ),
             'bdBestPricing' => array(
                 'reqType' => 'POST',
                 'path' => array('Quotes', '?', 'bd-best-pricing'),
@@ -1418,5 +1430,86 @@ class BdBenchDogsActionsApi extends BaseErpActionsApi
             }
         }
         return $best;
+    }
+
+    /**
+     * Bring a quote's line items into line with the Kinetic quote behind it.
+     *
+     * Two things, both additive:
+     *
+     *   1. a line item for every Kinetic quantity break that has none, so
+     *      each break can be ordered, valued and reported separately;
+     *   2. bd_ordered on any break Kinetic has ALREADY ordered, read off the
+     *      sales orders already synced against this quote.
+     *
+     * Nothing is edited and nothing is removed. A rep who deleted a break
+     * they are not quoting will get it back if they run this, which is why it
+     * is an action they invoke rather than something a sync does behind them.
+     *
+     * This is the repair path for a quote that predates per-line ordering, or
+     * that was worked in Kinetic first - the case the tiered model cannot
+     * otherwise see, because it reads everything off the Sugar line items.
+     */
+    public function syncQuoteTiers(ServiceBase $api, array $args)
+    {
+        if (empty($args['record'])) {
+            throw new SugarApiExceptionInvalidParameter('Missing record id');
+        }
+        $bean = BeanFactory::retrieveBean('Quotes', $args['record']);
+        if ($bean === null || empty($bean->id)) {
+            throw new SugarApiExceptionNotFound('Quote not found: ' . $args['record']);
+        }
+        if (!$bean->ACLAccess('edit')) {
+            throw new SugarApiExceptionNotAuthorized('No edit access to this quote');
+        }
+
+        $erpQuote = $this->pickErpQuote($bean);
+        if ($erpQuote === null) {
+            return array(
+                'status' => 'error',
+                'message' => 'This quote is not linked to a Kinetic quote, so there are no quantity breaks to sync.',
+            );
+        }
+
+        require_once 'custom/modules/bd01_ERP_Quote/BdQuoteReflectionHook.php';
+        $hook = new BdQuoteReflectionHook();
+
+        $created = $hook->backfillMissingQuoteLines($erpQuote, $bean);
+
+        // Re-value through the ordinary reflection path, which also runs the
+        // ordered reconciliation - so the opportunity, the RLIs and the
+        // ordered flags all land from one code path rather than this action
+        // inventing its own arithmetic.
+        $hook->refreshOpportunityAmount($erpQuote);
+
+        $ordered = 0;
+        $fresh = BeanFactory::retrieveBean('Quotes', $bean->id, array('use_cache' => false));
+        if ($fresh !== null && $fresh->load_relationship('products')) {
+            foreach ($fresh->products->getBeans() as $product) {
+                if (!empty($product->bd_ordered)) {
+                    $ordered++;
+                }
+            }
+        }
+
+        return array(
+            'status' => 'success',
+            'lines_added' => $created,
+            'lines_ordered' => $ordered,
+            'message' => $created > 0
+                ? sprintf(
+                    'Added %d line item%s from Kinetic quote %s. %d line%s now marked ordered.',
+                    $created,
+                    $created === 1 ? '' : 's',
+                    (string) ($erpQuote->name ?? ''),
+                    $ordered,
+                    $ordered === 1 ? '' : 's'
+                )
+                : sprintf(
+                    'Every Kinetic quantity break already has a line item. %d line%s marked ordered.',
+                    $ordered,
+                    $ordered === 1 ? '' : 's'
+                ),
+        );
     }
 }
