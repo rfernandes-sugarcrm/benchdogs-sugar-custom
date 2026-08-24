@@ -348,7 +348,7 @@ class BdQuoteReflectionHook
             return;
         }
 
-        $deliverables = $this->deliverables($bean);
+        $deliverables = $this->deliverables($bean, $quote);
         if ($deliverables === []) {
             return;
         }
@@ -406,34 +406,137 @@ class BdQuoteReflectionHook
     }
 
     /**
-     * The quote's deliverables, keyed by role ('prototype' / 'production').
+     * The quote's line items indexed by the Kinetic line number they mirror.
      *
-     * prototype   - the line flagged prototype (BdGoverningLineHook's sibling
-     *               flag, set by the reflection): its extended price.
-     * production  - the governing line's extended price when one is marked
-     *               (BdGoverningLineHook keeps the flag unique per quote);
-     *               otherwise the whole quote_total minus the prototype
-     *               slice, so the two RLIs never double-count the same
-     *               dollars (v0.1 whole-quote fallback, REQ-6-safe).
+     * Built ONCE per pass and handed to the whole deliverables calculation:
+     * the alternative is a getBeans() per ERP line, which on a four-break
+     * quote is four full relationship loads to answer one question.
+     *
+     * bd_erp_line_num is the join column and it is MLP-owned - REQ-1's
+     * ordering action stamps it, nothing in the connector writes it. A quote
+     * whose line items predate that stamp (or a REQ-28 quote, whose line
+     * items this package materialized before any ordering happened) simply
+     * yields an empty or partial map, which the caller reads as "the join is
+     * unresolvable" and answers conservatively.
+     *
+     * @return array<int, SugarBean> line number => quoted line item
+     */
+    private function qliByErpLine(?SugarBean $quote): array
+    {
+        if ($quote === null || empty($quote->id)) {
+            return [];
+        }
+        $map = [];
+        try {
+            if (!$quote->load_relationship('products')) {
+                return [];
+            }
+            foreach ($quote->products->getBeans() as $product) {
+                if (!empty($product->deleted)) {
+                    continue;
+                }
+                $lineNum = (int) ($product->bd_erp_line_num ?? 0);
+                if ($lineNum <= 0) {
+                    continue;
+                }
+                if (isset($map[$lineNum])) {
+                    // Two line items claiming one ERP line. First wins, and
+                    // it is said out loud: silently picking one of two
+                    // contradictory rows is how an opportunity quietly
+                    // reports the wrong number for a month.
+                    $GLOBALS['log']->warn(
+                        'BdQuoteReflectionHook: Quote ' . $quote->id . ' has more than one line '
+                        . 'item stamped bd_erp_line_num=' . $lineNum . ' (' . $map[$lineNum]->id
+                        . ' and ' . $product->id . ') - using the first.'
+                    );
+                    continue;
+                }
+                $map[$lineNum] = $product;
+            }
+        } catch (Throwable $e) {
+            $GLOBALS['log']->warn(
+                'BdQuoteReflectionHook: could not read the line items of Quote ' . $quote->id
+                . ' for the ERP line join: ' . $e->getMessage()
+            );
+            return [];
+        }
+        return $map;
+    }
+
+    /**
+     * The quote's deliverables, keyed by role.
+     *
+     * prototype  - the line flagged prototype: its extended price. Always its
+     *              own slice, never part of production.
+     * production - the OPEN production value: money still to win.
+     * ordered    - production already ordered: money won. Only ever emitted
+     *              when the join below resolves, because it is the only thing
+     *              that can tell ordered from open.
+     *
+     * A BENCH DOGS QUANTITY LADDER IS TIERED, NOT EXCLUSIVE. The breaks (25,
+     * 50, 100) are releases against one programme, not three competing
+     * versions of the same deal, and the customer orders them in stages over
+     * the life of the programme. So the deal is worth the whole ladder, and
+     * ordering a release does not shrink it - it moves that slice from
+     * 'production' to 'ordered' and the total stays put.
+     *
+     * FOUR PATHS, in priority order, and deliberately not collapsed:
+     *
+     *   1. A governing line is marked -> that line's extended price, exactly
+     *      as before. An estimator's explicit answer outranks derivation.
+     *      Skipped only when that very line has already been ordered (see
+     *      the comment at the branch: REQ-1 stamps governing when a single
+     *      line is ordered, so honouring it there would report won money as
+     *      still open).
+     *   2. The ERP line -> quoted line item join resolves for EVERY
+     *      non-prototype line -> open production is the sum of the lines
+     *      whose line item is not bd_ordered, and the ordered ones become
+     *      the 'ordered' slice.
+     *   3. The join does not fully resolve -> the sum of ALL non-prototype
+     *      lines, which is what this method did before tiering existed. A
+     *      partial join is treated as no join: knowing that two of four
+     *      lines are unordered says nothing about the other two, and half an
+     *      answer here writes a wrong number to a forecast.
+     *   4. No non-prototype line is visible at all -> the pre-existing
+     *      residual path, quote_total minus what this pass can see, flagged
+     *      'residual' so applyResidual() reconciles it against siblings.
+     *      'residual' is set on this path and no other: it means "this
+     *      figure claims the whole quote", which is true of nothing else
+     *      here.
      *
      * Empty array when the quote has no usable value at all - the caller
      * then leaves the opportunity's RLIs alone.
      */
-    private function deliverables(SugarBean $bean): array
+    private function deliverables(SugarBean $bean, ?SugarBean $quote = null): array
     {
         $proto = null;
         $governing = null;
+        $ladder = [];
         $bean->load_relationship('bd01_erp_quote_lines');
         if ($bean->bd01_erp_quote_lines && is_object($bean->bd01_erp_quote_lines)) {
             foreach ($bean->bd01_erp_quote_lines->getBeans() as $line) {
-                if ($proto === null && !empty($line->prototype)) {
-                    $proto = $line;
+                if (!empty($line->prototype)) {
+                    if ($proto === null) {
+                        $proto = $line;
+                    }
+                    continue;   // the prototype is its own deliverable, never production
                 }
                 if ($governing === null && !empty($line->governing)) {
                     $governing = $line;
                 }
+                $ladder[] = $line;
             }
         }
+
+        // Resolve the ERP line -> quoted line item join ONCE for this pass.
+        $qliByLine = $this->qliByErpLine($quote);
+        $unresolved = [];
+        foreach ($ladder as $line) {
+            if (!isset($qliByLine[(int) $line->line_num])) {
+                $unresolved[] = (int) $line->line_num;
+            }
+        }
+        $joinResolved = ($ladder !== [] && $unresolved === []);
 
         $out = [];
         if ($proto !== null) {
@@ -446,7 +549,20 @@ class BdQuoteReflectionHook
             ];
         }
 
-        if ($governing !== null) {
+        // The governing line, when one is marked, IS the production figure -
+        // an estimator's explicit answer outranks anything derived. The one
+        // exception is a governing line that has already been ORDERED: it is
+        // then describing a won slice, not the open run, and reporting it as
+        // open production would state the deal as still-to-win money that is
+        // already banked. This exception is not decoration - REQ-1's
+        // bd-order-selected-lines stamps governing on the ERP line whenever
+        // exactly one line is ordered, so without it every single-line order
+        // would collapse the open value to the line just won.
+        $governingOrdered = $governing !== null
+            && $joinResolved
+            && !empty($qliByLine[(int) $governing->line_num]->bd_ordered);
+
+        if ($governing !== null && !$governingOrdered) {
             $out['production'] = [
                 'amount' => (float) $governing->doc_ext_price,
                 'quantity' => (float) $governing->selling_qty,
@@ -454,6 +570,98 @@ class BdQuoteReflectionHook
                     ? trim((string) $governing->part_num) . ' (production run)'
                     : 'Production run',
             ];
+            $GLOBALS['log']->info(
+                'BdQuoteReflectionHook: deliverables for bd01_ERP_Quote ' . $bean->id
+                . ' took the GOVERNING branch - line ' . $governing->line_num
+                . ' is marked governing, production = ' . (float) $governing->doc_ext_price
+            );
+        } elseif ($joinResolved) {
+            // TIERED: the quantity breaks are RELEASES against one programme,
+            // not alternatives. Bench Dogs orders a quote in stages, so every
+            // break that has not yet been ordered is still winnable money and
+            // the open value is their sum. What has been ordered leaves the
+            // open figure and reappears as a won slice, so the deal's total
+            // never moves when a release is placed - it only changes hands.
+            //
+            // "Ordered" is read off the QUOTED LINE ITEM (bd_ordered), which
+            // is where REQ-1 records the decision, joined to the ERP line by
+            // Product.bd_erp_line_num.
+            $openAmount = 0.0;
+            $ordered = [];
+            $orderedAmount = 0.0;
+            $orderedQty = 0.0;
+            foreach ($ladder as $line) {
+                $qli = $qliByLine[(int) $line->line_num];
+                if (!empty($qli->bd_ordered)) {
+                    $ordered[] = $line;
+                    $orderedAmount += (float) $line->doc_ext_price;
+                    $orderedQty += (float) $line->selling_qty;
+                    continue;
+                }
+                $openAmount += (float) $line->doc_ext_price;
+            }
+
+            // Name and quantity are deliberately the ones the RESIDUAL path
+            // has always written. This row already exists on the filmed deal
+            // reading "Quote 1196" at quantity 1; the tiering changes what
+            // the number MEANS, and there is no reason to also change what
+            // the record says while the value is identical.
+            $out['production'] = [
+                'amount' => $openAmount,
+                'quantity' => 1.0,
+                'name' => trim((string) $bean->name) !== ''
+                    ? trim((string) $bean->name)
+                    : 'Quoted deal value',
+            ];
+
+            if ($ordered !== []) {
+                $out['ordered'] = [
+                    'amount' => $orderedAmount,
+                    'quantity' => $orderedQty,
+                    'name' => count($ordered) === 1
+                        ? trim((string) $ordered[0]->part_num) . ' x'
+                            . rtrim(rtrim(number_format((float) $ordered[0]->selling_qty, 2, '.', ''), '0'), '.')
+                            . ' (ordered)'
+                        : 'Ordered releases (' . count($ordered) . ' lines)',
+                ];
+            }
+
+            $GLOBALS['log']->info(
+                'BdQuoteReflectionHook: deliverables for bd01_ERP_Quote ' . $bean->id
+                . ' took the TIERED branch - ' . count($ladder) . ' non-prototype lines, '
+                . count($ordered) . ' already ordered. Open production = ' . $openAmount
+                . ', ordered = ' . $orderedAmount
+            );
+        } elseif ($ladder !== []) {
+            // JOIN UNRESOLVABLE. Some ERP line has no quoted line item
+            // carrying its number, so this pass cannot tell what has been
+            // ordered and what has not - and guessing would either invent
+            // won revenue or delete open revenue. Fall back to the behaviour
+            // that predates tiering: every non-prototype line counts as open.
+            // Wrong in the same direction it has always been wrong, which is
+            // the only safe direction to be wrong in.
+            $openAmount = 0.0;
+            foreach ($ladder as $line) {
+                $openAmount += (float) $line->doc_ext_price;
+            }
+            $out['production'] = [
+                'amount' => $openAmount,
+                'quantity' => 1.0,
+                'name' => trim((string) $bean->name) !== ''
+                    ? trim((string) $bean->name)
+                    : 'Quoted deal value',
+            ];
+            $GLOBALS['log']->warn(
+                'BdQuoteReflectionHook: deliverables for bd01_ERP_Quote ' . $bean->id
+                . ' could NOT resolve the ERP line -> quoted line item join'
+                . ($quote === null
+                    ? ' (no Sugar quote in hand)'
+                    : ' (Quote ' . $quote->id . ' has no line item carrying bd_erp_line_num '
+                        . implode(', ', $unresolved) . ')')
+                . ' - falling back to the whole non-prototype ladder as open production ('
+                . $openAmount . '). Ordered releases cannot be recognised until every ERP '
+                . 'line has a quoted line item stamped with its line number.'
+            );
         } else {
             $total = $bean->quote_total;
             if ($total !== null && $total !== '') {
@@ -708,6 +916,14 @@ class BdQuoteReflectionHook
     private function deliverableStage(string $role, SugarBean $opportunity): array
     {
         $oppStage = (string) ($opportunity->sales_stage ?? '');
+
+        if ($role === 'ordered') {
+            // An ordered release is money that has been won, whatever the
+            // rest of the deal is doing. It is also the row the stale-row
+            // sweep in upsertDeliverableRlis() must never remove, and Closed
+            // Won is exactly what protects it there.
+            return ['Closed Won', 100];
+        }
 
         if ($role === 'prototype') {
             if ($oppStage === 'Prototype Closed' || $oppStage === 'Partial Production Closed') {

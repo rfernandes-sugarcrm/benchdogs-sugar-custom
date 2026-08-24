@@ -828,8 +828,8 @@ class BdBenchDogsActionsApi extends BaseErpActionsApi
         // Best-effort mirror onto the Kinetic reflection when exactly one
         // line was ordered: keeps the bd01 subpanel's governing tick
         // truthful without fighting BdGoverningLineHook's single winner.
+        $erpQuote = $this->pickErpQuote($bean);
         if (count($selected) === 1 && !empty($selected[0]->bd_erp_line_num)) {
-            $erpQuote = $this->pickErpQuote($bean);
             if ($erpQuote !== null && $erpQuote->load_relationship('bd01_erp_quote_lines')) {
                 foreach ($erpQuote->bd01_erp_quote_lines->getBeans() as $line) {
                     if ((int) $line->line_num === (int) $selected[0]->bd_erp_line_num
@@ -839,6 +839,28 @@ class BdBenchDogsActionsApi extends BaseErpActionsApi
                         $line->save();
                     }
                 }
+            }
+        }
+
+        // Re-value the deal NOW. Ordering a release moves money out of the
+        // open production figure and into a won slice, and nothing else
+        // would make that happen: the ERP mirror row is untouched by an
+        // order, so no reflection hook fires on its own. The single-line
+        // case happens to save a mirror line above (the governing tick) and
+        // would refresh by accident; two lines ordered at once would not,
+        // and the opportunity would sit on a stale open value until the next
+        // unrelated sync. Explicit beats incidental.
+        if ($erpQuote !== null) {
+            try {
+                require_once 'custom/modules/bd01_ERP_Quote/BdQuoteReflectionHook.php';
+                (new BdQuoteReflectionHook())->refreshOpportunityAmount($erpQuote);
+            } catch (Throwable $e) {
+                // A stale forecast must never fail an order that Epicor has
+                // already accepted.
+                $GLOBALS['log']->error(
+                    'BdBenchDogsActionsApi: could not re-value the opportunity after ordering '
+                    . 'from Quote ' . $bean->id . ': ' . $e->getMessage()
+                );
             }
         }
 
@@ -870,6 +892,22 @@ class BdBenchDogsActionsApi extends BaseErpActionsApi
                 if ($opp->load_relationship('revenuelineitems')) {
                     foreach ($opp->revenuelineitems->getBeans() as $rliBean) {
                         if (in_array($rliBean->sales_stage, array('Closed Won', 'Closed Lost'), true)) {
+                            continue;
+                        }
+                        // DELIVERABLE-KEYED RLIs ARE NOT OURS TO RE-STAGE.
+                        // Same discipline orderWinningLine() already applies,
+                        // and it belongs here more strongly: under the tiered
+                        // model the slice that actually won is its own
+                        // ':ordered' row, already Closed Won and already
+                        // skipped above. Every other keyed row is a
+                        // deliverable that did NOT win - the open production
+                        // balance, and the prototype, which closed on its own
+                        // terms earlier. Measured live: this loop relabelled
+                        // the filmed deal's prototype RLI from 'Prototype
+                        // Closed' to 'Partial Production Closed', erasing the
+                        // fact that the prototype was the slice that closed.
+                        // Unkeyed RLIs keep the pre-0.8.6 blanket behaviour.
+                        if ((string) ($rliBean->bd_deliverable_key ?? '') !== '') {
                             continue;
                         }
                         $rliBean->sales_stage = $newStage;
