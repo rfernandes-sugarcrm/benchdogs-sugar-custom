@@ -93,6 +93,12 @@ class BdQuotesLayoutExtensions
             'create_erp_order_button',
             'refresh_price_availability_button',
             'bd_order_winning_button',
+            // Removed for the Bench Dogs demo: catalog best-pricing is not part
+            // of the pure-quote story on either simple or advanced quotes - the
+            // estimator's price on the quote is the only price. Listed here as
+            // well as dropped from $wanted because the button is already in the
+            // deployed viewdefs and $wanted alone would not take it back out.
+            'bd_best_pricing_button',
         ];
 
         $wanted = [
@@ -102,15 +108,6 @@ class BdQuotesLayoutExtensions
                 'name' => 'bd_send_estimating_button',
                 'label' => 'LBL_BD_SEND_ESTIMATING_BUTTON',
                 'css_class' => 'rowaction actionbuttons actionbuttons-button btn btn-primary ml-2',
-                'showOn' => 'view',
-                'acl_action' => 'edit',
-            ],
-            [
-                'type' => 'bd-best-pricing',
-                'event' => 'button:bd_best_pricing_button:click',
-                'name' => 'bd_best_pricing_button',
-                'label' => 'LBL_BD_BEST_PRICING_BUTTON',
-                'css_class' => 'rowaction actionbuttons actionbuttons-button btn btn-secondary ml-2',
                 'showOn' => 'view',
                 'acl_action' => 'edit',
             ],

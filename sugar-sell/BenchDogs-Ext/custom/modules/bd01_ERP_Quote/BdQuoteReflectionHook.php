@@ -150,6 +150,26 @@ class BdQuoteReflectionHook
             $dirty = true;
         }
 
+        // erp_quoted_value is ERP-Core's field and its own panel's headline
+        // number - "Quoted Value" on the Quotes record view. On a quote that
+        // ORIGINATES in Sugar the connector never fills it (it writes the
+        // write-back status trio and nothing else), so the header read
+        // "$0.00" beside a $24,850 grand total on the very quote this demo is
+        // built around. Mirror our number into it so the two agree.
+        //
+        // Written ONLY while it is empty or zero: a value the connector
+        // actually supplied is ERP-Core's answer and outranks ours, and
+        // overwriting it every reflection would be a tug-of-war between two
+        // packages over one field. Empty-or-zero is not an answer, so filling
+        // it takes nothing away.
+        if ($total !== null && $total !== '' && (float) $total !== 0.0
+            && isset($quote->field_defs['erp_quoted_value'])
+            && (float) ($quote->erp_quoted_value ?? 0) === 0.0
+        ) {
+            $quote->erp_quoted_value = (float) $total;
+            $dirty = true;
+        }
+
         $previousStage = (string) $quote->bd_erp_stage;
         if ($previousStage !== $stage) {
             $quote->bd_erp_stage = $stage;
@@ -1435,7 +1455,11 @@ class BdQuoteReflectionHook
         $current = (string) ($opportunity->sales_stage ?? '');
         $dirty = false;
 
-        if (abs((float) $opportunity->amount - $sum) > 0.005) {
+        // Captured BEFORE the write below. best_case/worst_case use it to
+        // tell their own stale copy of our number from a forecaster's real one.
+        $priorAmount = (float) $opportunity->amount;
+
+        if (abs($priorAmount - $sum) > 0.005) {
             $opportunity->amount = $sum;
             $dirty = true;
         }
@@ -1444,18 +1468,33 @@ class BdQuoteReflectionHook
         // their formulas (see the Opportunities vardef extension) they would
         // otherwise sit at 0.00 on every forecast view, so they carry the same
         // number: this deal has one value, not a spread we have any evidence
-        // for. Written ONLY while the field is still zero - the moment a
-        // forecaster puts a real number in there it is theirs, and no later
-        // reflection overwrites it. The ERP knows what the job is worth; it
-        // does not know how confident sales feel about it.
+        // for.
+        //
+        // Written while the field is still zero OR still equals the amount we
+        // are about to replace - i.e. while it still holds OUR number. The
+        // earlier rule was "only while zero", which froze both fields at the
+        // FIRST value they ever took: on Northgate they read 450.00 - the
+        // prototype alone, the only deliverable that existed at the first
+        // reflection - against an amount of 24,850.00 once the ladder landed,
+        // so every forecast view understated the deal by 24,400 while the
+        // Likely column beside it was right. The moment a forecaster puts a
+        // real number in there it stops matching the amount we wrote and is
+        // theirs for good; no later reflection overwrites it. The ERP knows
+        // what the job is worth; it does not know how confident sales feel
+        // about it.
         foreach (['best_case', 'worst_case'] as $bdCase) {
-            if (isset($opportunity->field_defs[$bdCase])
-                && abs((float) $opportunity->$bdCase - $sum) > 0.005
-                && (float) $opportunity->$bdCase === 0.0
-            ) {
-                $opportunity->$bdCase = $sum;
-                $dirty = true;
+            if (!isset($opportunity->field_defs[$bdCase])) {
+                continue;
             }
+            $held = (float) $opportunity->$bdCase;
+            if (abs($held - $sum) <= 0.005) {
+                continue;   // already says what we would say
+            }
+            if ($held !== 0.0 && abs($held - $priorAmount) > 0.005) {
+                continue;   // a human's forecast, not our stale copy
+            }
+            $opportunity->$bdCase = $sum;
+            $dirty = true;
         }
 
         if ($current !== 'Closed Lost'

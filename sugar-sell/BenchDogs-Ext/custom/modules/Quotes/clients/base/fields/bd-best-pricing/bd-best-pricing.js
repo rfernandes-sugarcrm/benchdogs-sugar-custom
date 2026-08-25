@@ -62,12 +62,17 @@
     },
 
     _checkVisibility: function() {
-        var stage = this.model.get('quote_stage');
-        if (stage !== 'Closed Lost' && stage !== 'Closed Accepted') {
-            this.$el.show();
-        } else {
-            this.$el.hide();
-        }
+        // WITHDRAWN. Catalog best-pricing is not part of the Bench Dogs quote
+        // model on either simple or advanced quotes: the estimator's price on
+        // the quote is the only price, so a second, ERP-catalog price in the
+        // header offers an answer the story does not have. The button is also
+        // dropped from BdQuotesLayoutExtensions::$wanted and named in its
+        // $unwanted list; this hide is the belt to that braces, because the
+        // layout removal only reaches views the deployed viewdef writer
+        // actually rewrites, and a stale deployed viewdef would keep
+        // rendering the button. Hiding at the field means it cannot appear in
+        // ANY layout that still names it. Restore by reverting both.
+        this.$el.hide();
     },
 
     isAllowedDropdownButton: function() {
