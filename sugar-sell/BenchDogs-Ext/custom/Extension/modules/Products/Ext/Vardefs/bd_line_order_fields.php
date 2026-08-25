@@ -1,31 +1,11 @@
 <?php
 
-// Native-line partial ordering (1:1 CRM quote <-> ERP quote): the quoted
-// line items themselves carry the order decision - tick bd_to_order on the
-// break(s) the customer committed to, bd-order-selected-lines raises the
-// Epicor order from ONLY those rows, and bd_ordered records which rows have
-// already turned into orders (they stay on the quote as history; nothing is
-// deleted). bd_erp_line_num is the xref to the Kinetic quote line.
-
-$dictionary['Product']['fields']['bd_to_order'] = array(
-    'name' => 'bd_to_order',
-    'vname' => 'LBL_BD_TO_ORDER',
-    'type' => 'bool',
-    'default' => '0',
-    'comment' => 'Line is selected to go to the next Epicor sales order',
-    'reportable' => true,
-    'audited' => true,
-);
-
-$dictionary['Product']['fields']['bd_ordered'] = array(
-    'name' => 'bd_ordered',
-    'vname' => 'LBL_BD_ORDERED',
-    'type' => 'bool',
-    'default' => '0',
-    'comment' => 'Line has already been ordered in Epicor',
-    'reportable' => true,
-    'audited' => true,
-);
+// Kinetic line xref for the native quoted line items. The ORDER decision no
+// longer lives here: since ERP-Epicor 1.0.84 the seller ticks rows in the
+// grid and presses its Order Selected Lines, and the lock is ERP-Epicor's own
+// erp_ordered / erp_ordered_order_num / erp_ordered_at (BdQuoteReflectionHook
+// stamps the same three for orders raised in Kinetic). bd_to_order and
+// bd_ordered were retired in 0.9.39; their columns stay in the table.
 
 $dictionary['Product']['fields']['bd_erp_line_num'] = array(
     'name' => 'bd_erp_line_num',

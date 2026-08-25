@@ -111,19 +111,27 @@ class BdQuotesLayoutExtensions
                 'showOn' => 'view',
                 'acl_action' => 'edit',
             ],
-            [
-                'type' => 'bd-order-selected',
-                'event' => 'button:bd_order_selected_button:click',
-                'name' => 'bd_order_selected_button',
-                'label' => 'LBL_BD_ORDER_SELECTED_BUTTON',
-                'css_class' => 'rowaction actionbuttons actionbuttons-button btn btn-primary ml-2',
-                'showOn' => 'view',
-                'acl_action' => 'edit',
-            ],
         ];
+
 
         $kept = [];
         $removed = 0;
+        // Order Selected Lines is ERP-Epicor's own button since 1.0.84
+        // (erp_order_selected_button). Every Bench Dogs quote is an
+        // advanced_quote (mirrored from Kinetic), which core's button hides
+        // by default - opt in on ITS definition rather than shipping a
+        // second button. Idempotent; a no-op until ERP-Epicor >= 1.0.85 has
+        // put the button on the layout.
+        $unwanted[] = 'bd_order_selected_button';
+        foreach ($buttons as &$b) {
+            if (is_array($b) && ($b['name'] ?? '') === 'erp_order_selected_button'
+                && empty($b['allow_advanced_quotes'])
+            ) {
+                $b['allow_advanced_quotes'] = true;
+                $removed++;   // counts as a change so the viewdef is redeployed
+            }
+        }
+        unset($b);
         foreach ($buttons as $b) {
             if (is_array($b) && in_array($b['name'] ?? '', $unwanted, true)) {
                 $removed++;

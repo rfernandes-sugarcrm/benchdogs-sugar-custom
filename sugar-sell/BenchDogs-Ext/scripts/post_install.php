@@ -58,6 +58,26 @@ if (function_exists('post_execute') === false) {
         } catch (Throwable $e) {
             $GLOBALS['log']->error('BenchDogs-Ext: QLI columns failed: ' . $e->getMessage());
         }
+        // 0.9.39: ordering selected lines is ERP-Epicor's own (>= 1.0.84).
+        // Every Bench Dogs quote is an advanced_quote (mirrored from Kinetic),
+        // which core's route refuses by default - this deployment opts in.
+        // The button-side half (allow_advanced_quotes on the core button) is
+        // written by BdQuotesLayoutExtensions::writeButtons above.
+        try {
+            $admin = BeanFactory::getBean('Administration');
+            $admin->saveSetting('erp_integration', 'advanced_quotes_orderable', '1', 'base');
+            $GLOBALS['log']->info('BenchDogs-Ext: erp_integration.advanced_quotes_orderable = 1');
+        } catch (Throwable $e) {
+            $GLOBALS['log']->error('BenchDogs-Ext: advanced-quote opt-in failed: ' . $e->getMessage());
+        }
+        // Files this package used to ship and no longer does stay on disk
+        // after an upgrade install (Sugar Cloud's package scanner denylists
+        // every file-removal call, the SugarAutoLoader wrapper included -
+        // by name, comments too). They are inert: the zzz_ quotes_erp_orders dictionary now says exactly
+        // what ERP-Epicor >= 1.0.84 says (one-to-many over the same join
+        // table), the bd-order-selected / bd-order-winning field JS is no
+        // longer referenced by any button, and bd_order_requested_at is an
+        // unread column. A fresh install never gets them at all.
         try {
             $accountsHelper = 'custom/modules/Accounts/BdAccountsLayoutExtensions.php';
             if (file_exists($accountsHelper)) {

@@ -49,7 +49,10 @@ class BdQliColumnsLayout extends BaseErpLayout
      */
     private function bdOrderFieldNames(): array
     {
-        return ['bd_to_order', 'bd_ordered', 'bd_erp_line_num'];
+        // bd_to_order / bd_ordered are gone: the lock is ERP-Epicor's own
+        // erp_ordered (>= 1.0.84), which core's QuotesLayout carries onto
+        // each row itself. Only the Kinetic line number is still ours.
+        return ['bd_erp_line_num'];
     }
 
     /**

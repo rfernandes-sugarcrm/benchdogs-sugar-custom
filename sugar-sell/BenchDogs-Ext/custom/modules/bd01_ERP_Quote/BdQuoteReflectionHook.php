@@ -379,7 +379,7 @@ class BdQuoteReflectionHook
     private function maybeUpdateOpportunity(SugarBean $bean, SugarBean $quote): void
     {
         // An order raised in Kinetic rather than through Sugar never touches
-        // bd_ordered, so the release goes on reporting as open pipeline after
+        // erp_ordered, so the release goes on reporting as open pipeline after
         // it has been won. Reconciled HERE, on the single path every caller
         // funnels through, rather than in the action that happened to need it
         // first: whether the deal is re-valued by a pipeline sync, a link
@@ -874,7 +874,7 @@ class BdQuoteReflectionHook
     /**
      * Mark quoted line items that Kinetic has ALREADY turned into orders.
      *
-     * bd_ordered is written by REQ-1's bd-order-selected-lines, which is the
+     * erp_ordered is written by ERP-Epicor's Order Selected Lines (erp-order-selected), which is the
      * path where Sugar RAISES the order. It is not the only way a Bench Dogs
      * release gets ordered: an order raised directly in Kinetic - by the
      * inside-sales desk, or before the customer was ever worked in Sugar -
@@ -889,7 +889,7 @@ class BdQuoteReflectionHook
      * same part at the same quantity. Anything ambiguous is left alone and
      * said out loud.
      *
-     * It only ever sets bd_ordered TRUE. Nothing here clears it: an order can
+     * It only ever sets erp_ordered TRUE. Nothing here clears it: an order can
      * be cancelled in Kinetic without the release ceasing to have been won,
      * and quietly reopening closed revenue is not a decision a sync should
      * take by itself.
@@ -935,7 +935,7 @@ class BdQuoteReflectionHook
                     $qty = (float) ($orderLine->quantity ?? 0);
                     $candidates = [];
                     foreach ($items as $product) {
-                        if (!empty($product->bd_ordered)) {
+                        if (!empty($product->erp_ordered)) {
                             continue;   // already won - nothing to decide
                         }
                         if ($this->itemPart($product) !== $part) {
@@ -959,8 +959,12 @@ class BdQuoteReflectionHook
                         continue;
                     }
                     $product = $candidates[0];
-                    $product->bd_ordered = true;
-                    $product->bd_to_order = false;
+                    // ERP-Epicor's own lock (>= 1.0.84): the same three fields
+                    // Order Selected Lines stamps, so a line ordered in Kinetic
+                    // and one released from Sugar look identical on the grid.
+                    $product->erp_ordered = true;
+                    $product->erp_ordered_order_num = (string) ($order->name ?? '');
+                    $product->erp_ordered_at = TimeDate::getInstance()->nowDb();
                     $product->save();
                     $marked++;
                     $GLOBALS['log']->info(
@@ -1046,7 +1050,7 @@ class BdQuoteReflectionHook
      *
      *   1. The prototype line, when there is one, is always its own slice
      *      and never part of production.
-     *   2. Every non-prototype break whose quoted line item is bd_ordered
+     *   2. Every non-prototype break whose quoted line item is erp_ordered
      *      becomes its own CLOSED slice at the value it was ordered at.
      *      Ordering is per line and stays that way.
      *   3. Every break that has NOT been ordered is still live potential and
@@ -1123,7 +1127,7 @@ class BdQuoteReflectionHook
                 'name' => trim((string) $proto->part_num) !== ''
                     ? trim((string) $proto->part_num) . ' (prototype)'
                     : 'Prototype run',
-                'won' => $protoQli !== null && !empty($protoQli->bd_ordered),
+                'won' => $protoQli !== null && !empty($protoQli->erp_ordered),
             ];
         }
 
@@ -1160,7 +1164,7 @@ class BdQuoteReflectionHook
         $open = [];
         foreach ($ladder as $line) {
             $qli = $qliByLine[(int) $line->line_num] ?? null;
-            if ($joinResolved && $qli !== null && !empty($qli->bd_ordered)) {
+            if ($joinResolved && $qli !== null && !empty($qli->erp_ordered)) {
                 $orderedProduction[] = $line;
                 continue;
             }
