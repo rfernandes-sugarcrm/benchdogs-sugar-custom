@@ -28,6 +28,14 @@
 class BdQuoteReflectionHook
 {
     /**
+     * Stages an ERP quote can be in before estimating has priced it. Mirrors
+     * BdEstimatingNotificationHook::PRE_PRICING_STAGES - the same transition
+     * drives the return-leg notification and the first-hand-back backfill,
+     * and they must agree about what "not yet priced" means.
+     */
+    private const PRE_PRICING_STAGES = ['draft', 'in_estimating', 'revision'];
+
+    /**
      * Fields on bd01_ERP_Quote that feed the reflection. If none of them
      * changed in this save there is nothing to push.
      */
@@ -141,6 +149,25 @@ class BdQuoteReflectionHook
             (string) ($bean->reason_code ?? ''),
             $this->hasLinkedOrder($quote)
         );
+
+        // The estimator's ladder has to reach the rep's own grid, and until
+        // now nothing carried it there: the total landed automatically but the
+        // per-line breakdown only appeared if somebody called
+        // bd-sync-quote-tiers by hand, and no screen anywhere offers that. So
+        // on a live instance a rep who sent a quote out for pricing got a
+        // headline number over a grid that still showed their single
+        // scope-to-be-defined line.
+        //
+        // Runs BEFORE the dirty-field edits below so the re-read cannot
+        // discard pending changes - same ordering the materialized path uses,
+        // and for the same reason (adding line items rewrites the quote's
+        // totals underneath the bean in hand).
+        if ($this->backfillOnFirstHandBack($bean, $quote, $stage)) {
+            $fresh = BeanFactory::retrieveBean('Quotes', $quote->id, ['use_cache' => false]);
+            if ($fresh !== null && !empty($fresh->id)) {
+                $quote = $fresh;
+            }
+        }
 
         $dirty = false;
 
@@ -631,6 +658,78 @@ class BdQuoteReflectionHook
         );
 
         return $map;
+    }
+
+    /**
+     * Backfill the estimator's lines onto a rep-owned quote, ONCE, on the
+     * first time estimating hands it back priced.
+     *
+     * backfillMissingQuoteLines() is deliberately manual because on a
+     * rep-owned quote, re-adding lines on every sync would fight the rep for
+     * control of their own document - a quantity break they deliberately
+     * deleted would keep coming back. That reasoning is sound for every
+     * LATER sync and wrong for the first one: pressing Send to Estimating is
+     * the rep explicitly handing pricing to the estimator, so placing what
+     * comes back is completing the round trip they started, not overriding
+     * them. There is nothing of theirs to overwrite either - the method is
+     * add-only and never touches a row it did not create.
+     *
+     * Gated on all four of:
+     *   - this is the first hand-back (bd_priced_back_at still empty), which
+     *     is what keeps a later deletion deleted;
+     *   - the quote was actually sent to estimating from Sugar, so an ERP
+     *     quote that merely drifted into a priced stage on its own does not
+     *     rewrite a rep's grid;
+     *   - the stage transition really is pre-pricing -> priced;
+     *   - the quote is not one this package materialized, where
+     *     syncMaterializedQuoteLines already owns every row.
+     *
+     * The transition check is not belt-and-braces, it is what bounds this to
+     * one run: bd_priced_back_at is stamped by the block below under exactly
+     * that same condition, so gating on it guarantees the stamp lands in the
+     * same pass that backfills. Loosen it here without loosening it there and
+     * the stamp never lands, and this re-adds deleted breaks on every single
+     * sync - precisely the behaviour backfillMissingQuoteLines was kept
+     * manual to avoid.
+     *
+     * Never fatal: a grid that stays thin is worth strictly less than the
+     * stage, total and reason the caller exists to write, so a failure here
+     * must not be able to abort them.
+     *
+     * @return bool whether any line item was created (caller must re-read)
+     */
+    private function backfillOnFirstHandBack(SugarBean $bean, SugarBean $quote, string $stage): bool
+    {
+        if ($stage !== 'priced' || !empty($bean->bd_priced_back_at)) {
+            return false;
+        }
+        if (empty($bean->bd_sent_to_estimating_at)) {
+            return false;
+        }
+        if (!in_array((string) $quote->bd_erp_stage, self::PRE_PRICING_STAGES, true)) {
+            return false;
+        }
+        if ((string) ($bean->bd_materialized_quote_id ?? '') === (string) $quote->id) {
+            return false;
+        }
+
+        try {
+            $created = $this->backfillMissingQuoteLines($bean, $quote);
+        } catch (Throwable $e) {
+            $GLOBALS['log']->error(
+                'BdQuoteReflectionHook: first-hand-back backfill failed on Quote '
+                . $quote->id . ': ' . $e->getMessage()
+            );
+            return false;
+        }
+
+        if ($created > 0) {
+            $GLOBALS['log']->info(
+                'BdQuoteReflectionHook: first hand-back placed ' . $created
+                . ' estimator line(s) on Quote ' . $quote->id
+            );
+        }
+        return $created > 0;
     }
 
     /**
