@@ -9,7 +9,7 @@
  * Buttons only - this package deliberately ships no Accounts fields or
  * panels: ERP-Epicor's AccountsLayout owns that view's ERP panels in replace
  * mode, and writing panels from here would fight the package that declares
- * their fields (see post_install_replace.php's docblock). A button append is
+ * their fields (see post_install.php's docblock). A button append is
  * the one safe, idempotent touch.
  *
  * Same DeployedMetaDataImplementation get -> mutate -> set -> deploy
