@@ -114,10 +114,10 @@ if ($customReal) {
     }
 }
 
-// The post_execute variants are never shipped under their own names: each build
-// below writes the one it wants AS scripts/post_install.php, so only that name
-// exists in a zip and a copy entry for the other would point at a missing file.
-$variantScripts = array('post_install.php', 'post_install_replace.php');
+// post_install.php ships via the post_execute installdef above, not as a
+// plain copy entry - excluded here so it isn't ALSO copied to
+// custom/include/bd_scripts/post_install.php, which nothing would ever run.
+$postExecuteScript = 'post_install.php';
 
 // Add scripts/ files (kept on the instance for later re-runs)
 $scriptsReal = realpath('scripts');
@@ -130,7 +130,7 @@ if ($scriptsReal) {
         if (!$file->isFile()) {
             continue;
         }
-        if (in_array($file->getFilename(), $variantScripts, true)) {
+        if ($file->getFilename() === $postExecuteScript) {
             continue;
         }
         $real = $file->getRealPath();
@@ -231,76 +231,53 @@ foreach (glob('language/application/*.lang.php') as $f) {
 // Build the zip
 // ---------------------------------------------------------------------------
 
-// Two builds off one tree, differing only in which post_execute script ships as
-// scripts/post_install.php. The default (no suffix) is append-only and is the
-// safe one for an existing tenant; -replace-layouts makes the packaged Quotes
-// record view authoritative and is the one for a fresh demo instance.
-$builds = array(
-    array('suffix' => '',                 'source' => 'scripts/post_install.php'),
-    array('suffix' => '-replace-layouts', 'source' => 'scripts/post_install_replace.php'),
-);
-
 $manifestContent = sprintf(
     "<?php\n\$manifest = %s;\n\$installdefs = %s;\n",
     var_export($manifest, true),
     var_export($installdefs, true)
 );
 
-$written = array();
-foreach ($builds as $build) {
-    $zipPath = "{$dir}/{$packageID}-{$version}{$build['suffix']}.zip";
-    if (file_exists($zipPath)) {
-        die("Error: {$zipPath} already exists. Delete it or bump version.\n");
-    }
-    if (!file_exists($build['source'])) {
-        die("ERROR: missing {$build['source']}\n");
-    }
-
-    echo "Creating {$zipPath} ...\n";
-    $zip = new ZipArchive();
-    $zip->open($zipPath, ZipArchive::CREATE);
-
-    $addTree = function (string $rootName) use ($zip, $variantScripts) {
-        $rootReal = realpath($rootName);
-        if (!$rootReal) {
-            return;
-        }
-        $it = new RecursiveIteratorIterator(
-            new RecursiveDirectoryIterator($rootReal, RecursiveDirectoryIterator::SKIP_DOTS),
-            RecursiveIteratorIterator::LEAVES_ONLY
-        );
-        foreach ($it as $file) {
-            if (!$file->isFile()) {
-                continue;
-            }
-            if (in_array($file->getFilename(), $variantScripts, true)) {
-                continue;
-            }
-            $real = $file->getRealPath();
-            $relInZip = $rootName . str_replace($rootReal, '', $real);
-            $relInZip = str_replace(DIRECTORY_SEPARATOR, '/', $relInZip);
-            $zip->addFile($real, $relInZip);
-            echo " [*] {$relInZip}\n";
-        }
-    };
-
-    // modules/ + custom/ + relationships/ + language/ + scripts/ all ship at the
-    // zip root: copy entries and the relationship/vardef/layoutdef/language/
-    // post_execute installdef paths all resolve against <basepath>.
-    $addTree('modules');
-    $addTree('custom');
-    $addTree('relationships');
-    $addTree('language');
-    $addTree('scripts');
-
-    $zip->addFile($build['source'], 'scripts/post_install.php');
-    echo " [*] scripts/post_install.php (from {$build['source']})\n";
-
-    $zip->addFromString('manifest.php', $manifestContent);
-    $zip->close();
-
-    $written[] = $zipPath;
+$zipPath = "{$dir}/{$packageID}-{$version}.zip";
+if (file_exists($zipPath)) {
+    die("Error: {$zipPath} already exists. Delete it or bump version.\n");
 }
 
-echo "Done. Wrote " . implode(', ', $written) . "\n";
+echo "Creating {$zipPath} ...\n";
+$zip = new ZipArchive();
+$zip->open($zipPath, ZipArchive::CREATE);
+
+$addTree = function (string $rootName) use ($zip) {
+    $rootReal = realpath($rootName);
+    if (!$rootReal) {
+        return;
+    }
+    $it = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($rootReal, RecursiveDirectoryIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::LEAVES_ONLY
+    );
+    foreach ($it as $file) {
+        if (!$file->isFile()) {
+            continue;
+        }
+        $real = $file->getRealPath();
+        $relInZip = $rootName . str_replace($rootReal, '', $real);
+        $relInZip = str_replace(DIRECTORY_SEPARATOR, '/', $relInZip);
+        $zip->addFile($real, $relInZip);
+        echo " [*] {$relInZip}\n";
+    }
+};
+
+// modules/ + custom/ + relationships/ + language/ + scripts/ all ship at the
+// zip root: copy entries and the relationship/vardef/layoutdef/language/
+// post_execute installdef paths all resolve against <basepath>.
+$addTree('modules');
+$addTree('custom');
+$addTree('relationships');
+$addTree('language');
+$addTree('scripts');
+
+$zip->addFromString('manifest.php', $manifestContent);
+$zip->close();
+
+echo "Done. Wrote {$zipPath}\n";
 exit(0);

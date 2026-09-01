@@ -1,16 +1,19 @@
 <?php
 
 /**
- * Replace build (fresh installs / demo instances).
+ * Single build, used for both fresh installs and upgrades of an existing
+ * tenant. Previously split into two builds/zips (post_install.php +
+ * post_install_replace.php) differing only in this file's write(true) vs.
+ * write(false) call - and a real bug: BOTH files passed true, so the build
+ * documented as "the safe one for an existing tenant" was actually
+ * rewriting the Bench Dogs Quotes panel unconditionally on every install,
+ * discarding any Studio customization a tenant had made since. There was
+ * never a legitimate case for true in the first place: on a genuinely
+ * fresh install the panel does not exist yet, so write()'s default
+ * (append-if-missing, skip-if-present) already adds it - see
+ * BdQuotesLayoutExtensions::write()'s own docblock.
  *
- * Identical to post_install.php except for one line: the Quotes record view
- * panel is rewritten from the packaged definition even when it is already
- * deployed. That is the seam the layout plan asks for - baking makes the package
- * authoritative for a view, which on an existing tenant that has customised it
- * would discard their work, so the authoritative rewrite belongs in this build
- * and NOT in the append-only one.
- *
- * The Accounts record view is deliberately not touched by either build. Its ERP
+ * The Accounts record view is deliberately not touched here. Its ERP
  * panels (LBL_RECORDVIEW_PANEL_ERP, _BILLING_DETAIL, _CREDIT_DETAIL,
  * _SYNC_STATUS) are built by ERP-Epicor's AccountsLayout, which already runs in
  * replace mode and owns every field in them; this package ships no Accounts
@@ -25,7 +28,7 @@ if (function_exists('post_execute') === false) {
             if (file_exists($layoutHelper)) {
                 require_once $layoutHelper;
                 if (class_exists('BdQuotesLayoutExtensions')) {
-                    BdQuotesLayoutExtensions::write(true);
+                    BdQuotesLayoutExtensions::write();
                 }
             } else {
                 $GLOBALS['log']->error("BenchDogs-Ext: {$layoutHelper} missing, skipping layout extensions");
@@ -38,7 +41,7 @@ if (function_exists('post_execute') === false) {
         // Bench Dogs action buttons (Quotes: Send to Estimating / Order
         // Winning Line; Accounts: Create Opportunity & Quote) - same
         // DeployedMetaDataImplementation mechanism as the panel above,
-        // idempotent by button name, so safe in both builds.
+        // idempotent by button name, so safe to re-run on every install.
         try {
             if (class_exists('BdQuotesLayoutExtensions')) {
                 BdQuotesLayoutExtensions::writeButtons();
@@ -93,7 +96,7 @@ if (function_exists('post_execute') === false) {
         // Stage dropdown keys (quote_stage_dom 'Partially Fulfilled',
         // sales_stage_dom 'Prototype Closed'/'Partial Production Closed') via
         // ModuleInstaller::install_languages() - the scanner-safe route
-        // ERP-Core's BaseErpDropdown documents. Append-only either build.
+        // ERP-Core's BaseErpDropdown documents. Append-only, idempotent.
         try {
             $tpl = 'custom/dropdowntemplates/bd_stage_doms.append.php';
             if (file_exists($tpl)) {
@@ -119,9 +122,13 @@ if (function_exists('post_execute') === false) {
             $GLOBALS['log']->error('BenchDogs-Ext: stage dropdowns failed: ' . $e->getMessage());
         }
 
-        // Pin the Accounts focus drawer and the Home dashboard - see the note in
-        // post_install.php for why this runs in both builds and why it loads via
-        // __DIR__.
+        // Pin the Accounts focus drawer and the Home dashboard. Loaded via
+        // __DIR__ rather than a fixed custom/include/bd_scripts/ path: at
+        // this point in post_execute, the separate copy installdef entries
+        // (which land the permanent copy there for later manual re-runs)
+        // are not guaranteed to have run yet, but addTree('scripts') always
+        // extracts this file into the same temp directory as post_install.php
+        // itself, so __DIR__ is the one location guaranteed present already.
         try {
             require_once __DIR__ . '/BdDemoDashboards.php';
             (new BdDemoDashboards())->install();
