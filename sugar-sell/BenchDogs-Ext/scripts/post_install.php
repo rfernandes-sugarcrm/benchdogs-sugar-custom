@@ -61,18 +61,12 @@ if (function_exists('post_execute') === false) {
         } catch (Throwable $e) {
             $GLOBALS['log']->error('BenchDogs-Ext: QLI columns failed: ' . $e->getMessage());
         }
-        // 0.9.39: ordering selected lines is ERP-Epicor's own (>= 1.0.84).
-        // Every Bench Dogs quote is an advanced_quote (mirrored from Kinetic),
-        // which core's route refuses by default - this deployment opts in.
-        // The button-side half (allow_advanced_quotes on the core button) is
-        // written by BdQuotesLayoutExtensions::writeButtons above.
-        try {
-            $admin = BeanFactory::getBean('Administration');
-            $admin->saveSetting('erp_integration', 'advanced_quotes_orderable', '1', 'base');
-            $GLOBALS['log']->info('BenchDogs-Ext: erp_integration.advanced_quotes_orderable = 1');
-        } catch (Throwable $e) {
-            $GLOBALS['log']->error('BenchDogs-Ext: advanced-quote opt-in failed: ' . $e->getMessage());
-        }
+        // Ordering selected lines is ERP-Epicor-PartialFulfillment's own
+        // route, and every Bench Dogs quote is an advanced_quote (mirrored
+        // from Kinetic) - it just works once that package is installed,
+        // for any quote type, with nothing for this package to opt into.
+        // erp_integration.advanced_quotes_orderable used to be a real gate
+        // this had to flip; that gate no longer exists at all.
         // Files this package used to ship and no longer does stay on disk
         // after an upgrade install (Sugar Cloud's package scanner denylists
         // every file-removal call, the SugarAutoLoader wrapper included -
