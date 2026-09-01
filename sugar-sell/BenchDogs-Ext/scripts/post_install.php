@@ -61,11 +61,13 @@ if (function_exists('post_execute') === false) {
         } catch (Throwable $e) {
             $GLOBALS['log']->error('BenchDogs-Ext: QLI columns failed: ' . $e->getMessage());
         }
-        // 0.9.39: ordering selected lines is ERP-Epicor's own (>= 1.0.84).
-        // Every Bench Dogs quote is an advanced_quote (mirrored from Kinetic),
-        // which core's route refuses by default - this deployment opts in.
-        // The button-side half (allow_advanced_quotes on the core button) is
-        // written by BdQuotesLayoutExtensions::writeButtons above.
+        // Ordering selected lines is ERP-Epicor-PartialFulfillment's own
+        // route. Every Bench Dogs quote is an advanced_quote (mirrored
+        // from Kinetic), which that route refuses server-side by default -
+        // this deployment opts in. Button-side visibility needs nothing
+        // from this package anymore: the button shows for every quote
+        // type once its own package is installed, with no per-deployment
+        // flag to set on it.
         try {
             $admin = BeanFactory::getBean('Administration');
             $admin->saveSetting('erp_integration', 'advanced_quotes_orderable', '1', 'base');
