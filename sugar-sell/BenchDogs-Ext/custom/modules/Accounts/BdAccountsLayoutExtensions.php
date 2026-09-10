@@ -3,14 +3,13 @@
 // phpcs:disable PSR1.Classes.ClassDeclaration.MissingNamespace
 
 /**
- * Appends the Bench Dogs "Create Opportunity & Quote" button to the Accounts
- * record view at install time (REQ-20 / build commitments #1-#2).
+ * Appends the Bench Dogs "Create Opportunity & Quote" button, and the REQ-19
+ * customer group fields, to the Accounts record view at install time.
  *
- * Buttons only - this package deliberately ships no Accounts fields or
- * panels: ERP-Epicor's AccountsLayout owns that view's ERP panels in replace
- * mode, and writing panels from here would fight the package that declares
- * their fields (see post_install.php's docblock). A button append is
- * the one safe, idempotent touch.
+ * Both are append-only: ERP-Epicor's AccountsLayout owns that view's ERP
+ * panels in replace mode, so this class never reorders, removes or rewrites
+ * a panel - it only appends to the buttons array or to the end of a panel's
+ * field list if not already present (see post_install.php's docblock).
  *
  * Same DeployedMetaDataImplementation get -> mutate -> set -> deploy
  * mechanism as BdQuotesLayoutExtensions, and self-contained for the same
