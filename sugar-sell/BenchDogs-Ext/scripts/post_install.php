@@ -13,12 +13,12 @@
  * (append-if-missing, skip-if-present) already adds it - see
  * BdQuotesLayoutExtensions::write()'s own docblock.
  *
- * The Accounts record view is deliberately not touched here. Its ERP
- * panels (LBL_RECORDVIEW_PANEL_ERP, _BILLING_DETAIL, _CREDIT_DETAIL,
- * _SYNC_STATUS) are built by ERP-Epicor's AccountsLayout, which already runs in
- * replace mode and owns every field in them; this package ships no Accounts
- * fields at all, so writing that layout from here would place fields it does not
- * declare and fight the package that does.
+ * The Accounts ERP panels themselves (LBL_RECORDVIEW_PANEL_ERP,
+ * _BILLING_DETAIL, _CREDIT_DETAIL, _SYNC_STATUS) are built by ERP-Epicor's
+ * AccountsLayout, which already runs in replace mode and owns every field in
+ * them - this package never writes those panels or their fields. It only
+ * appends its own button and the REQ-19 customer group fields (see
+ * BdAccountsLayoutExtensions), which never touch those panels.
  */
 if (function_exists('post_execute') === false) {
     function post_execute()
@@ -85,6 +85,22 @@ if (function_exists('post_execute') === false) {
             }
         } catch (Throwable $e) {
             $GLOBALS['log']->error('BenchDogs-Ext: Accounts button failed: ' . $e->getMessage());
+        }
+
+        // REQ-19 customer group fields - declared in vardefs since the
+        // package's first release but never placed on the record view from
+        // here; only bdRepairUi() called this method, so a fresh install
+        // never got them without an admin manually hitting that route.
+        try {
+            $accountsHelper = 'custom/modules/Accounts/BdAccountsLayoutExtensions.php';
+            if (file_exists($accountsHelper)) {
+                require_once $accountsHelper;
+                if (class_exists('BdAccountsLayoutExtensions')) {
+                    BdAccountsLayoutExtensions::writeCustomerGroupField();
+                }
+            }
+        } catch (Throwable $e) {
+            $GLOBALS['log']->error('BenchDogs-Ext: Accounts customer group field failed: ' . $e->getMessage());
         }
 
         // Stage dropdown keys (quote_stage_dom 'Partially Fulfilled',
