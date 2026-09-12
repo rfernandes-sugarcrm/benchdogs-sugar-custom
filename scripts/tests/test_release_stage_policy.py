@@ -191,7 +191,7 @@ $quote->products = new TestLink([$make('qli', 1, false, true)]);
             self.assertEqual(zipped.read(path), (package / path).read_bytes())
             manifest = zipped.read("manifest.php").decode()
             self.assertIn("sugarai_erp_epicor_partialfulfillment", manifest)
-            self.assertRegex(manifest, r"'version'\s*=>\s*'1\.0\.11'")
+            self.assertRegex(manifest, r"'version'\s*=>\s*'1\.0\.13'")
 
 
 if __name__ == "__main__":

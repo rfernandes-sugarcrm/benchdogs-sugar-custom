@@ -37,3 +37,12 @@ retrieval rather than trusting any level of an already-loaded relationship
 snapshot. A clean REST read after the request is only persistence evidence; it
 cannot clear an in-request observation defect. Test stale snapshots at each
 role-bearing level as well as prototype-only, production and mixed releases.
+
+**Diagnostic compatibility.** A provider and a shared writer can be correct
+while an older dispatcher hides the reason they preserved the stage. Ship the
+writer's bounded outcome vocabulary with the matching dispatcher allowlist,
+declare that minimum dependency, and verify those versions inside the built
+manifest. Keep missing configuration distinct from an explicitly configured
+unknown stage without returning either value. Bench rc9 changes dependency
+declarations for this diagnostic contract, not its customer decision policy;
+see the [candidate evidence](../../../sugar-sell/BenchDogs-Ext/docs/release-0.9.42-rc9.md).

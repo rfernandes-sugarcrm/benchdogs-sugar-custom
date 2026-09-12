@@ -47,11 +47,11 @@ $manifest = array(
     'dependencies'              => array(
         array(
             'id_name' => 'sugarai_erp_epicor',
-            'version' => '1.1.24-rc4',
+            'version' => '1.1.24-rc5',
         ),
         array(
             'id_name' => 'sugarai_erp_epicor_partialfulfillment',
-            'version' => '1.0.12',
+            'version' => '1.0.13',
         ),
     ),
 );
