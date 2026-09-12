@@ -348,11 +348,12 @@ class BdQuoteReflectionHook
             $this->syncMaterializedQuoteLines($bean, $sugarQuoteId);
             $quote = BeanFactory::retrieveBean('Quotes', $sugarQuoteId, ['use_cache' => false]);
             if ($quote && !empty($quote->id)) {
-                $this->maybeUpdateOpportunity($bean, $quote);
                 // ERP-Core owns the one Opportunity amount writer. Invoke its
-                // public hook after a governing/ERP refresh as well as on a
-                // native Quote save, so later triggers converge on the same
-                // Bench contribution policy instead of restoring all options.
+                // public hook before Bench consumes the resulting headline
+                // for its system-managed forecast cases. That preserves the
+                // shared writer's currency conversion and makes one trigger
+                // converge in one pass instead of leaving Best/Worst one
+                // governing selection behind.
                 $file = 'custom/modules/Quotes/QuoteOpportunityAmount.php';
                 if (!class_exists('QuoteOpportunityAmount', false) && file_exists($file)) {
                     require_once \Sugarcrm\Sugarcrm\Util\Files\FileLoader::validateFilePath($file);
@@ -360,6 +361,7 @@ class BdQuoteReflectionHook
                 if (class_exists('QuoteOpportunityAmount', false)) {
                     (new QuoteOpportunityAmount())->refresh($quote);
                 }
+                $this->maybeUpdateOpportunity($bean, $quote);
             }
         } catch (Throwable $e) {
             $GLOBALS['log']->error(
@@ -1499,8 +1501,10 @@ class BdQuoteReflectionHook
      * Maintain Bench stage and forecast fields from deliverables, no RLIs.
      *
      * Headline amount belongs to the shared primary-Quote hook, never this
-     * method. The existing deliverable policy remains solely the input to
-     * Bench's own forecast/stage behavior; this does not choose REQ-5 policy.
+     * method. System-managed Best/Worst consume that already-converted
+     * headline, so selected production + prototype + native tax/shipping has
+     * one currency semantic and one arithmetic owner. Deliverables remain the
+     * input to stage only.
      *
      * Stage is derived here rather than left alone because in this mode
      * nothing else derives it: with RLIs gone Sugar stops rolling a stage up,
@@ -1547,41 +1551,74 @@ class BdQuoteReflectionHook
         $current = (string) ($opportunity->sales_stage ?? '');
         $dirty = false;
 
-        // Keep the existing conservative forecast guard: never replace a
-        // nonzero best/worst value that differs from the current headline.
-        // Amount itself is read-only here, owned by the shared Quote hook.
-        $priorAmount = (float) $opportunity->amount;
+        // Amount itself is read-only here and already in Opportunity currency,
+        // owned by the shared Quote hook. Best/Worst carry that same value
+        // while system-managed: the accepted policy supplies no evidence for
+        // a spread. Provenance is explicit because comparing a forecast to
+        // the CURRENT headline loses ownership when the shared writer changes
+        // amount first. That exact sequence left QA Best/Worst at the old
+        // all-options subtotal after governing selection changed.
+        $forecast = (float) ($opportunity->amount ?? 0);
+        $managedValue = isset($opportunity->bd_forecast_managed_value)
+            && is_numeric($opportunity->bd_forecast_managed_value)
+            ? (float) $opportunity->bd_forecast_managed_value
+            : null;
+        $managedAny = false;
 
-        // best_case / worst_case were rollups of the same line items. Freed of
-        // their formulas (see the Opportunities vardef extension) they would
-        // otherwise sit at 0.00 on every forecast view, so they carry the same
-        // number: this deal has one value, not a spread we have any evidence
-        // for.
-        //
-        // Written while the field is still zero OR still equals the amount we
-        // are about to replace - i.e. while it still holds OUR number. The
-        // earlier rule was "only while zero", which froze both fields at the
-        // FIRST value they ever took: on Northgate they read 450.00 - the
-        // prototype alone, the only deliverable that existed at the first
-        // reflection - against an amount of 24,850.00 once the ladder landed,
-        // so every forecast view understated the deal by 24,400 while the
-        // Likely column beside it was right. The moment a forecaster puts a
-        // real number in there it stops matching the amount we wrote and is
-        // theirs for good; no later reflection overwrites it. The ERP knows
-        // what the job is worth; it does not know how confident sales feel
-        // about it.
-        foreach (['best_case', 'worst_case'] as $bdCase) {
+        foreach (['best_case' => 'bd_best_case_origin', 'worst_case' => 'bd_worst_case_origin'] as $bdCase => $originField) {
             if (!isset($opportunity->field_defs[$bdCase])) {
                 continue;
             }
             $held = (float) $opportunity->$bdCase;
-            if (abs($held - $sum) <= 0.005) {
-                continue;   // already says what we would say
+            $origin = (string) ($opportunity->$originField ?? '');
+
+            if (!in_array($origin, ['', 'system', 'human'], true)) {
+                // Corrupt/foreign provenance is never authorization to
+                // overwrite a native forecast. Fail conservative and make
+                // the ownership state explicit for subsequent passes.
+                $opportunity->$originField = 'human';
+                $dirty = true;
+                continue;
             }
-            if ($held !== 0.0 && abs($held - $priorAmount) > 0.005) {
-                continue;   // a human's forecast, not our stale copy
+            if ($origin === 'human') {
+                continue;
             }
-            $opportunity->$bdCase = $sum;
+            if ($origin === 'system' && ($managedValue === null || abs($held - $managedValue) > 0.005)) {
+                // The visible field diverged from the exact value we last
+                // wrote. Record that independent human takeover permanently;
+                // never reclaim it merely because values happen to coincide.
+                $opportunity->$originField = 'human';
+                $dirty = true;
+                continue;
+            }
+
+            if ($origin === '') {
+                // One-time upgrade adoption. Previous package versions wrote
+                // zero, the then-current headline, or the legacy deliverable
+                // sum. Anything else is conservatively classified as human.
+                $legacyManaged = abs($held) <= 0.005
+                    || abs($held - $forecast) <= 0.005
+                    || abs($held - $sum) <= 0.005;
+                if (!$legacyManaged) {
+                    $opportunity->$originField = 'human';
+                    $dirty = true;
+                    continue;
+                }
+                $opportunity->$originField = 'system';
+                $dirty = true;
+            }
+
+            if (abs($held - $forecast) > 0.005) {
+                $opportunity->$bdCase = $forecast;
+                $dirty = true;
+            }
+            $managedAny = true;
+        }
+
+        if ($managedAny
+            && ($managedValue === null || abs($managedValue - $forecast) > 0.005)
+        ) {
+            $opportunity->bd_forecast_managed_value = $forecast;
             $dirty = true;
         }
 
@@ -1609,8 +1646,9 @@ class BdQuoteReflectionHook
 
         $GLOBALS['log']->info(
             'BdQuoteReflectionHook: opportunity ' . $opportunity->id
-            . ' stage/forecast refreshed from ' . count($deliverables) . ' deliverable(s) of '
-            . 'ERP quote ' . $bean->quote_num . ' = ' . number_format($sum, 2)
+            . ' stage refreshed from ' . count($deliverables) . ' deliverable(s); system-managed '
+            . 'forecast = Opportunity amount ' . number_format($forecast, 2) . ' for ERP quote '
+            . $bean->quote_num
             . ' stage ' . (string) $opportunity->sales_stage
             . ' (Opportunities-only mode, no revenue line items)'
         );

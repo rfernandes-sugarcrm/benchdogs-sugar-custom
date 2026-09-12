@@ -11,7 +11,7 @@ overrides a stock Sugar file.
 
 | Module | Hook class | Fires on | Does |
 |---|---|---|---|
-| `bd01_ERP_Quote` | `BdQuoteReflectionHook` | after_save | Reflects ERP fields onto the linked Quote and maintains Bench stage/forecast behavior; shared ERP-Core owns Opportunity headline amount in Opportunities-only mode |
+| `bd01_ERP_Quote` | `BdQuoteReflectionHook` | after_save | Reflects ERP fields onto the linked Quote and maintains Bench stage/forecast behavior; shared ERP-Core owns Opportunity headline amount and its currency conversion in Opportunities-only mode |
 | `bd01_ERP_Quote_Line` | `BdGoverningLineHook` | after_save | Demotes governing siblings and requests a reflection refresh; installed single-session governing-amount behavior passes, while concurrent uniqueness remains unverified |
 | `Quotes` | `BdEstimatingNotificationHook` | after_save | Creates a Notifications record when `bd_erp_stage` enters `in_estimating` |
 
@@ -31,7 +31,13 @@ Opportunity Revenue Line Items. The current headline-owner repair leaves
 Opportunity amount with shared ERP-Core's primary-Quote hook, using the stored
 native Quote total. Bench reflection must not overwrite that amount with a
 different subtotal, or access/create/delete Opportunity RLIs in this mode.
-Its existing stage and forecast logic remains separate.
+Stage derivation remains Bench-specific. System-managed Opportunity Best and
+Worst consume the shared writer's already converted headline amount, so they
+follow the same selected production + prototype + tax + shipping policy.
+Hidden provenance fields track each case independently: changing Best marks
+only Best human-owned, for example, while Worst continues to converge. An
+upgrade adopts only zero, current-headline or legacy-deliverable values;
+anything else is conservatively classified as a human value.
 
 The owner-confirmed contribution is the selected governing production line
 plus prototype value, tax and shipping. Other production quantity options stay
@@ -43,6 +49,10 @@ refuse instead of guessing or reverting to the summed display total.
 The exact governing field on the Kinetic Quote header is still unknown, so the
 candidate uses the explicit Sugar line flag. Automated ERP-driven selection,
 clearing, concurrency and revision lineage remain release acceptance gaps.
+
+The shared amount writer must run before the Bench forecast refresh on a
+governing-line trigger. Reversing that order leaves Best/Worst one selection
+behind and also tempts Bench code to duplicate shared currency semantics.
 
 ### Headline-owner regression evidence
 

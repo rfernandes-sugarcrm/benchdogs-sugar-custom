@@ -1,4 +1,45 @@
-# 0.9.42-rc2 — governing contribution candidate
+# 0.9.42-rc3 — governing forecast alignment candidate
+
+Not installed on QA and not approved for production.
+
+System-managed Opportunity Best and Worst now equal the shared writer's
+Opportunity-currency amount: selected governing production + prototype +
+native Quote tax + shipping. Unselected production alternatives remain
+visible but contribute zero. The Bench hook invokes the shared writer first
+on governing/ERP refresh, then consumes the resulting headline; it does not
+duplicate contribution arithmetic or currency conversion.
+
+Three hidden Opportunity fields retain explicit ownership provenance. Best
+and Worst can be taken over independently by a person; once a field diverges
+from the exact last system value it is marked human-owned and is never
+reclaimed by value coincidence. On upgrade, only zero, current-headline or
+legacy-deliverable values are adopted as system-owned. This migrates the QA
+all-options values while conservatively preserving genuinely different human
+forecasts.
+
+The ERP Quote Line primary record panel now renders the editable Governing
+Line boolean. rc2 exposed the field through the model/filter and used it in
+the calculation, but omitted it from the actual detail layout, so a seller
+could not inspect or change the choice in the supported UI.
+
+Offline evidence: 79 repository tests pass with two declared skips (native
+SugarLogic and sibling shared package unavailable in the isolated checkout).
+The focused hook tests cover one-pass repricing, shared currency conversion,
+legacy adoption and independent human takeover. PHP syntax and the source
+preflight pass. The rc3 ZIP is structurally valid and has no blocker/required
+findings; it retains the known `files.md5` advisory. SHA-256:
+`1b9d90b0c9b853abfcc792ce26e005c266def5a602c5a60960731038ceab9f41`.
+The repository-wide artifact-version checker also reports retained rc1/rc2
+ZIPs as historical mismatches; the targeted rc3 artifact check passes.
+
+QA still must prove the installed migration, selected-option switch,
+independent human override, visible governing control, native currency/tax
+behavior and cleanup. Roll back to the installed 0.9.42-rc2 package; do not
+uninstall modules or remove tables.
+
+## Previous candidate
+
+### 0.9.42-rc2 — governing contribution candidate
 
 Installed on Bench Dogs QA as package
 `9dcac8be-aee1-11f1-abd9-060ab0eed8b1`; not approved for production. The QA
@@ -41,10 +82,10 @@ This proves the installed downstream provider, uniqueness hook, shared-writer
 convergence and arithmetic. It does not prove automatic selection from the
 unknown Kinetic header field. The run also found that Bench `best_case` and
 `worst_case` became the all-options subtotal ($16,250) while headline amount
-was $7,100.63; that forecast-experience inconsistency remains open rather than
-being silently treated as part of this pass.
+was $7,100.63. That measured inconsistency motivated rc3; it remains open in
+the installed QA environment until rc3 passes its deployment gates.
 
-## Previous candidate
+## Earlier candidate
 
 ### 0.9.42-rc1 — local validation candidate
 

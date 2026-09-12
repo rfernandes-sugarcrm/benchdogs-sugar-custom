@@ -153,6 +153,9 @@ echo json_encode([
     'stage' => $opp->sales_stage,
     'best_case' => $opp->best_case ?? null,
     'worst_case' => $opp->worst_case ?? null,
+    'managed_value' => $opp->bd_forecast_managed_value ?? null,
+    'best_origin' => $opp->bd_best_case_origin ?? null,
+    'worst_origin' => $opp->bd_worst_case_origin ?? null,
     'relationship_reads' => $GLOBALS['relationship_reads'],
     'errors' => $GLOBALS['log']->errors,
 ]);
@@ -241,7 +244,7 @@ $bench->refreshOpportunityAmount($erp);
 ''')
         self.assertEqual(observed["amount"], 560, observed)
 
-    def test_bench_stage_and_conservative_forecast_behavior_remain(self):
+    def test_bench_stage_and_independent_human_forecast_override_remain(self):
         observed = self.execute(r'''
 $opp->sales_stage = 'Prospecting';
 $opp->field_defs = ['best_case' => [], 'worst_case' => []];
@@ -252,8 +255,88 @@ $bench->refreshOpportunityAmount($erp);
 ''')
         self.assertEqual(observed["amount"], 280, observed)
         self.assertEqual(observed["stage"], "Proposal/Price Quote", observed)
-        self.assertEqual(observed["best_case"], 250, observed)
+        self.assertEqual(observed["best_case"], 280, observed)
         self.assertEqual(observed["worst_case"], 75, observed)
+        self.assertEqual(observed["managed_value"], 280, observed)
+        self.assertEqual(observed["best_origin"], "system", observed)
+        self.assertEqual(observed["worst_origin"], "human", observed)
+
+    def test_system_forecasts_follow_repriced_shared_headline_in_one_pass(self):
+        observed = self.execute(r'''
+$opp->field_defs = ['best_case' => [], 'worst_case' => []];
+$opp->best_case = 0;
+$opp->worst_case = 0;
+$shared->refresh($quote);
+$bench->refreshOpportunityAmount($erp);
+$quote->total = 530;
+$bench->refreshOpportunityAmount($erp);
+''')
+        self.assertEqual(observed["amount"], 530, observed)
+        self.assertEqual(observed["best_case"], 530, observed)
+        self.assertEqual(observed["worst_case"], 530, observed)
+        self.assertEqual(observed["managed_value"], 530, observed)
+        self.assertEqual(observed["best_origin"], "system", observed)
+        self.assertEqual(observed["worst_origin"], "system", observed)
+
+    def test_system_forecasts_reuse_shared_currency_conversion(self):
+        observed = self.execute(r'''
+$opp->field_defs = ['best_case' => [], 'worst_case' => []];
+$opp->best_case = 0;
+$opp->worst_case = 0;
+$quote->currency_id = 'owned-other-currency';
+$bench->refreshOpportunityAmount($erp);
+''')
+        self.assertEqual(observed["amount"], 560, observed)
+        self.assertEqual(observed["best_case"], 560, observed)
+        self.assertEqual(observed["worst_case"], 560, observed)
+        self.assertEqual(observed["managed_value"], 560, observed)
+
+    def test_human_takeover_of_one_case_does_not_freeze_the_other(self):
+        observed = self.execute(r'''
+$opp->field_defs = ['best_case' => [], 'worst_case' => []];
+$opp->best_case = 0;
+$opp->worst_case = 0;
+$shared->refresh($quote);
+$bench->refreshOpportunityAmount($erp);
+// A person changes only Best after the system recorded exact provenance.
+$opp->best_case = 999;
+$quote->total = 530;
+$bench->refreshOpportunityAmount($erp);
+''')
+        self.assertEqual(observed["amount"], 530, observed)
+        self.assertEqual(observed["best_case"], 999, observed)
+        self.assertEqual(observed["worst_case"], 530, observed)
+        self.assertEqual(observed["managed_value"], 530, observed)
+        self.assertEqual(observed["best_origin"], "human", observed)
+        self.assertEqual(observed["worst_origin"], "system", observed)
+
+    def test_unknown_provenance_never_authorizes_forecast_overwrite(self):
+        observed = self.execute(r'''
+$opp->field_defs = ['best_case' => [], 'worst_case' => []];
+$opp->best_case = 999;
+$opp->worst_case = 0;
+$opp->bd_best_case_origin = 'foreign';
+$bench->refreshOpportunityAmount($erp);
+''')
+        self.assertEqual(observed["amount"], 280, observed)
+        self.assertEqual(observed["best_case"], 999, observed)
+        self.assertEqual(observed["worst_case"], 280, observed)
+        self.assertEqual(observed["best_origin"], "human", observed)
+        self.assertEqual(observed["worst_origin"], "system", observed)
+
+    def test_upgrade_adopts_legacy_all_options_value_then_converges(self):
+        observed = self.execute(r'''
+$opp->field_defs = ['best_case' => [], 'worst_case' => []];
+$opp->amount = 7100.63;
+$opp->best_case = 250;
+$opp->worst_case = 250;
+$bench->refreshOpportunityAmount($erp);
+''')
+        self.assertEqual(observed["amount"], 280, observed)
+        self.assertEqual(observed["best_case"], 280, observed)
+        self.assertEqual(observed["worst_case"], 280, observed)
+        self.assertEqual(observed["best_origin"], "system", observed)
+        self.assertEqual(observed["worst_origin"], "system", observed)
 
     def test_materialization_public_trigger_refreshes_shared_headline(self):
         observed = self.execute(MATERIALIZED + r'''
