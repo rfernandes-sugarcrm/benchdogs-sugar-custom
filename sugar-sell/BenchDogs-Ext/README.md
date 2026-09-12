@@ -11,8 +11,8 @@ overrides a stock Sugar file.
 
 | Module | Hook class | Fires on | Does |
 |---|---|---|---|
-| `bd01_ERP_Quote` | `BdQuoteReflectionHook` | after_save | Reflects ERP stage/total onto the linked Quote (`bd_erp_total`, `bd_erp_stage`, `bd_priced_at`, `bd_reason_code`) and rolls the amount up to the primary Opportunity |
-| `bd01_ERP_Quote_Line` | `BdGoverningLineHook` | after_save | Keeps `governing` unique per parent ERP quote and refreshes the Opportunity rollup |
+| `bd01_ERP_Quote` | `BdQuoteReflectionHook` | after_save | Reflects ERP fields onto the linked Quote and maintains Bench stage/forecast behavior; shared ERP-Core owns Opportunity headline amount in Opportunities-only mode |
+| `bd01_ERP_Quote_Line` | `BdGoverningLineHook` | after_save | Demotes governing siblings and requests a reflection refresh; concurrent uniqueness and governing-amount acceptance remain unverified |
 | `Quotes` | `BdEstimatingNotificationHook` | after_save | Creates a Notifications record when `bd_erp_stage` enters `in_estimating` |
 
 ### Governing-line rollup (REQ-5 / REQ-6)
@@ -21,18 +21,33 @@ overrides a stock Sugar file.
 list view, and the lines subpanel under `bd01_ERP_Quote`. Marking a line
 governing:
 
-1. clears the flag on every sibling line of the same ERP quote
-   (`BdGoverningLineHook`, after_save — at most one governing line per
-   quote, always);
-2. refreshes the Opportunity amount through `BdQuoteReflectionHook`'s own
-   rollup path.
+1. clears the flag on sibling lines of the same ERP quote through sequential
+   saves (`BdGoverningLineHook`, after_save); this is not an atomic guarantee
+   against concurrent edits;
+2. requests `BdQuoteReflectionHook::refreshOpportunityAmount`.
 
-The rollup rule (`BdQuoteReflectionHook::rollupAmount`): when a governing
-line exists, the Opportunity amount is that line's `doc_ext_price`;
-otherwise it is the whole `quote_total` (the original behavior). Both are
-gated, as before, on the Quote being its Opportunity's primary quote
-(`erp_is_primary_quote`, owned by ERP-Core). Clearing a governing flag
-touches nothing — the fallback applies again on the next reflection save.
+Both QA profiles use **Opportunities-only**, with Quote line items and no
+Opportunity Revenue Line Items. The current headline-owner repair leaves
+Opportunity amount with shared ERP-Core's primary-Quote hook, using the stored
+native Quote total. Bench reflection must not overwrite that amount with a
+different subtotal, or access/create/delete Opportunity RLIs in this mode.
+Its existing stage and forecast logic remains separate.
+
+This does **not** establish REQ-5 governing-quantity acceptance: quantity
+alternatives need a verified contribution policy rather than summing every
+option into the native total. Clearing a governing flag currently performs no
+refresh. Selection, clearing, concurrency, ERP ownership and revision behavior
+remain release acceptance gaps; do not treat the presence of the editable
+flag as proof that the business workflow works.
+
+### Headline-owner regression evidence
+
+`scripts/tests/test_headline_valuation_owner.py` calls both repositories' real
+public PHP hooks with isolated beans. It verifies trigger-order convergence,
+repricing, currency conversion, primary/nonprimary guards and no RLI access.
+It deliberately does not emulate native SugarLogic: materialized Quote
+tax/shipping calculations still require installed-instance verification.
+Passing this fixture is not evidence that a new MLP has been installed.
 
 ### Estimating notification (REQ-13)
 
@@ -71,7 +86,7 @@ In Estimating`, action "Add Related Record → Notifications" (or an email).
 bash buildPackages.sh BenchDogs-Ext
 
 # or directly, from this directory (php 8.2 via docker if none local):
-docker run --rm -v "$(pwd)":/work -w /work php:8.2-cli php pack.php
+docker run --rm -v "$(pwd)":/work -w /work composer:2 php pack.php
 ```
 
 The installable zip lands in `releases/sugarai_benchdogs_ext-<version>.zip`.

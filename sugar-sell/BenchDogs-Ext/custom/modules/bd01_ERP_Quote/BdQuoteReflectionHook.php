@@ -410,34 +410,14 @@ class BdQuoteReflectionHook
         }
 
         if (!self::rliModeEnabled()) {
-            // Opportunities mode: bd_amount_direct.php has stripped the
-            // rollup formula from amount, so the deal value is written onto
-            // the opportunity itself and nothing needs a line item to carry
-            // it.
-            //
-            // 0.9.29 maintained the RLIs here anyway, as an audit trail -
-            // "an opportunity without revenue line items is invisible to the
-            // numbers leadership uses". That reasoning holds on an instance
-            // that REPORTS over RevenueLineItems. On this one the module is
-            // off the record entirely, so the rows are not a second view of
-            // the deal that anyone reads - they are an unread second set of
-            // books, and an unread book only ever drifts. The three
-            // contradictions 0.9.29's own comment records (Northgate End-Cap
-            // $24,850 against $16,450; Harbor Lane $23,750 against $4,850;
-            // quote 1199 $7,600 against $4,840) ARE that drift: maintaining
-            // both shapes at once was the mechanism producing them, not the
-            // guard against them. One shape, the one the instance can read.
-            //
-            // The purge is deliberately unconditional rather than limited to
-            // rows this pass would have written. Rows can predate this
-            // version - every build from 0.9.25 to 0.9.29 created them - and
-            // a guard alone would leave those sitting beside a freshly
-            // direct-written amount, reproducing the exact contradiction
-            // above at the moment the fix lands.
-            $this->purgeDeliverableRlis($opportunity);
-
-            // Re-read before valuing: the purge above can leave the
-            // in-memory bean behind the row it was loaded from.
+            // The shared Quote hook owns headline amount from the stored
+            // native grand total. Bench owns its stage/forecast policy only:
+            // a second amount writer here drops tax/shipping and makes the
+            // result depend on whether a Quote save or ERP reflection ran last.
+            // Opportunities-only means no RLI reads, writes or cleanup here.
+            // Historical repair is a separate explicitly approved operation.
+            // Re-read immediately before saving our fields: earlier line or
+            // Quote saves may have refreshed the shared headline already.
             $fresh = BeanFactory::retrieveBean(
                 'Opportunities',
                 $opportunity->id,
@@ -1505,13 +1485,11 @@ class BdQuoteReflectionHook
 
 
     /**
-     * Value the opportunity straight from the deliverables, no line items.
+     * Maintain Bench stage and forecast fields from deliverables, no RLIs.
      *
-     * The sum is the same number upsertDeliverableRlis() would have produced
-     * across its rows - prototype plus the ONE open production break plus
-     * every ordered release - because both read the same deliverables() map.
-     * That is the point: dropping RLIs must not change what a deal is worth,
-     * only how many records it takes to say so.
+     * Headline amount belongs to the shared primary-Quote hook, never this
+     * method. The existing deliverable policy remains solely the input to
+     * Bench's own forecast/stage behavior; this does not choose REQ-5 policy.
      *
      * Stage is derived here rather than left alone because in this mode
      * nothing else derives it: with RLIs gone Sugar stops rolling a stage up,
@@ -1558,14 +1536,10 @@ class BdQuoteReflectionHook
         $current = (string) ($opportunity->sales_stage ?? '');
         $dirty = false;
 
-        // Captured BEFORE the write below. best_case/worst_case use it to
-        // tell their own stale copy of our number from a forecaster's real one.
+        // Keep the existing conservative forecast guard: never replace a
+        // nonzero best/worst value that differs from the current headline.
+        // Amount itself is read-only here, owned by the shared Quote hook.
         $priorAmount = (float) $opportunity->amount;
-
-        if (abs($priorAmount - $sum) > 0.005) {
-            $opportunity->amount = $sum;
-            $dirty = true;
-        }
 
         // best_case / worst_case were rollups of the same line items. Freed of
         // their formulas (see the Opportunities vardef extension) they would
@@ -1624,7 +1598,7 @@ class BdQuoteReflectionHook
 
         $GLOBALS['log']->info(
             'BdQuoteReflectionHook: opportunity ' . $opportunity->id
-            . ' valued directly from ' . count($deliverables) . ' deliverable(s) of '
+            . ' stage/forecast refreshed from ' . count($deliverables) . ' deliverable(s) of '
             . 'ERP quote ' . $bean->quote_num . ' = ' . number_format($sum, 2)
             . ' stage ' . (string) $opportunity->sales_stage
             . ' (Opportunities-only mode, no revenue line items)'
