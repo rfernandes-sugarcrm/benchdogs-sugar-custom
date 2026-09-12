@@ -21,9 +21,24 @@ class SugarBean {
     public function load_relationship($name) { return isset($this->$name); }
     public function save() { $this->saves++; }
 }
+class BeanFactory {
+    public static $beans = [];
+    public static $retrievals = [];
+    public static function retrieveBean($module, $id, $options = []) {
+        self::$retrievals[] = [$module, $id, $options];
+        return self::$beans[$id] ?? null;
+    }
+}
 class TestLink {
-    public function __construct(public $beans = []) {}
+    public function __construct(public $beans = []) {
+        foreach ($beans as $bean) {
+            if (!empty($bean->id)) { BeanFactory::$beans[$bean->id] = $bean; }
+        }
+    }
     public function getBeans() { return $this->beans; }
+    public function get() {
+        return array_values(array_map(function ($bean) { return $bean->id; }, $this->beans));
+    }
 }
 require '__PROVIDER__';
 $make = function ($id, $lineNum, $prototype = false, $ordered = false) {
@@ -48,7 +63,7 @@ class ReleaseStagePolicyTest(unittest.TestCase):
 try { $decision = (new ErpOpportunityReleaseStagePolicy())->resolve($quote); }
 catch (UnexpectedValueException $e) { $error = $e->getMessage(); }
 echo json_encode(['decision' => $decision ?? null, 'error' => $error ?? null,
-    'quote_saves' => $quote->saves]);
+    'quote_saves' => $quote->saves, 'retrievals' => BeanFactory::$retrievals]);
 '''], cwd=ROOT, capture_output=True, text=True,
         )
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
@@ -64,6 +79,9 @@ $quote->products = new TestLink([$make('qli-proto', 1, false, true)]);
         self.assertEqual(observed["decision"], {
             "sales_stage": "Prototype Closed", "probability": 80,
         })
+        self.assertEqual(observed["retrievals"], [
+            ["Products", "qli-proto", {"use_cache": False}],
+        ])
         self.assertEqual(observed["quote_saves"], 0)
 
     def test_any_ordered_production_outranks_prototype(self):
@@ -80,14 +98,31 @@ $quote->products = new TestLink([
             "sales_stage": "Partial Production Closed", "probability": 90,
         })
 
-    def test_no_release_is_not_applicable(self):
+    def test_linked_bench_quote_with_no_visible_release_refuses_and_logs_upstream(self):
         observed = self.execute(r'''
 $erp->bd01_erp_quote_lines = new TestLink([$make('erp-production', 2)]);
 $quote->bd01_erp_quote_quotes = new TestLink([$erp]);
 $quote->products = new TestLink([$make('qli-production', 2)]);
 ''')
         self.assertIsNone(observed["decision"])
-        self.assertIsNone(observed["error"])
+        self.assertIn("No committed Quote line", observed["error"])
+
+    def test_preloaded_relationship_snapshot_cannot_hide_committed_release(self):
+        observed = self.execute(r'''
+$erp->bd01_erp_quote_lines = new TestLink([$make('erp-proto', 1, true)]);
+$quote->bd01_erp_quote_quotes = new TestLink([$erp]);
+$stale = $make('qli-proto', 1, false, false);
+$quote->products = new TestLink([$stale]);
+$fresh = clone $stale;
+$fresh->erp_ordered = true;
+BeanFactory::$beans[$fresh->id] = $fresh;
+''')
+        self.assertEqual(observed["decision"], {
+            "sales_stage": "Prototype Closed", "probability": 80,
+        })
+        self.assertEqual(observed["retrievals"], [
+            ["Products", "qli-proto", {"use_cache": False}],
+        ])
 
     def test_ambiguous_or_missing_identity_refuses(self):
         scenarios = [

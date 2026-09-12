@@ -63,9 +63,29 @@ class ErpOpportunityReleaseStagePolicy
             throw new UnexpectedValueException('Quote line items unavailable for release stage');
         }
 
+        // Order Selected Lines loads this relationship before it stamps the
+        // selected Product. SugarBean::retrieve() refreshes the Quote fields,
+        // but it does not discard an already-loaded Link2 bean snapshot. A
+        // getBeans() here therefore observed erp_ordered=false after the order
+        // had actually succeeded on QA. Resolve relationship IDs, then read
+        // each Product outside BeanFactory's cache so release policy observes
+        // the committed row rather than the action's pre-order snapshot.
+        $productIds = $quote->products->get();
+        if (!is_array($productIds)) {
+            throw new UnexpectedValueException('Quote line-item identities unavailable for release stage');
+        }
+
         $hasPrototype = false;
         $hasProduction = false;
-        foreach ($quote->products->getBeans() as $product) {
+        foreach ($productIds as $productId) {
+            $product = BeanFactory::retrieveBean(
+                'Products',
+                (string) $productId,
+                ['use_cache' => false]
+            );
+            if (!$product || empty($product->id)) {
+                throw new UnexpectedValueException('Quote line item unavailable for release stage');
+            }
             if (!empty($product->deleted) || empty($product->erp_ordered)) {
                 continue;
             }
@@ -95,6 +115,8 @@ class ErpOpportunityReleaseStagePolicy
             ];
         }
 
-        return null;
+        throw new UnexpectedValueException(
+            'No committed Quote line is visible for Bench release-stage policy'
+        );
     }
 }

@@ -64,8 +64,11 @@ class TestLink {
 class TestAdmin { public function getConfigForModule($category) { return []; } }
 class BeanFactory {
     public static $opp;
+    public static $products = [];
     public static function getBean($module) { return new TestAdmin(); }
-    public static function retrieveBean($module, $id, $options = []) { return self::$opp; }
+    public static function retrieveBean($module, $id, $options = []) {
+        return $module === 'Products' ? (self::$products[$id] ?? null) : self::$opp;
+    }
 }
 $GLOBALS['reads'] = [];
 $GLOBALS['log'] = new class {
@@ -100,8 +103,9 @@ $protoQli->id = 'proto-qli'; $protoQli->bd_erp_line_num = 1; $protoQli->erp_orde
 $productionQli = new SugarBean();
 $productionQli->id = 'production-qli'; $productionQli->bd_erp_line_num = 2;
 $productionQli->erp_ordered = false;
-$quote->products = new TestLink([$protoQli, $productionQli]);
+$quote->products = new TestLink([$protoQli, $productionQli], [$protoQli->id, $productionQli->id]);
 BeanFactory::$opp = $opp;
+BeanFactory::$products = [$protoQli->id => $protoQli, $productionQli->id => $productionQli];
 require 'custom/modules/Quotes/ErpOpportunityValuation.php';
 $writer = new ErpOpportunityValuation();
 $writer->afterLinesOrdered($quote, true);

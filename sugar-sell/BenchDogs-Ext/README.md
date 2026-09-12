@@ -70,6 +70,13 @@ marks ordered is sent through the same shared `AfterLinesOrdered` dispatcher.
 Bench's direct reflection retains only pre-order Proposal initialization and
 forecast maintenance; it no longer advances a post-order Opportunity stage.
 
+The action may have loaded `Quote.products` before stamping the release.
+Therefore the policy takes relationship IDs but re-retrieves every Product
+with `use_cache=false`; `getBeans()` can retain the pre-order snapshot even
+after `Quote::retrieve()`. A linked Bench quote with no freshly visible ordered
+line throws a deterministic refusal for the shared logger rather than silently
+claiming the policy is not applicable.
+
 ### Headline-owner regression evidence
 
 `scripts/tests/test_headline_valuation_owner.py` calls both repositories' real
