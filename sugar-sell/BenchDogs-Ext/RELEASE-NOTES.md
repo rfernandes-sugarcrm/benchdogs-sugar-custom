@@ -1,6 +1,7 @@
 # 0.9.42-rc3 — governing forecast alignment candidate
 
-Not installed on QA and not approved for production.
+Installed on Bench QA as package
+`7e19d778-aee9-11f1-8749-060ab0eed8b1`; not approved for production.
 
 System-managed Opportunity Best and Worst now equal the shared writer's
 Opportunity-currency amount: selected governing production + prototype +
@@ -32,10 +33,17 @@ findings; it retains the known `files.md5` advisory. SHA-256:
 The repository-wide artifact-version checker also reports retained rc1/rc2
 ZIPs as historical mismatches; the targeted rc3 artifact check passes.
 
-QA still must prove the installed migration, selected-option switch,
-independent human override, visible governing control, native currency/tax
-behavior and cleanup. Roll back to the installed 0.9.42-rc2 package; do not
-uninstall modules or remove tables.
+Installed QA evidence passes: the 50x80 and75x70 governing options produced
+Opportunity amount and system-managed Best/Worst of5850.63 and7100.63,
+including prototype500, native tax1340.625 and shipping10. A manual Best
+override of999 survived two later governing changes while system-owned Worst
+continued to follow the headline. The real browser displayed amount7100.63,
+all four Quote lines and the checked Governing control, with no page errors.
+Zero Opportunity RLIs were created. All12 owned records were deleted and
+independently read back absent; browser/API logouts succeeded. Currency beyond
+base USD, automatic Kinetic-header selection and concurrent governing edits
+remain open. Roll back to 0.9.42-rc2; do not uninstall modules or remove
+tables.
 
 ## Previous candidate
 
