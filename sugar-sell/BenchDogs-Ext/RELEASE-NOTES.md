@@ -38,7 +38,8 @@ Opportunity amount and system-managed Best/Worst of5850.63 and7100.63,
 including prototype500, native tax1340.625 and shipping10. A manual Best
 override of999 survived two later governing changes while system-owned Worst
 continued to follow the headline. The real browser displayed amount7100.63,
-all four Quote lines and the checked Governing control, with no page errors.
+all four Quote lines and the checked, enabled-in-Edit Governing control, with
+no page errors.
 Zero Opportunity RLIs were created. All12 owned records were deleted and
 independently read back absent; browser/API logouts succeeded. Currency beyond
 base USD, automatic Kinetic-header selection and concurrent governing edits
