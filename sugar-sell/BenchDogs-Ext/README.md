@@ -74,12 +74,15 @@ marks ordered is sent through the same shared `AfterLinesOrdered` dispatcher.
 Bench's direct reflection retains only pre-order Proposal initialization and
 forecast maintenance; it no longer advances a post-order Opportunity stage.
 
-The action may have loaded `Quote.products` before stamping the release.
-Therefore the policy takes relationship IDs but re-retrieves every Product
-with `use_cache=false`; `getBeans()` can retain the pre-order snapshot even
-after `Quote::retrieve()`. A linked Bench quote with no freshly visible ordered
-line throws a deterministic refusal for the shared logger rather than silently
-claiming the policy is not applicable.
+The action may have loaded relationship beans before stamping the release.
+The current candidate therefore treats the entire role-bearing graph as
+snapshots: it
+resolves relationship IDs, then re-retrieves the single ERP quote, every ERP
+line and every Product with `use_cache=false`. `getBeans()` can retain an old
+snapshot even after its focus bean is retrieved again. A linked Bench quote
+with no freshly visible ordered line throws a deterministic refusal for the
+shared logger rather than silently claiming the policy is not applicable.
+This observation repair still requires a hosted prototype-first rerun.
 
 ### Headline-owner regression evidence
 

@@ -52,6 +52,7 @@ $make = function ($id, $lineNum, $prototype = false, $ordered = false) {
 };
 $quote = new SugarBean();
 $erp = new SugarBean();
+$erp->id = 'erp-quote';
 '''.replace("__PROVIDER__", PROVIDER.as_posix())
 
 
@@ -80,6 +81,8 @@ $quote->products = new TestLink([$make('qli-proto', 1, false, true)]);
             "sales_stage": "Prototype Closed", "probability": 80,
         })
         self.assertEqual(observed["retrievals"], [
+            ["bd01_ERP_Quote", "erp-quote", {"use_cache": False}],
+            ["bd01_ERP_Quote_Line", "erp-proto", {"use_cache": False}],
             ["Products", "qli-proto", {"use_cache": False}],
         ])
         self.assertEqual(observed["quote_saves"], 0)
@@ -121,6 +124,30 @@ BeanFactory::$beans[$fresh->id] = $fresh;
             "sales_stage": "Prototype Closed", "probability": 80,
         })
         self.assertEqual(observed["retrievals"], [
+            ["bd01_ERP_Quote", "erp-quote", {"use_cache": False}],
+            ["bd01_ERP_Quote_Line", "erp-proto", {"use_cache": False}],
+            ["Products", "qli-proto", {"use_cache": False}],
+        ])
+
+    def test_preloaded_erp_graph_cannot_hide_line_identity_or_prototype_role(self):
+        observed = self.execute(r'''
+$staleLine = $make('erp-proto', 0, false);
+$staleErp = clone $erp;
+$staleErp->bd01_erp_quote_lines = new TestLink([$staleLine]);
+$quote->bd01_erp_quote_quotes = new TestLink([$staleErp]);
+$quote->products = new TestLink([$make('qli-proto', 1, false, true)]);
+
+$freshLine = $make('erp-proto', 1, true);
+$freshErp = clone $erp;
+$freshErp->bd01_erp_quote_lines = new TestLink([$freshLine]);
+BeanFactory::$beans[$freshErp->id] = $freshErp;
+''')
+        self.assertEqual(observed["decision"], {
+            "sales_stage": "Prototype Closed", "probability": 80,
+        })
+        self.assertEqual(observed["retrievals"], [
+            ["bd01_ERP_Quote", "erp-quote", {"use_cache": False}],
+            ["bd01_ERP_Quote_Line", "erp-proto", {"use_cache": False}],
             ["Products", "qli-proto", {"use_cache": False}],
         ])
 

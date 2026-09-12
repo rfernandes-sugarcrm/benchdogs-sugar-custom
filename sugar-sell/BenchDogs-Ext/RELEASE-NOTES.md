@@ -1,14 +1,44 @@
-# 0.9.42-rc6 — observable shared-stage candidate
+# 0.9.42-rc7 — fresh release-policy graph candidate
 
 Not installed on QA and not approved for production.
+
+The coordinated rc6 hosted run returned
+`release_stage_status=policy_preserved` even though post-request reads proved
+the prototype Product was ordered, all four Product-to-ERP line numbers
+matched, and exactly one ERP quote with one prototype line was linked. The
+order action can carry already-loaded Link2 beans at more than one level, so a
+clean REST read after the request does not prove what the policy observed
+inside that request.
+
+rc7 keeps Partial Fulfillment as the sole Opportunity-stage writer. The Bench
+decision-only policy resolves relationship IDs and re-retrieves the ERP quote,
+every ERP quote line, and every Product outside BeanFactory's request cache
+before classifying the release. Missing, duplicate, or contradictory identity
+still refuses rather than guessing. It does not save an Opportunity or access
+Opportunity Revenue Line Items.
+
+The source suite passes 85 tests with two declared skips, plus four independent
+stale-graph/cardinality controls. Source and built-package preflight are clean
+apart from the package line's known `files.md5` advisory. The rc7 archive is
+loadable, and the packaged policy is byte-identical to source. Archive SHA-256:
+`7022040a7af0da7e7cbab2eba7e911e8bad8329197bba9857b00883184381647`.
+Hosted scan, installation, and a fresh prototype-first journey remain required.
+Roll back to rc6 without uninstalling modules or removing tables.
+
+## Previous candidate
+
+### 0.9.42-rc6 — observable shared-stage candidate
+
+Installed on Bench QA for controlled diagnosis; not approved for production.
 
 The installed rc5 package still created exactly one prototype order while the
 Opportunity remained Proposal for 60 seconds. That disproved stale Product
 beans as the complete cause. rc6 retains rc5's provider behavior but requires
 the coordinated ERP-Epicor 1.1.24-rc4 / Partial Fulfillment 1.0.11 repair.
 Those shared packages normalize associative Opportunity relationship id arrays
-and return a neutral `release_stage_status` in the order response, allowing the
-next hosted run to locate a silent skip without server-log access. The status
+and return a neutral `release_stage_status` in the order response. The hosted
+run returned `policy_preserved`, localizing the skip to the policy decision.
+The status
 contains no record ids, exception text or customer-policy internals and does
 not alter the seller's truthful order-success message.
 
@@ -19,10 +49,11 @@ byte-identical to source, and the manifest pins both coordinated dependencies.
 SHA-256:
 `f4b6ea37f16ef22bd95d800a6187a290b70739e203afd8167b8fef4a1897081e`.
 
-Hosted scan and a fresh prototype-first journey remain required. Roll back to
-rc3 without uninstalling modules or removing tables.
+That controlled run created exact Epicor order 11574, then removed and
+absence-verified it and the complete owned Sugar/ERP graph with no cleanup
+failures. Roll back to rc3 without uninstalling modules or removing tables.
 
-## Previous candidate
+## Earlier candidate
 
 ### 0.9.42-rc5 — fresh release-stage observation candidate
 

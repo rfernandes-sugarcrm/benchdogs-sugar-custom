@@ -57,7 +57,14 @@ class SugarBean {
     public function save() { $this->saves++; }
 }
 class TestLink {
-    public function __construct(public $beans = [], public $ids = []) {}
+    public function __construct(public $beans = [], public $ids = null) {
+        if ($this->ids === null) {
+            $this->ids = array_values(array_map(
+                function ($bean) { return $bean->id; },
+                $this->beans
+            ));
+        }
+    }
     public function getBeans() { return $this->beans; }
     public function get() { return $this->ids; }
 }
@@ -65,9 +72,14 @@ class TestAdmin { public function getConfigForModule($category) { return []; } }
 class BeanFactory {
     public static $opp;
     public static $products = [];
+    public static $erpQuotes = [];
+    public static $erpLines = [];
     public static function getBean($module) { return new TestAdmin(); }
     public static function retrieveBean($module, $id, $options = []) {
-        return $module === 'Products' ? (self::$products[$id] ?? null) : self::$opp;
+        if ($module === 'Products') { return self::$products[$id] ?? null; }
+        if ($module === 'bd01_ERP_Quote') { return self::$erpQuotes[$id] ?? null; }
+        if ($module === 'bd01_ERP_Quote_Line') { return self::$erpLines[$id] ?? null; }
+        return self::$opp;
     }
 }
 $GLOBALS['reads'] = [];
@@ -94,8 +106,9 @@ $quote->id = 'same-quote';
 $quote->erp_is_primary_quote = false;
 $quote->opportunities = new TestLink([], [$opp->id]);
 $erp = new SugarBean();
-$proto = new SugarBean(); $proto->line_num = 1; $proto->prototype = true;
-$production = new SugarBean(); $production->line_num = 2; $production->prototype = false;
+$erp->id = 'erp-quote';
+$proto = new SugarBean(); $proto->id = 'erp-proto'; $proto->line_num = 1; $proto->prototype = true;
+$production = new SugarBean(); $production->id = 'erp-production'; $production->line_num = 2; $production->prototype = false;
 $erp->bd01_erp_quote_lines = new TestLink([$proto, $production]);
 $quote->bd01_erp_quote_quotes = new TestLink([$erp]);
 $protoQli = new SugarBean();
@@ -106,6 +119,8 @@ $productionQli->erp_ordered = false;
 $quote->products = new TestLink([$protoQli, $productionQli], [$protoQli->id, $productionQli->id]);
 BeanFactory::$opp = $opp;
 BeanFactory::$products = [$protoQli->id => $protoQli, $productionQli->id => $productionQli];
+BeanFactory::$erpQuotes = [$erp->id => $erp];
+BeanFactory::$erpLines = [$proto->id => $proto, $production->id => $production];
 require 'custom/modules/Quotes/ErpOpportunityValuation.php';
 $writer = new ErpOpportunityValuation();
 $writer->afterLinesOrdered($quote, true);

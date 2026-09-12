@@ -23,15 +23,30 @@ class ErpOpportunityReleaseStagePolicy
             return null;
         }
 
-        $erpQuotes = array_values($quote->bd01_erp_quote_quotes->getBeans());
-        if ($erpQuotes === []) {
+        $erpQuoteIds = $quote->bd01_erp_quote_quotes->get();
+        if (!is_array($erpQuoteIds) || $erpQuoteIds === []) {
             return null;
         }
-        if (count($erpQuotes) !== 1) {
+        if (count($erpQuoteIds) !== 1) {
             throw new UnexpectedValueException('Ambiguous ERP quote revision for release stage');
         }
 
-        $erpQuote = $erpQuotes[0];
+        // Quote saves during Order Selected Lines can load the Bench ERP
+        // relationship graph before the release is committed. Treat Link2
+        // beans as a snapshot throughout this policy: resolve identities and
+        // re-read both levels outside BeanFactory's request cache.
+        $erpQuoteId = (string) reset($erpQuoteIds);
+        if ($erpQuoteId === '') {
+            throw new UnexpectedValueException('ERP quote identity is unavailable for release stage');
+        }
+        $erpQuote = BeanFactory::retrieveBean(
+            'bd01_ERP_Quote',
+            $erpQuoteId,
+            ['use_cache' => false]
+        );
+        if (!$erpQuote || empty($erpQuote->id)) {
+            throw new UnexpectedValueException('ERP quote is unavailable for release stage');
+        }
         if (!$erpQuote->load_relationship('bd01_erp_quote_lines')
             || !$erpQuote->bd01_erp_quote_lines
             || !is_object($erpQuote->bd01_erp_quote_lines)
@@ -41,7 +56,19 @@ class ErpOpportunityReleaseStagePolicy
 
         $lineKinds = [];
         $prototypeCount = 0;
-        foreach ($erpQuote->bd01_erp_quote_lines->getBeans() as $line) {
+        $erpLineIds = $erpQuote->bd01_erp_quote_lines->get();
+        if (!is_array($erpLineIds)) {
+            throw new UnexpectedValueException('ERP quote-line identities unavailable for release stage');
+        }
+        foreach ($erpLineIds as $erpLineId) {
+            $line = BeanFactory::retrieveBean(
+                'bd01_ERP_Quote_Line',
+                (string) $erpLineId,
+                ['use_cache' => false]
+            );
+            if (!$line || empty($line->id)) {
+                throw new UnexpectedValueException('ERP quote line unavailable for release stage');
+            }
             $lineNum = (int) ($line->line_num ?? 0);
             if ($lineNum <= 0 || array_key_exists($lineNum, $lineKinds)) {
                 throw new UnexpectedValueException('ERP quote line identity is ambiguous for release stage');
