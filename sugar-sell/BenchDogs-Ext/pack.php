@@ -68,6 +68,18 @@ $installdefs = array(
     ),
     'copy'         => array(),
     'post_execute' => array('<basepath>/scripts/post_install.php'),
+    // The uninstall counterpart to post_execute, in two halves because the two
+    // jobs need opposite conditions. pre_uninstall undoes the DEPLOYED METADATA
+    // post_install.php wrote - record-view panels, buttons, the fields the
+    // uninstaller cannot see because they live in a file this package does not
+    // ship - and needs the helper classes under custom/ still on disk.
+    // post_uninstall rebuilds the caches and has to run after those same files
+    // are gone, or it simply re-bakes what it is meant to clear.
+    //
+    // Their absence is what broke the instance the last time this package was
+    // removed. See the docblock at the top of each script.
+    'pre_uninstall'  => array('<basepath>/scripts/pre_uninstall.php'),
+    'post_uninstall' => array('<basepath>/scripts/post_uninstall.php'),
 );
 
 // Add the new modules' own files
@@ -114,10 +126,17 @@ if ($customReal) {
     }
 }
 
-// post_install.php ships via the post_execute installdef above, not as a
-// plain copy entry - excluded here so it isn't ALSO copied to
-// custom/include/bd_scripts/post_install.php, which nothing would ever run.
-$postExecuteScript = 'post_install.php';
+// These three ship via the post_execute / pre_uninstall / post_uninstall
+// installdefs above, not as plain copy entries - excluded here so they aren't
+// ALSO copied to custom/include/bd_scripts/, where nothing would ever run
+// them. The uninstall pair matters more than the install one: a copy of
+// pre_uninstall.php under custom/ would be deleted by the very uninstall it is
+// supposed to run during.
+$lifecycleScripts = array(
+    'post_install.php',
+    'pre_uninstall.php',
+    'post_uninstall.php',
+);
 
 // Add scripts/ files (kept on the instance for later re-runs)
 $scriptsReal = realpath('scripts');
@@ -130,7 +149,7 @@ if ($scriptsReal) {
         if (!$file->isFile()) {
             continue;
         }
-        if ($file->getFilename() === $postExecuteScript) {
+        if (in_array($file->getFilename(), $lifecycleScripts, true)) {
             continue;
         }
         $real = $file->getRealPath();

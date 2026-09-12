@@ -159,4 +159,85 @@ class BdAccountsLayoutExtensions
         $deploy->setViewdefs($viewdefs);
         $deploy->deploy($viewdefs);
     }
+
+    /**
+     * Undo both writes above, from scripts/pre_uninstall.php.
+     *
+     * Deployed metadata is not covered by any installdef, so without this the
+     * uninstall left the Accounts record view carrying a button whose field
+     * type had just been removed and two fields whose vardefs had just been
+     * removed. Nothing else on the view is ours - ERP-Epicor's AccountsLayout
+     * owns the ERP panels in replace mode - so this removes exactly four things
+     * and touches nothing else, which is the same append-only discipline the
+     * install side keeps.
+     *
+     * The two fields are searched for across EVERY panel rather than in the one
+     * writeCustomerGroupField() put them in, because an admin may since have
+     * moved them somewhere better. Leaving a moved field behind would leave
+     * exactly the orphan this method exists to prevent.
+     *
+     * One get -> mutate -> set -> deploy cycle for both repairs. Removing what
+     * is not there is a no-op, so this is safe on an instance that never got
+     * the fields placed.
+     */
+    public static function remove(): void
+    {
+        require_once 'modules/ModuleBuilder/parsers/constants.php';
+        require_once 'modules/ModuleBuilder/parsers/views/DeployedMetaDataImplementation.php';
+
+        $deploy = new DeployedMetaDataImplementation(MB_RECORDVIEW, 'Accounts', 'base');
+        $viewdefs = $deploy->getViewdefs();
+        $changed = false;
+
+        if (!empty($viewdefs['base']['view']['record']['buttons'])
+            && is_array($viewdefs['base']['view']['record']['buttons'])
+        ) {
+            $buttons =& $viewdefs['base']['view']['record']['buttons'];
+            $kept = array();
+            foreach ($buttons as $b) {
+                if (is_array($b) && ($b['name'] ?? '') === 'bd_create_opp_quote_button') {
+                    $changed = true;
+                    continue;
+                }
+                $kept[] = $b;
+            }
+            $buttons = array_values($kept);
+            unset($buttons);
+        }
+
+        // The buttons array writeButtons() may have MATERIALISED from the base
+        // record template is deliberately left in place. It is the stock set,
+        // identical to what Sidecar would fall back to, so removing it would be
+        // a second change with no visible effect and some risk.
+
+        if (!empty($viewdefs['base']['view']['record']['panels'])
+            && is_array($viewdefs['base']['view']['record']['panels'])
+        ) {
+            $panels =& $viewdefs['base']['view']['record']['panels'];
+            $drop = array('bd_customer_group', 'bd_customer_group_code');
+            foreach ($panels as $i => $panel) {
+                if (empty($panel['fields']) || !is_array($panel['fields'])) {
+                    continue;
+                }
+                $kept = array();
+                foreach ($panel['fields'] as $field) {
+                    $name = is_array($field) ? ($field['name'] ?? '') : (string) $field;
+                    if (in_array($name, $drop, true)) {
+                        $changed = true;
+                        continue;
+                    }
+                    $kept[] = $field;
+                }
+                $panels[$i]['fields'] = array_values($kept);
+            }
+            unset($panels);
+        }
+
+        if (!$changed) {
+            return;
+        }
+
+        $deploy->setViewdefs($viewdefs);
+        $deploy->deploy($viewdefs);
+    }
 }
