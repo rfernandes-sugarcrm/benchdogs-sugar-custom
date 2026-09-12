@@ -83,9 +83,21 @@ jobs:
       # Built the way a release is built. A failure here is a packaging
       # failure: pack.php no longer runs, or an installdef points at a file
       # that has moved.
-      - name: Build the package
-        working-directory: sugar-sell/BenchDogs-Ext
-        run: php pack.php
+      #
+      # Every package under sugar-sell that has a builder, not just the main
+      # one. The disposable one-off repairs are real packages that install into
+      # a live instance, and a builder that nothing exercises is a builder that
+      # breaks quietly and is discovered at the worst moment - halfway through
+      # fixing a broken instance.
+      - name: Build every package
+        run: |
+          set -e
+          for pack in sugar-sell/*/pack.php; do
+            dir=$(dirname "$pack")
+            echo "::group::$dir"
+            (cd "$dir" && php pack.php)
+            echo "::endgroup::"
+          done
 
       # What the loader will actually be handed. Asserts the things that are
       # only true of a built artifact: manifest.php at the archive ROOT (one

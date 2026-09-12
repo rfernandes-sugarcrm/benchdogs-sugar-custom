@@ -14,10 +14,15 @@ And against a built artifact, which is where the manifest rules can actually be
 evaluated:
 
 ```bash
-cd sugar-sell/BenchDogs-Ext && php pack.php && cd ../..
+for p in sugar-sell/*/pack.php; do (cd "$(dirname "$p")" && php pack.php); done
 python3 scripts/check_built_packages.py
 python3 scripts/mlp_lint.py --zips-from sugar-sell
 ```
+
+Every directory under `sugar-sell` with a `pack.php` is a package the loader
+will be handed, the disposable one-off repairs included, so build them all.
+CI does the same. A builder nothing exercises is one that breaks quietly and is
+found halfway through fixing a broken instance.
 
 `pack.php` needs PHP's `zip` extension. The stock `php:8.2-cli` image does not
 ship it; `composer:2` does, which is the quickest way to build locally.
