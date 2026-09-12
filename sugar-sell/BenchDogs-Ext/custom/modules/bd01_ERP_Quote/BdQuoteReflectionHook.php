@@ -349,6 +349,17 @@ class BdQuoteReflectionHook
             $quote = BeanFactory::retrieveBean('Quotes', $sugarQuoteId, ['use_cache' => false]);
             if ($quote && !empty($quote->id)) {
                 $this->maybeUpdateOpportunity($bean, $quote);
+                // ERP-Core owns the one Opportunity amount writer. Invoke its
+                // public hook after a governing/ERP refresh as well as on a
+                // native Quote save, so later triggers converge on the same
+                // Bench contribution policy instead of restoring all options.
+                $file = 'custom/modules/Quotes/QuoteOpportunityAmount.php';
+                if (!class_exists('QuoteOpportunityAmount', false) && file_exists($file)) {
+                    require_once \Sugarcrm\Sugarcrm\Util\Files\FileLoader::validateFilePath($file);
+                }
+                if (class_exists('QuoteOpportunityAmount', false)) {
+                    (new QuoteOpportunityAmount())->refresh($quote);
+                }
             }
         } catch (Throwable $e) {
             $GLOBALS['log']->error(

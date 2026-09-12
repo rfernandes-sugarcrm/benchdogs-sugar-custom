@@ -33,12 +33,16 @@ native Quote total. Bench reflection must not overwrite that amount with a
 different subtotal, or access/create/delete Opportunity RLIs in this mode.
 Its existing stage and forecast logic remains separate.
 
-This does **not** establish REQ-5 governing-quantity acceptance: quantity
-alternatives need a verified contribution policy rather than summing every
-option into the native total. Clearing a governing flag currently performs no
-refresh. Selection, clearing, concurrency, ERP ownership and revision behavior
-remain release acceptance gaps; do not treat the presence of the editable
-flag as proof that the business workflow works.
+The owner-confirmed contribution is the selected governing production line
+plus prototype value, tax and shipping. Other production quantity options stay
+visible and contribute zero. `ErpQuoteOpportunityContribution` provides that
+number through ERP-Core's neutral contract; ERP-Core remains the sole writer.
+Missing/multiple selection, multiple prototypes and multiple linked ERP quotes
+refuse instead of guessing or reverting to the summed display total.
+
+The exact governing field on the Kinetic Quote header is still unknown, so the
+candidate uses the explicit Sugar line flag. Automated ERP-driven selection,
+clearing, concurrency and revision lineage remain release acceptance gaps.
 
 ### Headline-owner regression evidence
 

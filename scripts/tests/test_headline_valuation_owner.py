@@ -141,7 +141,7 @@ $quote->product_bundles = new TestLink([$bundle]);
 @unittest.skipUnless(shutil.which("php"), "requires PHP 8.2 build-test image")
 @unittest.skipUnless(SHARED_HOOK.is_file(), "requires sibling shared Sugar checkout")
 class HeadlineValuationOwnerTest(unittest.TestCase):
-    def execute(self, scenario):
+    def execute(self, scenario, expected_errors=0):
         result = subprocess.run(
             ["php", "-r", FIXTURE + scenario + r'''
 echo json_encode([
@@ -161,7 +161,7 @@ echo json_encode([
         )
         self.assertEqual(result.stderr, "", result.stderr)
         observed = json.loads(result.stdout)
-        self.assertEqual(observed["errors"], [], observed)
+        self.assertEqual(len(observed["errors"]), expected_errors, observed)
         return observed
 
     def test_shared_owner_control_preserves_native_tax_and_shipping(self):

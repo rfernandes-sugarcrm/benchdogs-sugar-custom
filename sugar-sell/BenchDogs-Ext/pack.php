@@ -42,6 +42,14 @@ $manifest = array(
     'remove_tables'             => 'prompt',
     'acceptable_sugar_versions' => array('regex_matches' => array($supportedVersionRegex)),
     'acceptable_sugar_flavors'  => $acceptableSugarFlavors,
+    // The governing provider implements a neutral contract introduced by
+    // shared ERP-Epicor. Refuse unsafe install order before copying any file.
+    'dependencies'              => array(
+        array(
+            'id_name' => 'sugarai_erp_epicor',
+            'version' => '1.1.24-rc1',
+        ),
+    ),
 );
 
 $installdefs = array(
