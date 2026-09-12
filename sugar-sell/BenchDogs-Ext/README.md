@@ -60,7 +60,7 @@ Bench supplies `ErpOpportunityReleaseStagePolicy` through Partial
 Fulfillment's fixed neutral seam. It returns Prototype Closed/80 when the only
 ordered release is the prototype, and Partial Production Closed/90 once any
 production option is ordered. The provider never saves an Opportunity.
-Partial Fulfillment 1.0.11 validates and performs the only release-stage write.
+Partial Fulfillment 1.0.12 validates and performs the only release-stage write.
 ERP-Epicor 1.1.24-rc4 returns that writer's neutral outcome as
 `release_stage_status` on the order action, allowing hosted acceptance to
 distinguish an update from a preserved stage without exposing record ids,

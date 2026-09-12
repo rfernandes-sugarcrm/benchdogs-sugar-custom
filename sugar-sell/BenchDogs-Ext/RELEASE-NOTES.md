@@ -1,4 +1,27 @@
-# 0.9.42-rc7 — fresh release-policy graph candidate
+# 0.9.42-rc8 — canonical stage-validation candidate
+
+Not installed on QA and not approved for production.
+
+The rc7 hosted run proved the complete persisted policy graph was correct and
+still returned `policy_preserved`, disproving stale Link2 beans as the complete
+cause. rc8 pins Partial Fulfillment 1.0.12, whose shared sole writer validates
+customer stage keys against Sugar's freshly loaded current-language application
+strings rather than relying only on a request-global copy that may predate a
+language-extension rebuild. Loader failure falls back safely and unknown stage
+keys remain rejected.
+
+Bench policy behavior is otherwise unchanged: it decides only, never saves the
+Opportunity, never accesses Opportunity Revenue Line Items, and refuses
+ambiguous release identity. The rc8 archive is loadable and pins Partial
+Fulfillment 1.0.12; SHA-256:
+`9f3dd4b1769c46fd440469a09b3938522981863d5191e832f8b958cb8cd4e7e5`.
+Hosted scan, installation, and the full prototype-to-production journey remain
+required. Roll back to rc7 and Partial Fulfillment 1.0.11 without uninstalling
+modules or removing tables.
+
+## Previous candidate
+
+### 0.9.42-rc7 — fresh release-policy graph candidate
 
 Not installed on QA and not approved for production.
 
@@ -25,7 +48,7 @@ loadable, and the packaged policy is byte-identical to source. Archive SHA-256:
 Hosted scan, installation, and a fresh prototype-first journey remain required.
 Roll back to rc6 without uninstalling modules or removing tables.
 
-## Previous candidate
+## Earlier candidate
 
 ### 0.9.42-rc6 — observable shared-stage candidate
 

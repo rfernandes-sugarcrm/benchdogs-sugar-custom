@@ -51,7 +51,7 @@ $manifest = array(
         ),
         array(
             'id_name' => 'sugarai_erp_epicor_partialfulfillment',
-            'version' => '1.0.11',
+            'version' => '1.0.12',
         ),
     ),
 );
