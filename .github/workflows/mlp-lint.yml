@@ -1,0 +1,116 @@
+name: MLP pre-flight
+
+# Runs on every pull request and on pushes to main.
+#
+# An MLP installs into a live instance with no sandbox, so a defect in one is
+# not a bug report, it is an outage. On 2026-09-11 ERP-Epicor 1.1.8 died
+# mid-install on a demo instance with "Cannot redeclare class
+# ErpDashboardReconcile", was never recorded in upgrade_history, and left that
+# instance with its ERP modules gone and the Quotes list throwing. The defect
+# was two install scripts loading one class from two different paths, visible
+# in the source the whole time, and nothing looked for it.
+#
+# The rules and both scripts are taken from sugarcrm/erp-integration-sugar,
+# where they were written after that incident. They are carried here rather
+# than referenced because this repository builds and ships its own package to
+# the same instances, and a gate that lives in somebody else's repository does
+# not run on this one's pull requests.
+#
+# This package was clean on the day the rules arrived - 0 blocker, 0 required,
+# 0 advisory - after two MLP001 blockers it found were fixed. So there is
+# deliberately no mlp_lint_baseline.json here. The upstream repository needs
+# one because its rules postdate its packages; this one starts from green and
+# should stay there. If a finding ever genuinely has to be deferred, run
+# `python3 scripts/mlp_lint.py --update-baseline` and say in the pull request
+# why it is being carried rather than fixed.
+#
+# Two jobs, because source and artifact fail differently:
+#
+#   rules  - lints package source. Fast, runs on plain python3, no container.
+#   build  - actually builds the package and audits the zip it produced.
+#
+# The build job is the one that would have caught the incident above end to
+# end. Several rules can only be evaluated against the real generated manifest
+# (a duplicated install destination, a beans entry naming a module that was
+# never shipped, a missing files.md5), and linting pack.php instead is
+# guesswork. It also means a change that breaks packaging - an edit to
+# pack.php, a file moved out from under an installdef - fails here rather than
+# at the moment somebody tries to upload the result.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  rules:
+    name: Package rules (source)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The linter's own tests. A linter nobody trusts gets disabled, and the
+      # way it loses trust is a false positive, so every rule is tested on a
+      # fixture that must fire and on the fixed version that must not. If
+      # these fail, nothing below means anything.
+      - name: Self-tests
+        run: python3 scripts/tests/test_mlp_lint.py
+
+      - name: Audit the package
+        run: python3 scripts/mlp_lint.py
+
+      # Advisory findings never gate. Printed so they stay visible rather than
+      # accumulating silently behind a passing check.
+      - name: Full report
+        if: always()
+        run: python3 scripts/mlp_lint.py --fail-on advisory || true
+
+  build:
+    name: Build and audit the artifact
+    runs-on: ubuntu-latest
+    # pack.php needs ZipArchive, which php:8.2-cli does not ship.
+    container:
+      image: php:8.2-cli
+    steps:
+      - name: Install the zip extension and python
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends libzip-dev zip unzip python3
+          docker-php-ext-install zip
+          rm -rf /var/lib/apt/lists/*
+
+      - uses: actions/checkout@v4
+
+      # Built the way a release is built. A failure here is a packaging
+      # failure: pack.php no longer runs, or an installdef points at a file
+      # that has moved.
+      - name: Build the package
+        working-directory: sugar-sell/BenchDogs-Ext
+        run: php pack.php
+
+      # What the loader will actually be handed. Asserts the things that are
+      # only true of a built artifact: manifest.php at the archive ROOT (one
+      # directory down and the upload fails outright with
+      # NoPackageManifestFileException), and the version inside the manifest
+      # matching the package's own version file - a mismatch produces a zip
+      # Module Loader treats as "not an upgrade" and silently declines.
+      - name: Check the artifact is loadable
+        run: python3 scripts/check_built_packages.py
+
+      # The same rules again, this time over the real generated manifest.
+      - name: Audit the built zip
+        run: python3 scripts/mlp_lint.py --zips-from sugar-sell
+
+      - name: Full artifact report
+        if: always()
+        run: python3 scripts/mlp_lint.py --zips-from sugar-sell --fail-on advisory || true
+
+      # Kept so a failed run can be inspected, and so a reviewer can install
+      # exactly what CI audited rather than rebuilding it locally.
+      - name: Upload the package
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlp-package
+          path: sugar-sell/*/releases/*.zip
+          if-no-files-found: error
+          retention-days: 14
