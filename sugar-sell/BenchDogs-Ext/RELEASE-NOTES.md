@@ -1,4 +1,50 @@
-# 0.9.42-rc8 — canonical stage-validation candidate
+# 0.9.42-rc12 — Quote-line-only visible-stage candidate
+
+Not installed on QA and not approved for production.
+
+rc12 makes the user's Opportunities-only decision a permanent package
+boundary. It removes the old Opportunity-line vardef, runtime projection,
+record creation and line-refresh implementation rather than hiding them behind
+the current tenant configuration. Native Quote lines remain the only itemized
+sales records; shared ERP-Core remains the sole Opportunity amount writer and
+Partial Fulfillment remains the sole release-stage writer.
+
+The stage styles are now strictly append-only at the key level: an existing
+tenant style for either Bench stage wins, while an absent style receives the
+Bench default. A regression proves both same-key preservation and preservation
+of unrelated styles and `applyFormatting`.
+
+This is a clean replacement, not an in-place upgrade. Module Loader must first
+uninstall rc9 with data tables retained, then install rc12; otherwise files the
+old archive shipped can remain on disk. Rollback is the reverse supported
+sequence—uninstall rc12 with tables retained, then install the saved rc9
+artifact—not a simple reinstall over rc12.
+
+See `docs/release-0.9.42-rc12.md` for evidence, gates and rollback.
+
+## Previous candidate
+
+### 0.9.42-rc11 — visible native release-stage candidate
+
+The rc9 hosted action reached `Prototype Closed`/80 in the API after native
+language repair, while the Opportunity record view displayed a blank Sales
+Stage. A disposable live diagnostic ruled out action timing and Sidecar model
+staleness: route-away/back and hard reload both loaded the correct model value,
+but the formatted `enum-cascade` remained empty. Client metadata had
+`applyFormatting: true` and no `sales_stage_dom_style` entries for either
+Bench stage.
+
+rc11 appends those two entries through Sugar's native application
+DropdownsStyle extension, preserving every shared and tenant-owned style. It
+also includes rc10's installer language compile/refresh/verification and
+removes Opportunity RLI repair references from both install and manual repair
+lifecycle paths. Stage decision/write ownership, amount arithmetic, SDK and
+shared dependencies do not change. See
+`docs/release-0.9.42-rc11.md` for evidence, gates and rollback.
+
+## Earlier candidate
+
+### 0.9.42-rc8 — canonical stage-validation candidate
 
 Not installed on QA and not approved for production.
 

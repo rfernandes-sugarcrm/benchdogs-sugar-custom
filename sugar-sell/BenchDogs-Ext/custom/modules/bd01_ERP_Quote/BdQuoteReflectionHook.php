@@ -10,9 +10,8 @@
  * are updated only when a value changed. Bench QA is Opportunities-only: the
  * shared Quote hook owns headline amount, this class maintains forecast
  * provenance and pre-order Proposal initialization, and Partial Fulfillment
- * owns release-stage writes through Bench's neutral policy. No Opportunity
- * RLI is read or written in that path. Legacy RLI-mode projection remains
- * isolated below for older deployments and is not the Bench acceptance model.
+ * owns release-stage writes through Bench's neutral policy. The package uses
+ * native Quote lines only and never reads or writes Opportunity line items.
  *
  * When NEITHER sugar_quote_id nor bd_materialized_quote_id is set the ERP
  * quote was born in Kinetic, and REQ-28's materialization runs instead: a
@@ -320,12 +319,10 @@ class BdQuoteReflectionHook
     }
 
     /**
-     * Re-run just the deliverable-RLI materialization for an ERP quote,
-     * outside a bd01_ERP_Quote save. BdGoverningLineHook calls this after a
-     * governing flag changes hands (so the production RLI re-values
-     * immediately), BdRliRefreshHook after a line's price or role changes -
-     * same code path, same gates (sugar_quote_id on the ERP quote,
-     * erp_is_primary_quote on the Sugar Quote).
+     * Re-run the Quote-owned contribution and Bench forecast path outside an
+     * ERP quote save. Governing and reflected-line hooks call this after the
+     * selected contribution, price or role changes. The shared Quote hook
+     * remains the sole Opportunity amount writer.
      */
     public function refreshOpportunityAmount(SugarBean $bean): void
     {
@@ -338,7 +335,7 @@ class BdQuoteReflectionHook
         try {
             // A REQ-28 quote's lines live in Sugar only because we copied
             // them there, so a line change in Kinetic has to be copied again
-            // before the deliverables are recomputed - otherwise the
+            // before the contribution is recomputed - otherwise the
             // opportunity would be re-valued from a stale quote.
             $this->syncMaterializedQuoteLines($bean, $sugarQuoteId);
             $quote = BeanFactory::retrieveBean('Quotes', $sugarQuoteId, ['use_cache' => false]);
@@ -369,20 +366,9 @@ class BdQuoteReflectionHook
     }
 
     /**
-     * REQ-6: if the reflected Quote is its Opportunity's primary quote
-     * (erp_is_primary_quote is owned by ERP-Core and set by the connector),
-     * materialize and maintain the Opportunity's revenue line items from the
-     * quote's deliverables, and let Sugar's own RLI arithmetic carry the
-     * value up to Opportunity.amount.
-     *
-     * Deliverables, not ladder rows: the quantity-break ladder's lines are
-     * alternative quantities of ONE item - mirroring every line into an RLI
-     * would multiply the deal value inside a single revision. So the
-     * prototype-flagged line feeds the prototype RLI, the governing line
-     * feeds the production RLI (no governing line: the quote total minus the
-     * prototype slice, keeping the v0.1 whole-quote fallback), and each is
-     * upserted by bd_deliverable_key with REPLACE semantics: five or six
-     * Kinetic revisions re-value the same rows, never add to them.
+     * Refresh Bench-owned forecast provenance and pre-order stage policy for
+     * the primary Quote. Amount remains owned by the shared Quote hook, and
+     * release-stage writes remain owned by Partial Fulfillment.
      */
     private function maybeUpdateOpportunity(SugarBean $bean, SugarBean $quote): void
     {
@@ -408,7 +394,7 @@ class BdQuoteReflectionHook
             // Bench Dogs revisions arrive as NEW Kinetic quotes carrying the
             // same sugar_quote_id (1194 -> 1195 measured live). Only the
             // newest generation may value the deal - a late save of an old
-            // generation must not drag the RLIs backwards.
+            // generation must not drag the forecast backwards.
             return;
         }
 
@@ -421,52 +407,26 @@ class BdQuoteReflectionHook
             return;
         }
 
-        if (!self::rliModeEnabled()) {
-            // The shared Quote hook owns headline amount from the stored
-            // native grand total. Bench owns its stage/forecast policy only:
-            // a second amount writer here drops tax/shipping and makes the
-            // result depend on whether a Quote save or ERP reflection ran last.
-            // Opportunities-only means no RLI reads, writes or cleanup here.
-            // Historical repair is a separate explicitly approved operation.
-            // Re-read immediately before saving our fields: earlier line or
-            // Quote saves may have refreshed the shared headline already.
-            $fresh = BeanFactory::retrieveBean(
-                'Opportunities',
-                $opportunity->id,
-                ['use_cache' => false]
-            );
-            $this->writeOpportunityDirect(
-                $bean,
-                $quote,
-                ($fresh && !empty($fresh->id)) ? $fresh : $opportunity,
-                $deliverables
-            );
-            return;
-        }
-
-        // RevenueLineItems mode ONLY. Here amount IS a rollup of these rows
-        // and a direct write to it is silently discarded, so the line items
-        // are the only vehicle the deal value has. Same arithmetic as the
-        // branch above - both read the same deliverables() map - expressed in
-        // whichever single shape the instance can actually read.
-        $this->upsertDeliverableRlis($bean, $quote, $opportunity, $deliverables);
-
-        // In RevenueLineItems mode ONLY, the opportunity's own sales_stage is
-        // deliberately not written here, and cannot be: Sugar derives it from
-        // the line items and discards any value written to the field. Proved
-        // by measurement 24 Aug 2026 - a REST PUT of 'Partial Production
-        // Closed' onto opportunity e4a0f474 returned 200 and read back
-        // 'Prototype Closed' unchanged. So the stage is a CONSEQUENCE of the
-        // RLI stages this method maintains, never something to set directly:
-        // a deal whose only open-stage RLI has been removed reports the least
-        // advanced stage still present on it.
+        // Re-read immediately before saving Bench-owned fields: earlier line
+        // or Quote saves may have refreshed the shared headline already.
+        $fresh = BeanFactory::retrieveBean(
+            'Opportunities',
+            $opportunity->id,
+            ['use_cache' => false]
+        );
+        $this->writeOpportunityDirect(
+            $bean,
+            $quote,
+            ($fresh && !empty($fresh->id)) ? $fresh : $opportunity,
+            $deliverables
+        );
     }
 
 
     /**
      * Is a NEWER Kinetic generation of this deal already reflected? Compared
      * by quote_num across the Sugar quote's bd01_erp_quote_quotes siblings.
-     * Fails open: better a maintained RLI than a frozen one.
+     * Fails open: preserving the current forecast is safer than freezing it.
      */
     private function isStaleGeneration(SugarBean $bean, SugarBean $quote): bool
     {
@@ -1022,45 +982,15 @@ class BdQuoteReflectionHook
     }
 
     /**
-     * The quote's deliverables, keyed by role.
+     * Native Quote-line release slices used only for Bench forecast
+     * provenance and pre-order stage initialization. Opportunity amount is
+     * not calculated here: shared ERP-Core owns that write through the
+     * governing contribution provider (selected production + prototype +
+     * native tax + shipping).
      *
-     * prototype  - the line flagged prototype: its extended price. Always its
-     *              own slice, never part of production.
-     * production - the OPEN production value: money still to win.
-     * ordered    - production already ordered: money won. Only ever emitted
-     *              when the join below resolves, because it is the only thing
-     *              that can tell ordered from open.
-     *
-     * LEGACY RLI PROJECTION ONLY. This shape predates the accepted
-     * Opportunities-only governing contribution and is retained solely for
-     * installations that still run RevenueLineItems mode. It must not become
-     * Opportunity headline arithmetic in Bench QA: the shared writer uses
-     * selected governing production + prototype + tax + shipping instead.
-     *
-     * FOUR PATHS, in priority order, and deliberately not collapsed:
-     *
-     *   1. The prototype line, when there is one, is always its own slice
-     *      and never part of production.
-     *   2. Every non-prototype break whose quoted line item is erp_ordered
-     *      becomes its own CLOSED slice at the value it was ordered at.
-     *      Ordering is per line and stays that way.
-     *   3. Every break not ordered is carried together on one open production
-     *      slice for this legacy model. That sum is not the accepted headline.
-     *   4. There is no fourth path.
-     *
-     * Governing deliberately does not alter this legacy RLI projection. It
-     * controls the accepted Opportunities-only headline through
-     * ErpQuoteOpportunityContribution; keeping those scopes explicit prevents
-     * this historical calculation from becoming a second amount owner.
-     *
-     * There is still no quote_total-based fallback, for a reason that
-     * survives the correction: that figure is taken from the quote HEADER,
-     * which a partial line set can stamp wrong (and has - see the header/line
-     * divergence on Northgate). The deliverables are computed from the lines
-     * themselves so the number is always the sum of things that exist.
-     *
-     * Empty array when the quote has no usable value at all - the caller
-     * then leaves the opportunity alone.
+     * The roles distinguish prototype, ordered production and still-open
+     * production so stage policy sees committed release state without
+     * inventing a second amount owner.
      */
     private function deliverables(SugarBean $bean, ?SugarBean $quote = null): array
     {
@@ -1086,8 +1016,8 @@ class BdQuoteReflectionHook
         // Resolve the ERP line -> quoted line item join ONCE for this pass.
         // The PROTOTYPE is joined too, even though it never joins the ladder:
         // it can be ordered like any other line (Kinetic order 9368 against
-        // Northgate 23 Aug 2026 is exactly that), and an ordered prototype is
-        // won revenue whose RLI has to say so.
+        // Northgate 23 Aug 2026 is exactly that), and release-stage policy
+        // must see the committed result.
         $allLines = $ladder;
         if ($proto !== null) {
             $allLines[] = $proto;
@@ -1114,10 +1044,9 @@ class BdQuoteReflectionHook
             ];
         }
 
-        // LEGACY RLI PROJECTION. Open production options remain one aggregate
-        // RLI so this old mode does not churn a row per option. This sum is not
-        // the accepted Bench Opportunity amount; Opportunities-only uses the
-        // governing contribution provider and performs zero RLI access.
+        // Partition alternative production lines by committed order state.
+        // The values inform stage/provenance only; they never replace the
+        // shared governing contribution used for Opportunity amount.
         $orderedProduction = [];
         $open = [];
         foreach ($ladder as $line) {
@@ -1143,9 +1072,8 @@ class BdQuoteReflectionHook
             ];
         }
 
-        // Everything still orderable, on one legacy RLI row. Governing is
-        // handled by the Opportunities-only contribution seam, not duplicated
-        // in this projection.
+        // Summarize lines that remain orderable for stage/provenance. The
+        // governing contribution is handled by the shared amount seam.
         $openSum = 0.0;
         $openQtys = [];
         $openPart = '';
@@ -1187,280 +1115,15 @@ class BdQuoteReflectionHook
             . '.'
         );
 
-        // There is no header-total fallback: this legacy projection emits only
-        // slices it can identify. Headline fallback and ambiguity semantics
-        // belong to the shared contribution writer.
+        // There is no header-total fallback: this state model emits only slices
+        // it can identify. Amount ambiguity belongs to the shared writer.
 
         return $out;
     }
 
     /**
-     * Remove the line items this package created, leaving every other row
-     * alone.
-     *
-     * Ownership is read from bd_deliverable_key - the same field
-     * upsertDeliverableRlis() writes, adopts and re-keys by, so a non-empty
-     * value means this hook minted or claimed the row. A row without one was
-     * never ours and is not ours to delete: the requirement is that the
-     * CONNECTOR stops using revenue line items, not that the module gets
-     * emptied out from under whoever else is using it. That is the same
-     * ownership line upsertDeliverableRlis() already draws when it spares
-     * unkeyed human-created rows.
-     *
-     * Returns silently on a missing relationship for the same reason
-     * upsertDeliverableRlis() does: where the RLI module is off the record
-     * there is nothing to load, and nothing to clear.
-     */
-    private function purgeDeliverableRlis(SugarBean $opportunity): void
-    {
-        if (!$opportunity->load_relationship('revenuelineitems')
-            || !$opportunity->revenuelineitems
-            || !is_object($opportunity->revenuelineitems)
-        ) {
-            return;
-        }
-
-        foreach ($opportunity->revenuelineitems->getBeans() as $rli) {
-            if ((string) ($rli->bd_deliverable_key ?? '') === '') {
-                continue;
-            }
-            $GLOBALS['log']->info(
-                'BdQuoteReflectionHook: removing connector-owned RLI ' . $rli->id
-                . ' (' . $rli->bd_deliverable_key . ') - opportunities mode'
-                . ' values the deal on the opportunity itself'
-            );
-            $rli->mark_deleted($rli->id);
-        }
-    }
-
-    /**
-     * Upsert one RLI per deliverable, keyed on bd_deliverable_key
-     * ("<bd01_ERP_Quote id>:<role>").
-     *
-     * Replace semantics: an existing keyed RLI is re-valued in place, never
-     * duplicated. The $0 placeholder RLI that the account-level action
-     * inserts at opportunity birth (unkeyed, likely_case 0) is claimed for
-     * the first missing deliverable instead of being left as an orphan row.
-     * Human-created RLIs (unkeyed, non-zero) are never touched.
-     *
-     * sales_stage is only set on rows this pass brings INTO the deliverable
-     * model (created or adopted) - an existing keyed RLI keeps whatever
-     * stage the closure machinery gave it (the partial-win lane in
-     * BdBenchDogsActionsApi owns closing the won slice; REQ-1 hinges on it).
-     */
-    private function upsertDeliverableRlis(
-        SugarBean $bean,
-        SugarBean $quote,
-        SugarBean $opportunity,
-        array $deliverables
-    ): void
-    {
-        if (!$opportunity->load_relationship('revenuelineitems')
-            || !$opportunity->revenuelineitems
-            || !is_object($opportunity->revenuelineitems)
-        ) {
-            return;
-        }
-
-        $byKey = [];
-        $byRole = [];
-        $placeholder = null;
-        foreach ($opportunity->revenuelineitems->getBeans() as $rli) {
-            $key = (string) ($rli->bd_deliverable_key ?? '');
-            if ($key !== '') {
-                if (!isset($byKey[$key])) {
-                    $byKey[$key] = $rli;
-                }
-                $rolePart = substr($key, strrpos($key, ':') + 1);
-                $byRole[$rolePart][] = $rli;
-            } elseif ($placeholder === null && (float) $rli->likely_case === 0.0) {
-                $placeholder = $rli;
-            }
-        }
-
-        foreach ($deliverables as $role => $spec) {
-            // Keyed on the SUGAR quote (the deal), not the ERP quote row: a
-            // Bench Dogs revision arrives as a NEW Kinetic quote for the same
-            // deal, and it must land on the SAME RLIs (replace, never add).
-            $key = $quote->id . ':' . $role;
-            $rli = $byKey[$key] ?? null;
-            $created = false;
-            $adopted = false;
-
-            if ($rli === null && !empty($byRole[$role])) {
-                // A connector-owned RLI of this role under an older key
-                // (an earlier package version keyed on the ERP quote row, or
-                // an earlier Kinetic generation): re-key it in place.
-                $rli = array_shift($byRole[$role]);
-            }
-            if ($rli === null && strpos($role, 'ordered_') === 0 && !empty($byRole['ordered'])) {
-                // Before per-line ordered rows, ONE row carried every ordered
-                // release for the quote. Adopt it rather than leave it: the
-                // stale sweep below deliberately spares Closed Won rows, so
-                // an orphaned merged row would keep its whole value on the
-                // opportunity while the per-line rows added theirs on top.
-                // On Harbor Lane that is a silent +4,100.
-                $rli = array_shift($byRole['ordered']);
-                $GLOBALS['log']->info(
-                    'BdQuoteReflectionHook: adopting the pre-per-line ordered RLI ' . $rli->id
-                    . ' (' . $rli->bd_deliverable_key . ') as ' . $key
-                );
-            }
-            if ($rli === null && $placeholder !== null) {
-                $rli = $placeholder;
-                $placeholder = null;
-                $adopted = true;
-            }
-            if ($rli === null) {
-                $rli = BeanFactory::newBean('RevenueLineItems');
-                $rli->opportunity_id = $opportunity->id;
-                $rli->account_id = (string) ($opportunity->account_id ?? '');
-                $rli->assigned_user_id = (string) ($opportunity->assigned_user_id ?? '');
-                $rli->currency_id = '-99';
-                $rli->base_rate = 1;
-                $rli->date_closed = !empty($opportunity->date_closed)
-                    ? $opportunity->date_closed
-                    : date('Y-m-d', strtotime('+30 days'));
-                $created = true;
-            }
-
-            $dirty = $created;
-            if ((string) ($rli->bd_deliverable_key ?? '') !== $key) {
-                $rli->bd_deliverable_key = $key;
-                $dirty = true;
-            }
-            if ((string) $rli->name !== $spec['name']) {
-                $rli->name = $spec['name'];
-                $dirty = true;
-            }
-            foreach (['likely_case', 'best_case', 'worst_case'] as $field) {
-                if ((float) $rli->$field !== $spec['amount']) {
-                    $rli->$field = $spec['amount'];
-                    $dirty = true;
-                }
-            }
-            if ($spec['quantity'] > 0 && (float) $rli->quantity !== $spec['quantity']) {
-                $rli->quantity = $spec['quantity'];
-                $dirty = true;
-            }
-
-            // A deliverable whose ERP line has been ORDERED is won revenue,
-            // and an existing RLI still sitting in an open stage is simply
-            // out of date - typically because the order was raised in Kinetic
-            // rather than through Sugar, so nothing in Sugar ever moved it.
-            //
-            // ONE-WAY, and only out of an OPEN stage. It can promote an open
-            // row to closed; it can never relabel a row that is already
-            // closed, and it can never reopen one. That restriction is not
-            // theoretical: a blanket re-stage of keyed RLIs relabelled the
-            // filmed deal's prototype from 'Prototype Closed' to 'Partial
-            // Production Closed' on 23 Aug 2026, and the guard below is what
-            // makes that unreachable from here.
-            if (!$created && !$adopted && !empty($spec['won'])) {
-                $current = (string) $rli->sales_stage;
-                $closed = ['Closed Won', 'Closed Lost', 'Prototype Closed', 'Partial Production Closed'];
-                if (!in_array($current, $closed, true)) {
-                    $wonStage = $role === 'prototype' ? 'Prototype Closed' : 'Closed Won';
-                    $rli->sales_stage = $wonStage;
-                    $rli->probability = 100;
-                    $dirty = true;
-                    $GLOBALS['log']->info(
-                        'BdQuoteReflectionHook: RLI ' . $rli->id . ' (' . $key . ') advanced from '
-                        . $current . ' to ' . $wonStage . ' - its Kinetic line is ordered.'
-                    );
-                }
-            }
-
-            if ($created || $adopted) {
-                [$stage, $probability] = $this->deliverableStage($role, $opportunity);
-                if ($stage !== '' && (string) $rli->sales_stage !== $stage) {
-                    $rli->sales_stage = $stage;
-                    $rli->probability = $probability;
-                    $dirty = true;
-                }
-            }
-
-            if ($dirty) {
-                $rli->save();
-                $GLOBALS['log']->info(
-                    'BdQuoteReflectionHook: RLI ' . $rli->id . ' (' . $key . ') '
-                    . ($created ? 'created' : ($adopted ? 'adopted from placeholder' : 'updated'))
-                    . ' likely_case=' . $spec['amount'] . ' on opportunity ' . $opportunity->id
-                );
-            }
-
-            // Stale generations of this role (keyed rows that lost the
-            // upsert) are connector-owned by definition - remove them so a
-            // re-quoted deal never double-counts. Closed rows are history
-            // and stay.
-            foreach ($byRole[$role] ?? [] as $stale) {
-                if ($stale->id === $rli->id) {
-                    continue;
-                }
-                if (in_array((string) $stale->sales_stage, ['Closed Won', 'Closed Lost'], true)) {
-                    continue;
-                }
-                $stale->mark_deleted($stale->id);
-                $GLOBALS['log']->info(
-                    'BdQuoteReflectionHook: stale deliverable RLI ' . $stale->id
-                    . ' (' . $stale->bd_deliverable_key . ') removed - superseded by ' . $key
-                );
-            }
-        }
-
-        // An open production row that is no longer produced has to be
-        // REMOVED, not left behind. Nothing above would touch it: the stale
-        // sweep only runs for roles this pass is writing, so a suppressed
-        // production row would survive with its last value and keep adding
-        // it to the opportunity forever - on Harbor Lane that is a silent
-        // +18,900 on a deal whose open value is now nil.
-        if (!isset($deliverables['production'])) {
-            foreach ($byRole['production'] ?? [] as $orphan) {
-                $orphanKey = (string) ($orphan->bd_deliverable_key ?? '');
-                if (strpos($orphanKey, $quote->id . ':') !== 0
-                    && strpos($orphanKey, $bean->id . ':') !== 0) {
-                    continue;   // another deal's deliverable sharing this opportunity
-                }
-                $orphan->mark_deleted($orphan->id);
-                $GLOBALS['log']->info(
-                    'BdQuoteReflectionHook: open production RLI ' . $orphan->id . ' (' . $orphanKey
-                    . ') removed - a production break has been ordered, so there is no open '
-                    . 'production value left on this deal.'
-                );
-            }
-        }
-    }
-
-
-    /**
-     * Is this instance rolling opportunity value up from Revenue Line Items?
-     *
-     * Bench Dogs do not sell line items. They sell ONE job that happens to be
-     * quoted as a prototype plus a ladder of ALTERNATIVE quantity breaks, and
-     * deliverables() already answers "what is this deal worth" from the quote
-     * itself. RLIs were never the source of that answer - they were a vehicle
-     * for it, needed only because this instance ran opps_view_by =
-     * RevenueLineItems, where Opportunity.amount is a read-only rollup and a
-     * direct write is silently discarded (measured 24 Aug 2026: a REST PUT of
-     * amount 1234.56 returned 200, echoed back 0.000000 and re-read
-     * 0.000000). With the mode off, the RLI module is not on the record at
-     * all and the same write lands.
-     *
-     * So the mode is not a preference this package may assume - it decides
-     * which of two shapes the SAME arithmetic has to take. Read at call time
-     * rather than cached: an admin can flip it underneath a running instance,
-     * and the next save must then reflect the deal the new way.
-     */
-    private static function rliModeEnabled(): bool
-    {
-        return SugarConfig::getInstance()->get('opps.view_by', 'Opportunities')
-            === 'RevenueLineItems';
-    }
-
-
-    /**
      * Maintain Bench forecast fields and pre-order Proposal initialization
-     * from deliverables, with no RLIs.
+     * from native Quote-line release state.
      *
      * Headline amount belongs to the shared primary-Quote hook, never this
      * method. System-managed Best/Worst consume that already-converted
@@ -1603,7 +1266,7 @@ class BdQuoteReflectionHook
             . 'forecast = Opportunity amount ' . number_format($forecast, 2) . ' for ERP quote '
             . $bean->quote_num
             . ' stage ' . (string) $opportunity->sales_stage
-            . ' (Opportunities-only mode, no revenue line items)'
+            . ' (Quote-line-only mode)'
         );
     }
 
@@ -1679,52 +1342,6 @@ class BdQuoteReflectionHook
         return $ranks[$stage] ?? 0;
     }
 
-
-    /**
-     * The stage a deliverable RLI is BORN with (create/adopt only - updates
-     * never touch stage). Derived from the opportunity's own stage so the
-     * materialization slots into whatever state the deal is already in:
-     * a prototype that already closed keeps its closure; the production
-     * slice of a partially-closed deal is the quoted proposal still in play.
-     *
-     * @return array{0: string, 1: int}
-     */
-    private function deliverableStage(string $role, SugarBean $opportunity): array
-    {
-        $oppStage = (string) ($opportunity->sales_stage ?? '');
-
-        if ($role === 'ordered' || strpos($role, 'ordered_') === 0) {
-            // An ordered release is money that has been won, whatever the
-            // rest of the deal is doing. It is also the row the stale-row
-            // sweep in upsertDeliverableRlis() must never remove, and Closed
-            // Won is exactly what protects it there.
-            return ['Closed Won', 100];
-        }
-
-        if ($role === 'prototype') {
-            if ($oppStage === 'Prototype Closed' || $oppStage === 'Partial Production Closed') {
-                return ['Prototype Closed', 80];
-            }
-            return [
-                $oppStage !== '' ? $oppStage : 'Prospecting',
-                (int) ($opportunity->probability ?? 10),
-            ];
-        }
-
-        if ($oppStage === 'Closed Won') {
-            return ['Closed Won', 100];
-        }
-        if ($oppStage === 'Closed Lost') {
-            return ['Closed Lost', 0];
-        }
-        if ($oppStage === ''
-            || $oppStage === 'Prototype Closed'
-            || $oppStage === 'Partial Production Closed'
-        ) {
-            return ['Proposal/Price Quote', 65];
-        }
-        return [$oppStage, (int) ($opportunity->probability ?? 50)];
-    }
 
     // -------------------------------------------------------------------
     // REQ-28: a quote born in Kinetic becomes a native Sugar quote
@@ -1878,53 +1495,12 @@ class BdQuoteReflectionHook
 
         // Hand the new quote straight to the ordinary reflection. Creating
         // the records is only half of REQ-28: without this the Sugar quote
-        // would carry no bd_erp_stage and no bd_erp_total, and the
-        // opportunity would sit at zero with no deliverable RLIs - a
-        // materialized deal that is invisible to every forecast the rest of
-        // this package exists to make true. Doing it HERE rather than
+        // would carry no bd_erp_stage or bd_erp_total and its Opportunity
+        // would remain invisible to the shared amount and Bench forecast
+        // paths. Doing it here rather than
         // waiting for the next sync also means the record is complete the
         // first time anyone looks at it.
         $this->reflectOntoQuote($bean, $quote->id);
-        $this->seedDealStage($quote);
-    }
-
-    /**
-     * Put a newly materialized deal at Proposal/Price Quote.
-     *
-     * With RevenueLineItems on, an Opportunity's sales_stage is rolled UP
-     * from its RLIs, and deliverableStage() seeds an RLI from the
-     * opportunity's stage - so a brand-new opportunity, which has no RLIs and
-     * therefore rolls up to Prospecting, seeds RLIs that say Prospecting and
-     * holds the deal there. Measured on Kinetic quote 1200: a fully priced
-     * $9,420 quote landed in Prospecting.
-     *
-     * A materialized deal is never at prospecting: a priced quote already
-     * exists, in the ERP, which is the whole reason the record was created.
-     *
-     * Runs ONCE, at birth, and only on rows still sitting at the default -
-     * never on a later sync, so a rep who moves the deal keeps it moved.
-     */
-    private function seedDealStage(SugarBean $quote): void
-    {
-        try {
-            $opportunity = $this->linkedOpportunity($quote);
-            if ($opportunity === null || !$opportunity->load_relationship('revenuelineitems')) {
-                return;
-            }
-            foreach ($opportunity->revenuelineitems->getBeans() as $rli) {
-                if ((string) $rli->sales_stage !== 'Prospecting') {
-                    continue;
-                }
-                $rli->sales_stage = 'Proposal/Price Quote';
-                $rli->probability = 65;
-                $rli->save();
-            }
-        } catch (Throwable $e) {
-            $GLOBALS['log']->warn(
-                'BdQuoteReflectionHook: could not seed the deal stage for quote '
-                . $quote->id . ': ' . $e->getMessage()
-            );
-        }
     }
 
     /**
@@ -2069,8 +1645,8 @@ class BdQuoteReflectionHook
      * downstream action in this package.
      *
      * The quote is stamped erp_display_sync_key (adoption's key on the next
-     * run) and erp_is_primary_quote. The second one matters: the deliverable
-     * RLI materialization is gated on it, so without it the opportunity this
+     * run) and erp_is_primary_quote. The second one matters because the shared
+     * Quote amount writer is gated on it, so without it the Opportunity this
      * method just created would sit at zero forever. We are the ones
      * declaring this quote the opportunity's primary quote - there is no
      * other candidate, we made both records in the same breath.
@@ -2296,9 +1872,8 @@ class BdQuoteReflectionHook
      * after_relationship_add on bd01_ERP_Quote: the account or a line just
      * became part of this ERP quote, so reconsider REQ-28.
      *
-     * Needed for the same create-then-link ordering that broke the
-     * deliverable RLIs (see BdRliRefreshHook::refreshOnLink): the connector
-     * writes the mirror header first and attaches its account and its lines
+     * Needed for the connector's create-then-link ordering: it writes the
+     * mirror header first and attaches its account and its lines
      * in separate calls afterwards, none of which fire a save hook on the
      * header. Without this, a Kinetic-born quote would sit at
      * "waiting_account" or "waiting_lines" until some unrelated field

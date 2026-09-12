@@ -48,6 +48,8 @@ class SugarBean {
     }
 }
 class Opportunity extends SugarBean {
+    // Shared ERP-Core owns this mode check. The Bench implementation is
+    // independently scanned to prove that it never calls this method.
     public static function usingRevenueLineItems() { return false; }
 }
 class SugarConfig {

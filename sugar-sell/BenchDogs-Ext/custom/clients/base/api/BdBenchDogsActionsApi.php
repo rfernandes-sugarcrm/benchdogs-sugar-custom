@@ -14,8 +14,7 @@ use Sugarcrm\Sugarcrm\Security\HttpClient\ExternalResourceClient;
  *     engineered-to-order - no catalog part exists at account stage; the doc
  *     records "Epicor permits a free text string not in the catalog"). The
  *     Quote is the leading object: it is born linked to the opportunity and
- *     typed advanced_quote, so estimating - not revenue line items - carries
- *     the deal from here.
+ *     typed advanced_quote, so estimating carries the deal from here.
  *
  *   POST Quotes/:record/bd-send-to-estimating   REQ-27 (the path the whole
  *     solution rests on) + REQ-13/UC-6: create the Kinetic quote shell for
@@ -132,13 +131,12 @@ if (file_exists($parentApiFile)) {
         // -------------------------------------------------------------------
 
         /**
-         * Bean sequence cloned from the proven sales-i
-         * RecommendationConvertApi::convertToOpportunity (Opportunity -> RLI ->
-         * Quote -> default ProductBundle -> Products line), re-sourced from the
-         * Account record and carrying a free-text line instead of a catalog
-         * part. Everything is created at amount 0 - the honest number before
-         * estimating has priced anything (REQ-6's roll-up direction is
-         * ERP -> Sugar, so seeding fake values here would fight the sync).
+         * Bean sequence creates one Opportunity, one Quote, its default
+         * ProductBundle and a native Products line, re-sourced from the Account
+         * record and carrying a free-text line instead of a catalog part.
+         * Everything is created at amount 0 - the honest number before
+         * estimating has priced anything (REQ-6's roll-up direction is ERP ->
+         * Sugar, so seeding fake values here would fight the sync).
          */
         public function createOppQuote(ServiceBase $api, array $args)
         {
@@ -182,29 +180,6 @@ if (file_exists($parentApiFile)) {
                 $opp->accounts->add($account);
             }
 
-            if (class_exists('Opportunity')
-                && method_exists('Opportunity', 'usingRevenueLineItems')
-                && Opportunity::usingRevenueLineItems()
-            ) {
-                $rli = BeanFactory::newBean('RevenueLineItems');
-                $rli->name = $placeholder;
-                $rli->likely_case = 0;
-                $rli->best_case = 0;
-                $rli->worst_case = 0;
-                $rli->quantity = $qty;
-                $rli->discount_price = 0;
-                $rli->list_price = 0;
-                $rli->currency_id = '-99';
-                $rli->base_rate = 1;
-                $rli->date_closed = $closeDate;
-                $rli->sales_stage = 'Prospecting';
-                $rli->probability = 10;
-                $rli->assigned_user_id = $assigned;
-                $rli->opportunity_id = $opp->id;
-                $rli->account_id = $account->id;
-                $rli->save();
-            }
-
             $quote = BeanFactory::newBean('Quotes');
             $quote->name = $name;
             $quote->quote_stage = 'Draft';
@@ -221,8 +196,9 @@ if (file_exists($parentApiFile)) {
             $quote->shipping_account_id = $account->id;
             $quote->shipping_account_name = $account->name;
             $quote->erp_is_primary_quote = true;
-            // REQ-6's RLI materialization is gated on this flag, and nothing else
-            // sets it on a quote Sugar raised itself - measured live: two quotes
+            // Shared ERP-Core's single Opportunity amount writer is gated on
+            // this flag, and nothing else sets it on a quote Sugar raised
+            // itself - measured live: two quotes
             // created here reached 'priced' in Kinetic and their opportunities
             // still read $0, because the gate had never opened. We create the
             // opportunity and the quote in the same call, so there is no other
@@ -391,7 +367,10 @@ if (file_exists($parentApiFile)) {
 
             try {
                 SugarAutoLoader::load('modules/Administration/QuickRepairAndRebuild.php');
-                $modules = array('Quotes', 'Opportunities', 'RevenueLineItems', 'Accounts');
+                // Bench Dogs is an Opportunities-only deployment. Repair the
+                // Quote/Opportunity surfaces it owns without compiling a
+                // disabled sales model.
+                $modules = array('Quotes', 'Opportunities', 'Accounts');
                 $rac = new RepairAndClear();
                 $rac->show_output = false;
                 $rac->module_list = $modules;
@@ -625,8 +604,8 @@ if (file_exists($parentApiFile)) {
             $created = $hook->backfillMissingQuoteLines($erpQuote, $bean);
 
             // Re-value through the ordinary reflection path, which also runs the
-            // ordered reconciliation - so the opportunity, the RLIs and the
-            // ordered flags all land from one code path rather than this action
+            // ordered reconciliation - so the opportunity forecast and the
+            // ordered flags both land from one code path rather than this action
             // inventing its own arithmetic.
             $hook->refreshOpportunityAmount($erpQuote);
 

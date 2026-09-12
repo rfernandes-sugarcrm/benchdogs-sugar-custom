@@ -162,7 +162,7 @@ if (function_exists('post_execute') === false) {
 
         try {
             SugarAutoLoader::load('modules/Administration/QuickRepairAndRebuild.php');
-            $modules = ['Quotes', 'Opportunities', 'RevenueLineItems', 'Accounts', 'bd01_ERP_Quote', 'bd01_ERP_Quote_Line', 'bd01_ERP_Quote_Cost'];
+            $modules = ['Quotes', 'Opportunities', 'Accounts', 'bd01_ERP_Quote', 'bd01_ERP_Quote_Line', 'bd01_ERP_Quote_Cost'];
             $rac = new RepairAndClear();
             $rac->show_output = false;
             $rac->module_list = $modules;
@@ -193,5 +193,40 @@ if (function_exists('post_execute') === false) {
             $GLOBALS['log']->error('BenchDogs-Ext: relationship rebuild failed: ' . $e->getMessage());
         }
 
+        // A copied language fragment is not yet a usable stage domain. The
+        // admin repair route explicitly compiles application languages and
+        // refreshes their metadata; fresh installs and upgrades need that
+        // same lifecycle before they can report this capability as ready.
+        // Run after the other extension rebuilds, and verify uncached lists.
+        try {
+            require_once 'ModuleInstall/ModuleInstaller.php';
+            $languages = array('en_us' => 'en_us');
+            foreach (array(
+                $GLOBALS['sugar_config']['default_language'] ?? 'en_us',
+                $GLOBALS['current_language'] ?? 'en_us',
+            ) as $language) {
+                if (is_string($language) && trim($language) !== '') {
+                    $languages[trim($language)] = trim($language);
+                }
+            }
+            $mi = new ModuleInstaller();
+            $mi->silent = true;
+            $mi->rebuild_languages($languages);
+            MetaDataManager::refreshLanguagesCache(array_values($languages));
+            foreach ($languages as $language) {
+                $doms = return_app_list_strings_language($language, false);
+                if (!isset($doms['quote_stage_dom']['Partially Fulfilled'])
+                    || !isset($doms['sales_stage_dom']['Prototype Closed'])
+                    || !isset($doms['sales_stage_dom']['Partial Production Closed'])
+                    || (string) ($doms['sales_probability_dom']['Prototype Closed'] ?? '') !== '80'
+                    || (string) ($doms['sales_probability_dom']['Partial Production Closed'] ?? '') !== '90') {
+                    throw new RuntimeException('Required stage domains unavailable');
+                }
+            }
+        } catch (Throwable $e) {
+            $message = 'BenchDogs-Ext: required stage language verification failed';
+            $GLOBALS['log']->error($message);
+            throw new RuntimeException($message);
+        }
     }
 }

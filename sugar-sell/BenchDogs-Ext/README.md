@@ -27,10 +27,11 @@ governing:
 2. requests `BdQuoteReflectionHook::refreshOpportunityAmount`.
 
 Both QA profiles use **Opportunities-only**, with Quote line items and no
-Opportunity Revenue Line Items. The current headline-owner repair leaves
-Opportunity amount with shared ERP-Core's primary-Quote hook, using the stored
-native Quote total. Bench reflection must not overwrite that amount with a
-different subtotal, or access/create/delete Opportunity RLIs in this mode.
+Opportunity Revenue Line Items. This is a package invariant, not a runtime
+branch: rc12 ships no Opportunity-line vardef, hook, module lookup or fallback
+projection. Opportunity amount stays with shared ERP-Core's primary-Quote hook,
+using the stored native Quote total. Bench reflection must not overwrite that
+amount with a different subtotal.
 Stage derivation remains Bench-specific. System-managed Opportunity Best and
 Worst consume the shared writer's already converted headline amount, so they
 follow the same selected production + prototype + tax + shipping policy.
@@ -69,6 +70,22 @@ exception text or customer-policy internals.
 The coordinated rc9 candidate and its exact dependency/artifact hashes are
 recorded in [release evidence](docs/release-0.9.42-rc9.md). Offline passing
 tests are not hosted installation or prototype-stage acceptance.
+
+Bench rc12 adds required post-install application-language compilation and
+metadata refresh, followed by uncached stage/probability verification. A
+missing required domain fails installation with a neutral error rather than
+requiring a manual `repair-ui` call. It also supplies append-only native
+DropdownsStyle entries for the two customer stage keys: Sugar's formatted
+`enum-cascade` renders a value blank when the domain label exists but its style
+entry does not. Existing tenant styles for either exact key are preserved. It
+does not change stage policy or the shared writer. See
+[rc12 candidate evidence](docs/release-0.9.42-rc12.md).
+
+Because Sugar upgrades do not remove files omitted by a newer ZIP, moving from
+rc9 to rc12 requires a Module Loader uninstall with tables retained, followed
+by the rc12 install. This is what removes the retired Opportunity-line files;
+an in-place upgrade is not accepted. Rollback uses the same supported boundary:
+uninstall rc12 with tables retained, then install the saved rc9 artifact.
 
 Classification uses the ordered Quote line item's `bd_erp_line_num` identity
 against exactly one linked ERP quote. Multiple revisions, duplicate ERP line

@@ -3,9 +3,8 @@
 /**
  * REQ-13, the reportable half: how long estimating took.
  *
- * Value is already covered (the deliverable RLIs are live and Sugar rolls
- * Opportunities.amount up from them - this package never writes that amount
- * directly), and committed history is already covered (Sugar's Forecast
+ * Value is already covered by native Quote lines and the shared Opportunity
+ * amount writer, and committed history is already covered (Sugar's Forecast
  * worksheet snapshots on commit). Turnaround is the one thing no layer
  * captured, and it is Bench Dogs' biggest process question.
  *
