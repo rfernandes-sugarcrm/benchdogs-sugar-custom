@@ -256,7 +256,25 @@ class BdQuotesLayoutExtensions
             $buttons = array_values($keptButtons);
 
             // 3. Hand back what we took from ERP-Epicor.
-            foreach (self::stashedButtons() as $name => $entry) {
+            $stashed = self::stashedButtons();
+            if (empty($stashed)) {
+                // An empty stash is not necessarily good news, and this is the
+                // one case this mechanism CANNOT repair. On an instance whose
+                // last install predates the stash, ERP-Epicor's buttons are
+                // already gone from the deployed view and nothing recorded what
+                // they were - and reinstalling this package does not recapture
+                // them, because writeButtons() can only stash what is still
+                // there to remove. Say so loudly rather than finish quietly and
+                // leave an admin to discover three missing buttons later.
+                $GLOBALS['log']->error(
+                    'BenchDogs-Ext: no stashed buttons to restore. If advanced_quote_button, '
+                    . 'create_erp_order_button or refresh_price_availability_button are missing '
+                    . 'from the Quotes record view after this uninstall, re-run ERP-Epicor\'s own '
+                    . 'installer to write them back - this package removed them before it recorded '
+                    . 'what it was removing.'
+                );
+            }
+            foreach ($stashed as $name => $entry) {
                 $def = is_array($entry) ? ($entry['def'] ?? null) : null;
                 if (!is_array($def) || empty($def['name'])) {
                     continue;
