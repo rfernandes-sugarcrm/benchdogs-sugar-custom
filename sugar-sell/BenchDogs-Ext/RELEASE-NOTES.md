@@ -1,6 +1,33 @@
-# 0.9.42-rc5 — fresh release-stage observation candidate
+# 0.9.42-rc6 — observable shared-stage candidate
 
 Not installed on QA and not approved for production.
+
+The installed rc5 package still created exactly one prototype order while the
+Opportunity remained Proposal for 60 seconds. That disproved stale Product
+beans as the complete cause. rc6 retains rc5's provider behavior but requires
+the coordinated ERP-Epicor 1.1.24-rc4 / Partial Fulfillment 1.0.11 repair.
+Those shared packages normalize associative Opportunity relationship id arrays
+and return a neutral `release_stage_status` in the order response, allowing the
+next hosted run to locate a silent skip without server-log access. The status
+contains no record ids, exception text or customer-policy internals and does
+not alter the seller's truthful order-success message.
+
+Offline network-none validation passes 88 tests with two declared skips. Source
+preflight is clean; ZIP preflight has zero blocker/required findings and retains
+the known `files.md5` advisory. The packaged provider and reflection hook are
+byte-identical to source, and the manifest pins both coordinated dependencies.
+SHA-256:
+`f4b6ea37f16ef22bd95d800a6187a290b70739e203afd8167b8fef4a1897081e`.
+
+Hosted scan and a fresh prototype-first journey remain required. Roll back to
+rc3 without uninstalling modules or removing tables.
+
+## Previous candidate
+
+### 0.9.42-rc5 — fresh release-stage observation candidate
+
+Installed on Bench QA for one controlled prototype-first run; not approved for
+production.
 
 The rc4 prototype action created one exact Epicor order and stamped the native
 Quote line, but Opportunity remained Proposal for 60 seconds. The action had
@@ -20,9 +47,11 @@ the known `files.md5` advisory. The packaged provider and reflection hook are
 byte-identical to source. SHA-256:
 `82989bf888f5a864b3ef8695c2dc2979e869e32aaf2bcd899556a5e3f409a2c3`.
 
-Hosted scan and a fresh prototype-then-production QA journey remain required.
-Roll back to rc3, the last candidate that preceded release-stage policy; do not
-uninstall modules or remove tables.
+Hosted scan passed, but the fresh prototype action failed identically to rc4:
+exact Epicor order 11572 was created and the Opportunity remained Proposal for
+60 seconds. The production leg was withheld and exact cleanup passed. Roll back
+to rc3, the last candidate that preceded release-stage policy; do not uninstall
+modules or remove tables.
 
 ## Previous candidate
 
