@@ -12,7 +12,7 @@ overrides a stock Sugar file.
 | Module | Hook class | Fires on | Does |
 |---|---|---|---|
 | `bd01_ERP_Quote` | `BdQuoteReflectionHook` | after_save | Reflects ERP fields onto the linked Quote and maintains Bench stage/forecast behavior; shared ERP-Core owns Opportunity headline amount in Opportunities-only mode |
-| `bd01_ERP_Quote_Line` | `BdGoverningLineHook` | after_save | Demotes governing siblings and requests a reflection refresh; concurrent uniqueness and governing-amount acceptance remain unverified |
+| `bd01_ERP_Quote_Line` | `BdGoverningLineHook` | after_save | Demotes governing siblings and requests a reflection refresh; installed single-session governing-amount behavior passes, while concurrent uniqueness remains unverified |
 | `Quotes` | `BdEstimatingNotificationHook` | after_save | Creates a Notifications record when `bd_erp_stage` enters `in_estimating` |
 
 ### Governing-line rollup (REQ-5 / REQ-6)

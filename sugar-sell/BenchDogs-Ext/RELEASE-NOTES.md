@@ -1,7 +1,9 @@
 # 0.9.42-rc2 — governing contribution candidate
 
-Not installed on QA or approved for production. Requires shared ERP-Epicor
-1.1.24-rc1 or newer for the neutral contribution contract.
+Installed on Bench Dogs QA as package
+`9dcac8be-aee1-11f1-abd9-060ab0eed8b1`; not approved for production. The QA
+site now has shared ERP-Epicor 1.1.24-rc3, satisfying this package's neutral
+contribution contract dependency.
 
 Only the selected governing production option contributes to Opportunity
 amount; alternatives remain visible. Prototype value, Quote tax and shipping
@@ -25,6 +27,22 @@ the known `files.md5` advisory. SHA-256:
 `f2b938949a48a85e115134645698f3c1a6bab3db4ff145578c742f66b74dacaa`.
 The retained rc1 ZIP is historical and therefore does not match the current
 version file; the targeted rc2 artifact check passes.
+
+Installed QA evidence (2026-09-12): one owned Quote retained all production
+options (50×80, 75×70, 100×65) plus a $500 prototype. With native tax
+$1,340.625 and shipping $10, Opportunity amount was $5,850.63 for the selected
+50-unit option and $7,100.63 after selecting the 75-unit option. A later native
+Quote save and repeated selection write both remained $7,100.63. Quote total
+stayed $17,600.625 and no Opportunity RLIs were created. All 12 exact owned
+records were individually confirmed absent after cleanup; API logout returned
+200.
+
+This proves the installed downstream provider, uniqueness hook, shared-writer
+convergence and arithmetic. It does not prove automatic selection from the
+unknown Kinetic header field. The run also found that Bench `best_case` and
+`worst_case` became the all-options subtotal ($16,250) while headline amount
+was $7,100.63; that forecast-experience inconsistency remains open rather than
+being silently treated as part of this pass.
 
 ## Previous candidate
 
