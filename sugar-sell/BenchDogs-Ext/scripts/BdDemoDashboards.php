@@ -527,12 +527,103 @@ class BdDemoDashboards
     }
 
     /**
-     * Nothing to undo. Removing the tiles on uninstall would also strip whatever
-     * an admin has since arranged around them, and the dashlet types themselves
-     * disappear with their own packages.
+     * Remove only the tiles that point at a module this uninstall is deleting.
+     *
+     * An earlier version of this method did nothing, on the reasoning that a
+     * dashlet type disappears with its own package. That is true of the TYPE and
+     * false of the target: the Bench Dogs filler tiles are stock `dashablelist`
+     * dashlets, so their type survives the uninstall perfectly well while the
+     * module each one lists - bd01_ERP_Quote and friends - does not. The result
+     * is a tile that renders an error where a list used to be, on the Accounts
+     * focus drawer and the Home dashboard, which is precisely the broken-tile
+     * outcome the class comment says is worse than a missing one.
+     *
+     * The old reasoning still holds for everything else, and is why this is
+     * narrow. Tiles this script placed on another package's behalf
+     * (erp-account-snapshot, saah-*, the BAQ dashlet, sales-targets-chart) stay:
+     * they belong to packages that are still installed. Tiles an admin added
+     * stay. Positions of surviving tiles are left exactly as they are rather
+     * than re-flowed, because re-flowing would move somebody else's work to
+     * close a cosmetic gap that the grid closes by itself.
      */
     public function uninstall(): void
     {
+        foreach (self::DASHBOARDS as $spec) {
+            try {
+                $this->removeOne($spec);
+            } catch (\Exception $e) {
+                $GLOBALS['log']->error(
+                    "BdDemoDashboards: could not clean {$spec['dashboard_module']}/"
+                    . "{$spec['view_name']} - " . $e->getMessage()
+                );
+            }
+        }
+    }
+
+    /**
+     * The modules that go away with this package, whose tiles therefore cannot
+     * survive it. Kept in one place so it stays in step with pack.php's `beans`
+     * installdef, which is the list that actually removes them.
+     *
+     * @return array<int, string>
+     */
+    private function doomedModules(): array
+    {
+        return ['bd01_ERP_Quote', 'bd01_ERP_Quote_Line', 'bd01_ERP_Quote_Cost'];
+    }
+
+    private function removeOne(array $spec): void
+    {
+        $bean = $this->findDefaultDashboard($spec);
+        if (!$bean) {
+            return;
+        }
+
+        $doomedModules = $this->doomedModules();
+
+        // Ids of the tiles THIS spec declares against a doomed module. Matching
+        // on id as well as on module means a tile we wrote is recognised even if
+        // an admin has since retargeted it, and the module check below catches a
+        // copy an admin made that carries a different id.
+        $doomedIds = [];
+        foreach ($spec['dashlets'] as $tile) {
+            $module = $tile['context']['module'] ?? '';
+            if ($module !== '' && in_array($module, $doomedModules, true)) {
+                $doomedIds[] = $tile['id'];
+            }
+        }
+
+        $metadata = $this->decodeMetadata($bean->metadata);
+        $existing = isset($metadata['dashlets']) && is_array($metadata['dashlets'])
+            ? $metadata['dashlets']
+            : [];
+
+        $kept = [];
+        $removed = 0;
+        foreach ($existing as $tile) {
+            $id = is_array($tile) ? ($tile['id'] ?? '') : '';
+            $module = is_array($tile) ? ($tile['context']['module'] ?? '') : '';
+            if (($id !== '' && in_array($id, $doomedIds, true))
+                || ($module !== '' && in_array($module, $doomedModules, true))) {
+                $removed++;
+                continue;
+            }
+            $kept[] = $tile;
+        }
+
+        if ($removed === 0) {
+            return;
+        }
+
+        $metadata['dashlets'] = array_values($kept);
+        $bean->metadata = json_encode($metadata);
+        $bean->save();
+
+        $GLOBALS['log']->info(
+            "BdDemoDashboards: removed {$removed} tile(s) from {$spec['name']} that "
+            . 'listed a module this uninstall deletes, and left ' . count($kept)
+            . ' other tile(s) exactly where they were'
+        );
     }
 
     private function applyOne(array $spec): void

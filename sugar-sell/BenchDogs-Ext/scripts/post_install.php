@@ -139,8 +139,21 @@ if (function_exists('post_execute') === false) {
         // are not guaranteed to have run yet, but addTree('scripts') always
         // extracts this file into the same temp directory as post_install.php
         // itself, so __DIR__ is the one location guaranteed present already.
+        //
+        // GUARD THE CLASS, NOT THE PATH. This file reaches for __DIR__ and
+        // pre_uninstall.php falls back to custom/include/bd_scripts/, so
+        // BdDemoDashboards.php is reachable at two paths on an installed
+        // instance. require_once dedupes by RESOLVED PATH, not by class name,
+        // and an uninstall_before_upgrade run executes pre_uninstall.php and
+        // this file in ONE request - so both copies would load and PHP would
+        // fatal with "Cannot redeclare class BdDemoDashboards", killing the
+        // install outright. The sibling repository lost a demo instance to
+        // exactly this defect on 2026-09-11; scripts/mlp_lint.py MLP001 exists
+        // because of it, and flagged this line.
         try {
-            require_once __DIR__ . '/BdDemoDashboards.php';
+            if (!class_exists('BdDemoDashboards', false)) {
+                require_once __DIR__ . '/BdDemoDashboards.php';
+            }
             (new BdDemoDashboards())->install();
         } catch (Throwable $e) {
             $GLOBALS['log']->error('BenchDogs-Ext: demo dashboards failed: ' . $e->getMessage());
