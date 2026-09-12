@@ -1,4 +1,37 @@
-# 0.9.42-rc3 — governing forecast alignment candidate
+# 0.9.42-rc4 — shared release-stage ownership candidate
+
+Not installed on QA and not approved for production.
+
+Bench now provides release-stage policy as plain data through Partial
+Fulfillment 1.0.10's fixed neutral seam. Prototype-only release resolves to
+Prototype Closed/80; any ordered production option resolves to Partial
+Production Closed/90. Missing or contradictory ERP-line identity refuses.
+The provider never writes Opportunity.
+
+`BdQuoteReflectionHook` no longer advances post-order Opportunity stage. It
+retains pre-order Proposal initialization and system/human forecast provenance.
+When Kinetic reconciliation newly marks a Quote line ordered, it invokes the
+same shared `AfterLinesOrdered` dispatcher used by Order Selected Lines, so
+trigger order cannot choose a different writer. The package now requires
+Partial Fulfillment 1.0.10.
+
+Offline network-none validation passes 87 tests with two declared skips. The
+composed real-PHP lifecycle keeps one Opportunity and zero RLI reads while
+moving prototype release to Prototype Closed/80 and later production release
+to Partial Production Closed/90. Policy cases cover no release, production
+precedence, multiple ERP revisions, duplicate line identity, missing identity
+and multiple prototypes. Source preflight is clean; ZIP preflight has zero
+blocker/required findings and retains the known `files.md5` advisory. Both
+changed packaged PHP files are byte-identical to source. SHA-256:
+`dbfa731f1d05bda2b45a6bf46eff12634656e69aaf210c1ca9decbe085bf3d80`.
+
+Hosted ModuleScanner and installed prototype-then-production release journeys
+remain required before QA approval. Roll back to 0.9.42-rc3 without uninstalling
+modules or removing tables.
+
+## Previous candidate
+
+### 0.9.42-rc3 — governing forecast alignment candidate
 
 Installed on Bench QA as package
 `7e19d778-aee9-11f1-8749-060ab0eed8b1`; not approved for production.

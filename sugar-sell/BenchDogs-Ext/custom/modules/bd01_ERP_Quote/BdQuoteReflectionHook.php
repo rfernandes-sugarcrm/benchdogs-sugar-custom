@@ -7,17 +7,12 @@
  *
  * When sugar_quote_id is set, the saved ERP quote is reflected onto that
  * Sugar Quote: bd_erp_total / bd_erp_stage / bd_priced_at / bd_reason_code
- * are updated (only when a value actually changed), and if the Quote is the
- * primary quote of its Opportunity (erp_is_primary_quote, owned by ERP-Core),
- * the Opportunity's REVENUE LINE ITEMS are materialized and maintained from
- * the quote's deliverables (Bench Dogs REQ-6): the prototype-flagged line
- * feeds the prototype RLI, the governing line (see BdGoverningLineHook,
- * which keeps that flag unique per quote) feeds the production RLI, each
- * upserted by bd_deliverable_key with replace semantics. Sugar's own RLI
- * arithmetic then carries the value up to Opportunity.amount - this
- * instance runs opps_view_by = RevenueLineItems, where a directly written
- * amount does not durably stick (pre-0.8.6 wrote the amount here; the
- * write is now re-targeted at the RLIs).
+ * are updated only when a value changed. Bench QA is Opportunities-only: the
+ * shared Quote hook owns headline amount, this class maintains forecast
+ * provenance and pre-order Proposal initialization, and Partial Fulfillment
+ * owns release-stage writes through Bench's neutral policy. No Opportunity
+ * RLI is read or written in that path. Legacy RLI-mode projection remains
+ * isolated below for older deployments and is not the Bench acceptance model.
  *
  * When NEITHER sugar_quote_id nor bd_materialized_quote_id is set the ERP
  * quote was born in Kinetic, and REQ-28's materialization runs instead: a
@@ -398,7 +393,7 @@ class BdQuoteReflectionHook
         // first: whether the deal is re-valued by a pipeline sync, a link
         // event or a button, it has to land on the same numbers. Convergence
         // is the requirement - the answer must not depend on what triggered it.
-        $this->reconcileOrderedFromErpOrders($quote);
+        $reconciledReleaseLines = $this->reconcileOrderedFromErpOrders($quote);
 
         if (empty($quote->erp_is_primary_quote)) {
             return;
@@ -415,6 +410,10 @@ class BdQuoteReflectionHook
             // newest generation may value the deal - a late save of an old
             // generation must not drag the RLIs backwards.
             return;
+        }
+
+        if ($reconciledReleaseLines > 0) {
+            $this->dispatchReleaseStageAfterKineticReconciliation($quote);
         }
 
         $deliverables = $this->deliverables($bean, $quote);
@@ -1032,12 +1031,11 @@ class BdQuoteReflectionHook
      *              when the join below resolves, because it is the only thing
      *              that can tell ordered from open.
      *
-     * A BENCH DOGS QUANTITY LADDER IS TIERED, NOT EXCLUSIVE. The breaks (25,
-     * 50, 100) are releases against one programme, not three competing
-     * versions of the same deal, and the customer orders them in stages over
-     * the life of the programme. So the deal is worth the whole ladder, and
-     * ordering a release does not shrink it - it moves that slice from
-     * 'production' to 'ordered' and the total stays put.
+     * LEGACY RLI PROJECTION ONLY. This shape predates the accepted
+     * Opportunities-only governing contribution and is retained solely for
+     * installations that still run RevenueLineItems mode. It must not become
+     * Opportunity headline arithmetic in Bench QA: the shared writer uses
+     * selected governing production + prototype + tax + shipping instead.
      *
      * FOUR PATHS, in priority order, and deliberately not collapsed:
      *
@@ -1046,22 +1044,14 @@ class BdQuoteReflectionHook
      *   2. Every non-prototype break whose quoted line item is erp_ordered
      *      becomes its own CLOSED slice at the value it was ordered at.
      *      Ordering is per line and stays that way.
-     *   3. Every break that has NOT been ordered is still live potential and
-     *      they are carried TOGETHER on one open production slice, valued at
-     *      their SUM. One row, not one per tier: five tiers would present a
-     *      single production programme as five separate deals and the record
-     *      count would churn on every revision.
-     *   4. There is no fourth path, and the absence is the fix. This method
-     *      used to suppress the open slice entirely once any production break
-     *      was ordered, on the theory that the customer had chosen their
-     *      quantity. That was our misreading, and Bench Dogs corrected it:
-     *      taking a tier does not retire the others. Suppressing them
-     *      UNDERSTATED every partially released deal - measured 24 Aug 2026,
-     *      Harbor Lane read $4,850 against a committed $23,750 and Northgate
-     *      $16,450 against $24,850.
+     *   3. Every break not ordered is carried together on one open production
+     *      slice for this legacy model. That sum is not the accepted headline.
+     *   4. There is no fourth path.
      *
-     * The governing flag marks which tier is being RELEASED next. It does not
-     * set the number, and it plays no part in this arithmetic.
+     * Governing deliberately does not alter this legacy RLI projection. It
+     * controls the accepted Opportunities-only headline through
+     * ErpQuoteOpportunityContribution; keeping those scopes explicit prevents
+     * this historical calculation from becoming a second amount owner.
      *
      * There is still no quote_total-based fallback, for a reason that
      * survives the correction: that figure is taken from the quote HEADER,
@@ -1124,35 +1114,10 @@ class BdQuoteReflectionHook
             ];
         }
 
-        // TIERED VALUATION.
-        //
-        // The breaks on a Bench Dogs quote are RELEASE TIERS against one
-        // quote, NOT mutually exclusive alternatives. Bench Dogs corrected us
-        // on this directly and the working document carries the correction:
-        // the rep ticks whichever tier goes on this order, that line locks and
-        // becomes an order, and the tiers not taken STAY on the quote and stay
-        // orderable later - the UC-11 pattern of a customer taking bulk
-        // pricing once and issuing purchase orders in tranches over months.
-        //
-        // So every tier that has not been ordered is still live potential and
-        // is carried TOGETHER on ONE open production deliverable valued at
-        // their SUM. Two consequences that are the whole point:
-        //
-        //   - The opportunity total does not move when a tier is released.
-        //     Releasing redistributes value between open and closed; it
-        //     neither inflates the deal nor deflates it. Harbor Lane reads
-        //     $23,750 before the 25-unit release and $23,750 after.
-        //   - Reading only ONE break instead - which this method used to do -
-        //     UNDERSTATES the deal, because it writes off tiers the customer
-        //     can still order. Measured 24 Aug 2026, and it is why this was
-        //     rewritten: Harbor Lane reported $4,850 against a committed
-        //     $23,750 and Northgate $16,450 against $24,850, silently losing
-        //     $18,900 and $8,400 of still-orderable value.
-        //
-        // A line-for-line mirror is still wrong, but for a different reason
-        // than the old comment here gave: five tiers would present ONE
-        // production programme as five separate deals, and the record count
-        // would churn on every revision. One open row, one row per release.
+        // LEGACY RLI PROJECTION. Open production options remain one aggregate
+        // RLI so this old mode does not churn a row per option. This sum is not
+        // the accepted Bench Opportunity amount; Opportunities-only uses the
+        // governing contribution provider and performs zero RLI access.
         $orderedProduction = [];
         $open = [];
         foreach ($ladder as $line) {
@@ -1178,9 +1143,9 @@ class BdQuoteReflectionHook
             ];
         }
 
-        // Everything still orderable, on one row, at its sum. The governing
-        // flag deliberately plays no part here: it marks which tier is being
-        // RELEASED next, it does not decide the number.
+        // Everything still orderable, on one legacy RLI row. Governing is
+        // handled by the Opportunities-only contribution seam, not duplicated
+        // in this projection.
         $openSum = 0.0;
         $openQtys = [];
         $openPart = '';
@@ -1222,13 +1187,9 @@ class BdQuoteReflectionHook
             . '.'
         );
 
-        // NOTE: there is deliberately NO "quote total minus prototype"
-        // fallback. That figure is the sum of every break by construction, so
-        // it reintroduces exactly the overstatement this method exists to
-        // stop, and it does it precisely when the lines are not visible - the
-        // case nobody checks. A quote whose lines have not synced yet reports
-        // no production value at all until they do, and then reports the
-        // right one.
+        // There is no header-total fallback: this legacy projection emits only
+        // slices it can identify. Headline fallback and ambiguity semantics
+        // belong to the shared contribution writer.
 
         return $out;
     }
@@ -1498,7 +1459,8 @@ class BdQuoteReflectionHook
 
 
     /**
-     * Maintain Bench stage and forecast fields from deliverables, no RLIs.
+     * Maintain Bench forecast fields and pre-order Proposal initialization
+     * from deliverables, with no RLIs.
      *
      * Headline amount belongs to the shared primary-Quote hook, never this
      * method. System-managed Best/Worst consume that already-converted
@@ -1506,13 +1468,10 @@ class BdQuoteReflectionHook
      * one currency semantic and one arithmetic owner. Deliverables remain the
      * input to stage only.
      *
-     * Stage is derived here rather than left alone because in this mode
-     * nothing else derives it: with RLIs gone Sugar stops rolling a stage up,
-     * so the field is ours to maintain. It only ever moves FORWARD (rank
-     * comparison below) - a late save of an older reflection must not drag a
-     * closed deal back to Proposal, and a human who has advanced the deal
-     * past where the ERP thinks it is keeps their answer. 'Closed Lost' is
-     * left alone entirely: losing is a sales decision, not an ERP fact.
+     * Release stage is not derived here. Partial Fulfillment is the sole
+     * writer through the neutral provider beside this class. This method only
+     * initializes an unreleased priced deal to Proposal, forward-only, and
+     * leaves Closed Lost and every later stage alone.
      */
     private function writeOpportunityDirect(
         SugarBean $bean,
@@ -1521,7 +1480,6 @@ class BdQuoteReflectionHook
         array $deliverables
     ): void {
         $sum = 0.0;
-        $open = 0;
         $wonPrototype = false;
         $wonProduction = false;
 
@@ -1533,19 +1491,7 @@ class BdQuoteReflectionHook
                 } else {
                     $wonProduction = true;
                 }
-            } else {
-                $open++;
             }
-        }
-
-        if ($open === 0 && ($wonPrototype || $wonProduction)) {
-            [$stage, $prob] = ['Closed Won', 100];
-        } elseif ($wonProduction) {
-            [$stage, $prob] = ['Partial Production Closed', 90];
-        } elseif ($wonPrototype) {
-            [$stage, $prob] = ['Prototype Closed', 80];
-        } else {
-            [$stage, $prob] = ['Proposal/Price Quote', 65];
         }
 
         $current = (string) ($opportunity->sales_stage ?? '');
@@ -1622,11 +1568,18 @@ class BdQuoteReflectionHook
             $dirty = true;
         }
 
-        if ($current !== 'Closed Lost'
-            && self::stageRank($stage) > self::stageRank($current)
+        // Before the first release, a priced quote is at Proposal. Once any
+        // release is won this hook no longer writes stage: the shared Partial
+        // Fulfillment package owns the release transition and consumes our
+        // neutral policy. Keeping a second post-order writer here made the
+        // final stage depend on whether ERP reflection or the order action ran
+        // last.
+        if (!$wonPrototype && !$wonProduction
+            && $current !== 'Closed Lost'
+            && self::stageRank('Proposal/Price Quote') > self::stageRank($current)
         ) {
-            $opportunity->sales_stage = $stage;
-            $opportunity->probability = $prob;
+            $opportunity->sales_stage = 'Proposal/Price Quote';
+            $opportunity->probability = 65;
             $dirty = true;
         }
 
@@ -1652,6 +1605,53 @@ class BdQuoteReflectionHook
             . ' stage ' . (string) $opportunity->sales_stage
             . ' (Opportunities-only mode, no revenue line items)'
         );
+    }
+
+    /**
+     * A release raised directly in Kinetic bypasses Order Selected Lines, so
+     * invoke the same neutral shared hook after reconciliation marks its Quote
+     * line. Bench still supplies policy only; Partial Fulfillment performs the
+     * Opportunity write. Literal dispatch is required by SugarCloud scanner.
+     */
+    private function dispatchReleaseStageAfterKineticReconciliation(SugarBean $quote): void
+    {
+        $file = 'custom/modules/Quotes/ErpQuoteHooks.php';
+        if (!file_exists($file)) {
+            $GLOBALS['log']->warn('BdQuoteReflectionHook: shared release-stage dispatcher is unavailable for Quote '
+                . $quote->id);
+            return;
+        }
+
+        try {
+            require_once \Sugarcrm\Sugarcrm\Util\Files\FileLoader::validateFilePath($file);
+            if (!class_exists('ErpQuoteHooks', false)) {
+                $GLOBALS['log']->warn('BdQuoteReflectionHook: shared release-stage dispatcher class is unavailable '
+                    . 'for Quote ' . $quote->id);
+                return;
+            }
+            ErpQuoteHooks::fireAfterLinesOrdered($quote, $this->hasOpenQuoteLines($quote));
+        } catch (Throwable $e) {
+            $GLOBALS['log']->error('BdQuoteReflectionHook: shared release-stage dispatch failed for Quote '
+                . $quote->id . ': ' . $e->getMessage());
+        }
+    }
+
+    private function hasOpenQuoteLines(SugarBean $quote): bool
+    {
+        if (!$quote->load_relationship('products')
+            || !$quote->products
+            || !is_object($quote->products)
+        ) {
+            // Conservative: generic fallback must not interpret an unreadable
+            // line set as a final release.
+            return true;
+        }
+        foreach ($quote->products->getBeans() as $product) {
+            if (empty($product->deleted) && empty($product->erp_ordered)) {
+                return true;
+            }
+        }
+        return false;
     }
 
 

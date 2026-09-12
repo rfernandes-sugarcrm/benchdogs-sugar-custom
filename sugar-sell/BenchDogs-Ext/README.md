@@ -54,6 +54,22 @@ The shared amount writer must run before the Bench forecast refresh on a
 governing-line trigger. Reversing that order leaves Best/Worst one selection
 behind and also tempts Bench code to duplicate shared currency semantics.
 
+### Release-stage ownership
+
+Bench supplies `ErpOpportunityReleaseStagePolicy` through Partial
+Fulfillment's fixed neutral seam. It returns Prototype Closed/80 when the only
+ordered release is the prototype, and Partial Production Closed/90 once any
+production option is ordered. The provider never saves an Opportunity.
+Partial Fulfillment 1.0.10 validates and performs the only release-stage write.
+
+Classification uses the ordered Quote line item's `bd_erp_line_num` identity
+against exactly one linked ERP quote. Multiple revisions, duplicate ERP line
+numbers, multiple prototypes, or an ordered line without that identity refuse
+instead of guessing. A Kinetic-originated order that reconciliation newly
+marks ordered is sent through the same shared `AfterLinesOrdered` dispatcher.
+Bench's direct reflection retains only pre-order Proposal initialization and
+forecast maintenance; it no longer advances a post-order Opportunity stage.
+
 ### Headline-owner regression evidence
 
 `scripts/tests/test_headline_valuation_owner.py` calls both repositories' real

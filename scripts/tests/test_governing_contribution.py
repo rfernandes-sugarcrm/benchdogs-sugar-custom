@@ -112,6 +112,11 @@ catch (UnexpectedValueException $e) { $error = $e->getMessage(); }
             self.assertIn(path, manifest)
             self.assertRegex(manifest, r"'id_name'\s*=>\s*'sugarai_erp_epicor'")
             self.assertRegex(manifest, r"'version'\s*=>\s*'1\.1\.24-rc1'")
+            self.assertRegex(
+                manifest,
+                r"'id_name'\s*=>\s*'sugarai_erp_epicor_partialfulfillment'",
+            )
+            self.assertRegex(manifest, r"'version'\s*=>\s*'1\.0\.10'")
 
 
 if __name__ == "__main__":

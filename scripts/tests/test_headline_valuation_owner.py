@@ -236,6 +236,18 @@ $bench->refreshOpportunityAmount($erp);
         observed = self.execute("$bench->refreshOpportunityAmount($erp);")
         self.assertNotIn("revenuelineitems", observed["relationship_reads"])
 
+    def test_ordered_release_does_not_give_bench_a_second_stage_writer(self):
+        observed = self.execute(r'''
+$product->erp_ordered = true;
+$product->bd_erp_line_num = 1;
+$line->prototype = true;
+$opp->sales_stage = 'Proposal/Price Quote';
+$opp->probability = 65;
+$bench->refreshOpportunityAmount($erp);
+''')
+        self.assertEqual(observed["stage"], "Proposal/Price Quote", observed)
+        self.assertEqual(observed["amount"], 280, observed)
+
     def test_currency_converted_headline_is_not_replaced_by_unconverted_sum(self):
         observed = self.execute(r'''
 $quote->currency_id = 'owned-other-currency';
