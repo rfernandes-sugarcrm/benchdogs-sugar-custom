@@ -24,6 +24,9 @@
 if (function_exists('post_uninstall') === false) {
     function post_uninstall()
     {
+        // Proof of life - see the matching note in pre_uninstall.php.
+        $GLOBALS['log']->fatal('BenchDogs-Ext: post_uninstall running - rebuilding caches');
+
         // The stock modules this package extended with fields, hooks or
         // layouts. Its OWN three modules (bd01_ERP_Quote and friends) are
         // deliberately not listed: by now the uninstaller has dropped their

@@ -51,6 +51,16 @@
 if (function_exists('pre_uninstall') === false) {
     function pre_uninstall()
     {
+        // Proof of life, and the only cheap way to confirm the installdef is
+        // wired correctly. If Module Loader did not call this - a wrong key, a
+        // wrong function name - it would fail SILENTLY and leave exactly the
+        // mess this script exists to prevent, with nothing to distinguish that
+        // from a clean run. After an uninstall, grep sugarcrm.log for this
+        // line: present means the cleanup ran, absent means do it by hand
+        // (docs/runbooks/remove-benchdogs-sugar-package.md in the connector
+        // extension repo) and treat the wiring as broken.
+        $GLOBALS['log']->fatal('BenchDogs-Ext: pre_uninstall running - cleaning up deployed metadata');
+
         // 1. Quotes record view: drop our panel and buttons, and hand ERP-Epicor
         // back the three buttons writeButtons() took. One deploy cycle, inside
         // BdQuotesLayoutExtensions::remove().
