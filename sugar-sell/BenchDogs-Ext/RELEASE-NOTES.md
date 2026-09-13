@@ -1,4 +1,25 @@
-# 0.9.42-rc21 — Opportunity floor stored as an Administration setting
+# 0.9.42-rc22 — adopt Kinetic quotes whose Sugar marker names a deleted Quote
+
+Not installed on QA and not approved for production.
+
+rc22 is rc21 with one REQ-28 fix found live on Bench QA (2026-09-13). All 30 ERP
+quotes that carried a Sugar-origin marker (`sugar_quote_id`, parsed from the
+Kinetic QuoteComment) pointed at Quotes that no longer exist. Rule 1 treated
+them as Sugar-born and never adopted them, so their connector-created Quotes
+had no mirror link and the governing contribution answered "not applicable".
+
+- A `sugar_quote_id` whose Quote Sugar no longer has is treated as absent. The
+  ERP quote is then adopted by its Kinetic number like any Kinetic-born quote.
+- A live marker still means Sugar-born and is left alone.
+- A read that fails for any other reason keeps the marker, so a transient error
+  never re-routes a real Sugar-born quote.
+- Existing rows adopt on their next save or line link.
+
+Tests: `test_kinetic_quote_adoption.py` now has 11 PHP-backed cases.
+
+## Previous candidates
+
+## 0.9.42-rc21 — Opportunity floor stored as an Administration setting
 
 Not installed on QA and not approved for production. Supersedes rc20, which was
 built and scanned but never installed.
@@ -16,8 +37,6 @@ quotes do. When no numbered Quote exists, or the setting cannot be read, nothing
 is created. No manual deployment step is needed.
 
 Tests: `test_kinetic_quote_adoption.py` now has 8 PHP-backed cases.
-
-## Previous candidates
 
 ## 0.9.42-rc20 — Kinetic-born quotes adopt core's native Quote
 

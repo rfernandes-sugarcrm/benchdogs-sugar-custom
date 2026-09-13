@@ -16,7 +16,8 @@ from test_headline_valuation_owner import FIXTURE, WORKSPACE
 
 _CREATE = "        throw new Exception('Unexpected record creation: ' . $module);"
 _CONFIG = "        return $key === 'opps.view_by' ? 'Opportunities' : $default;"
-assert FIXTURE.count(_CREATE) == 1 and FIXTURE.count(_CONFIG) == 1
+_READ = "        return self::$beans[$module][$id]\n"
+assert FIXTURE.count(_CREATE) == 1 and FIXTURE.count(_CONFIG) == 1 and FIXTURE.count(_READ) == 1
 ADOPTION_FIXTURE = FIXTURE.replace(_CREATE, r"""        if ($module === 'Administration') {
             return new AdminSettingsDouble();
         }
@@ -30,7 +31,11 @@ ADOPTION_FIXTURE = FIXTURE.replace(_CREATE, r"""        if ($module === 'Adminis
     _CONFIG, r"""        if (array_key_exists($key, $GLOBALS['config'] ?? [])) {
             return $GLOBALS['config'][$key];
         }
-        return $key === 'opps.view_by' ? 'Opportunities' : $default;""")
+        return $key === 'opps.view_by' ? 'Opportunities' : $default;""").replace(
+    _READ, """        if (in_array($id, $GLOBALS['missing_ids'] ?? [], true)) {
+            return null;   // what Sugar answers for a deleted or unknown record
+        }
+""" + _READ)
 
 SCAFFOLD = r'''
 class AdminSettingsDouble {
@@ -201,6 +206,34 @@ $GLOBALS['creatable'][] = 'Opportunities';
         self.assertEqual(observed["saved_settings"], [], observed)
         self.assertNotIn("Opportunities", observed["created"], observed)
         self.assertNothingInvented(observed)
+
+
+    def test_marker_naming_a_deleted_sugar_quote_is_adopted_by_kinetic_number(self):
+        observed = self.execute(r"""
+$erp->sugar_quote_id = 'deleted-quote';
+$GLOBALS['missing_ids'] = ['deleted-quote'];
+$GLOBALS['query_rows'] = [['id' => 'owned-quote']];
+""")
+        self.assertEqual(observed["status"], "adopted", observed)
+        self.assertEqual(observed["adopted_id"], "owned-quote", observed)
+        self.assertNothingInvented(observed)
+
+    def test_marker_naming_a_live_sugar_quote_is_left_alone(self):
+        observed = self.execute(r"""
+$erp->sugar_quote_id = 'owned-quote';
+$GLOBALS['query_rows'] = [['id' => 'owned-quote']];
+""")
+        self.assertIsNone(observed["status"], observed)
+        self.assertEqual(observed["adopted_id"], "", observed)
+        self.assertEqual(observed["lookups"], [], observed)
+
+    def test_unreadable_marker_keeps_its_sugar_origin(self):
+        observed = self.execute(r"""
+$erp->sugar_quote_id = 'unreadable-quote';
+$GLOBALS['query_rows'] = [['id' => 'owned-quote']];
+""")
+        self.assertIsNone(observed["status"], observed)
+        self.assertEqual(observed["adopted_id"], "", observed)
 
 
 if __name__ == "__main__":

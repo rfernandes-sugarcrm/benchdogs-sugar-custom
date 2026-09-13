@@ -1393,11 +1393,37 @@ class BdQuoteReflectionHook
      */
     private function effectiveSugarQuoteId(SugarBean $bean): string
     {
-        $id = trim((string) ($bean->sugar_quote_id ?? ''));
+        $id = $this->liveSugarQuoteId($bean);
         if ($id !== '') {
             return $id;
         }
         return trim((string) ($bean->bd_materialized_quote_id ?? ''));
+    }
+
+    /**
+     * sugar_quote_id, unless it names a Quote Sugar no longer has.
+     *
+     * The id is parsed out of the Kinetic QuoteComment marker, and markers
+     * outlive the Sugar quotes they point at: on Bench QA all 30 marked ERP
+     * quotes named deleted Quotes (journal section 65), so none was adopted,
+     * their connector-created Quotes had no mirror link, and the governing
+     * contribution answered "not applicable" for them. A marker whose Quote
+     * is gone is treated as absent, which hands the ERP quote to adoption by
+     * its Kinetic number. A read that fails for any other reason keeps the
+     * id, so a transient error never re-routes a real Sugar-born quote.
+     */
+    private function liveSugarQuoteId(SugarBean $bean): string
+    {
+        $id = trim((string) ($bean->sugar_quote_id ?? ''));
+        if ($id === '') {
+            return '';
+        }
+        try {
+            $quote = BeanFactory::retrieveBean('Quotes', $id, ['use_cache' => false]);
+        } catch (Throwable $e) {
+            return $id;
+        }
+        return ($quote && !empty($quote->id) && empty($quote->deleted)) ? $id : '';
     }
 
     /**
@@ -1410,8 +1436,9 @@ class BdQuoteReflectionHook
      * leaves every break unselected until a person marks exactly one governing
      * bd01_ERP_Quote_Line. So this method:
      *
-     * 1. Never touches a quote that ORIGINATED in Sugar (sugar_quote_id set)
-     *    and short-circuits once bd_materialized_quote_id is set.
+     * 1. Never touches a quote that ORIGINATED in Sugar (sugar_quote_id names
+     *    a Quote Sugar still has) and short-circuits once
+     *    bd_materialized_quote_id is set.
      *
      * 2. ADOPTS the core-created Quote by Kinetic number, whatever its age:
      *    adoption creates nothing, so there is no history to protect. The
@@ -1431,10 +1458,8 @@ class BdQuoteReflectionHook
      */
     private function materializeFromKinetic(SugarBean $bean): void
     {
-        if (trim((string) ($bean->sugar_quote_id ?? '')) !== ''
-            || trim((string) ($bean->bd_materialized_quote_id ?? '')) !== ''
-        ) {
-            return;   // rule 1
+        if ($this->effectiveSugarQuoteId($bean) !== '') {
+            return;   // rule 1 (a marker naming a deleted Quote does not count)
         }
 
         $quoteNum = (int) ($bean->quote_num ?? 0);
@@ -1794,7 +1819,7 @@ class BdQuoteReflectionHook
 
         self::$inProgress = true;
         try {
-            if (trim((string) ($bean->sugar_quote_id ?? '')) !== '') {
+            if ($this->liveSugarQuoteId($bean) !== '') {
                 return;   // born in Sugar - REQ-28 is not about this quote
             }
             $materializedId = trim((string) ($bean->bd_materialized_quote_id ?? ''));
