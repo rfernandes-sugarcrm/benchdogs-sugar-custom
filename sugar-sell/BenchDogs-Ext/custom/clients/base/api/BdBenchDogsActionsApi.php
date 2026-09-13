@@ -134,8 +134,16 @@ if (file_exists($parentApiFile)) {
             if ($account === null || empty($account->id)) {
                 throw new SugarApiExceptionNotFound('Account not found: ' . $args['record']);
             }
-            if (!$account->ACLAccess('view')) {
-                throw new SugarApiExceptionNotAuthorized('No access to this account');
+            // Same gate as ERP-Epicor's AccountsErpActionsApi::createOppQuote:
+            // this action writes an Opportunity, a Quote, its bundle and a line
+            // for the account, so viewing the account is not enough. Both checks
+            // run before any bean is saved, so a refused caller creates nothing.
+            if (!$account->ACLAccess('edit')) {
+                throw new SugarApiExceptionNotAuthorized('No edit access to this account');
+            }
+            if (!BeanFactory::newBean('Opportunities')->ACLAccess('save')
+                || !BeanFactory::newBean('Quotes')->ACLAccess('save')) {
+                throw new SugarApiExceptionNotAuthorized('No access to create opportunities and quotes');
             }
 
             $assigned = $api->user->id;

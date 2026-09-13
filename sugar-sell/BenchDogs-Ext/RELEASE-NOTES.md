@@ -1,4 +1,20 @@
-# 0.9.42-rc17 — SugarCloud scanner-safe estimating notifications
+# 0.9.42-rc18 — account action requires the same access as the shared one
+
+Not installed on QA and not approved for production.
+
+rc18 is rc17 with one access-control fix. `POST Accounts/:record/bd-create-opp-quote`
+(`BdBenchDogsActionsApi::createOppQuote`) checked only **view** access on the
+account and then saved an Opportunity, a Quote, its bundle and a placeholder
+line with no create-access check, so a user who could only view an account
+could create sales records through the API. It now applies the same gate as
+ERP-Epicor's `AccountsErpActionsApi::createOppQuote`: edit access on the account
+and save access on Opportunities and Quotes, all checked before the first save.
+A refused caller gets `SugarApiExceptionNotAuthorized` and nothing is created.
+See `docs/release-0.9.42-rc18.md`.
+
+## Previous candidates
+
+## 0.9.42-rc17 — SugarCloud scanner-safe estimating notifications
 
 Not installed on QA and not approved for production.
 
@@ -14,7 +30,6 @@ The repository pre-flight missed it because `MLP017` matched
 calls; that gap is closed here and upstream in `erp-integration-sugar`.
 See `docs/release-0.9.42-rc17.md`.
 
-## Previous candidate
 
 ## 0.9.42-rc16 — exact Kinetic estimating completion
 
