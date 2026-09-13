@@ -65,7 +65,8 @@
         // WITHDRAWN. Catalog best-pricing is not part of the Bench Dogs quote
         // model on either simple or advanced quotes: the estimator's price on
         // the quote is the only price, so a second, ERP-catalog price in the
-        // header offers an answer the story does not have. The button is also
+        // header offers an answer the story does not have. Its REST route is
+        // deliberately not registered. The button is also
         // dropped from BdQuotesLayoutExtensions::$wanted and named in its
         // $unwanted list; this hide is the belt to that braces, because the
         // layout removal only reaches views the deployed viewdef writer

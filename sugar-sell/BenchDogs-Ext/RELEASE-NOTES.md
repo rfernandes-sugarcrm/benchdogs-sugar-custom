@@ -1,3 +1,37 @@
+# 0.9.42-rc14 — callable and fail-visible estimating handoff
+
+Not installed on QA and not approved for production.
+
+rc14 repairs the advertised Bench `Send to Estimating` action. The customer
+route now delegates `advanced_quote` to the shared ERP-Epicor API owner,
+applies only the Bench lifecycle transition after shared success, and proves
+that transition through an uncached read before reporting completion. Existing
+ERP quotes retain their current stage. The Sidecar action rejects repeated
+events while a request is pending and does not invite a retry when ERP identity
+is ambiguous or absent.
+
+The turnaround start uses only the exact company-scoped Quote key already
+stamped by core; it never borrows a company prefix or joins on bare QuoteNum.
+The withdrawn best-pricing route is no longer advertised. ERP-Epicor
+`1.1.24-rc9` and Partial Fulfillment `1.0.13` are pinned; SDK `1.18` and the
+Quote-line-only model are unchanged.
+
+This candidate does not claim durable cross-tab `quote_to_quote` idempotency,
+notification delivery, or a valid estimating-completion signal: EPIC06 reports
+`CurrentStage=QUOT` on every sampled open quote, so that value alone cannot
+prove estimator work is finished. See `docs/release-0.9.42-rc14.md`.
+
+## Previous candidate
+
+### 0.9.42-rc13 — fail-closed commercial charges
+
+rc13 requires explicit native Quote tax and shipping values before the Bench
+contribution provider returns an amount. Missing values fail closed; genuine
+numeric zero remains valid. It was staged but not installed. rc14 supersedes
+it without reusing its version or bytes.
+
+## Earlier candidate
+
 # 0.9.42-rc12 — Quote-line-only visible-stage candidate
 
 Not installed on QA and not approved for production.

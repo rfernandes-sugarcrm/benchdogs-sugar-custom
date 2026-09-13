@@ -1,7 +1,5 @@
 <?php
 
-use Sugarcrm\Sugarcrm\Security\HttpClient\ExternalResourceClient;
-
 // phpcs:disable PSR1.Classes.ClassDeclaration.MissingNamespace
 
 /**
@@ -105,18 +103,6 @@ if (file_exists($parentApiFile)) {
                     'pathVars' => array('module', 'record', ''),
                     'method' => 'syncQuoteTiers',
                     'shortHelp' => 'Adds a line item for every Kinetic quantity break this quote is missing, and marks the breaks Kinetic has already ordered. Never edits or removes an existing line.',
-                    'exceptions' => array(
-                        'SugarApiExceptionNotAuthorized',
-                        'SugarApiExceptionInvalidParameter',
-                        'SugarApiExceptionNotFound',
-                    ),
-                ),
-                'bdBestPricing' => array(
-                    'reqType' => 'POST',
-                    'path' => array('Quotes', '?', 'bd-best-pricing'),
-                    'pathVars' => array('module', 'record', ''),
-                    'method' => 'bestPricingFromCatalog',
-                    'shortHelp' => 'Reprices OPEN catalog-linked line items from the live Epicor price lists; already-ordered lines are left untouched, and non-catalog lines are skipped - both reported by name.',
                     'exceptions' => array(
                         'SugarApiExceptionNotAuthorized',
                         'SugarApiExceptionInvalidParameter',
@@ -276,6 +262,101 @@ if (file_exists($parentApiFile)) {
         // -------------------------------------------------------------------
 
         /**
+         * Delegate creation of the Kinetic quote to ERP-Epicor's public owner.
+         *
+         * Bench Dogs owns only the customer stage and turnaround timestamp.
+         * Reimplementing quote_to_quote here would bypass the shared owner's
+         * validation, transport, ordinary re-click guard, status stamps and
+         * future repairs. Durable concurrent/lost-response idempotency is
+         * still an open shared-layer gap. The quote is re-read after the
+         * shared call because that call can update it while this request is in
+         * flight; saving the pre-call bean would overwrite those shared fields
+         * on this Sugar version.
+         */
+        public function sendToEstimating(ServiceBase $api, array $args): array
+        {
+            $sharedApiFile = 'custom/clients/base/api/QuotesErpActionsApi.php';
+            if (!file_exists($sharedApiFile)) {
+                throw new SugarApiExceptionNotFound('ERP-Epicor quote actions are not installed');
+            }
+            require_once \Sugarcrm\Sugarcrm\Util\Files\FileLoader::validateFilePath($sharedApiFile);
+
+            // The shared action deliberately returns success for a normal
+            // re-click once erp_display_sync_key exists. Remember that state
+            // before delegating: a priced/revision/ordered ERP quote must never
+            // be pushed backwards into estimating by this customer wrapper.
+            $recordId = (string) ($args['record'] ?? '');
+            $before = $recordId === '' ? null : BeanFactory::retrieveBean(
+                'Quotes',
+                $recordId,
+                array('use_cache' => false)
+            );
+            $erpQuoteAlreadyExisted = $before !== null
+                && $before !== false
+                && !empty($before->id)
+                && trim((string) ($before->erp_display_sync_key ?? '')) !== '';
+
+            $sharedArgs = $args;
+            $sharedArgs['action'] = 'advanced_quote';
+            $result = (new QuotesErpActionsApi())->runErpAction($api, $sharedArgs);
+
+            if (($result['status'] ?? '') !== 'success' || $erpQuoteAlreadyExisted) {
+                return $result;
+            }
+
+            $quote = BeanFactory::retrieveBean('Quotes', $recordId, array('use_cache' => false));
+            if ($quote === null || $quote === false || empty($quote->id)) {
+                return $this->estimatingStageFailure($result);
+            }
+
+            $needsSave = false;
+            if (($quote->bd_erp_stage ?? '') !== 'in_estimating') {
+                $quote->bd_erp_stage = 'in_estimating';
+                $needsSave = true;
+            }
+            if ($needsSave) {
+                try {
+                    if (!$quote->save()) {
+                        return $this->estimatingStageFailure($result);
+                    }
+                } catch (Throwable $e) {
+                    $GLOBALS['log']->error(
+                        'BdBenchDogsActionsApi: Kinetic quote created but in_estimating save failed'
+                    );
+                    return $this->estimatingStageFailure($result);
+                }
+            }
+
+            // save() returning an id is not persistence evidence. Re-read once
+            // more and refuse a success response unless the customer stage is
+            // actually visible outside the bean that performed the save.
+            $persisted = BeanFactory::retrieveBean('Quotes', $recordId, array('use_cache' => false));
+            if ($persisted === null
+                || $persisted === false
+                || empty($persisted->id)
+                || ($persisted->bd_erp_stage ?? '') !== 'in_estimating'
+            ) {
+                return $this->estimatingStageFailure($result);
+            }
+            $result['estimating_timestamp_status'] = $this->stampSentToEstimating($persisted);
+
+            return $result;
+        }
+
+        /** Preserve the ERP identity while refusing a misleading hand-off success. */
+        private function estimatingStageFailure(array $result): array
+        {
+            $result['status'] = 'error';
+            $result['partial_success'] = true;
+            $result['retry_safe'] = false;
+            $result['message'] = 'The Kinetic quote was created, but Sugar could not confirm the '
+                . 'In Estimating stage. Refresh this Quote and contact an administrator if the '
+                . 'stage is still missing. Do not retry from another tab until its ERP quote '
+                . 'number has been checked.';
+            return $result;
+        }
+
+        /**
          * Re-runs the post_install UI deploy steps with NOTHING swallowed: every
          * step's exception text comes back in the response. post_install logs
          * failures to sugarcrm.log, which SugarCloud keeps out of reach - this
@@ -395,148 +476,107 @@ if (file_exists($parentApiFile)) {
         }
 
         /**
-         * Rewrite the quote's Products rows to exactly the winning ERP lines,
-         * so the product's quote_to_order path orders precisely the chosen
-         * break at its estimated price. The first existing row (normally the
-         * ETO placeholder) is updated in place, further winners append, and
-         * surplus rows are removed. Returns an error string, or null on success.
-         */
-        /**
-         * The Epicor part number a Product Catalog record stands for, or ''.
-         * erp_display_sync_key is the raw part num; erp_sync_key is the scoped
-         * form ("EPIC06__BD-DISPLAY-01") and is unscoped here.
-         */
-        private function erpPartNumFromTemplate(SugarBean $tpl): string
-        {
-            $partNum = $tpl->erp_display_sync_key ?: '';
-            if ($partNum === '' && !empty($tpl->erp_sync_key)) {
-                $parts = explode('__', (string) $tpl->erp_sync_key, 2);
-                $partNum = end($parts) ?: '';
-            }
-            return (string) $partNum;
-        }
-
-        /**
-         * The catalog record for a part number typed onto an unlinked line.
-         * Matched on the catalog's OWN part number field, so a typo does not
-         * silently reprice a line from some other part: no match means the line
-         * is reported as not-in-catalog exactly as before.
-         */
-        private function findTemplateByPartNum(string $partNum): ?SugarBean
-        {
-            $partNum = trim($partNum);
-            if ($partNum === '') {
-                return null;
-            }
-            $query = new SugarQuery();
-            $seed = BeanFactory::newBean('ProductTemplates');
-            $query->from($seed);
-            $query->select(array('id'));
-            $query->where()->equals('mft_part_num', $partNum);
-            $query->limit(1);
-            $rows = $query->execute();
-            foreach ($rows as $row) {
-                if (!empty($row['id'])) {
-                    return BeanFactory::retrieveBean('ProductTemplates', $row['id']);
-                }
-            }
-            return null;
-        }
-
-        /**
          * Start the REQ-13 turnaround clock on the ERP quote row this send just
          * raised in Kinetic.
          *
-         * The mirror row usually does not exist yet - the quote is seconds old
-         * in Kinetic and the connector has not swept since - so this
-         * resolve-or-CREATES it, keyed on the sync key the connector will use
-         * ('<COMPANY>__<QuoteNum>', verified live: EPIC06__1196). Creating it
-         * with that exact key means the next sync UPSERTS onto this row and
-         * fills in the rest; it is not a second record racing the real one. The
-         * company prefix is read off an existing mirror rather than hard-coded,
-         * and if no mirror exists to read it from, this does nothing rather than
-         * guess a key that would fork the record.
+         * Core stamps both the bare QuoteNum and the exact
+         * <COMPANY>__<QuoteNum> key onto the Quote before the shared action
+         * returns. The scoped key is the only safe lookup/create identity. A
+         * bare QuoteNum is not globally unique; borrowing a company prefix
+         * from an unrelated row can stamp the wrong company and is forbidden.
          *
-         * bd_sent_to_estimating_at is in no container payload, so the sync that
-         * arrives moments later cannot blank it.
+         * The mirror often does not exist yet, so create only from that exact
+         * scoped identity. A later connector sync upserts onto the same key.
          */
-        private function stampSentToEstimating(SugarBean $quote): void
+        private function stampSentToEstimating(SugarBean $quote): string
         {
             try {
                 $quoteNum = trim((string) ($quote->erp_display_sync_key ?? ''));
-                if ($quoteNum === '' || !ctype_digit($quoteNum)) {
-                    return;   // the delegate did not come back with a Kinetic number
+                $scopedKey = trim((string) ($quote->erp_sync_key ?? ''));
+                $suffix = '__' . $quoteNum;
+                if ($quoteNum === ''
+                    || !ctype_digit($quoteNum)
+                    || $scopedKey === $suffix
+                    || substr($scopedKey, -strlen($suffix)) !== $suffix
+                ) {
+                    return 'pending_exact_mirror';
                 }
 
-                $erpQuote = $this->findErpQuoteByNumber((int) $quoteNum);
-                if ($erpQuote === null) {
-                    $prefix = $this->erpSyncKeyPrefix();
-                    if ($prefix === '') {
-                        $GLOBALS['log']->warn(
-                            'BdBenchDogsActionsApi: no existing bd01_ERP_Quote to read the sync-key '
-                            . 'prefix from - not creating a mirror row for Kinetic quote ' . $quoteNum
-                        );
-                        return;
-                    }
+                $matches = $this->findErpQuotesByScopedKey($scopedKey);
+                if (count($matches) > 1) {
+                    $GLOBALS['log']->warn(
+                        'BdBenchDogsActionsApi: ambiguous_exact_mirror for scoped Kinetic quote'
+                    );
+                    return 'ambiguous_exact_mirror';
+                }
+                if ($matches === array()) {
                     $erpQuote = BeanFactory::newBean('bd01_ERP_Quote');
                     $erpQuote->name = 'Quote ' . $quoteNum;
                     $erpQuote->quote_num = (int) $quoteNum;
-                    $erpQuote->erp_sync_key = $prefix . '__' . $quoteNum;
+                    $erpQuote->erp_sync_key = $scopedKey;
                     $erpQuote->sugar_quote_id = $quote->id;
+                } else {
+                    $erpQuote = $matches[0];
                 }
 
                 if (!empty($erpQuote->bd_sent_to_estimating_at)) {
-                    return;   // already clocked - a re-send must not restart it
+                    return 'already_stamped';
                 }
                 $erpQuote->bd_sent_to_estimating_at = TimeDate::getInstance()->nowDb();
-                $erpQuote->save();
+                $sentAt = $erpQuote->bd_sent_to_estimating_at;
+                if (!$erpQuote->save()) {
+                    $GLOBALS['log']->error(
+                        'BdBenchDogsActionsApi: exact ERP quote timestamp save returned no id'
+                    );
+                    return 'pending_timestamp_persistence';
+                }
+
+                $verified = $this->findErpQuotesByScopedKey($scopedKey);
+                if (count($verified) !== 1
+                    || (string) ($verified[0]->bd_sent_to_estimating_at ?? '') !== $sentAt
+                ) {
+                    $GLOBALS['log']->error(
+                        'BdBenchDogsActionsApi: exact ERP quote timestamp was not persisted'
+                    );
+                    return count($verified) > 1
+                        ? 'ambiguous_exact_mirror'
+                        : 'pending_timestamp_persistence';
+                }
 
                 $GLOBALS['log']->info(
                     'BdBenchDogsActionsApi: bd_sent_to_estimating_at stamped on bd01_ERP_Quote '
                     . $erpQuote->id . ' for Kinetic quote ' . $quoteNum
                 );
+                return 'stamped';
             } catch (Throwable $e) {
                 // A missing KPI stamp must never fail the hand-off itself.
                 $GLOBALS['log']->error(
                     'BdBenchDogsActionsApi: could not stamp bd_sent_to_estimating_at: ' . $e->getMessage()
                 );
+                return 'pending_exact_mirror';
             }
         }
 
-        /** The bd01_ERP_Quote mirror for a Kinetic quote number, or null. */
-        private function findErpQuoteByNumber(int $quoteNum): ?SugarBean
+        /** @return SugarBean[] exact scoped-key matches; more than one is corruption. */
+        private function findErpQuotesByScopedKey(string $scopedKey): array
         {
             $query = new SugarQuery();
-            $query->select(['id']);
+            $query->select(array('id'));
             $query->from(BeanFactory::newBean('bd01_ERP_Quote'));
-            $query->where()->equals('quote_num', $quoteNum);
-            $query->limit(1);
-            $rows = $query->execute();
-            $id = $rows[0]['id'] ?? '';
-            if ($id === '') {
-                return null;
+            $query->where()->equals('erp_sync_key', $scopedKey);
+            $query->limit(2);
+            $matches = array();
+            foreach ($query->execute() as $row) {
+                $bean = BeanFactory::retrieveBean(
+                    'bd01_ERP_Quote',
+                    (string) ($row['id'] ?? ''),
+                    array('use_cache' => false)
+                );
+                if ($bean && !empty($bean->id)) {
+                    $matches[] = $bean;
+                }
             }
-            $bean = BeanFactory::retrieveBean('bd01_ERP_Quote', $id);
-            return ($bean && !empty($bean->id)) ? $bean : null;
-        }
-
-        /**
-         * The company prefix the connector puts in front of every ERP sync key,
-         * read from a mirror row that already has one ('EPIC06__1196' ->
-         * 'EPIC06'). Empty when there is nothing to read it from.
-         */
-        private function erpSyncKeyPrefix(): string
-        {
-            $query = new SugarQuery();
-            $query->select(['erp_sync_key']);
-            $query->from(BeanFactory::newBean('bd01_ERP_Quote'));
-            $query->where()->notEquals('erp_sync_key', '');
-            $query->orderBy('quote_num', 'DESC');
-            $query->limit(1);
-            $rows = $query->execute();
-            $key = (string) ($rows[0]['erp_sync_key'] ?? '');
-            $pos = strpos($key, '__');
-            return $pos === false ? '' : substr($key, 0, $pos);
+            return $matches;
         }
 
         /**

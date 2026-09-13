@@ -62,7 +62,7 @@ Fulfillment's fixed neutral seam. It returns Prototype Closed/80 when the only
 ordered release is the prototype, and Partial Production Closed/90 once any
 production option is ordered. The provider never saves an Opportunity.
 Partial Fulfillment 1.0.13 validates and performs the only release-stage write.
-ERP-Epicor 1.1.24-rc5 returns that writer's neutral outcome as
+ERP-Epicor 1.1.24-rc9 returns that writer's neutral outcome as
 `release_stage_status` on the order action, allowing hosted acceptance to
 distinguish an update from a preserved stage without exposing record ids,
 exception text or customer-policy internals.
@@ -115,6 +115,39 @@ tax/shipping calculations still require installed-instance verification.
 Passing this fixture is not evidence that a new MLP has been installed.
 
 ### Estimating notification (REQ-13)
+
+The `Quote Estimate` header action is a customer-owned entry point, not a
+second ERP writer. `BdBenchDogsActionsApi::sendToEstimating` delegates the
+`advanced_quote` action to shared `QuotesErpActionsApi::runErpAction`. Only a
+shared success can move a freshly re-read Quote to `in_estimating` and start
+the existing turnaround clock; the endpoint proves the persisted stage with a
+second uncached read and otherwise returns an actionable error while retaining
+the ERP identity. Validation, the ordinary existing-quote re-click guard, ERP
+communication and write-back status stay with ERP-Epicor. A re-click on an
+existing ERP quote preserves its current customer stage.
+
+The Sidecar field rejects a second click while the first request or its success
+refresh is pending and unlocks after an error for an explicit retry. That guard
+is local to one browser field instance. It does not serialize concurrent tabs,
+users or a lost-response retry; durable `quote_to_quote` idempotency remains a
+shared-layer acceptance gap and is not claimed by this package.
+
+The turnaround start is stamped only from the exact scoped
+`Quotes.erp_sync_key` returned by Core (`<COMPANY>__<QuoteNum>`). The bare
+display number is never joined to an arbitrary company; missing, mismatched or
+duplicate scoped identity leaves an explicit pending/ambiguous timestamp
+status. This fixes hand-off identity, not estimating completion: all 106 open
+EPIC06 QuoteHed rows inspected currently report `CurrentStage=QUOT`, which the
+existing reflection maps to `priced`. Until a distinct, live-proven Kinetic
+completion signal is known, the next sweep can still end the turnaround too
+early. REQ-13 remains open until that signal is identified and proven; this
+package does not guess one.
+
+Endpoint success proves the shared ERP action and persisted outbound stage; it
+does not prove the Notifications bean was delivered. The existing notification
+hook deliberately catches save/recipient failures so a secondary notification
+cannot roll back an ERP hand-off. Hosted notification delivery and failure
+observability therefore remain open acceptance work.
 
 When a Quote's `bd_erp_stage` transitions into `in_estimating` (the closest
 `bd_erp_stage_list` key to "ready for estimating" — the list deliberately

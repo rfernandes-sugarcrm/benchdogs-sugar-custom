@@ -47,7 +47,7 @@ $manifest = array(
     'dependencies'              => array(
         array(
             'id_name' => 'sugarai_erp_epicor',
-            'version' => '1.1.24-rc5',
+            'version' => '1.1.24-rc9',
         ),
         array(
             'id_name' => 'sugarai_erp_epicor_partialfulfillment',

@@ -22,31 +22,77 @@
         this.model.on('change:erp_display_sync_key', this._checkVisibility, this);
     },
 
-    render: function() {
-        this._super('render');
+    _render: function() {
+        this._super('_render');
         this._checkVisibility();
+        this._setSendPending(!!this._sendPending);
     },
 
     _onClicked: function() {
+        // A context event can arrive twice before a disabled anchor repaints.
+        // Keep the request guard in the field instance as well as in the DOM.
+        if (this._sendPending) {
+            return;
+        }
         var self = this;
         var url = app.api.buildURL('Quotes/' + this.model.get('id') + '/bd-send-to-estimating');
+        this._setSendPending(true);
 
-        app.alert.show('bd-send-estimating', {
-            level: 'process',
-            title: app.lang.get('LBL_BD_SEND_ESTIMATING_RUNNING', 'Quotes')
-        });
-
-        app.api.call('create', url, {}, {
+        var callbacks = {
             success: function(data) {
                 app.alert.dismiss('bd-send-estimating');
+                var succeeded = data && data.status === 'success';
+                var timestampStatus = data && data.estimating_timestamp_status;
+                var timestampPending = succeeded && timestampStatus &&
+                    timestampStatus !== 'stamped' && timestampStatus !== 'already_stamped';
+                var message = (data && data.message) || 'Send to estimating failed.';
+                if (timestampPending) {
+                    message += ' Turnaround timing is pending exact ERP mirror verification.';
+                }
                 app.alert.show('bd-send-estimating-done', {
-                    level: (data && data.status === 'success') ? 'success' : 'error',
-                    messages: (data && data.message) || 'Send to estimating failed.',
+                    level: timestampPending ? 'warning' : (succeeded ? 'success' : 'error'),
+                    messages: message,
                     autoClose: true
                 });
-                self.model.fetch();
+                if (!succeeded) {
+                    if (data && data.partial_success) {
+                        // ERP creation succeeded but the local stage did not.
+                        // Refresh the stamped ERP identity and keep this field
+                        // guarded if it is still not visible; a second tab or
+                        // blind retry is not a safe recovery mechanism.
+                        self.model.fetch({
+                            success: function() {
+                                self._checkVisibility();
+                                if (self.model.get('erp_display_sync_key')) {
+                                    self._setSendPending(false);
+                                }
+                            }
+                        });
+                        return;
+                    }
+                    self._setSendPending(false);
+                    return;
+                }
+
+                // Keep the action guarded until the successful server-side
+                // stage transition and ERP identity are visible locally.
+                self.model.fetch({
+                    success: function() {
+                        self._checkVisibility();
+                        if (self.model.get('erp_display_sync_key')) {
+                            self._setSendPending(false);
+                        } else {
+                            app.alert.show('bd-send-estimating-identity-pending', {
+                                level: 'warning',
+                                messages: 'Kinetic accepted the Quote, but its ERP identity is not visible yet. Refresh to check the identity; do not retry unless an administrator verifies that no Kinetic quote exists.',
+                                autoClose: false
+                            });
+                        }
+                    }
+                });
             },
             error: function(err) {
+                self._setSendPending(false);
                 app.alert.dismiss('bd-send-estimating');
                 app.alert.show('bd-send-estimating-done', {
                     level: 'error',
@@ -54,7 +100,28 @@
                     autoClose: true
                 });
             }
-        });
+        };
+
+        try {
+            app.alert.show('bd-send-estimating', {
+                level: 'process',
+                title: app.lang.get('LBL_BD_SEND_ESTIMATING_RUNNING', 'Quotes')
+            });
+            app.api.call('create', url, {}, callbacks);
+        } catch (error) {
+            this._setSendPending(false);
+            app.alert.dismiss('bd-send-estimating');
+            throw error;
+        }
+    },
+
+    /** Keep the in-flight guard independent of the rendered element. */
+    _setSendPending: function(pending) {
+        this._sendPending = pending;
+        this.$el.find('[data-key-action="press"]')
+            .attr('aria-disabled', pending)
+            .attr('aria-busy', pending)
+            .prop('disabled', pending);
     },
 
     _checkVisibility: function() {

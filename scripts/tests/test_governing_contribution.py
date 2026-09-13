@@ -141,7 +141,7 @@ catch (UnexpectedValueException $e) { $error = $e->getMessage(); }
             manifest = zipped.read("manifest.php").decode()
             self.assertIn(path, manifest)
             self.assertRegex(manifest, r"'id_name'\s*=>\s*'sugarai_erp_epicor'")
-            self.assertRegex(manifest, r"'version'\s*=>\s*'1\.1\.24-rc5'")
+            self.assertRegex(manifest, r"'version'\s*=>\s*'1\.1\.24-rc9'")
             self.assertRegex(
                 manifest,
                 r"'id_name'\s*=>\s*'sugarai_erp_epicor_partialfulfillment'",
