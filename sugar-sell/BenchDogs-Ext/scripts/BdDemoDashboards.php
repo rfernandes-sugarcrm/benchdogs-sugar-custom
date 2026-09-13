@@ -284,7 +284,6 @@ class BdDemoDashboards
                         'quote_num',
                         'bd_erp_stage',
                         'bd_erp_total',
-                        'bd_governing_line',
                         'date_modified',
                     ],
                     'orderBy' => [

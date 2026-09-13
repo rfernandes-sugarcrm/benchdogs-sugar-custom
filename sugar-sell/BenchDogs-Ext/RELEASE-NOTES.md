@@ -1,8 +1,12 @@
-# 0.9.42-rc23 — `bd_country` type label survives ERP-Epicor upgrades
+# 0.9.42-rc23 — `bd_country` label survives ERP upgrades; retired governing label hidden
 
 Not built, not installed on QA and not approved for production.
 
-rc23 is rc22 with one REQ-15 display fix. The Bench-owned `ERP_LookupValues`
+rc23 is rc22 with two display fixes.
+
+### `bd_country` type label (REQ-15)
+
+The Bench-owned `ERP_LookupValues`
 type label `erp_lookup_type_list.bd_country` ("Country (Bench Dogs)") stopped
 being served on Bench after the ERP-Epicor `1.1.24-rc16` install. It stayed
 gone after the additive rc17 and the Bench Dogs rc21 upgrade. Offline diagnosis:
@@ -30,12 +34,38 @@ gone after the additive rc17 and the Bench Dogs rc21 upgrade. Offline diagnosis:
 - Display only. `BdAccountCountryGuard` reads stored type values, and nothing
   else changes.
 
+### Retired `bd_governing_line` removed from view (decision 29)
+
+- Nothing writes `Quotes.bd_governing_line`. Under decision 29 the governing
+  selection is the explicit `bd01_ERP_Quote_Line.governing` flag, which
+  `ErpQuoteOpportunityContribution` reads fail-closed. The Quote-level label
+  therefore only ever showed an empty or stale value.
+- `BdQuotesLayoutExtensions::write()` now removes it from the Bench Dogs Quotes
+  panel on every install. That includes upgraded tenants, where the append path
+  used to return early.
+  - The removal touches only that panel, so an admin's own placement elsewhere
+    survives.
+  - The packaged panel no longer lists it.
+- The Account "ERP Quote Pipeline" dashlet no longer lists it. `BdDemoDashboards`
+  rewrites its own tiles on install, so upgraded tenants follow.
+- The vardef and column stay for existing data, now marked retired and hidden
+  from Studio. Nothing in core, the SDK or either Sugar repo maps or reads the
+  field.
+- Unchanged: `BdGoverningLineHook`, `bd01_ERP_Quote_Line.governing` and the
+  contribution itself.
+
 Verification still owed on Bench after install:
 - The served `/lang/en_us` `app_list_strings.erp_lookup_type_list.bd_country`
   is "Country (Bench Dogs)".
 - The 7 ERP keys are still present.
+- The Quotes record view and the Account dashlet no longer show "ERP Governing
+  Line".
 
-Tests: `test_account_country_guard.py` reads the renamed fragment.
+Tests:
+- `test_account_country_guard.py` reads the renamed fragment.
+- New `test_governing_line_retired.py` covers:
+  - the packaged panel, the dashlet and the retired vardef;
+  - a PHP harness of `write()` for upgrade, fresh and replace installs.
 
 ## Previous candidates
 

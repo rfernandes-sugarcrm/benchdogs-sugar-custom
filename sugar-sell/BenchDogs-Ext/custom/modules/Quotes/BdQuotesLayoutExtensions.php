@@ -60,7 +60,13 @@ class BdQuotesLayoutExtensions
         $at = array_search(self::PANEL_NAME, array_column($panels, 'name'), true);
         if ($at !== false) {
             if (!$replace) {
-                return; // already deployed - keep whatever the admin has done since
+                // Already deployed - keep whatever the admin has done since,
+                // except the retired fields this panel itself once shipped.
+                if (self::dropRetiredPanelFields($panels[$at])) {
+                    $deploy->setViewdefs($viewdefs);
+                    $deploy->deploy($viewdefs);
+                }
+                return;
             }
             $panels[$at] = self::benchDogsPanel();
         } else {
@@ -212,7 +218,7 @@ class BdQuotesLayoutExtensions
         $viewdefs = $deploy->getViewdefs();
         $changed = false;
 
-        // 1. The Bench Dogs panel, and with it all five bd_* field references.
+        // 1. The Bench Dogs panel, and with it every bd_* field reference.
         if (!empty($viewdefs['base']['view']['record']['panels'])
             && is_array($viewdefs['base']['view']['record']['panels'])
         ) {
@@ -425,8 +431,41 @@ class BdQuotesLayoutExtensions
                 ['name' => 'bd_erp_stage', 'label' => 'LBL_BD_ERP_STAGE', 'readonly' => true],
                 ['name' => 'bd_priced_at', 'label' => 'LBL_BD_PRICED_AT', 'readonly' => true],
                 ['name' => 'bd_reason_code', 'label' => 'LBL_BD_REASON_CODE', 'readonly' => true],
-                ['name' => 'bd_governing_line', 'label' => 'LBL_BD_GOVERNING_LINE', 'readonly' => true],
             ],
         ];
+    }
+
+    /**
+     * Fields earlier versions placed on this panel that nothing writes any more.
+     *
+     * bd_governing_line: decision 29 (2026-09-13) makes the governing selection
+     * the bd01_ERP_Quote_Line.governing flag a person sets in Sugar, read
+     * fail-closed by ErpQuoteOpportunityContribution. No writer derives a
+     * Quote-level label from it, so the field only ever showed an empty or
+     * stale value.
+     *
+     * Removed from THIS panel only, on every install. The append path above
+     * otherwise returns early and would keep the old entry forever. An admin
+     * who placed the field on another panel keeps it.
+     */
+    private const RETIRED_PANEL_FIELDS = ['bd_governing_line'];
+
+    private static function dropRetiredPanelFields(array &$panel): bool
+    {
+        if (empty($panel['fields']) || !is_array($panel['fields'])) {
+            return false;
+        }
+        $kept = [];
+        foreach ($panel['fields'] as $field) {
+            $name = is_array($field) ? ($field['name'] ?? '') : $field;
+            if (!in_array($name, self::RETIRED_PANEL_FIELDS, true)) {
+                $kept[] = $field;
+            }
+        }
+        if (count($kept) === count($panel['fields'])) {
+            return false;
+        }
+        $panel['fields'] = $kept;
+        return true;
     }
 }

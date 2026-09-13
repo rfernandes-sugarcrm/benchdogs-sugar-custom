@@ -47,9 +47,18 @@ number through ERP-Core's neutral contract; ERP-Core remains the sole writer.
 Missing/multiple selection, multiple prototypes and multiple linked ERP quotes
 refuse instead of guessing or reverting to the summed display total.
 
-The exact governing field on the Kinetic Quote header is still unknown, so the
-candidate uses the explicit Sugar line flag. Automated ERP-driven selection,
-clearing, concurrency and revision lineage remain release acceptance gaps.
+The release contract for this selection is **decision 29** (2026-09-13): an
+explicit selection in Sugar, fail-closed. A person sets
+`bd01_ERP_Quote_Line.governing`. Nothing reads a governing field from the
+Kinetic Quote header, and no UD01 marker is created. EPIC06 has no such field,
+and a real Kinetic UD column is a later follow-up with an external owner.
+Automatic ERP-driven selection is therefore not a release requirement.
+Concurrent selection edits and revision lineage remain open acceptance items.
+
+The Quote-level `bd_governing_line` label is retired, because nothing writes it
+under decision 29. rc23 removes it from the Bench Dogs Quotes panel on every
+install and from the Account "ERP Quote Pipeline" dashlet. The vardef and
+column stay for existing data.
 
 The shared amount writer must run before the Bench forecast refresh on a
 governing-line trigger. Reversing that order leaves Best/Worst one selection
