@@ -14,10 +14,13 @@
  * native Quote lines only and never reads or writes Opportunity line items.
  *
  * When NEITHER sugar_quote_id nor bd_materialized_quote_id is set the ERP
- * quote was born in Kinetic, and REQ-28's materialization runs instead: a
- * native Sugar Quote with its line items, plus an Opportunity, on the
- * account the connector already matched by ERP sync key. See
- * materializeFromKinetic() for the three rules that bound it.
+ * quote was born in Kinetic. Core owns its native Sugar Quote (user decision
+ * 18, 2026-09-13: one native line per Kinetic quantity break, all unselected),
+ * so REQ-28 here only ADOPTS that Quote by its Kinetic number, links the
+ * mirror, reflects Bench fields and - above the configured
+ * materialize_from_quote_num - gives it its Opportunity. It never creates a
+ * Quote and never writes lines onto an adopted one. See
+ * materializeFromKinetic().
  */
 class BdQuoteReflectionHook
 {
@@ -58,9 +61,8 @@ class BdQuoteReflectionHook
 
         $sugarQuoteId = $this->effectiveSugarQuoteId($bean);
         if ($sugarQuoteId === '') {
-            // REQ-28: this quote was born in Kinetic - there is no Sugar
-            // quote to reflect onto, so make one. See
-            // materializeFromKinetic() for the three rules that govern it.
+            // REQ-28: this quote was born in Kinetic - adopt the native
+            // Quote core created for it. See materializeFromKinetic().
             self::$inProgress = true;
             try {
                 $this->materializeFromKinetic($bean);
@@ -1395,206 +1397,75 @@ class BdQuoteReflectionHook
     }
 
     /**
-     * REQ-28: materialize a Kinetic-born quote as a native Sugar Quote with
-     * its line items, plus an Opportunity, on the matched Account.
+     * REQ-28: attach a Kinetic-born quote to the native Sugar Quote core
+     * created for it.
      *
-     * Until now the ERP -> Sugar reflection could only ever PATCH a Sugar
-     * quote that already existed, matched by an id the Sugar side had
-     * stamped into the Kinetic QuoteComment. A quote raised directly in
-     * Kinetic carries no such id, so it arrived as a bd01_* mirror and
-     * stopped there: real work, invisible to the pipeline. This is the piece
-     * that was written up as "cannot be met this phase".
+     * User decision 18 (2026-09-13): core owns native Quote creation and this
+     * package only enriches. Core writes the Quote (erp_display_sync_key = the
+     * Kinetic QuoteNum) and one native line per QuoteQty break; decision 29
+     * leaves every break unselected until a person marks exactly one governing
+     * bd01_ERP_Quote_Line. So this method:
      *
-     * It is MLP work by necessity, not preference: core's CRM writer cannot
-     * write ProductBundles, so the line items a Sugar quote needs cannot be
-     * created from the connector side at all.
+     * 1. Never touches a quote that ORIGINATED in Sugar (sugar_quote_id set)
+     *    and short-circuits once bd_materialized_quote_id is set.
      *
-     * THREE RULES, none negotiable:
+     * 2. ADOPTS the core-created Quote by Kinetic number, whatever its age:
+     *    adoption creates nothing, so there is no history to protect. The
+     *    adopted Quote's lines stay core's - syncMaterializedQuoteLines()
+     *    refuses anything that is not a legacy 'materialized' quote, because
+     *    copying one line per QuoteDtl onto it would double every line.
      *
-     * 1. A Kinetic quote that ORIGINATED in Sugar is never re-materialized.
-     *    The embedded Sugar quote id is the guard and it is already proven:
-     *    the caller only reaches here when BOTH ids are empty, and a quote
-     *    born in Sugar always has sugar_quote_id parsed back out of its own
-     *    QuoteComment (1196 -> 49c7b618, 1197 -> bf62a990, measured).
+     * 3. Gives an adopted quote its Opportunity only when the Account is
+     *    matched by ERP sync key (never guessed) and the quote number is
+     *    above $sugar_config['benchdogs_ext']['materialize_from_quote_num'].
+     *    Without that setting nothing is created: a derived floor cascades
+     *    upward as rows adopt in ascending order and would turn the whole
+     *    Kinetic history into pipeline.
      *
-     * 2. An account is never guessed. The customer link comes from the
-     *    relationship the connector already resolves by the account's own
-     *    ERP sync key (110/110 populated live); no name matching, no
-     *    fuzzy fallback, no creating a customer that nobody confirmed. A
-     *    quote whose customer has no Sugar account WAITS - visibly, with the
-     *    reason on the record in bd_materialize_status/_msg - and is retried
-     *    on every later sync, because the account may simply not have synced
-     *    yet.
-     *
-     * 3. Re-runnable. Two independent guards: bd_materialized_quote_id short
-     *    circuits the whole path, and before creating anything the code looks
-     *    for a Sugar quote already carrying this Kinetic quote number
-     *    (erp_display_sync_key) and ADOPTS it. So a wiped mirror table that
-     *    re-syncs from scratch re-attaches to the quotes it made last time
-     *    instead of making them again.
-     *
-     * Scope: only Kinetic quotes above the materialize floor (see
-     * materializeFloor()). Everything the customer already had in Kinetic
-     * when this was switched on is history, not a backlog to import - 96 of
-     * the 115 mirror rows on this instance are exactly that, and creating 96
-     * opportunities on install is nobody's idea of the feature working.
+     * 4. Waits, visibly, when core has not created the Quote yet
+     *    ('waiting_native_quote'); the next save or line link retries.
      */
     private function materializeFromKinetic(SugarBean $bean): void
     {
         if (trim((string) ($bean->sugar_quote_id ?? '')) !== ''
             || trim((string) ($bean->bd_materialized_quote_id ?? '')) !== ''
         ) {
-            return;   // rule 1 / rule 3 - nothing to do
+            return;   // rule 1
         }
 
         $quoteNum = (int) ($bean->quote_num ?? 0);
         if ($quoteNum <= 0) {
             return;   // a mirror row with no Kinetic quote number is not a quote
         }
-        $floor = $this->materializeFloor();
-        if ($quoteNum <= $floor) {
-            // Pre-existing Kinetic history. Said out loud on the record
-            // rather than silently: a feature that declines to fire should
-            // be legible to the person wondering why, and stampMaterialize
-            // is a no-op once the row already says this, so it costs one
-            // write per row ever, not one per sync.
-            $this->stampMaterialize(
-                $bean,
-                'below_floor',
-                'Kinetic quote ' . $quoteNum . ' predates the Sugar materialization floor ('
-                . $floor . ') - existing Kinetic history, not a backlog to import.'
-            );
-            return;
-        }
 
-        $account = $this->matchedAccount($bean);
-        if ($account === null) {
-            $this->stampMaterialize(
-                $bean,
-                'waiting_account',
-                'Kinetic quote ' . $quoteNum . ' has no matching Sugar account yet - '
-                . 'waiting rather than inventing one. Retried on every sync.'
-            );
-            return;
-        }
-
-        $lines = $this->orderedLines($bean);
-        if ($lines === []) {
-            // The connector writes the header first and links its lines in a
-            // separate call afterwards, so an empty line set here means the
-            // picture is still arriving - not that the quote is empty. A
-            // Sugar quote materialized now would be a quote with no line
-            // items, which is worse than one that appears a second later.
-            // retryMaterializeOnLink() brings us back when they land.
-            $this->stampMaterialize(
-                $bean,
-                'waiting_lines',
-                'Kinetic quote ' . $quoteNum . ' has no lines in Sugar yet - '
-                . 'materializing when they arrive.'
-            );
-            return;
-        }
-
-        $adopted = $this->findQuoteByKineticNumber($quoteNum);
-        if ($adopted !== null) {
-            $this->stampMaterialize(
-                $bean,
-                'adopted',
-                'Adopted the existing Sugar quote for Kinetic quote ' . $quoteNum . '.',
-                $adopted->id
-            );
-            $this->linkToSugarQuote($bean, $adopted);
-            return;
-        }
-
-        $quote = $this->createNativeQuote($bean, $account, $lines);
+        $quote = $this->findQuoteByKineticNumber($quoteNum);
         if ($quote === null) {
-            return;   // createNativeQuote has already recorded why
+            $this->stampMaterialize(
+                $bean,
+                'waiting_native_quote',
+                'Kinetic quote ' . $quoteNum . ' has no connector-created Sugar quote yet - '
+                . 'adopting it when the connector delivers it.'
+            );
+            return;
         }
 
         $this->stampMaterialize(
             $bean,
-            'materialized',
-            'Created Sugar quote and opportunity from Kinetic quote ' . $quoteNum . '.',
+            'adopted',
+            'Adopted the connector-created Sugar quote for Kinetic quote ' . $quoteNum . '.',
             $quote->id
         );
         $this->linkToSugarQuote($bean, $quote);
 
-        // Hand the new quote straight to the ordinary reflection. Creating
-        // the records is only half of REQ-28: without this the Sugar quote
-        // would carry no bd_erp_stage or bd_erp_total and its Opportunity
-        // would remain invisible to the shared amount and Bench forecast
-        // paths. Doing it here rather than
-        // waiting for the next sync also means the record is complete the
-        // first time anyone looks at it.
-        $this->reflectOntoQuote($bean, $quote->id);
-    }
-
-    /**
-     * Kinetic quote numbers at or below this are pre-existing history and
-     * are never materialized.
-     *
-     * Derived from the data, not from anything recorded at install time:
-     * the floor is the highest Kinetic quote number Sugar ALREADY has a
-     * quote for. The reasoning is that Sugar has been keeping up with
-     * Kinetic as far as that number, so anything at or below it that Sugar
-     * does not have is history it deliberately does not have - 96 of the 115
-     * mirror rows on this instance are exactly that, and turning them into
-     * 96 opportunities on install is nobody's idea of the feature working.
-     * Anything ABOVE it is genuinely new, which is what REQ-28 is about.
-     *
-     * Deriving it beats storing it. A stored floor has to survive an MLP
-     * uninstall, a wipe of the mirror table and the full resync that
-     * recreates every row as if new; this one is recomputed from the Sugar
-     * quotes, which outlive all three. It also self-advances: once 1199 is
-     * materialized it becomes the floor, so 1200 is next and 1199 is never
-     * reconsidered.
-     *
-     * $sugar_config['benchdogs_ext']['materialize_from_quote_num'] overrides
-     * it, which is the supported way to deliberately backfill a range.
-     *
-     * FAILS CLOSED. If no Sugar quote is linked to any mirror row - a fresh
-     * tenant, or a broken link table - this answers the highest quote number
-     * in the mirror, i.e. materialize nothing until something newer arrives.
-     * A feature that visibly does not fire is recoverable; a hundred
-     * fabricated deals in a customer's pipeline is not, and those costs are
-     * not symmetric.
-     */
-    private function materializeFloor(): int
-    {
-        $override = SugarConfig::getInstance()->get('benchdogs_ext.materialize_from_quote_num', null);
-        if ($override !== null && $override !== '') {
-            return (int) $override;
-        }
-
-        try {
-            $query = new SugarQuery();
-            $query->select(['quote_num']);
-            $query->from(BeanFactory::newBean('bd01_ERP_Quote'));
-            $query->where()->queryOr()
-                ->notEquals('sugar_quote_id', '')
-                ->notEquals('bd_materialized_quote_id', '');
-            $query->orderBy('quote_num', 'DESC');
-            $query->limit(1);
-            $rows = $query->execute();
-            if (!empty($rows) && (int) ($rows[0]['quote_num'] ?? 0) > 0) {
-                return (int) $rows[0]['quote_num'];
+        $from = SugarConfig::getInstance()->get('benchdogs_ext.materialize_from_quote_num', null);
+        if ($from !== null && $from !== '' && $quoteNum > (int) $from) {
+            $account = $this->matchedAccount($bean);
+            if ($account !== null) {
+                $this->ensureOpportunity($quote, $account, $quoteNum);
             }
-
-            // Nothing linked at all - fail closed at the current high water.
-            $query = new SugarQuery();
-            $query->select(['quote_num']);
-            $query->from(BeanFactory::newBean('bd01_ERP_Quote'));
-            $query->orderBy('quote_num', 'DESC');
-            $query->limit(1);
-            $rows = $query->execute();
-            return (int) ($rows[0]['quote_num'] ?? PHP_INT_MAX);
-        } catch (Throwable $e) {
-            $GLOBALS['log']->error(
-                'BdQuoteReflectionHook: could not derive the materialize floor: ' . $e->getMessage()
-            );
-            return PHP_INT_MAX;
         }
+
+        $this->reflectOntoQuote($bean, $quote->id);
     }
 
     /**
@@ -1663,112 +1534,55 @@ class BdQuoteReflectionHook
     }
 
     /**
-     * Build the Opportunity, the Quote, its bundle and its line items.
+     * REQ-28's Opportunity for an adopted Kinetic-born quote.
      *
-     * Same record shape createOppQuote() writes for a Sugar-born deal
-     * (Opportunity -> Quote -> default ProductBundle -> Products lines,
-     * free-text lines carrying the Kinetic PartNum in mft_part_num), so a
-     * materialized quote is indistinguishable from a hand-made one to every
-     * downstream action in this package.
-     *
-     * The quote is stamped erp_display_sync_key (adoption's key on the next
-     * run) and erp_is_primary_quote. The second one matters because the shared
-     * Quote amount writer is gated on it, so without it the Opportunity this
-     * method just created would sit at zero forever. We are the ones
-     * declaring this quote the opportunity's primary quote - there is no
-     * other candidate, we made both records in the same breath.
+     * A quote that already has an Opportunity keeps it untouched. Otherwise
+     * this writes the same Opportunity shape the Sugar-born flow does, links
+     * it, and stamps erp_is_primary_quote - there is no other candidate. That
+     * stamp gates ERP-Core's sole Opportunity amount writer, whose Bench
+     * contribution refuses (keeps the old amount) until a person selects
+     * exactly one governing line (decision 29), so no quantity break is ever
+     * summed into the forecast.
      */
-    private function createNativeQuote(SugarBean $bean, SugarBean $account, array $lines): ?SugarBean
+    private function ensureOpportunity(SugarBean $quote, SugarBean $account, int $quoteNum): void
     {
-        $quoteNum = (int) $bean->quote_num;
+        if (!$quote->load_relationship('opportunities') || !is_object($quote->opportunities)
+            || $quote->opportunities->get() !== []
+        ) {
+            return;
+        }
 
         $assigned = (string) ($account->assigned_user_id ?? '');
         if ($assigned === '') {
             $assigned = '1';   // admin - a record nobody owns is worse than one the admin owns
         }
-        $name = $account->name . ' - Kinetic Quote ' . $quoteNum;
-        $closeDate = date('Y-m-d', strtotime('+30 days'));
 
         $opp = BeanFactory::newBean('Opportunities');
-        $opp->name = $name;
+        $opp->name = $account->name . ' - Kinetic Quote ' . $quoteNum;
         $opp->amount = 0;
-        $opp->currency_id = '-99';
-        $opp->base_rate = 1;
-        $opp->date_closed = $closeDate;
+        $opp->currency_id = (string) ($quote->currency_id ?: '-99');
+        $opp->base_rate = $quote->base_rate ?: 1;
+        $opp->date_closed = date('Y-m-d', strtotime('+30 days'));
         $opp->sales_stage = 'Proposal/Price Quote';
         $opp->probability = 65;
         $opp->assigned_user_id = $assigned;
         $opp->account_id = $account->id;
         $opp->account_name = $account->name;
         $opp->description = 'Raised in Epicor Kinetic as quote ' . $quoteNum
-            . ' and materialized into Sugar by BenchDogs-Ext (REQ-28).';
+            . '; its native Quote was created by the connector (REQ-28).';
         $opp->save();
         if ($opp->load_relationship('accounts')) {
             $opp->accounts->add($account);
         }
+        $quote->opportunities->add($opp);
 
-        $quote = BeanFactory::newBean('Quotes');
-        $quote->name = $name;
-        $quote->quote_stage = 'Draft';
-        $quote->erp_quote_type = 'advanced_quote';
-        $quote->erp_display_sync_key = (string) $quoteNum;
         $quote->erp_is_primary_quote = true;
-        $quote->date_quote_expected_closed = $closeDate;
-        $quote->assigned_user_id = $assigned;
-        $quote->currency_id = '-99';
-        $quote->base_rate = 1;
-        $quote->billing_account_id = $account->id;
-        $quote->billing_account_name = $account->name;
-        $quote->shipping_account_id = $account->id;
-        $quote->shipping_account_name = $account->name;
-        $quote->subtotal = 0;
-        $quote->new_sub = 0;
-        $quote->total = 0;
-        $quote->shipping = 0;
-        $quote->tax = 0;
-        $quote->subtotal_usdollar = 0;
-        $quote->new_sub_usdollar = 0;
-        $quote->total_usdollar = 0;
-        $quote->description = 'Materialized from Epicor Kinetic quote ' . $quoteNum . '.';
         $quote->save();
-        if ($quote->load_relationship('billing_accounts')) {
-            $quote->billing_accounts->add($account);
-        }
-        if ($quote->load_relationship('opportunities')) {
-            $quote->opportunities->add($opp);
-        }
-
-        $bundle = BeanFactory::newBean('ProductBundles');
-        $bundle->name = '';
-        $bundle->default_group = true;
-        $bundle->bundle_stage = 'Draft';
-        $bundle->currency_id = '-99';
-        $bundle->base_rate = 1;
-        $bundle->subtotal = 0;
-        $bundle->new_sub = 0;
-        $bundle->total = 0;
-        $bundle->save();
-        if ($quote->load_relationship('product_bundles')) {
-            $quote->product_bundles->add($bundle, ['position' => 0]);
-        }
-
-        $position = $this->syncLinesToQuote($quote, $bundle, $lines, $account->id, $assigned);
-
-        // Re-save so the quote's own rollup totals evaluate against the rows
-        // just written - the same step copyWinningLinesToQuote() ends on.
-        $requote = BeanFactory::retrieveBean('Quotes', $quote->id, ['use_cache' => false]);
-        if ($requote !== null) {
-            $requote->save();
-            $quote = $requote;
-        }
 
         $GLOBALS['log']->info(
-            'BdQuoteReflectionHook: REQ-28 materialized Kinetic quote ' . $quoteNum
-            . ' as Sugar quote ' . $quote->id . ' / opportunity ' . $opp->id
-            . ' on account ' . $account->id . ' (' . $position . ' lines)'
+            'BdQuoteReflectionHook: REQ-28 gave adopted Sugar quote ' . $quote->id
+            . ' (Kinetic ' . $quoteNum . ') opportunity ' . $opp->id
         );
-
-        return $quote;
     }
 
     /**
@@ -1902,10 +1716,9 @@ class BdQuoteReflectionHook
      * Needed for the connector's create-then-link ordering: it writes the
      * mirror header first and attaches its account and its lines
      * in separate calls afterwards, none of which fire a save hook on the
-     * header. Without this, a Kinetic-born quote would sit at
-     * "waiting_account" or "waiting_lines" until some unrelated field
-     * changed - materialization that needs a human to nudge it is not
-     * materialization.
+     * header. Without this, a Kinetic-born quote would sit unadopted (or at
+     * "waiting_native_quote") until some unrelated field changed - adoption
+     * that needs a human to nudge it is not adoption.
      *
      * Once materialized, later link events top the line items up instead
      * (syncLinesToQuote is an upsert), which is what makes a two-line quote
@@ -1957,6 +1770,12 @@ class BdQuoteReflectionHook
     private function syncMaterializedQuoteLines(SugarBean $bean, string $quoteId): bool
     {
         if ($quoteId === '' || (string) ($bean->bd_materialized_quote_id ?? '') !== $quoteId) {
+            return false;
+        }
+        if ((string) ($bean->bd_materialize_status ?? '') !== 'materialized') {
+            // An adopted quote's lines are core's, one per quantity break
+            // (decision 18). Only a legacy quote this package built itself
+            // may be re-copied from the mirror.
             return false;
         }
         $lines = $this->orderedLines($bean);

@@ -130,6 +130,7 @@ MATERIALIZED = r'''
 $GLOBALS['quote_save_hook'] = true;
 $erp->sugar_quote_id = '';
 $erp->bd_materialized_quote_id = $quote->id;
+$erp->bd_materialize_status = 'materialized';  // legacy quote this package built
 $line->name = 'Owned ERP line';
 $line->doc_unit_price = 125;
 $product->name = $line->name;
