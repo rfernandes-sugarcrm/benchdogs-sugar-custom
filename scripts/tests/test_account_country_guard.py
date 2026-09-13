@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 PKG = ROOT / "sugar-sell/BenchDogs-Ext"
 GUARD = PKG / "custom/modules/Accounts/BdAccountCountryGuard.php"
 HOOK = PKG / "custom/Extension/modules/Accounts/Ext/LogicHooks/bd_account_country_guard.php"
-LANG = PKG / "custom/Extension/application/Ext/Language/en_us.bd_country_lookup.php"
+LANG = PKG / "custom/Extension/application/Ext/Language/_override_en_us.bd_country_lookup.php"
 
 HARNESS = r'''
 #[AllowDynamicProperties]
@@ -120,6 +120,18 @@ class AccountCountryGuardPackagingTest(unittest.TestCase):
         lang = LANG.read_text()
         self.assertIn("$app_list_strings['erp_lookup_type_list']['bd_country']", lang)
         self.assertNotRegex(lang, r"\$app_list_strings\['erp_lookup_type_list'\]\s*=")
+
+    def test_type_label_merges_after_erp_fragments_whatever_their_mtime(self):
+        # Sugar 26.1 sorts language fragments by is_override, then by an order-map
+        # mtime refreshed only when a file's md5 changes. ERP-Epicor upgrades keep
+        # changing (and appending to) their fragment, whose accumulated whole-array
+        # erp_lookup_type_list then wiped this key after rc16. `_override*` always
+        # merges last; the name must still contain en_us to join that merge.
+        self.assertTrue(LANG.name.startswith("_override_"), LANG.name)
+        self.assertIn("en_us", LANG.name)
+        others = sorted(p.name for p in LANG.parent.glob("*.php")
+                        if p != LANG and "bd_country" in p.read_text())
+        self.assertEqual(others, [], "one fragment owns the bd_country label")
 
 
 if __name__ == "__main__":

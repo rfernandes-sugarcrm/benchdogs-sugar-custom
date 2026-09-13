@@ -1,4 +1,45 @@
-# 0.9.42-rc22 — adopt Kinetic quotes whose Sugar marker names a deleted Quote
+# 0.9.42-rc23 — `bd_country` type label survives ERP-Epicor upgrades
+
+Not built, not installed on QA and not approved for production.
+
+rc23 is rc22 with one REQ-15 display fix. The Bench-owned `ERP_LookupValues`
+type label `erp_lookup_type_list.bd_country` ("Country (Bench Dogs)") stopped
+being served on Bench after the ERP-Epicor `1.1.24-rc16` install. It stayed
+gone after the additive rc17 and the Bench Dogs rc21 upgrade. Offline diagnosis:
+`validation/bd-country-label-diagnosis.md` (2026-09-13).
+
+- Cause, in two Sugar 26.1 behaviours:
+  - An upgrade without `uninstall_before_upgrade` only appends to
+    ERP-Epicor's application language fragment. The fragment still holds the
+    rc16-and-older whole-array `erp_lookup_type_list` assignments ahead of
+    rc17's additive keys.
+  - Language fragments merge by the order map's stored mtime, and that mtime
+    is refreshed only when the file's md5 changes. Bench's fragment was
+    byte-identical in rc19, rc21 and rc22, so it kept its old slot. ERP's
+    fragment changed on each upgrade, so it merged after Bench and wiped the key.
+- Fix: the fragment is renamed to
+  `custom/Extension/application/Ext/Language/_override_en_us.bd_country_lookup.php`.
+  Its content is unchanged and still additive. Sugar always merges `_override*`
+  fragments after the others, whatever their mtime or md5. The name still
+  contains `en_us`, so it stays in the en_us merge. Partial Fulfillment already
+  ships `_override_en_us.partial_fulfillment_quote_stage.php` the same way.
+- No `pack.php` change: every file under `custom/` is still a `copy` installdef.
+- On a tenant upgraded in place, the old `en_us.bd_country_lookup.php` stays on
+  disk (an upgrade never deletes an omitted file; BD-L-0005). That is harmless,
+  because it assigns the same single key.
+- Display only. `BdAccountCountryGuard` reads stored type values, and nothing
+  else changes.
+
+Verification still owed on Bench after install:
+- The served `/lang/en_us` `app_list_strings.erp_lookup_type_list.bd_country`
+  is "Country (Bench Dogs)".
+- The 7 ERP keys are still present.
+
+Tests: `test_account_country_guard.py` reads the renamed fragment.
+
+## Previous candidates
+
+## 0.9.42-rc22 — adopt Kinetic quotes whose Sugar marker names a deleted Quote
 
 Not installed on QA and not approved for production.
 
@@ -16,8 +57,6 @@ had no mirror link and the governing contribution answered "not applicable".
 - Existing rows adopt on their next save or line link.
 
 Tests: `test_kinetic_quote_adoption.py` now has 11 PHP-backed cases.
-
-## Previous candidates
 
 ## 0.9.42-rc21 — Opportunity floor stored as an Administration setting
 
