@@ -58,8 +58,11 @@ class ErpQuoteOpportunityContribution
         if ($prototypes !== []) {
             $amount += $this->lineAmount($prototypes[0]);
         }
-        $amount += $this->money($quote->tax ?? 0, 'Quote tax');
-        $amount += $this->money($quote->shipping ?? 0, 'Quote shipping');
+        // A sparse/stale Quote read is not evidence of zero commercial charges.
+        // Explicit native zero remains valid; unknown charges preserve the
+        // prior Opportunity value through the shared failure boundary.
+        $amount += $this->money($quote->tax ?? null, 'Quote tax');
+        $amount += $this->money($quote->shipping ?? null, 'Quote shipping');
         return $amount;
     }
 

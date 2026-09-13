@@ -66,6 +66,36 @@ $value = (new ErpQuoteOpportunityContribution())->resolve($quote);
         self.assertEqual(observed["value"], 5250)
         self.assertEqual(observed["line_count"], 2)
 
+    def test_unavailable_native_charges_are_not_fabricated_as_zero(self):
+        for field in ("tax", "shipping"):
+            for mutation in (f"unset($quote->{field});", f"$quote->{field} = null;"):
+                with self.subTest(field=field, mutation=mutation):
+                    observed = self.execute(r'''
+$lines = [$make('selected', 4000, true), $make('prototype', 500, false, true)];
+$erp->bd01_erp_quote_lines = new TestLink($lines);
+$quote->bd01_erp_quote_quotes = new TestLink([$erp]);
+''' + mutation + r'''
+try { $value = (new ErpQuoteOpportunityContribution())->resolve($quote); }
+catch (UnexpectedValueException $e) { $error = $e->getMessage(); }
+''')
+                    self.assertIsNone(observed["value"], observed)
+                    self.assertTrue(observed["error"], observed)
+
+    def test_zero_charges_and_discounted_extended_price_remain_valid(self):
+        observed = self.execute(r'''
+$selected = $make('selected', '3600.25', true);
+$selected->selling_qty = 50;
+$selected->doc_unit_price = 80; // Undiscounted multiplication would be wrong.
+$lines = [$selected, $make('alternative', 5250), $make('prototype', 0, false, true)];
+$erp->bd01_erp_quote_lines = new TestLink($lines);
+$quote->bd01_erp_quote_quotes = new TestLink([$erp]);
+$quote->tax = '0';
+$quote->shipping = 0;
+$value = (new ErpQuoteOpportunityContribution())->resolve($quote);
+''')
+        self.assertEqual(observed["value"], 3600.25)
+        self.assertEqual(observed["line_count"], 3)
+
     def test_unlinked_native_quote_is_not_applicable(self):
         observed = self.execute(r'''
 $quote->bd01_erp_quote_quotes = new TestLink([]);
