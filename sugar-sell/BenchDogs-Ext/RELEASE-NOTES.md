@@ -1,4 +1,28 @@
-# 0.9.42-rc18 — account action requires the same access as the shared one
+# 0.9.42-rc20 — Kinetic-born quotes adopt core's native Quote
+
+Not installed on QA and not approved for production.
+
+rc20 is rc19 with the REQ-28 hook brought under user decision 18 (core owns
+native Quote creation) and decision 29 (every Kinetic quantity break arrives as
+an unselected native line; only a person's governing selection counts).
+
+- `BdQuoteReflectionHook` adopts the Quote core created, by Kinetic quote
+  number, before anything else. Adoption creates nothing.
+- It never creates a Quote any more. Until core delivers one the ERP quote
+  shows `waiting_native_quote`.
+- It never copies mirror lines onto an adopted Quote. Core's per-break lines
+  are left alone; only legacy `materialized` quotes are still re-copied.
+- An adopted quote gets its Opportunity (and `erp_is_primary_quote`) only when
+  the account is matched by ERP key and the quote number is above
+  `$sugar_config['benchdogs_ext']['materialize_from_quote_num']`. Without that
+  setting no Opportunity is created. **Deployment step:** set it to the last
+  Kinetic quote number that predates go-live.
+
+Tests: new `scripts/tests/test_kinetic_quote_adoption.py` (5 PHP-backed cases).
+
+## Previous candidates
+
+## 0.9.42-rc18 — account action requires the same access as the shared one
 
 Not installed on QA and not approved for production.
 
@@ -11,8 +35,6 @@ ERP-Epicor's `AccountsErpActionsApi::createOppQuote`: edit access on the account
 and save access on Opportunities and Quotes, all checked before the first save.
 A refused caller gets `SugarApiExceptionNotAuthorized` and nothing is created.
 See `docs/release-0.9.42-rc18.md`.
-
-## Previous candidates
 
 ## 0.9.42-rc17 — SugarCloud scanner-safe estimating notifications
 
