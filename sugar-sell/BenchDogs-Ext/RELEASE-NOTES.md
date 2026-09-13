@@ -1,4 +1,31 @@
-# 0.9.42-rc14 — callable and fail-visible estimating handoff
+# 0.9.42-rc15 — honest and deduplicated estimating notifications
+
+Not installed on QA and not approved for production.
+
+rc15 keeps the shared ERP action and persisted Bench stage as the primary
+handoff result. The secondary Sugar notification now validates active internal
+recipients, uses the native unique `Notifications.sync_key` to deduplicate one
+stage transition, calls `save(false)`, and reads the record back before
+claiming delivery. Missing, inactive, invalid, failed and unobserved delivery
+paths remain named warnings and never undo or retry the ERP create.
+
+The action response carries separate `erp_handoff_status` and
+`notification_status` values. Sidecar keeps the successful action guarded and
+shows an amber operational message when the Kinetic handoff succeeded without
+a proven notification. Both configured recipient keys and their authoritative
+failure semantics are documented. Shared ERP-Epicor `1.1.24-rc9`, Partial
+Fulfillment `1.0.13`, SDK `1.18`, and the Quote-line-only model are unchanged.
+
+Do not build or install rc15 independently. It must be reviewed, built and
+accepted together with the paired Kinetic `Quoted`/`DateQuoted` lifecycle
+candidate. The notification hook deliberately retains the return leg; it does
+not guess completion from `CurrentStage` or hide the missing lifecycle input.
+
+See `docs/release-0.9.42-rc15.md`.
+
+## Previous candidate
+
+## 0.9.42-rc14 — callable and fail-visible estimating handoff
 
 Not installed on QA and not approved for production.
 

@@ -53,6 +53,17 @@ class TestErpQuote extends SugarBean {
         return $this->id;
     }
 }
+if (LOAD_NOTIFICATION_HOOK) {
+    class BdEstimatingNotificationHook {
+        public static function consumeEstimatingOutcome($quoteId) {
+            $GLOBALS['notification_consumes'][] = $quoteId;
+            return [
+                'status' => NOTIFICATION_STATUS,
+                'message' => NOTIFICATION_MESSAGE,
+            ];
+        }
+    }
+}
 class BeanFactory {
     public static function retrieveBean($module, $id, $options = []) {
         $GLOBALS['retrievals'][] = [$module, $id, $options];
@@ -100,6 +111,7 @@ $GLOBALS['delegated'] = [];
 $GLOBALS['erp_beans'] = [];
 $GLOBALS['new_beans'] = [];
 $GLOBALS['query_key'] = '';
+$GLOBALS['notification_consumes'] = [];
 $mirrorMode = MIRROR_MODE;
 if ($mirrorMode === 'two_companies') {
     $other = new TestErpQuote(); $other->id = 'other'; $other->quote_num = 1201; $other->erp_sync_key = 'OTHER__1201';
@@ -137,6 +149,7 @@ echo json_encode([
     'saves' => $GLOBALS['quote']->saves,
     'retrievals' => $GLOBALS['retrievals'],
     'erp' => $erp,
+    'notification_consumes' => $GLOBALS['notification_consumes'],
 ]);
 }
 """
@@ -171,6 +184,9 @@ class EstimatingEntrypointTest(unittest.TestCase):
         save_result: bool = True,
         throw_save: bool = False,
         lose_persistence: bool = False,
+        load_notification_hook: bool = True,
+        notification_status: str = "created",
+        notification_message: str = "Sugar created the in-app notification.",
     ) -> dict:
         with tempfile.TemporaryDirectory(prefix="bench-estimating-") as tmp:
             target = Path(tmp)
@@ -195,6 +211,9 @@ class EstimatingEntrypointTest(unittest.TestCase):
                 "SAVE_RESULT": "true" if save_result else "false",
                 "THROW_SAVE": "true" if throw_save else "false",
                 "LOSE_PERSISTENCE": "true" if lose_persistence else "false",
+                "LOAD_NOTIFICATION_HOOK": "true" if load_notification_hook else "false",
+                "NOTIFICATION_STATUS": repr(notification_status),
+                "NOTIFICATION_MESSAGE": repr(notification_message),
             }
             for needle, replacement in replacements.items():
                 code = code.replace(needle, replacement)
@@ -235,6 +254,9 @@ class EstimatingEntrypointTest(unittest.TestCase):
         self.assertEqual(observed["result"]["status"], "success")
         self.assertEqual(observed["result"]["erp_id"], "1201")
         self.assertEqual(observed["result"]["estimating_timestamp_status"], "stamped")
+        self.assertEqual(observed["result"]["erp_handoff_status"], "completed")
+        self.assertEqual(observed["result"]["notification_status"], "created")
+        self.assertEqual(observed["notification_consumes"], ["quote-1"])
         self.assertEqual(observed["stage"], "in_estimating")
         self.assertEqual(observed["saves"], 1)
         self.assertEqual(observed["retrievals"], [
@@ -247,6 +269,29 @@ class EstimatingEntrypointTest(unittest.TestCase):
             "id": "created-2", "key": "EPIC06__1201",
             "stamp": "2026-09-12 12:34:56", "saves": 1,
         }])
+
+    def test_notification_failure_remains_a_successful_non_retryable_erp_handoff(self):
+        response = {"status": "success", "message": "created", "erp_id": "1201"}
+        observed = self.execute(
+            response,
+            notification_status="save_failed",
+            notification_message="Use the In Estimating view.",
+        )
+        self.assertEqual(observed["result"]["status"], "success")
+        self.assertEqual(observed["result"]["erp_handoff_status"], "completed")
+        self.assertEqual(observed["result"]["notification_status"], "save_failed")
+        self.assertEqual(
+            observed["result"]["notification_message"],
+            "Use the In Estimating view.",
+        )
+        self.assertNotIn("retry_safe", observed["result"])
+
+    def test_missing_notification_hook_is_visible_without_changing_erp_success(self):
+        response = {"status": "success", "message": "created", "erp_id": "1201"}
+        observed = self.execute(response, load_notification_hook=False)
+        self.assertEqual(observed["result"]["status"], "success")
+        self.assertEqual(observed["result"]["notification_status"], "not_observed")
+        self.assertIn("did not report", observed["result"]["notification_message"])
 
     def test_shared_failure_is_returned_without_claiming_estimating_handoff(self):
         response = {"status": "error", "message": "ERP unavailable"}

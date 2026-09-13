@@ -59,7 +59,9 @@ test('two immediate clicks issue exactly one estimating request', () => {
 test('successful handoff stays guarded through the Quote refresh', () => {
     const {field, model, requests, attributes} = harness();
     field._onClicked();
-    requests[0].callbacks.success({status: 'success', message: 'Created'});
+    requests[0].callbacks.success({
+        status: 'success', notification_status: 'created', message: 'Created'
+    });
     field._onClicked();
     assert.equal(requests.length, 1);
     assert.ok(model.fetchOptions);
@@ -76,7 +78,7 @@ test('successful response stays guarded when refreshed ERP identity is absent', 
     field._onClicked();
     requests[0].callbacks.success({
         status: 'success', estimating_timestamp_status: 'pending_exact_mirror',
-        message: 'Created',
+        notification_status: 'created', message: 'Created',
     });
     model.fetchOptions.success();
     assert.equal(attributes.disabled, true);
@@ -98,12 +100,48 @@ test('pending or ambiguous timestamp is never presented as all-green success', (
         const {field, requests, alerts} = harness();
         field._onClicked();
         requests[0].callbacks.success({
-            status: 'success', estimating_timestamp_status: status, message: 'Created',
+            status: 'success', estimating_timestamp_status: status,
+            notification_status: 'created', message: 'Created',
         });
         const result = alerts.find(entry => entry.key === 'bd-send-estimating-done');
         assert.equal(result.value.level, 'warning');
         assert.match(result.value.messages, /pending exact ERP mirror verification/);
     }
+});
+
+test('notification failure is amber but never exposes an ERP retry', () => {
+    const {field, model, requests, alerts, attributes} = harness();
+    field._onClicked();
+    requests[0].callbacks.success({
+        status: 'success',
+        erp_handoff_status: 'completed',
+        estimating_timestamp_status: 'stamped',
+        notification_status: 'save_failed',
+        notification_message: 'Use the In Estimating view.',
+        message: 'Kinetic quote 1201 created.',
+    });
+    const result = alerts.find(entry => entry.key === 'bd-send-estimating-done');
+    assert.equal(result.value.level, 'warning');
+    assert.equal(result.value.autoClose, false);
+    assert.match(result.value.messages, /Kinetic quote 1201 created/);
+    assert.match(result.value.messages, /Use the In Estimating view/);
+    assert.equal(attributes.disabled, true);
+    field._onClicked();
+    assert.equal(requests.length, 1);
+
+    model.values.erp_display_sync_key = '1201';
+    model.fetchOptions.success();
+    assert.equal(requests.length, 1);
+});
+
+test('missing notification outcome is never shown as all-green success', () => {
+    const {field, requests, alerts} = harness();
+    field._onClicked();
+    requests[0].callbacks.success({status: 'success', message: 'Created'});
+    const result = alerts.find(entry => entry.key === 'bd-send-estimating-done');
+    assert.equal(result.value.level, 'warning');
+    assert.equal(result.value.autoClose, false);
+    assert.match(result.value.messages, /could not confirm the in-app notification/);
 });
 
 test('application error unlocks for an explicit retry and never retries itself', () => {

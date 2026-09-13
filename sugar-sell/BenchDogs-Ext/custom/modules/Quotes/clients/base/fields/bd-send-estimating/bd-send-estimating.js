@@ -5,7 +5,8 @@
  *
  * Quote header button: creates the Kinetic quote for this Sugar Quote via
  * the product's quote_to_quote write-back and flags the hand-off
- * (bd_erp_stage=in_estimating -> estimating owner is notified). REQ-27 +
+ * (bd_erp_stage=in_estimating). Notification delivery is reported as a
+ * separate, secondary result. REQ-27 +
  * REQ-13/UC-6 - the email-with-a-folder-link step this replaces.
  *
  * Visible only while no Kinetic quote exists yet (erp_display_sync_key is
@@ -45,14 +46,23 @@
                 var timestampStatus = data && data.estimating_timestamp_status;
                 var timestampPending = succeeded && timestampStatus &&
                     timestampStatus !== 'stamped' && timestampStatus !== 'already_stamped';
+                var notificationStatus = data && data.notification_status;
+                var notificationDelivered = notificationStatus === 'created' ||
+                    notificationStatus === 'already_created';
+                var notificationWarning = succeeded && !notificationDelivered;
                 var message = (data && data.message) || 'Send to estimating failed.';
                 if (timestampPending) {
                     message += ' Turnaround timing is pending exact ERP mirror verification.';
                 }
+                if (notificationWarning) {
+                    message += ' ' + ((data && data.notification_message) ||
+                        'The hand-off completed, but Sugar could not confirm the in-app notification. Use the In Estimating view and ask an administrator to inspect notification delivery.');
+                }
                 app.alert.show('bd-send-estimating-done', {
-                    level: timestampPending ? 'warning' : (succeeded ? 'success' : 'error'),
+                    level: (timestampPending || notificationWarning) ?
+                        'warning' : (succeeded ? 'success' : 'error'),
                     messages: message,
-                    autoClose: true
+                    autoClose: !notificationWarning
                 });
                 if (!succeeded) {
                     if (data && data.partial_success) {

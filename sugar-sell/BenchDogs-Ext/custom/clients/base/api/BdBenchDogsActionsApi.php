@@ -340,6 +340,29 @@ if (file_exists($parentApiFile)) {
             }
             $result['estimating_timestamp_status'] = $this->stampSentToEstimating($persisted);
 
+            // The Kinetic write and persisted Bench stage are the primary
+            // hand-off. The after_save hook's in-app Notification is a
+            // secondary delivery: report it independently and never turn its
+            // failure into an unsafe invitation to create the ERP quote again.
+            $result['erp_handoff_status'] = 'completed';
+            $notificationOutcome = array(
+                'status' => 'not_observed',
+                'message' => 'The Kinetic hand-off completed, but Sugar did not report a '
+                    . 'notification attempt. Use the In Estimating view and ask an '
+                    . 'administrator to verify the notification hook.',
+            );
+            if (class_exists('BdEstimatingNotificationHook', false)) {
+                $notificationOutcome = BdEstimatingNotificationHook::consumeEstimatingOutcome(
+                    $recordId
+                );
+            }
+            $result['notification_status'] = (string) (
+                $notificationOutcome['status'] ?? 'not_observed'
+            );
+            $result['notification_message'] = (string) (
+                $notificationOutcome['message'] ?? ''
+            );
+
             return $result;
         }
 

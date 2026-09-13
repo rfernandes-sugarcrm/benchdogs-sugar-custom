@@ -1,158 +1,65 @@
 <?php
 
 /**
- * after_save hook class for Quotes - see the registration in
- * custom/Extension/modules/Quotes/Ext/LogicHooks/bd_estimating_notification.php
- * for why this class lives here and not alongside that registration.
- *
- * Bench Dogs REQ-13 (estimating hand-off), minimal honest mechanism: when a
- * Quote's bd_erp_stage transitions into 'in_estimating' (the closest
- * bd_erp_stage_list key to "ready for estimating" - the list has no
- * ready_for_estimating value; see en_us.bd_erp_fields.php), create a Sugar
- * Notifications record so the estimating owner sees the hand-off in the
- * notification center. bd_erp_stage is normally set by BdQuoteReflectionHook
- * from the ERP quote's own stage, so this fires on the sync path as well as
- * on manual edits.
- *
- * Recipient resolution, in order:
- *   1. $sugar_config['benchdogs_ext']['estimating_notify_user_id'] - the
- *      package's one config knob (set it in config_override.php), for shops
- *      with a fixed estimating coordinator;
- *   2. the quote's assigned user's manager (Users.reports_to_id);
- *   3. the quote's assigned user themselves (last resort - a hand-off that
- *      notifies nobody is worse than one that notifies the requester).
- *
- * Deliberately NOT SugarBPM: shipping a process definition this package
- * can't honestly claim to have designed with the customer would be a fake
- * artifact. Customers who prefer BPM can disable this hook and model the
- * same trigger there post-install - see the package README.
+ * Best-effort, deduplicated Sugar notifications for the Bench estimating
+ * hand-off. The ERP hand-off and the persisted Quote stage are primary facts;
+ * a notification is a secondary delivery and must never undo either one.
  */
 class BdEstimatingNotificationHook
 {
-    /** bd_erp_stage_list key that means "ready for estimating". */
     private const ESTIMATING_STAGE = 'in_estimating';
-
-    /** bd_erp_stage_list key that means "estimating has put a price on it". */
     private const PRICED_STAGE = 'priced';
-
-    /**
-     * Stages a quote can be sitting in when estimating hands it BACK.
-     *
-     * Deliberately excludes the empty stage. A quote reflected for the very
-     * first time arrives '' -> 'priced' in a single save (dataChanges carries
-     * a new record's initial values as changes), and that is a backfill, not
-     * a hand-off: nobody just finished work on it, and firing there would
-     * mean a notification per quote on every first sync of a Kinetic
-     * backlog. Also excludes accepted / ordered / lost - a quote coming back
-     * from a closed state is a re-open, which is REQ-12's story and has its
-     * own hand-off, not this one.
-     */
     private const PRE_PRICING_STAGES = ['draft', 'in_estimating', 'revision'];
+    private const DIRECTION_ESTIMATING = 'estimating';
+    private const DIRECTION_SALES = 'sales';
+
+    /** Request-local outcomes let the initiating API report secondary delivery honestly. */
+    private static $outcomes = [];
 
     public function notifyEstimating(SugarBean $bean, string $event, array $arguments): void
     {
-        if ((string) ($bean->bd_erp_stage ?? '') !== self::ESTIMATING_STAGE) {
-            return;
-        }
-
-        // Only a real transition into the stage, not every resave of a Quote
-        // already there. dataChanges, not fetched_row: after_save fires after
-        // SugarBean has overwritten fetched_row with the bean's own
-        // post-write values, so fetched_row can never show a transition
-        // (see OrderStageOpportunityCascade for the confirmed-live account).
-        $stageChange = null;
-        foreach ($arguments['dataChanges'] ?? [] as $change) {
-            if (($change['field_name'] ?? '') === 'bd_erp_stage') {
-                $stageChange = $change;
-                break;
-            }
-        }
-        if ($stageChange === null || $stageChange['before'] === $stageChange['after']) {
-            return;
-        }
-
         try {
-            $recipientId = $this->resolveRecipient($bean);
-            if ($recipientId === '') {
-                $GLOBALS['log']->warn(
-                    'BdEstimatingNotificationHook: quote ' . $bean->id
-                    . ' entered in_estimating but no recipient could be resolved '
-                    . '(no config user, no assigned user) - no notification created'
-                );
+            if ((string) ($bean->bd_erp_stage ?? '') !== self::ESTIMATING_STAGE) {
                 return;
             }
 
-            $notification = BeanFactory::newBean('Notifications');
-            $notification->name = 'Quote ready for estimating: ' . mb_substr((string) $bean->name, 0, 200);
-            $notification->description = 'Quote "' . $bean->name . '" ('
-                . $this->quoteReference($bean) . ') has entered the estimating stage'
-                . ' and is ready to be worked.';
-            $notification->severity = 'information';
-            $notification->is_read = 0;
-            $notification->assigned_user_id = $recipientId;
-            $notification->parent_type = 'Quotes';
-            $notification->parent_id = $bean->id;
-            $notification->save();
+            $change = $this->stageChange($arguments);
+            if ($change === null || $change['before'] === $change['after']) {
+                return;
+            }
 
-            $GLOBALS['log']->info(
-                'BdEstimatingNotificationHook: notification ' . $notification->id
-                . ' created for user ' . $recipientId . ' (quote ' . $bean->id
-                . ' -> in_estimating)'
+            $outcome = $this->attemptNotification(
+                $bean,
+                $change,
+                self::DIRECTION_ESTIMATING,
+                'Quote ready for estimating: ',
+                'Quote "' . $bean->name . '" (' . $this->quoteReference($bean)
+                    . ') has entered the estimating stage and is ready to be worked.'
             );
+            self::rememberOutcome($bean, self::DIRECTION_ESTIMATING, $outcome);
         } catch (Throwable $e) {
-            // A failed notification must never fail the Quote save.
-            $GLOBALS['log']->error(
-                'BdEstimatingNotificationHook: failed notifying for quote '
-                . $bean->id . ': ' . $e->getMessage()
+            $outcome = self::outcome(
+                'delivery_failed',
+                'The hand-off completed, but Sugar could not run the in-app notification hook. '
+                    . 'Use the In Estimating view and ask an administrator to inspect notification delivery.'
             );
+            self::rememberOutcome($bean, self::DIRECTION_ESTIMATING, $outcome);
+            $this->logOutcome('error', $bean, self::DIRECTION_ESTIMATING, $outcome, $e);
         }
     }
 
-    /**
-     * REQ-13, the RETURN LEG: estimating has finished pricing and the quote
-     * is back with sales.
-     *
-     * The hand-off this package shipped first only ever pointed one way -
-     * sales -> estimating. Walking the REQ-13 sync test end to end, the deal
-     * crosses the desk six times and only the two outbound crossings told
-     * anybody. The rep who sent the quote out learned it had been priced by
-     * looking, which is the manual step REQ-13 exists to remove.
-     *
-     * Fires on a transition INTO 'priced' from a stage where estimating
-     * still had the work (see PRE_PRICING_STAGES for the two states this
-     * deliberately does NOT treat as a hand-back). bd_erp_stage is written
-     * by BdQuoteReflectionHook from the Kinetic quote's own stage, so this
-     * fires on the sync path - the estimator prices in Kinetic and the
-     * notification lands in Sugar without anybody in Sugar doing anything.
-     */
     public function notifyPricingReturned(SugarBean $bean, string $event, array $arguments): void
     {
-        if ((string) ($bean->bd_erp_stage ?? '') !== self::PRICED_STAGE) {
-            return;
-        }
-
-        $stageChange = null;
-        foreach ($arguments['dataChanges'] ?? [] as $change) {
-            if (($change['field_name'] ?? '') === 'bd_erp_stage') {
-                $stageChange = $change;
-                break;
-            }
-        }
-        if ($stageChange === null || $stageChange['before'] === $stageChange['after']) {
-            return;
-        }
-        if (!in_array((string) ($stageChange['before'] ?? ''), self::PRE_PRICING_STAGES, true)) {
-            return;
-        }
-
         try {
-            $recipientId = $this->resolveSalesRecipient($bean);
-            if ($recipientId === '') {
-                $GLOBALS['log']->warn(
-                    'BdEstimatingNotificationHook: quote ' . $bean->id
-                    . ' was priced but no sales recipient could be resolved '
-                    . '(no config user, no assigned user, no creator) - no notification created'
-                );
+            if ((string) ($bean->bd_erp_stage ?? '') !== self::PRICED_STAGE) {
+                return;
+            }
+
+            $change = $this->stageChange($arguments);
+            if ($change === null || $change['before'] === $change['after']) {
+                return;
+            }
+            if (!in_array((string) ($change['before'] ?? ''), self::PRE_PRICING_STAGES, true)) {
                 return;
             }
 
@@ -160,41 +67,419 @@ class BdEstimatingNotificationHook
             $priced = ($total !== null && $total !== '')
                 ? ' The ERP quote total is ' . SugarCurrency::formatAmountUserLocale((float) $total) . '.'
                 : '';
-
-            $notification = BeanFactory::newBean('Notifications');
-            $notification->name = 'Quote priced by estimating: ' . mb_substr((string) $bean->name, 0, 200);
-            $notification->description = 'Estimating has finished pricing quote "' . $bean->name . '" ('
-                . $this->quoteReference($bean) . ') and handed it back to sales.' . $priced;
-            $notification->severity = 'information';
-            $notification->is_read = 0;
-            $notification->assigned_user_id = $recipientId;
-            $notification->parent_type = 'Quotes';
-            $notification->parent_id = $bean->id;
-            $notification->save();
-
-            $GLOBALS['log']->info(
-                'BdEstimatingNotificationHook: return-leg notification ' . $notification->id
-                . ' created for user ' . $recipientId . ' (quote ' . $bean->id
-                . ' ' . $stageChange['before'] . ' -> priced)'
+            $outcome = $this->attemptNotification(
+                $bean,
+                $change,
+                self::DIRECTION_SALES,
+                'Quote priced by estimating: ',
+                'Estimating has finished pricing quote "' . $bean->name . '" ('
+                    . $this->quoteReference($bean) . ') and handed it back to sales.' . $priced
             );
+            self::rememberOutcome($bean, self::DIRECTION_SALES, $outcome);
         } catch (Throwable $e) {
-            // A failed notification must never fail the Quote save.
-            $GLOBALS['log']->error(
-                'BdEstimatingNotificationHook: failed notifying pricing return for quote '
-                . $bean->id . ': ' . $e->getMessage()
+            // There is no initiating API on the return leg, but the Quote save
+            // still must not fail because its optional notification did.
+            $outcome = self::outcome(
+                'delivery_failed',
+                'Estimating returned the Quote, but Sugar could not run the sales notification hook.'
             );
+            self::rememberOutcome($bean, self::DIRECTION_SALES, $outcome);
+            $this->logOutcome('error', $bean, self::DIRECTION_SALES, $outcome, $e);
         }
     }
 
     /**
-     * How to name this quote to a human reading the notification.
-     *
-     * The Kinetic quote number if there is one, said as such. Quotes.quote_num
-     * is SUGAR's own counter, and printing it bare next to the words
-     * "estimating" and "priced" invites the reader to go and look for that
-     * number in Kinetic - measured on the live proof, where Sugar quote 13
-     * was Kinetic quote 1201 and the notification said "(13)".
+     * Consume the outbound outcome after Quote::save() has run its hooks.
+     * Absence is itself visible: it catches a disabled or unregistered hook.
      */
+    public static function consumeEstimatingOutcome(string $quoteId): array
+    {
+        $key = self::outcomeKey($quoteId, self::DIRECTION_ESTIMATING);
+        if (!array_key_exists($key, self::$outcomes)) {
+            return self::outcome(
+                'not_observed',
+                'The Kinetic hand-off completed, but Sugar did not report a notification attempt. '
+                    . 'Use the In Estimating view and ask an administrator to verify the notification hook.'
+            );
+        }
+
+        $outcome = self::$outcomes[$key];
+        unset(self::$outcomes[$key]);
+        return $outcome;
+    }
+
+    private function attemptNotification(
+        SugarBean $bean,
+        array $change,
+        string $direction,
+        string $namePrefix,
+        string $description
+    ): array {
+        try {
+            $recipient = $direction === self::DIRECTION_ESTIMATING
+                ? $this->resolveEstimatingRecipient($bean)
+                : $this->resolveSalesRecipient($bean);
+            if (($recipient['status'] ?? '') !== 'resolved') {
+                $this->logOutcome('warn', $bean, $direction, $recipient);
+                return $recipient;
+            }
+
+            $syncKey = $this->eventSyncKey($bean, $change, $direction);
+            if ($syncKey === '') {
+                $outcome = self::outcome(
+                    'event_identity_unavailable',
+                    'The hand-off completed, but Sugar could not derive a safe notification identity. '
+                        . 'Use the Quote stage view and ask an administrator to inspect the Quote timestamps.'
+                );
+                $this->logOutcome('error', $bean, $direction, $outcome);
+                return $outcome;
+            }
+
+            $existing = $this->findNotificationsBySyncKey($syncKey);
+            $existingOutcome = $this->classifyExisting(
+                $existing,
+                $syncKey,
+                (string) $recipient['id'],
+                (string) $bean->id
+            );
+            if ($existingOutcome !== null) {
+                $this->logOutcome(
+                    $existingOutcome['status'] === 'already_created' ? 'info' : 'error',
+                    $bean,
+                    $direction,
+                    $existingOutcome
+                );
+                return $existingOutcome;
+            }
+
+            $notification = BeanFactory::newBean('Notifications');
+            if (!$notification) {
+                $outcome = self::outcome(
+                    'factory_unavailable',
+                    'The hand-off completed, but Sugar could not create a notification record.'
+                );
+                $this->logOutcome('error', $bean, $direction, $outcome);
+                return $outcome;
+            }
+
+            $notification->name = $namePrefix . mb_substr((string) $bean->name, 0, 200);
+            $notification->description = $description;
+            $notification->severity = 'information';
+            $notification->is_read = 0;
+            $notification->assigned_user_id = (string) $recipient['id'];
+            $notification->parent_type = 'Quotes';
+            $notification->parent_id = (string) $bean->id;
+            // Notifications already owns a unique sync_key. It closes the
+            // race between two stale concurrent saves without another table.
+            $notification->sync_key = $syncKey;
+
+            try {
+                $savedId = $notification->save(false);
+            } catch (Throwable $e) {
+                return $this->classifySaveFailure(
+                    $bean,
+                    $direction,
+                    $syncKey,
+                    (string) $recipient['id'],
+                    $e
+                );
+            }
+
+            if ($savedId === false || $savedId === null || $savedId === '' || empty($notification->id)) {
+                return $this->classifySaveFailure(
+                    $bean,
+                    $direction,
+                    $syncKey,
+                    (string) $recipient['id']
+                );
+            }
+
+            $persisted = BeanFactory::retrieveBean(
+                'Notifications',
+                (string) $notification->id,
+                ['use_cache' => false]
+            );
+            if (!$this->notificationMatches(
+                $persisted,
+                $syncKey,
+                (string) $recipient['id'],
+                (string) $bean->id
+            )) {
+                $outcome = self::outcome(
+                    'persistence_unconfirmed',
+                    'The hand-off completed, but Sugar could not confirm notification persistence. '
+                        . 'Use the Quote stage view and ask an administrator to inspect notification delivery.'
+                );
+                $this->logOutcome('error', $bean, $direction, $outcome);
+                return $outcome;
+            }
+
+            $outcome = self::outcome(
+                'created',
+                'Sugar created an in-app notification for the receiving team.'
+            );
+            $this->logOutcome('info', $bean, $direction, $outcome);
+            return $outcome;
+        } catch (Throwable $e) {
+            // A notification is secondary. Never rethrow through Quote::save().
+            $outcome = self::outcome(
+                'delivery_failed',
+                'The hand-off completed, but Sugar could not create the in-app notification. '
+                    . 'Use the Quote stage view and ask an administrator to inspect notification delivery.'
+            );
+            $this->logOutcome('error', $bean, $direction, $outcome, $e);
+            return $outcome;
+        }
+    }
+
+    private function classifySaveFailure(
+        SugarBean $bean,
+        string $direction,
+        string $syncKey,
+        string $recipientId,
+        ?Throwable $error = null
+    ): array {
+        try {
+            $existing = $this->findNotificationsBySyncKey($syncKey);
+            $outcome = $this->classifyExisting(
+                $existing,
+                $syncKey,
+                $recipientId,
+                (string) $bean->id
+            );
+            if ($outcome !== null) {
+                $this->logOutcome(
+                    $outcome['status'] === 'already_created' ? 'info' : 'error',
+                    $bean,
+                    $direction,
+                    $outcome,
+                    $error
+                );
+                return $outcome;
+            }
+        } catch (Throwable $lookupError) {
+            $error = $lookupError;
+        }
+
+        $outcome = self::outcome(
+            'save_failed',
+            'The hand-off completed, but Sugar could not save the in-app notification. '
+                . 'Use the Quote stage view and ask an administrator to inspect notification delivery.'
+        );
+        $this->logOutcome('error', $bean, $direction, $outcome, $error);
+        return $outcome;
+    }
+
+    private function classifyExisting(
+        array $matches,
+        string $syncKey,
+        string $recipientId,
+        string $quoteId
+    ): ?array {
+        if (count($matches) > 1) {
+            return self::outcome(
+                'identity_conflict',
+                'The hand-off completed, but Sugar found conflicting notification identities. '
+                    . 'Ask an administrator to inspect Notifications.sync_key.'
+            );
+        }
+        if (count($matches) === 0) {
+            return null;
+        }
+        if (!$this->notificationMatches($matches[0], $syncKey, $recipientId, $quoteId)) {
+            return self::outcome(
+                'identity_conflict',
+                'The hand-off completed, but the existing notification identity belongs to different data. '
+                    . 'Ask an administrator to inspect Notifications.sync_key.'
+            );
+        }
+        return self::outcome(
+            'already_created',
+            'Sugar had already created the in-app notification for this hand-off.'
+        );
+    }
+
+    /** @return SugarBean[] */
+    private function findNotificationsBySyncKey(string $syncKey): array
+    {
+        $seed = BeanFactory::newBean('Notifications');
+        if (!$seed) {
+            throw new RuntimeException('Notifications bean is unavailable');
+        }
+        $query = new SugarQuery();
+        $query->select(['id']);
+        $query->from($seed);
+        $query->where()->equals('sync_key', $syncKey);
+        $query->limit(2);
+
+        $matches = [];
+        foreach ($query->execute() as $row) {
+            $id = (string) ($row['id'] ?? '');
+            if ($id === '') {
+                continue;
+            }
+            $bean = BeanFactory::retrieveBean('Notifications', $id, ['use_cache' => false]);
+            if ($bean && !empty($bean->id)) {
+                $matches[] = $bean;
+            }
+        }
+        return $matches;
+    }
+
+    private function notificationMatches($bean, string $syncKey, string $recipientId, string $quoteId): bool
+    {
+        return $bean
+            && !empty($bean->id)
+            && empty($bean->deleted)
+            && (string) ($bean->sync_key ?? '') === $syncKey
+            && (string) ($bean->assigned_user_id ?? '') === $recipientId
+            && (string) ($bean->parent_type ?? '') === 'Quotes'
+            && (string) ($bean->parent_id ?? '') === $quoteId;
+    }
+
+    private function resolveEstimatingRecipient(SugarBean $bean): array
+    {
+        $configured = trim((string) SugarConfig::getInstance()->get(
+            'benchdogs_ext.estimating_notify_user_id',
+            ''
+        ));
+        if ($configured !== '') {
+            return $this->configuredRecipient(
+                $configured,
+                'benchdogs_ext.estimating_notify_user_id'
+            );
+        }
+
+        $assignedId = trim((string) ($bean->assigned_user_id ?? ''));
+        if ($assignedId === '') {
+            return self::outcome(
+                'recipient_unavailable',
+                'The hand-off completed, but the Quote has no active estimating notification recipient. '
+                    . 'Assign the Quote or configure benchdogs_ext.estimating_notify_user_id.'
+            );
+        }
+
+        $assigned = $this->retrieveUser($assignedId);
+        if ($assigned) {
+            $managerId = trim((string) ($assigned->reports_to_id ?? ''));
+            if ($managerId !== '') {
+                $manager = $this->retrieveUser($managerId);
+                if ($this->isActiveInternalUser($manager, $managerId)) {
+                    return ['status' => 'resolved', 'id' => $managerId];
+                }
+            }
+            if ($this->isActiveInternalUser($assigned, $assignedId)) {
+                return ['status' => 'resolved', 'id' => $assignedId];
+            }
+        }
+
+        return self::outcome(
+            'recipient_unavailable',
+            'The hand-off completed, but neither the Quote owner nor their manager can receive '
+                . 'Sugar notifications. Configure benchdogs_ext.estimating_notify_user_id.'
+        );
+    }
+
+    private function resolveSalesRecipient(SugarBean $bean): array
+    {
+        $configured = trim((string) SugarConfig::getInstance()->get(
+            'benchdogs_ext.pricing_notify_user_id',
+            ''
+        ));
+        if ($configured !== '') {
+            return $this->configuredRecipient(
+                $configured,
+                'benchdogs_ext.pricing_notify_user_id'
+            );
+        }
+
+        foreach (['assigned_user_id', 'created_by'] as $field) {
+            $candidate = trim((string) ($bean->{$field} ?? ''));
+            if ($candidate === '') {
+                continue;
+            }
+            if ($this->isActiveInternalUser($this->retrieveUser($candidate), $candidate)) {
+                return ['status' => 'resolved', 'id' => $candidate];
+            }
+        }
+
+        return self::outcome(
+            'recipient_unavailable',
+            'Estimating returned the Quote, but no active sales recipient can receive a Sugar '
+                . 'notification. Assign the Quote or configure benchdogs_ext.pricing_notify_user_id.'
+        );
+    }
+
+    private function configuredRecipient(string $userId, string $configKey): array
+    {
+        if ($this->isActiveInternalUser($this->retrieveUser($userId), $userId)) {
+            return ['status' => 'resolved', 'id' => $userId];
+        }
+        return self::outcome(
+            'configured_recipient_invalid',
+            'The hand-off completed, but the user in ' . $configKey
+                . ' is missing, inactive, or cannot use the Sugar notification center. '
+                . 'Correct that setting; Sugar did not reroute the notification.'
+        );
+    }
+
+    private function retrieveUser(string $userId)
+    {
+        $bean = BeanFactory::retrieveBean('Users', $userId, ['use_cache' => false]);
+        if (!$bean || empty($bean->id) || (string) $bean->id !== $userId || !empty($bean->deleted)) {
+            return null;
+        }
+        return $bean;
+    }
+
+    private function isActiveInternalUser($bean, string $expectedId): bool
+    {
+        return $bean
+            && (string) ($bean->id ?? '') === $expectedId
+            && empty($bean->deleted)
+            && strcasecmp(trim((string) ($bean->status ?? '')), 'Active') === 0
+            // An active Users row is not necessarily allowed to sign in.
+            // Sugar's notification center is available only to users whose
+            // Sugar login is enabled. Missing/unknown must fail closed too:
+            // accepting an older or partial bean would claim delivery to an
+            // account that cannot observe it.
+            && !empty($bean->sugar_login)
+            && empty($bean->is_group)
+            && empty($bean->portal_only);
+    }
+
+    private function stageChange(array $arguments): ?array
+    {
+        // dataChanges is confirmed on the hosted Bench version. It includes
+        // auditable unchanged fields too, so the caller must compare values.
+        foreach ($arguments['dataChanges'] ?? [] as $change) {
+            if (($change['field_name'] ?? '') === 'bd_erp_stage') {
+                return [
+                    'before' => (string) ($change['before'] ?? ''),
+                    'after' => (string) ($change['after'] ?? ''),
+                ];
+            }
+        }
+        return null;
+    }
+
+    private function eventSyncKey(SugarBean $bean, array $change, string $direction): string
+    {
+        $quoteId = trim((string) ($bean->id ?? ''));
+        $modified = trim((string) ($bean->date_modified ?? ''));
+        if ($quoteId === '' || $modified === '') {
+            return '';
+        }
+        $identity = implode('|', [
+            $quoteId,
+            $direction,
+            (string) ($change['before'] ?? ''),
+            (string) ($change['after'] ?? ''),
+            $modified,
+        ]);
+        return 'bdh:' . hash('sha256', $identity);
+    }
+
     private function quoteReference(SugarBean $bean): string
     {
         $kinetic = trim((string) ($bean->erp_display_sync_key ?? ''));
@@ -204,64 +489,35 @@ class BdEstimatingNotificationHook
         return 'Sugar quote ' . ($bean->quote_num ?? $bean->id);
     }
 
-    /**
-     * Who hears that the quote came back priced.
-     *
-     * Same defensive shape as resolveRecipient(), pointed the other way: the
-     * OUTBOUND leg hunts for whoever runs estimating, so it climbs to the
-     * manager; the return leg wants the person waiting on the answer, so it
-     * lands on the quote's assigned user and never climbs past them.
-     *
-     *   1. $sugar_config['benchdogs_ext']['pricing_notify_user_id'] - for a
-     *      shop that routes priced quotes through a quote desk rather than
-     *      back to the individual rep;
-     *   2. the quote's assigned user - the rep who owns the deal, and the
-     *      answer for every normal quote;
-     *   3. the quote's creator - last resort for an unassigned quote, on the
-     *      same principle the outbound leg uses: a hand-off that notifies
-     *      nobody is worse than one that notifies an approximation.
-     */
-    private function resolveSalesRecipient(SugarBean $bean): string
+    private static function rememberOutcome(SugarBean $bean, string $direction, array $outcome): void
     {
-        $configured = (string) SugarConfig::getInstance()->get(
-            'benchdogs_ext.pricing_notify_user_id',
-            ''
-        );
-        if ($configured !== '') {
-            return $configured;
-        }
-
-        $assignedId = (string) ($bean->assigned_user_id ?? '');
-        if ($assignedId !== '') {
-            return $assignedId;
-        }
-
-        return (string) ($bean->created_by ?? '');
+        self::$outcomes[self::outcomeKey((string) ($bean->id ?? ''), $direction)] = $outcome;
     }
 
-    /**
-     * Who gets the notification - see the class docblock for the order.
-     */
-    private function resolveRecipient(SugarBean $bean): string
+    private static function outcomeKey(string $quoteId, string $direction): string
     {
-        $configured = (string) SugarConfig::getInstance()->get(
-            'benchdogs_ext.estimating_notify_user_id',
-            ''
-        );
-        if ($configured !== '') {
-            return $configured;
-        }
+        return $quoteId . '|' . $direction;
+    }
 
-        $assignedId = (string) ($bean->assigned_user_id ?? '');
-        if ($assignedId === '') {
-            return '';
-        }
+    private static function outcome(string $status, string $message): array
+    {
+        return ['status' => $status, 'message' => $message];
+    }
 
-        $assigned = BeanFactory::retrieveBean('Users', $assignedId);
-        if ($assigned && !empty($assigned->reports_to_id)) {
-            return (string) $assigned->reports_to_id;
+    private function logOutcome(
+        string $level,
+        SugarBean $bean,
+        string $direction,
+        array $outcome,
+        ?Throwable $error = null
+    ): void {
+        $message = 'BdEstimatingNotificationHook: quote ' . (string) ($bean->id ?? '')
+            . ' direction=' . $direction . ' notification_status=' . ($outcome['status'] ?? 'unknown');
+        if ($error !== null) {
+            // Exception messages may carry SQL or tenant values; the class is
+            // enough to correlate while the public outcome stays redacted.
+            $message .= ' exception=' . get_class($error);
         }
-
-        return $assignedId;
+        $GLOBALS['log']->{$level}($message);
     }
 }

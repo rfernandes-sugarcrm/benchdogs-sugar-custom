@@ -136,18 +136,22 @@ The turnaround start is stamped only from the exact scoped
 `Quotes.erp_sync_key` returned by Core (`<COMPANY>__<QuoteNum>`). The bare
 display number is never joined to an arbitrary company; missing, mismatched or
 duplicate scoped identity leaves an explicit pending/ambiguous timestamp
-status. This fixes hand-off identity, not estimating completion: all 106 open
+status. This fixes hand-off identity, not estimating completion: all 90 open
 EPIC06 QuoteHed rows inspected currently report `CurrentStage=QUOT`, which the
 existing reflection maps to `priced`. Until a distinct, live-proven Kinetic
 completion signal is known, the next sweep can still end the turnaround too
 early. REQ-13 remains open until that signal is identified and proven; this
 package does not guess one.
 
-Endpoint success proves the shared ERP action and persisted outbound stage; it
-does not prove the Notifications bean was delivered. The existing notification
-hook deliberately catches save/recipient failures so a secondary notification
-cannot roll back an ERP hand-off. Hosted notification delivery and failure
-observability therefore remain open acceptance work.
+Endpoint success proves the shared ERP action and persisted outbound stage.
+Notification delivery is a separate result: `erp_handoff_status=completed`
+remains successful while `notification_status` reports `created`,
+`already_created`, or a named warning such as `recipient_unavailable`,
+`configured_recipient_invalid`, `save_failed`, `persistence_unconfirmed` or
+`not_observed`. A secondary notification can never roll back the ERP hand-off
+or make its non-idempotent create action retryable. The seller receives an
+amber, persistent message when the hand-off succeeded but the notification did
+not, with the In Estimating view as the safe operational fallback.
 
 When a Quote's `bd_erp_stage` transitions into `in_estimating` (the closest
 `bd_erp_stage_list` key to "ready for estimating" — the list deliberately
@@ -156,10 +160,10 @@ creates a Sugar **Notifications** record. Because `bd_erp_stage` is normally
 written by `BdQuoteReflectionHook`, the notification fires on the ERP sync
 path as well as on manual stage edits.
 
-Recipient, in order:
+Outbound recipient, in order:
 
-1. `$sugar_config['benchdogs_ext']['estimating_notify_user_id']` — the one
-   config knob this package reads. Set it in `config_override.php`:
+1. `$sugar_config['benchdogs_ext']['estimating_notify_user_id']` — the explicit
+   estimating coordinator. Set it in `config_override.php`:
 
    ```php
    $sugar_config['benchdogs_ext']['estimating_notify_user_id'] = '<user id>';
@@ -167,6 +171,37 @@ Recipient, in order:
 
 2. the quote's assigned user's manager (`Users.reports_to_id`);
 3. the quote's assigned user (last resort).
+
+Return-leg recipient, in order:
+
+1. `$sugar_config['benchdogs_ext']['pricing_notify_user_id']` — an optional
+   quote desk or sales coordinator;
+2. the quote's assigned user;
+3. the quote's creator.
+
+Only existing, active internal users with `Users.sugar_login` enabled can
+receive either notification. A missing or disabled login fails closed even if
+the Users row itself says Active. An
+explicitly configured recipient is authoritative: if it is missing, inactive,
+a login-disabled user, a group user or a portal-only user, Sugar reports
+`configured_recipient_invalid` and does not silently route the message to a
+different person. When no explicit recipient is configured, inactive dynamic
+candidates are skipped in the order above.
+
+rc15 is one half of the estimating-return repair and must not be built or
+installed independently. Pair it with the reviewed lifecycle candidate that
+preserves and consumes Kinetic `QuoteHed.Quoted` and `DateQuoted`; install and
+accept them together. Until that paired signal is present, do not guess from
+`CurrentStage`, suppress the return leg, or claim that estimating completion
+has been proven.
+
+Each hand-off uses the native, uniquely indexed `Notifications.sync_key`,
+derived from Quote identity, direction, stage transition and modification
+timestamp. A repeated callback or stale concurrent save therefore reuses the
+same notification, while a later genuine estimating cycle gets a new key.
+`save(false)` suppresses assignment-email side effects; the hook then performs
+an uncached read and verifies the recipient, parent and sync key before it
+reports `created`.
 
 **SugarBPM**: this is deliberately a logic hook, not a shipped SugarBPM
 process definition — the package does not pretend to have designed a BPM
