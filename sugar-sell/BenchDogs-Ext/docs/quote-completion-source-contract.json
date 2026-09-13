@@ -1,0 +1,35 @@
+{
+  "captured_at": "2026-09-13",
+  "metadata": {
+    "DateQuoted": {
+      "nullable": true,
+      "precision": 0,
+      "type": "Edm.DateTimeOffset",
+      "source_path": "Erp/Quote/DateQuoted",
+      "semantic_summary": "Business date when the quoter considers the quote complete; available after Quoted is enabled and overrideable."
+    },
+    "Quoted": {
+      "nullable": true,
+      "type": "Edm.Boolean",
+      "source_path": "Erp/Quote/Quoted",
+      "semantic_summary": "True only after details and prices are complete and the quote is ready for the customer."
+    }
+  },
+  "observations": {
+    "date_quoted_populated_count": 50,
+    "header_count": 129,
+    "open_current_stage_quot_count": 90,
+    "open_header_count": 90,
+    "open_quoted_true_count": 11,
+    "quoted_date_inconsistency_count": 0,
+    "quoted_true_count": 50,
+    "representative_date_quoted": "2008-09-10T00:00:00-05:00"
+  },
+  "scope": {
+    "company": "EPIC06",
+    "operation": "read_only",
+    "resource": "Erp.BO.QuoteSvc/Quotes",
+    "tenant": "sugar.local.dev"
+  },
+  "redaction": "No endpoint, credentials, customer data, quote ids, or free text retained."
+}

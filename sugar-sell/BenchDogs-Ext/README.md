@@ -136,12 +136,17 @@ The turnaround start is stamped only from the exact scoped
 `Quotes.erp_sync_key` returned by Core (`<COMPANY>__<QuoteNum>`). The bare
 display number is never joined to an arbitrary company; missing, mismatched or
 duplicate scoped identity leaves an explicit pending/ambiguous timestamp
-status. This fixes hand-off identity, not estimating completion: all 90 open
-EPIC06 QuoteHed rows inspected currently report `CurrentStage=QUOT`, which the
-existing reflection maps to `priced`. Until a distinct, live-proven Kinetic
-completion signal is known, the next sweep can still end the turnaround too
-early. REQ-13 remains open until that signal is identified and proven; this
-package does not guess one.
+status. This fixes hand-off identity and now keeps estimating completion
+separate from classification. All 90 open EPIC06 QuoteHed rows inspected
+report `CurrentStage=QUOT`, but only 11 report `Quoted=true`. The ERP mirror
+therefore stores nullable `QuoteHed.Quoted` and `DateQuoted` with no defaults,
+and the reflection advances to `priced` only for true with its business date.
+Unknown preserves the current lifecycle, false preserves an active hand-off,
+and an observed true-to-false change after priced marks revision. Closed and
+linked-order facts outrank
+completion. See `docs/quote-completion-source-contract.json` for the sanitized
+live source contract. The paired core null-omission repair is a hard
+deployment dependency.
 
 Endpoint success proves the shared ERP action and persisted outbound stage.
 Notification delivery is a separate result: `erp_handoff_status=completed`

@@ -1,4 +1,31 @@
-# 0.9.42-rc15 — honest and deduplicated estimating notifications
+# 0.9.42-rc16 — exact Kinetic estimating completion
+
+Not installed on QA and not approved for production.
+
+rc16 retains rc15's independently reviewed notification reliability and
+replaces the unsafe `CurrentStage=QUOT` completion inference with the exact
+nullable Kinetic facts `QuoteHed.Quoted` and `DateQuoted`. The customer module
+stores both without defaults. Unknown preserves lifecycle state, explicit
+false preserves an active hand-off, an observed true-to-false change after
+priced marks revision, and only true with its business date advances to
+priced. Linked-order and closed
+outcomes outrank completion.
+
+`DateQuoted` corroborates completion but is not treated as a precise clock:
+the observed EPIC06 values carry midnight/date precision. Sugar's first
+observed priced transition therefore owns the elapsed-time endpoints. Repeat
+true is stable; a false-to-true revision can create a new stage-edge
+notification without rewriting the first cycle's immutable timestamps. Shared core must first deliver the paired
+container-boundary repair that omits unknown `null` values while preserving
+false, zero and blank clears. SDK `1.18`, Quote-line-only behavior, shared
+ERP-Epicor `1.1.24-rc9`, and Partial Fulfillment `1.0.13` remain unchanged.
+
+See `docs/release-0.9.42-rc16.md` and
+`docs/quote-completion-source-contract.json`.
+
+## Previous candidate
+
+## 0.9.42-rc15 — honest and deduplicated estimating notifications
 
 Not installed on QA and not approved for production.
 

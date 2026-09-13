@@ -36,6 +36,8 @@ class BdQuoteReflectionHook
     private const SOURCE_FIELDS = [
         'sugar_quote_id',
         'current_stage',
+        'quoted',
+        'date_quoted',
         'quote_closed',
         'reason_code',
         'quote_total',
@@ -98,7 +100,7 @@ class BdQuoteReflectionHook
 
         self::$inProgress = true;
         try {
-            $this->reflectOntoQuote($bean, $sugarQuoteId);
+            $this->reflectOntoQuote($bean, $sugarQuoteId, $changed);
         } catch (Throwable $e) {
             $GLOBALS['log']->error(
                 'BdQuoteReflectionHook: failed reflecting bd01_ERP_Quote ' . $bean->id
@@ -109,7 +111,11 @@ class BdQuoteReflectionHook
         }
     }
 
-    private function reflectOntoQuote(SugarBean $bean, string $sugarQuoteId = ''): void
+    private function reflectOntoQuote(
+        SugarBean $bean,
+        string $sugarQuoteId = '',
+        array $changedFields = []
+    ): void
     {
         if ($sugarQuoteId === '') {
             $sugarQuoteId = $this->effectiveSugarQuoteId($bean);
@@ -137,12 +143,26 @@ class BdQuoteReflectionHook
             }
         }
 
+        $previousStage = (string) $quote->bd_erp_stage;
+        $quoted = $this->quotedSignal($bean);
+        $dateQuoted = trim((string) ($bean->date_quoted ?? ''));
         $stage = $this->mapStage(
             (string) ($bean->current_stage ?? ''),
             !empty($bean->quote_closed),
             (string) ($bean->reason_code ?? ''),
-            $this->hasLinkedOrder($quote)
+            $this->hasLinkedOrder($quote),
+            $quoted,
+            $dateQuoted,
+            $previousStage,
+            in_array('quoted', $changedFields, true)
         );
+        if ($quoted === true && $dateQuoted === '') {
+            $GLOBALS['log']->warn(
+                'BdQuoteReflectionHook: ERP quote ' . $bean->id
+                . ' reported Quoted=true without DateQuoted; preserving lifecycle stage '
+                . ($previousStage !== '' ? $previousStage : 'draft')
+            );
+        }
 
         // The estimator's ladder has to reach the rep's own grid, and until
         // now nothing carried it there: the total landed automatically but the
@@ -191,7 +211,6 @@ class BdQuoteReflectionHook
             $dirty = true;
         }
 
-        $previousStage = (string) $quote->bd_erp_stage;
         if ($previousStage !== $stage) {
             $quote->bd_erp_stage = $stage;
             $dirty = true;
@@ -206,11 +225,17 @@ class BdQuoteReflectionHook
         // Guarded on the field's own emptiness, never on a status: statuses
         // get rewritten underneath us, and a first-price-back that a later
         // Kinetic revision can overwrite measures nothing.
+        $completionObservedAt = null;
         if ($stage === 'priced'
             && in_array($previousStage, ['draft', 'in_estimating', 'revision'], true)
             && empty($bean->bd_priced_back_at)
         ) {
-            $bean->bd_priced_back_at = TimeDate::getInstance()->nowDb();
+            // DateQuoted proves the business-day completion event but the
+            // observed EPIC06 values have only midnight/date precision. Use
+            // Sugar's actual transition observation time for the elapsed-time
+            // endpoint instead of inventing a sub-day ERP timestamp.
+            $completionObservedAt = TimeDate::getInstance()->nowDb();
+            $bean->bd_priced_back_at = $completionObservedAt;
             // Safe inside our own after_save: the re-entrancy guard is held
             // for the whole reflection, so this save's reflect() no-ops.
             $bean->save();
@@ -223,9 +248,11 @@ class BdQuoteReflectionHook
         // Stamp bd_priced_at the first time the ERP quote reaches a
         // priced-or-later stage; never overwrite an existing stamp.
         if (empty($quote->bd_priced_at)
+            && $dateQuoted !== ''
             && in_array($stage, ['priced', 'revision', 'accepted', 'ordered'], true)
         ) {
-            $quote->bd_priced_at = TimeDate::getInstance()->nowDb();
+            $quote->bd_priced_at = $completionObservedAt
+                ?? TimeDate::getInstance()->nowDb();
             $dirty = true;
         }
 
@@ -2032,7 +2059,7 @@ class BdQuoteReflectionHook
     }
 
     /**
-     * Map the ERP quote's current_stage + quote_closed + reason_code onto a
+     * Map explicit ERP outcome/completion facts onto a
      * bd_erp_stage_list key (draft, in_estimating, priced, revision,
      * accepted, ordered, lost).
      *
@@ -2052,6 +2079,12 @@ class BdQuoteReflectionHook
      * ReasonDescription it will read 'Couldn't meet delivery date' and any
      * test on it would quietly start failing open.
      *
+     * CurrentStage is classification only. On EPIC06 every open quote is
+     * QUOT, including incomplete ones, so it can never prove pricing. The
+     * nullable Quoted + DateQuoted pair is the completion fact: unknown
+     * preserves the current Sugar lifecycle; false preserves an active
+     * hand-off, and true without its corroborating date fails closed.
+     *
      * @param bool $hasOrder A Sugar ERP_Orders record is linked to the Quote.
      *   Outranks everything: the quote demonstrably became an order. Epicor's
      *   own QuoteHed.Ordered flag would be the better source and is NOT
@@ -2062,7 +2095,11 @@ class BdQuoteReflectionHook
         string $currentStage,
         bool $closed,
         string $reasonCode,
-        bool $hasOrder = false
+        bool $hasOrder = false,
+        ?bool $quoted = null,
+        string $dateQuoted = '',
+        string $previousStage = '',
+        bool $quotedChanged = false
     ): string {
         $stage = strtolower(trim($currentStage));
 
@@ -2088,15 +2125,8 @@ class BdQuoteReflectionHook
             return 'accepted';
         }
 
-        if ($stage === '' || strpos($stage, 'draft') !== false) {
-            return 'draft';
-        }
-        if (strpos($stage, 'estimat') !== false || strpos($stage, 'engineer') !== false) {
-            return 'in_estimating';
-        }
-        if (strpos($stage, 'revis') !== false || strpos($stage, 'rework') !== false) {
-            return 'revision';
-        }
+        // These outcomes are independently observable and outrank whether an
+        // estimator currently regards the quote as complete.
         if (strpos($stage, 'order') !== false) {
             return 'ordered';
         }
@@ -2106,10 +2136,49 @@ class BdQuoteReflectionHook
         if (strpos($stage, 'lost') !== false || strpos($stage, 'cancel') !== false) {
             return 'lost';
         }
-        if (strpos($stage, 'price') !== false || strpos($stage, 'quoted') !== false) {
+
+        if ($quoted === true && trim($dateQuoted) !== '') {
             return 'priced';
         }
 
-        return 'draft';
+        if ($quoted === false) {
+            // A normal connector sweep must not undo the explicit Sugar
+            // hand-off merely because the estimator has not finished yet.
+            if (in_array($previousStage, ['in_estimating', 'revision'], true)) {
+                return $previousStage;
+            }
+            // Kinetic toggles Quoted off when a completed quote is reopened.
+            // That is revision evidence, but it is not a second send-time;
+            // the original turnaround stamps remain immutable.
+            if ($previousStage === 'priced' && $quotedChanged) {
+                return 'revision';
+            }
+            return $previousStage !== '' ? $previousStage : 'draft';
+        }
+
+        // Unknown means the source field never crossed the transport. It is
+        // categorically different from false and may not clear or advance a
+        // lifecycle decision already made in Sugar.
+        return $previousStage !== '' ? $previousStage : 'draft';
+    }
+
+    /** Preserve true, false and unknown from Sugar's nullable bool storage. */
+    private function quotedSignal(SugarBean $bean): ?bool
+    {
+        $value = $bean->quoted ?? null;
+        if ($value === null || $value === '') {
+            return null;
+        }
+        if ($value === true || $value === 1 || $value === '1') {
+            return true;
+        }
+        if ($value === false || $value === 0 || $value === '0') {
+            return false;
+        }
+        $GLOBALS['log']->warn(
+            'BdQuoteReflectionHook: ERP quote ' . ($bean->id ?? '')
+            . ' has an invalid Quoted value; treating completion as unknown'
+        );
+        return null;
     }
 }
