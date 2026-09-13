@@ -17,8 +17,8 @@
  * quote was born in Kinetic. Core owns its native Sugar Quote (user decision
  * 18, 2026-09-13: one native line per Kinetic quantity break, all unselected),
  * so REQ-28 here only ADOPTS that Quote by its Kinetic number, links the
- * mirror, reflects Bench fields and - above the configured
- * materialize_from_quote_num - gives it its Opportunity. It never creates a
+ * mirror, reflects Bench fields and - above the stored Opportunity floor -
+ * gives it its Opportunity. It never creates a
  * Quote and never writes lines onto an adopted one. See
  * materializeFromKinetic().
  */
@@ -31,6 +31,10 @@ class BdQuoteReflectionHook
      * and they must agree about what "not yet priced" means.
      */
     private const PRE_PRICING_STAGES = ['draft', 'in_estimating', 'revision'];
+
+    /** Administration setting holding the Opportunity floor - see opportunityFloor(). */
+    private const SETTINGS_CATEGORY = 'benchdogs';
+    private const FLOOR_KEY = 'materialize_from_quote_num';
 
     /**
      * Fields on bd01_ERP_Quote that feed the reflection. If none of them
@@ -1417,10 +1421,10 @@ class BdQuoteReflectionHook
      *
      * 3. Gives an adopted quote its Opportunity only when the Account is
      *    matched by ERP sync key (never guessed) and the quote number is
-     *    above $sugar_config['benchdogs_ext']['materialize_from_quote_num'].
-     *    Without that setting nothing is created: a derived floor cascades
-     *    upward as rows adopt in ascending order and would turn the whole
-     *    Kinetic history into pipeline.
+     *    above opportunityFloor(): the highest Kinetic number Sugar already
+     *    had at the first adoption, stored once. A floor re-derived on every
+     *    save would cascade upward as rows adopt in ascending order and turn
+     *    the whole Kinetic history into pipeline.
      *
      * 4. Waits, visibly, when core has not created the Quote yet
      *    ('waiting_native_quote'); the next save or line link retries.
@@ -1457,8 +1461,8 @@ class BdQuoteReflectionHook
         );
         $this->linkToSugarQuote($bean, $quote);
 
-        $from = SugarConfig::getInstance()->get('benchdogs_ext.materialize_from_quote_num', null);
-        if ($from !== null && $from !== '' && $quoteNum > (int) $from) {
+        $floor = $this->opportunityFloor();
+        if ($floor !== null && $quoteNum > $floor) {
             $account = $this->matchedAccount($bean);
             if ($account !== null) {
                 $this->ensureOpportunity($quote, $account, $quoteNum);
@@ -1528,6 +1532,58 @@ class BdQuoteReflectionHook
             $GLOBALS['log']->warn(
                 'BdQuoteReflectionHook: adoption lookup failed for Kinetic quote '
                 . $quoteNum . ': ' . $e->getMessage()
+            );
+            return null;
+        }
+    }
+
+    /**
+     * Kinetic quote numbers at or below this are history: adopted, never given
+     * an Opportunity. Null when it cannot be known - fail closed.
+     *
+     * $sugar_config['benchdogs_ext']['materialize_from_quote_num'] wins when
+     * set. Otherwise it is an Administration setting (benchdogs /
+     * materialize_from_quote_num), seeded once, on the first adoption, with
+     * the highest Kinetic quote number any Sugar Quote already carries. The
+     * benchdogs pipeline runs after core's (depends_on core), so by then
+     * core's initial load has created every historical Quote. Storing it
+     * means later quotes are never mistaken for history, it survives upgrades
+     * and mirror wipes, and it needs no config_override.php, which SugarCloud
+     * administrators cannot edit.
+     */
+    private function opportunityFloor(): ?int
+    {
+        $override = SugarConfig::getInstance()->get('benchdogs_ext.materialize_from_quote_num', null);
+        if ($override !== null && $override !== '') {
+            return (int) $override;
+        }
+        try {
+            $admin = BeanFactory::newBean('Administration');
+            $admin->retrieveSettings(self::SETTINGS_CATEGORY);
+            $stored = $admin->settings[self::SETTINGS_CATEGORY . '_' . self::FLOOR_KEY] ?? '';
+            if (is_numeric($stored)) {
+                return (int) $stored;
+            }
+
+            $query = new SugarQuery();
+            $query->select(['erp_display_sync_key']);
+            $query->from(BeanFactory::newBean('Quotes'));
+            $query->where()->notEquals('erp_display_sync_key', '');
+            $highest = 0;
+            foreach ($query->execute() as $row) {
+                $key = (string) ($row['erp_display_sync_key'] ?? '');
+                if (ctype_digit($key) && (int) $key > $highest) {
+                    $highest = (int) $key;
+                }
+            }
+            if ($highest <= 0) {
+                return null;   // nothing Sugar could call history yet - create nothing
+            }
+            $admin->saveSetting(self::SETTINGS_CATEGORY, self::FLOOR_KEY, (string) $highest);
+            return $highest;
+        } catch (Throwable $e) {
+            $GLOBALS['log']->error(
+                'BdQuoteReflectionHook: could not resolve the Opportunity floor: ' . $e->getMessage()
             );
             return null;
         }

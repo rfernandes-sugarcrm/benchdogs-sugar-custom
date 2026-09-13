@@ -3,7 +3,7 @@
 Core creates the native Quote for a Kinetic-born quote (one line per quantity
 break, all unselected). The Bench mirror hook only adopts it: it never creates
 a Quote, never copies mirror lines onto an adopted Quote, and gives it an
-Opportunity only above the configured materialize_from_quote_num.
+Opportunity only above the stored Opportunity floor.
 """
 
 import json
@@ -17,7 +17,10 @@ from test_headline_valuation_owner import FIXTURE, WORKSPACE
 _CREATE = "        throw new Exception('Unexpected record creation: ' . $module);"
 _CONFIG = "        return $key === 'opps.view_by' ? 'Opportunities' : $default;"
 assert FIXTURE.count(_CREATE) == 1 and FIXTURE.count(_CONFIG) == 1
-ADOPTION_FIXTURE = FIXTURE.replace(_CREATE, r"""        $GLOBALS['created'][] = $module;
+ADOPTION_FIXTURE = FIXTURE.replace(_CREATE, r"""        if ($module === 'Administration') {
+            return new AdminSettingsDouble();
+        }
+        $GLOBALS['created'][] = $module;
         if (in_array($module, $GLOBALS['creatable'] ?? [], true)) {
             $bean = new SugarBean();
             $bean->id = 'new-' . strtolower($module);
@@ -30,13 +33,28 @@ ADOPTION_FIXTURE = FIXTURE.replace(_CREATE, r"""        $GLOBALS['created'][] = 
         return $key === 'opps.view_by' ? 'Opportunities' : $default;""")
 
 SCAFFOLD = r'''
+class AdminSettingsDouble {
+    public $settings = [];
+    public function retrieveSettings($category) { $this->settings = $GLOBALS['admin_settings'] ?? []; }
+    public function saveSetting($category, $key, $value, $platform = '') {
+        $GLOBALS['admin_settings'][$category . '_' . $key] = $value;
+        $GLOBALS['saved_settings'][] = [$category, $key, $value];
+    }
+}
 class SugarQuery {
-    public function select($fields) { return $this; }
+    private $fields = [];
+    public function select($fields) { $this->fields = $fields; return $this; }
+    public function notEquals($field, $value) { return $this; }
     public function from($bean) { return $this; }
     public function where() { return $this; }
     public function equals($field, $value) { $GLOBALS['lookups'][] = [$field, $value]; return $this; }
     public function limit($n) { return $this; }
-    public function execute() { return $GLOBALS['query_rows'] ?? []; }
+    public function execute() {
+        if (($this->fields[0] ?? '') === 'erp_display_sync_key') {
+            return $GLOBALS['quote_keys'] ?? [];
+        }
+        return $GLOBALS['query_rows'] ?? [];
+    }
 }
 class AddLink extends TestLink {
     public $added = [];
@@ -82,6 +100,7 @@ echo json_encode([
     'opportunities_added' => $quote->opportunities->added,
     'primary' => $quote->erp_is_primary_quote,
     'quote_total' => $quote->total,
+    'saved_settings' => $GLOBALS['saved_settings'] ?? [],
     'errors' => $GLOBALS['log']->errors,
 ]);
 '''], cwd=WORKSPACE, capture_output=True, text=True,
@@ -147,6 +166,40 @@ $quote->opportunities = new AddLink([], ['existing-opportunity']);
 ''')
         self.assertNotIn("Opportunities", observed["created"], observed)
         self.assertEqual(observed["opportunities_added"], [], observed)
+        self.assertNothingInvented(observed)
+
+
+    def test_first_adoption_stores_the_floor_and_gives_history_no_opportunity(self):
+        observed = self.execute(r"""
+$GLOBALS['query_rows'] = [['id' => 'owned-quote']];
+$GLOBALS['quote_keys'] = [['erp_display_sync_key' => '1100'], ['erp_display_sync_key' => '1250'],
+                          ['erp_display_sync_key' => 'not-a-number']];
+$GLOBALS['creatable'][] = 'Opportunities';
+""")
+        self.assertEqual(observed["status"], "adopted", observed)
+        self.assertEqual(observed["saved_settings"], [["benchdogs", "materialize_from_quote_num", "1250"]], observed)
+        self.assertNotIn("Opportunities", observed["created"], observed)
+        self.assertFalse(observed["primary"], observed)
+        self.assertNothingInvented(observed)
+
+    def test_quote_above_the_stored_floor_gets_one_primary_opportunity(self):
+        observed = self.execute(r"""
+$GLOBALS['query_rows'] = [['id' => 'owned-quote']];
+$GLOBALS['admin_settings'] = ['benchdogs_materialize_from_quote_num' => '1200'];
+$GLOBALS['creatable'][] = 'Opportunities';
+""")
+        self.assertEqual(observed["saved_settings"], [], observed)
+        self.assertEqual(observed["created"].count("Opportunities"), 1, observed)
+        self.assertTrue(observed["primary"], observed)
+        self.assertNothingInvented(observed)
+
+    def test_no_numbered_quote_yet_means_no_opportunity_and_nothing_stored(self):
+        observed = self.execute(r"""
+$GLOBALS['query_rows'] = [['id' => 'owned-quote']];
+$GLOBALS['creatable'][] = 'Opportunities';
+""")
+        self.assertEqual(observed["saved_settings"], [], observed)
+        self.assertNotIn("Opportunities", observed["created"], observed)
         self.assertNothingInvented(observed)
 
 

@@ -1,4 +1,25 @@
-# 0.9.42-rc20 — Kinetic-born quotes adopt core's native Quote
+# 0.9.42-rc21 — Opportunity floor stored as an Administration setting
+
+Not installed on QA and not approved for production. Supersedes rc20, which was
+built and scanned but never installed.
+
+rc21 is rc20 with one deployment fix. rc20 read the Opportunity floor only from
+`$sugar_config['benchdogs_ext']['materialize_from_quote_num']`, which
+SugarCloud administrators cannot set. rc21 still honours that override, but
+otherwise stores the floor as the Administration setting
+`benchdogs / materialize_from_quote_num`. It is seeded once, on the first
+adoption, with the highest Kinetic quote number any Sugar Quote already
+carries. The Bench ERP `benchdogs` pipeline now runs after core's
+(`depends_on=("core",)`), so core's initial load has created every historical
+Quote by then. Historical quotes are adopted and never get an Opportunity; later
+quotes do. When no numbered Quote exists, or the setting cannot be read, nothing
+is created. No manual deployment step is needed.
+
+Tests: `test_kinetic_quote_adoption.py` now has 8 PHP-backed cases.
+
+## Previous candidates
+
+## 0.9.42-rc20 — Kinetic-born quotes adopt core's native Quote
 
 Not installed on QA and not approved for production.
 
@@ -19,8 +40,6 @@ an unselected native line; only a person's governing selection counts).
   Kinetic quote number that predates go-live.
 
 Tests: new `scripts/tests/test_kinetic_quote_adoption.py` (5 PHP-backed cases).
-
-## Previous candidates
 
 ## 0.9.42-rc18 — account action requires the same access as the shared one
 
