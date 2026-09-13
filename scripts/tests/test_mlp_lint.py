@@ -567,6 +567,30 @@ class TestDynamicDispatch(RuleTest):
         )
         self.assertFires("MLP017")
 
+    def test_brace_dynamic_method_call_fires(self) -> None:
+        # The exact shape SugarCloud rejected in a shipped hook.
+        self.fx.write(
+            "custom/modules/Quotes/Hook.php",
+            "<?php\nclass Hook {\n    private function log($level, $message) {\n"
+            "        $GLOBALS['log']->{$level}($message);\n    }\n}\n",
+        )
+        self.assertFires("MLP017")
+
+    def test_dynamic_static_method_call_fires(self) -> None:
+        self.fx.write(
+            "scripts/post_install.php",
+            "<?php\nInstaller::$step($bean);\nInstaller::{$other}($bean);\n",
+        )
+        self.assertFires("MLP017")
+
+    def test_brace_property_read_is_fine(self) -> None:
+        self.fx.write(
+            "custom/modules/Quotes/Hook.php",
+            "<?php\nclass Hook {\n    public function read($bean, $field) {\n"
+            "        return trim((string) ($bean->{$field} ?? ''));\n    }\n}\n",
+        )
+        self.assertQuiet("MLP017")
+
     def test_calling_a_closure_fires(self) -> None:
         # The trait-with-callable shape, which is why it cannot be used here.
         self.fx.write(

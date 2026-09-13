@@ -518,6 +518,15 @@ class BdEstimatingNotificationHook
             // enough to correlate while the public outcome stays redacted.
             $message .= ' exception=' . get_class($error);
         }
-        $GLOBALS['log']->{$level}($message);
+        // Scanner-forced shape: SugarCloud's ModuleScanner refuses a
+        // dynamically-named method call such as `->{$level}()` and rejected
+        // rc16 for it. Keep each level as a literal call.
+        if ($level === 'error') {
+            $GLOBALS['log']->error($message);
+        } elseif ($level === 'warn') {
+            $GLOBALS['log']->warn($message);
+        } else {
+            $GLOBALS['log']->info($message);
+        }
     }
 }

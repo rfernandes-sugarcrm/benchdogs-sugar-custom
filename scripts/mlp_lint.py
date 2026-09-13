@@ -1064,6 +1064,11 @@ def check_duplicate_destinations(pkg: Package) -> list[Finding]:
 DYNAMIC_DISPATCH = (
     (re.compile(r"\bnew\s+\$\w+\s*\("), "dynamic class instantiation (new $var())"),
     (re.compile(r"->\s*\$\w+\s*\("), "dynamic method call ($obj->$name())"),
+    # The brace form is the same call to ModuleScanner; it rejected a Bench
+    # Dogs release for `$GLOBALS['log']->{$level}($message)`. A brace
+    # PROPERTY read (`$bean->{$field}`) has no call and stays allowed.
+    (re.compile(r"->\s*\{[^{}]*\}\s*\("), "dynamic method call ($obj->{$name}())"),
+    (re.compile(r"::\s*(?:\$\w+|\{[^{}]*\})\s*\("), "dynamic static method call (Class::$name())"),
     (re.compile(r"(?<![\w>$])\$\w+\s*\(\s*(?:\$|\)|['\"])"), "call through a variable ($fn())"),
     (re.compile(r"\$\$\w+"), "variable variable ($$name)"),
 )

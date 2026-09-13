@@ -1,6 +1,25 @@
-# 0.9.42-rc16 — exact Kinetic estimating completion
+# 0.9.42-rc17 — SugarCloud scanner-safe estimating notifications
 
 Not installed on QA and not approved for production.
+
+rc17 is rc16 with one scanner-forced change. SugarCloud's ModuleScanner
+refused rc16 at upload on QA (2026-09-13): `BdEstimatingNotificationHook.php`
+"Code attempted dynamically-named method call on line 521", the logging helper
+`$GLOBALS['log']->{$level}($message)`. The helper now calls `error()`,
+`warn()` or `info()` by literal name. Notification behavior, redaction and
+every other rc16 change are unchanged.
+
+The repository pre-flight missed it because `MLP017` matched
+`$obj->$name()` but not the brace form `$obj->{$name}()` or dynamic static
+calls; that gap is closed here and upstream in `erp-integration-sugar`.
+See `docs/release-0.9.42-rc17.md`.
+
+## Previous candidate
+
+## 0.9.42-rc16 — exact Kinetic estimating completion
+
+Not uploaded successfully to QA (rejected by the hosted scanner) and not
+approved for production.
 
 rc16 retains rc15's independently reviewed notification reliability and
 replaces the unsafe `CurrentStage=QUOT` completion inference with the exact
