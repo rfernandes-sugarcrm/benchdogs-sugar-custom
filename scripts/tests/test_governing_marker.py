@@ -197,6 +197,76 @@ $line->bd01_erp_quote_lines = new TestLink([], []);
         self.assertEqual(observed["saves"], [], observed)
         self.assertEqual(observed["errors"], [], observed)
 
+    def test_a_full_resync_of_the_bench_population_writes_not_one_row(self):
+        """THE BLAST-RADIUS MEASUREMENT, not an assertion about the design.
+
+        Bench carries 230 ERP quote lines and 0 of them are governing. This
+        replays what a full connector resync does to that population - every
+        line saved, every save an UPDATE because every one of those rows
+        already exists - and counts the writes. The number that matters is the
+        one printed by `writes`, and it has to be zero.
+
+        This is the test to re-run if anyone ever moves the auto-selection onto
+        another event. A trigger that fires on updates would turn this number
+        into 230, and 230 rewritten forecasts is the outcome nobody approved.
+        """
+        observed = self.php(r'''
+$lines = [];
+$erp = new SugarBean();
+$erp->id = 'erp-bench';
+for ($i = 1; $i <= 230; $i++) {
+    $line = $mkLine('line-' . $i, 10000 - $i, false, '', $i);
+    $line->bd01_erp_quote_lines = new TestLink([], ['erp-bench']);
+    $lines[] = $line;
+}
+$erp->bd01_erp_quote_lines = new TestLink($lines);
+BeanFactory::$beans['bd01_ERP_Quote']['erp-bench'] = $erp;
+$hook = new BdGoverningAutoSelectHook();
+foreach ($lines as $line) {
+    // What a resync of an EXISTING row produces, and nothing else.
+    $hook->autoSelectOnNewLine($line, 'after_save', ['isUpdate' => true]);
+}
+$selected = 0;
+foreach ($lines as $l) { if (!empty($l->governing)) { $selected++; } }
+''', "['lines' => count($lines), 'writes' => count($GLOBALS['saves']), "
+     "'selected' => $selected, 'errors' => $GLOBALS['log']->errors]")
+        self.assertEqual(observed["lines"], 230, observed)
+        self.assertEqual(observed["writes"], 0, observed)
+        self.assertEqual(observed["selected"], 0, observed)
+        self.assertEqual(observed["errors"], [], observed)
+
+    def test_the_one_remaining_exposure_is_a_relink_and_it_is_recorded_here(self):
+        """HONEST LIMIT, written down rather than left for someone to find.
+
+        `isUpdate` bounds the save path completely. The LINK path has no such
+        bound: if anything ever removes and re-adds a line's relationship to
+        its ERP quote, that line's quote WOULD be auto-selected even though the
+        row is old. A normal connector resync does not re-add an existing
+        relationship, so this is not reached today - but it is the single
+        remaining way an existing quote could be selected without the backfill,
+        and `bench_dogs.governing_autoselect = false` is the switch that closes
+        it.
+        """
+        observed = self.php(r'''
+$lines = [$mkLine('old-a', 9600, false, '', 1), $mkLine('old-b', 6400, false, '', 2)];
+$erp = new SugarBean();
+$erp->id = 'erp-old';
+$erp->bd01_erp_quote_lines = new TestLink($lines);
+BeanFactory::$beans['bd01_ERP_Quote']['erp-old'] = $erp;
+$line = $lines[0];
+$line->bd01_erp_quote_lines = new TestLink([], ['erp-old']);
+$hook = new BdGoverningAutoSelectHook();
+$hook->autoSelectOnLink($line, 'after_relationship_add', ['link' => 'bd01_erp_quote_lines']);
+$relinked = count($GLOBALS['saves']);
+// ...and the operator switch closes it.
+BdGoverningAutoSelect::$enabledOverride = false;
+foreach ($lines as $l) { $l->governing = false; $l->bd_governing_origin = ''; }
+$GLOBALS['saves'] = [];
+$hook->autoSelectOnLink($line, 'after_relationship_add', ['link' => 'bd01_erp_quote_lines']);
+''', "['relinked' => $relinked, 'with_switch_off' => count($GLOBALS['saves'])]")
+        self.assertEqual(observed["relinked"], 1, observed)
+        self.assertEqual(observed["with_switch_off"], 0, observed)
+
     # --------------------------------------------------- the marker clearing
 
     def test_a_person_choosing_a_line_clears_the_auto_marker(self):
