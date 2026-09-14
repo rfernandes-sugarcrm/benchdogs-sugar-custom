@@ -42,6 +42,22 @@
  * provider throws unless exactly one production option is selected, so the
  * previous Opportunity amount is preserved and the summed total is never
  * written (confirmed live, journal D29-LIVE-2 A7).
+ *
+ * DECISION 72 (2026-09-14) AMENDS ONE CLAUSE, AND NOT THIS FILE'S CLAUSES.
+ *
+ * A quote that arrives with NOTHING selected is now auto-selected by
+ * BdGoverningAutoSelect instead of refusing - but that happens on the line
+ * CREATE path, never here, and this hook's own rules are untouched by it:
+ *
+ *   - TWO selections still fail closed. Nothing below resolves an ambiguity.
+ *   - The concurrency contract above (lock, re-read, re-assert, LAST WRITE
+ *     WINS) is exactly as D29-R1 left it at 0577bc0.
+ *   - Clearing the flag still does not guess a replacement here.
+ *
+ * The one thing decision 72 adds to this file is clearAutoMarker(): every
+ * route into `governing = 1` passes through this hook, so this is the single
+ * place that can honestly say "a person has now chosen" and remove the
+ * machine-made marker.
  */
 class BdGoverningLineHook
 {
@@ -205,10 +221,47 @@ class BdGoverningLineHook
                 . ' after a concurrent selection demoted it'
             );
         }
+        $this->clearAutoMarker($claim, $erpQuote);
         if (!$demote) {
             return;
         }
         $this->demoteSiblings($erpQuote, $keep);
+    }
+
+    /**
+     * Decision 72, item 4: "the marker clears the moment a person sets the
+     * governing line."
+     *
+     * Every route into `governing = 1` funnels through this hook, so clearing
+     * here needs no second code path and no list of callers to keep in sync -
+     * whatever set the flag, a person through the record view, the API, an
+     * import or a script, the machine-made marker stops being true and is
+     * removed. The ONE exception is BdGoverningAutoSelect writing its own
+     * selection, which is why that class publishes isApplying(): it is the
+     * only way to tell our own write from everybody else's, and without it
+     * this method would erase the marker in the same request that set it.
+     *
+     * A line whose marker is already empty is the ordinary case (a person
+     * chose it) and is left entirely alone, so a human selection costs no
+     * extra write.
+     */
+    private function clearAutoMarker(SugarBean $claim, SugarBean $erpQuote): void
+    {
+        if (class_exists('BdGoverningAutoSelect', false)
+            && BdGoverningAutoSelect::isApplying()
+        ) {
+            return;
+        }
+        if ((string) ($claim->bd_governing_origin ?? '') === '') {
+            return;
+        }
+        $claim->bd_governing_origin = '';
+        $claim->save();
+        $GLOBALS['log']->info(
+            'BdGoverningLineHook: line ' . $claim->id . ' of bd01_ERP_Quote '
+            . $erpQuote->id . ' was auto-selected and has now been set '
+            . 'deliberately - clearing the auto-selected marker'
+        );
     }
 
     /**

@@ -386,6 +386,14 @@ class BdQuoteReflectionHook
                 if (class_exists('QuoteOpportunityAmount', false)) {
                     (new QuoteOpportunityAmount())->refresh($quote);
                 }
+                // Decision 72's marker, written on the same funnel as the
+                // amount it describes. Deliberately BEFORE
+                // maybeUpdateOpportunity(), which has several legitimate
+                // early returns (no deliverables, stale generation) - the
+                // marker must not be skipped by any of them, because a
+                // machine-valued deal that shows no marker is exactly the
+                // invisible assumption the marker exists to prevent.
+                $this->refreshGoverningOrigin($bean, $quote);
                 $this->maybeUpdateOpportunity($bean, $quote);
             }
         } catch (Throwable $e) {
@@ -395,6 +403,65 @@ class BdQuoteReflectionHook
             );
         } finally {
             self::$inProgress = false;
+        }
+    }
+
+    /**
+     * Decision 72: record on the Opportunity whether its amount came from a
+     * line a PERSON chose or one the system auto-selected.
+     *
+     * DERIVED, NEVER REMEMBERED. The value is recomputed from the ERP quote's
+     * lines every time this runs, so it cannot drift away from what the rows
+     * say - which is the failure mode a stored flag would have. Writing only
+     * on change keeps a resave storm from touching the record at all.
+     *
+     * Gated on erp_is_primary_quote, the same ownership gate the amount uses:
+     * a marker describing an amount this quote did not write would be a lie
+     * about somebody else's number.
+     *
+     * The field_defs guard is the discipline writeOpportunityDirect() already
+     * keeps. If the vardef did not compile on this instance, writing the
+     * property would put a value in memory that no column stores - a silent
+     * half-state, and worse than no marker at all.
+     */
+    private function refreshGoverningOrigin(SugarBean $bean, SugarBean $quote): void
+    {
+        try {
+            if (empty($quote->erp_is_primary_quote)) {
+                return;
+            }
+            $file = 'custom/modules/bd01_ERP_Quote_Line/BdGoverningAutoSelect.php';
+            if (!class_exists('BdGoverningAutoSelect', false)) {
+                if (!file_exists($file)) {
+                    return;
+                }
+                require_once $file;
+            }
+            $opportunity = $this->linkedOpportunity($quote);
+            if ($opportunity === null
+                || !isset($opportunity->field_defs['bd_governing_origin'])
+            ) {
+                return;
+            }
+            $origin = BdGoverningAutoSelect::classify($bean);
+            if ((string) ($opportunity->bd_governing_origin ?? '') === $origin) {
+                return;
+            }
+            $opportunity->bd_governing_origin = $origin;
+            $opportunity->save();
+            $GLOBALS['log']->info(
+                'BdQuoteReflectionHook: opportunity ' . $opportunity->id
+                . ' value source is now "' . ($origin === '' ? 'unset' : $origin)
+                . '" from bd01_ERP_Quote ' . $bean->id
+            );
+        } catch (Throwable $e) {
+            // Never fail a valuation because its annotation could not be
+            // written. An absent marker is a known gap; a failed rollup is a
+            // forecast that silently stopped updating.
+            $GLOBALS['log']->error(
+                'BdQuoteReflectionHook: failed refreshing the governing-origin marker for '
+                . $bean->id . ': ' . $e->getMessage()
+            );
         }
     }
 

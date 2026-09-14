@@ -165,6 +165,57 @@ try {
     $GLOBALS['log']->fatal('BenchDogs-Ext: Accounts customer group field failed: ' . $e->getMessage());
 }
 
+// DECISION 72 - the auto-selected marker on the Opportunity record view.
+//
+// This placement is only deliverable because the block you are reading now
+// RUNS. Until rc25 this whole file sat inside an uncalled post_execute()
+// function, so a field placed from here would have been written by nothing and
+// rendered nowhere - a second invisible state rather than observability, which
+// is why no earlier version shipped it. It goes through the same path that
+// first proved out at 21:22:24Z on 2026-09-14.
+//
+// Append-only and skip-if-present, like the Accounts fields above: an admin who
+// has moved the field keeps their placement.
+//
+// This block SELECTS NOTHING and VALUES NOTHING. It writes deployed metadata
+// only. No install path in this package calls BdGoverningAutoSelect; the
+// retroactive route is scripts/bd_governing_backfill.php, which is dry-run by
+// default and is wired to no installdef, hook or schedule.
+try {
+    $bdOppsHelper = 'custom/modules/Opportunities/BdOpportunitiesLayoutExtensions.php';
+    if (file_exists($bdOppsHelper)) {
+        if (!class_exists('BdOpportunitiesLayoutExtensions', false)) {
+            require_once $bdOppsHelper;
+        }
+        if (class_exists('BdOpportunitiesLayoutExtensions')) {
+            BdOpportunitiesLayoutExtensions::writeGoverningOriginField();
+        }
+    } else {
+        $GLOBALS['log']->fatal("BenchDogs-Ext: {$bdOppsHelper} missing, skipping value-source placement");
+    }
+} catch (Throwable $e) {
+    $GLOBALS['log']->fatal('BenchDogs-Ext: value-source placement failed: ' . $e->getMessage());
+}
+
+// DECISION 72 item 3 - the saved report, which is the piece that actually
+// surfaces unreviewed deals in bulk. Created only if no report of that name
+// exists, so an admin's edits survive a re-install.
+try {
+    $bdReportHelper = 'custom/modules/Opportunities/BdAutoSelectedReport.php';
+    if (file_exists($bdReportHelper)) {
+        if (!class_exists('BdAutoSelectedReport', false)) {
+            require_once $bdReportHelper;
+        }
+        if (class_exists('BdAutoSelectedReport')) {
+            (new BdAutoSelectedReport())->install();
+        }
+    } else {
+        $GLOBALS['log']->fatal("BenchDogs-Ext: {$bdReportHelper} missing, skipping the review report");
+    }
+} catch (Throwable $e) {
+    $GLOBALS['log']->fatal('BenchDogs-Ext: review report install failed: ' . $e->getMessage());
+}
+
 // Stage dropdown keys (quote_stage_dom 'Partially Fulfilled',
 // sales_stage_dom 'Prototype Closed'/'Partial Production Closed') via
 // ModuleInstaller::install_languages() - the scanner-safe route

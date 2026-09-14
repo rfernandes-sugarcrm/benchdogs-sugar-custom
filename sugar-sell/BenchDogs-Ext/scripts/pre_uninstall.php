@@ -113,6 +113,45 @@ try {
     $GLOBALS['log']->error('BenchDogs-Ext: Accounts layout cleanup failed: ' . $e->getMessage());
 }
 
+// 2b. Opportunities record view: decision 72's value-source marker, and the
+// saved report that filters on it. Both have to go with the vardef.
+//
+// The report matters MORE than the placement here. A saved report whose filter
+// column no longer has a vardef does not error - it silently returns nothing,
+// which reads as "no unreviewed deals" rather than as a broken report. That is
+// exactly the trap release-0.9.42-rc24's operator notes describe for
+// bd_shipped_value, and it is why removing it is not optional tidying.
+try {
+    $bdOppsHelper = 'custom/modules/Opportunities/BdOpportunitiesLayoutExtensions.php';
+    if (file_exists($bdOppsHelper)) {
+        if (!class_exists('BdOpportunitiesLayoutExtensions', false)) {
+            require_once $bdOppsHelper;
+        }
+        if (class_exists('BdOpportunitiesLayoutExtensions')) {
+            BdOpportunitiesLayoutExtensions::remove();
+        }
+    } else {
+        $GLOBALS['log']->error("BenchDogs-Ext: {$bdOppsHelper} missing; Opportunities record view not cleaned up");
+    }
+} catch (Throwable $e) {
+    $GLOBALS['log']->error('BenchDogs-Ext: Opportunities layout cleanup failed: ' . $e->getMessage());
+}
+try {
+    $bdReportHelper = 'custom/modules/Opportunities/BdAutoSelectedReport.php';
+    if (file_exists($bdReportHelper)) {
+        if (!class_exists('BdAutoSelectedReport', false)) {
+            require_once $bdReportHelper;
+        }
+        if (class_exists('BdAutoSelectedReport')) {
+            (new BdAutoSelectedReport())->uninstall();
+        }
+    } else {
+        $GLOBALS['log']->error("BenchDogs-Ext: {$bdReportHelper} missing; review report left behind");
+    }
+} catch (Throwable $e) {
+    $GLOBALS['log']->error('BenchDogs-Ext: review report cleanup failed: ' . $e->getMessage());
+}
+
 // 3. The quoted-line-items grid: take bd_erp_line_num back out of the
 // Quotes product_bundle_items allowlist. This one had an uninstall() method
 // all along and nothing ever called it. The class only defines itself when
