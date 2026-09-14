@@ -32,7 +32,7 @@ name: MLP pre-flight
 # The build job is the one that would have caught the incident above end to
 # end. Several rules can only be evaluated against the real generated manifest
 # (a duplicated install destination, a beans entry naming a module that was
-# never shipped, a missing files.md5), and linting pack.php instead is
+# never shipped, a shipped files.md5), and linting pack.php instead is
 # guesswork. It also means a change that breaks packaging - an edit to
 # pack.php, a file moved out from under an installdef - fails here rather than
 # at the moment somebody tries to upload the result.
