@@ -202,9 +202,18 @@ class BenchShippedIsAQuantityNotMoneyTest(unittest.TestCase):
     def test_the_retired_fragments_are_absent_from_the_upgrade_boundary(self):
         """Named file by file, so the removal is legible in the test itself.
 
-        These are the six files decision 59 retired. An in-place Module Loader
-        upgrade replaces the package's files, so their absence from the new
-        zip is what takes them off the instance.
+        These are the six files decision 59 retired.
+
+        THEIR ABSENCE FROM THE ZIP IS NECESSARY BUT NOT SUFFICIENT. Lesson
+        BD-L-0005 (``docs/knowledge/lessons/``) is explicit: omitting a copied
+        file does NOT remove it on an in-place upgrade — Module Loader owns the
+        copied-file inventory and never deletes a path the new package simply
+        stops shipping. So this assertion proves a fresh install is clean and
+        that an upgraded tenant CAN be cleaned; it does not prove any tenant
+        HAS been. Taking these six off an installed tenant needs the supported
+        boundary the same lesson prescribes and rc12 already used: uninstall
+        the current package with data tables RETAINED, verify the files are
+        gone, then install this one.
         """
         retired = {
             "custom/Extension/modules/ERP_OrderLines/Ext/Vardefs/"

@@ -102,11 +102,39 @@ installed, no tenant touched.
 - Provenance by content: the rc24 zip was unpacked and diffed file-by-file
   against rc23 and against the commit.
 
+## Install — this is NOT an in-place upgrade
+
+**Lesson BD-L-0005 applies directly:** *omitting a copied file does not remove
+it on upgrade.* Module Loader owns the copied-file inventory and never deletes a
+path the new package simply stops shipping. An rc23 → rc24 upgrade-in-place
+would **leave all six fragments on disk**, a Quick Repair would recompile
+`bd_shipped_value` straight back into `vardefs.ext.php`, and this release would
+be **inert on the tenant** — the half-removal it exists to prevent.
+
+So rc24 installs across the same supported boundary rc12 used:
+
+1. Suspend integration work.
+2. **Uninstall Bench Dogs rc23 with data tables RETAINED** (`remove_tables` is
+   `prompt` — answer KEEP / DO NOT REMOVE).
+3. **Verify the six paths are gone** from
+   `custom/Extension/modules/ERP_OrderLines/` and
+   `custom/Extension/modules/ERP_Orders/`, and that both directories are empty
+   or absent.
+4. Install rc24 and verify the installed version reads `0.9.42-rc24`.
+5. Quick Repair and Rebuild, then confirm `bd_shipped_value` is absent from the
+   compiled `custom/modules/ERP_OrderLines/Ext/Vardefs/vardefs.ext.php` and that
+   the record view shows core's `erp-fulfillment` and no "Shipped Value" row.
+
+The offline test asserts the six paths are absent from the rc24 zip. That proves
+a fresh install is clean and that an upgraded tenant **can** be cleaned; it does
+**not** prove any tenant **has** been. Step 3 is the check that does.
+
 ## Operator notes
 
-- **Module Loader does not drop columns.** `erp_orderlines.bd_shipped_value`
-  and `erp_orders.bd_shipped_value_total` survive the upgrade with their stored
-  `0.00`s. They become invisible in the UI (no vardef, no layout entry) but
+- **Module Loader does not drop columns**, and the uninstall above deliberately
+  retains tables, so `erp_orderlines.bd_shipped_value` and
+  `erp_orders.bd_shipped_value_total` survive with their stored `0.00`s either
+  way. They become invisible in the UI (no vardef, no layout entry) but
   stay reachable by SQL and by any saved report built on them, where they would
   silently return zeros. Grep the tenant's `saved_reports` for
   `bd_shipped_value` before installing.

@@ -1,3 +1,44 @@
+# 0.9.42-rc24 — shipped is a quantity, not money (user decisions 55 / 59)
+
+Not installed on QA and not approved for production. Sequenced with ERP-Epicor
+`1.1.24-rc23` and with `connector_ext_benchdogs` `cb5ec60`.
+
+rc24 is rc23 with six files deleted and nothing added to the payload.
+
+### The Bench shipped-money duplicate is retired
+
+ERP-Core retired `ERP_OrderLines.shipped_value` and
+`ERP_Orders.shipped_value_total` in `1.1.24-rc23` (user decision 55, *"lets
+change shiped as quanmitity not money"*). This package carried its own
+`bd_shipped_value` / `bd_shipped_value_total` on the **same two core modules**,
+so the decision landed half-delivered on Bench. User decision 59 —
+*"they shoudl both be based on quanity and if core does a good job you dont need
+the extension"* — settles it as a **removal**, not a rename to
+`bd_shipped_quantity`.
+
+- Deleted: the vardef, language fragment and record-view fragment for each of
+  the two fields. The package now ships **nothing** for `ERP_OrderLines` or
+  `ERP_Orders`; both Extension directories are gone.
+- The only shipped surface on a Bench tenant is core's line-level
+  **quantity**, `ERP_OrderLines.shipped_quantity`, rendered by core's
+  `erp-fulfillment` field as "12 of 15" — unchanged by this release, and
+  never touched by this package (the retired record-view fragments appended
+  by panel name and removed nothing).
+- Both retired vardefs carried `'default' => 0.0`, and the connector module
+  that would have written them is gated OFF on the QA tenants
+  (`SUGARAI_BD_MLP_FIELDS: "account_group"`). So since 0.9.41 the record view
+  has been rendering **"Shipped Value (not invoiced): $0.00" with no writer at
+  all** — a fabricated zero, indistinguishable from a measured one.
+- Guarded by `scripts/tests/test_bench_shipped_is_a_quantity_not_money.py`
+  (source, built zip and manifest; `bd_shipped*` and `LBL_BD_SHIPPED*`; any
+  `'default' => 0` on those two modules; shadowing `shipped_quantity`).
+- No `pack.php` change: every file under `custom/` is still a `copy`
+  installdef, so the six `copy` entries left the manifest by themselves.
+
+**This is not an in-place upgrade.** BD-L-0005: omitting a copied file does not
+remove it on upgrade. Uninstall rc23 with data tables RETAINED, verify the six
+paths are gone, then install rc24. See `docs/release-0.9.42-rc24.md`.
+
 # 0.9.42-rc23 — `bd_country` label survives ERP upgrades; retired governing label hidden
 
 Not installed on QA and not approved for production.
