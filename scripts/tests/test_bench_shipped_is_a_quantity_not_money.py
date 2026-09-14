@@ -13,74 +13,133 @@ one, in either direction:
   two modules;
 * not a rebuilt ``bd_shipped_quantity`` either — decision 59's refinement is
   that core owns the quantity, so a Bench copy of it is the same defect
-  wearing a better name. That is why the forbidden token is ``bd_shipped``
-  and not ``bd_shipped_value``.
+  wearing a better name.
 
 AND THE ZERO THAT MEANS UNKNOWN
 ===============================
 ``bd_shipped_value`` carried ``'default' => 0.0``. A vardef default on a field
 whose only writer is the ERP sync MANUFACTURES DATA at row creation: Module
-Loader adds the column with that default, so every existing and every future
-``ERP_OrderLines`` row reads 0.00 before the connector has said anything at
-all. "Nothing shipped" and "we never measured this" then render identically,
-and the zero silently understates fulfilment to a seller — the exact failure
-REQ-21 was disabled to prevent, and the exact default REQ-21 removed from
-ERP-Core's copy. It was worse here than in core: the Bench connector module
-that wrote the field was gated OFF on the QA tenants
-(``SUGARAI_BD_MLP_FIELDS: "account_group"``, with an explicit "Do not enable
-shipped_value here"), so the record view rendered a fabricated $0.00 with no
-writer behind it at all.
+Loader adds the column with that default, so every row reads 0.00 before the
+connector has said anything at all. "Nothing shipped" and "we never measured
+this" then render identically to a seller. It was worse here than in core: the
+Bench connector module that wrote the field was gated OFF on the QA tenants,
+so the record view rendered a fabricated $0.00 with NO WRITER AT ALL.
+Measured on Bench before removal: **994 of 994 rows (304 order lines + 690
+orders) held exactly 0.00 — not one non-zero value and not one null.** The
+fabrication is proved, not inferred.
 
-So the guard is two-part and neither half is redundant:
+WHY THIS TEST WAS INVERTED — READ BEFORE CHANGING IT
+====================================================
+An earlier version of this file asserted the six fragments were ABSENT, and
+banned the token ``bd_shipped`` in FILE NAMES as well as contents. That was
+wrong, and shipping it cost a release candidate.
 
-1. no ``bd_shipped*`` field/label/layout entry may come back, in source OR in
-   the built zip — a file removed from source but still inside a stale zip is
-   exactly the half-removal this test exists to catch;
-2. no fragment this package ships for ``ERP_OrderLines`` / ``ERP_Orders`` may
-   declare a ``'default' => 0`` at all, whatever the field is called.
+Deleting a file does not remove it from an installed tenant. TWO mechanisms,
+both measured on Bench (ophirsx177) on 2026-09-14 rather than assumed:
 
-WHY THE ZIP IS CHECKED SEPARATELY FROM THE SOURCE
-=================================================
-The schema store (``PostgresSchemaStore.put``) is upsert-only and never
-deletes, so a removed field survives in the tenant's snapshot with its old
-stamp and ``schema-validate`` passes straight over it. Nothing downstream of
-the build will notice a field that was deleted from source but still shipped.
-The package is the last place a removal can be proven, so it is proven here.
+1. An in-place upgrade copies what the new manifest ships and leaves
+   everything else alone — lesson BD-L-0005 — and Sugar Cloud's package
+   scanner denylists every file-removal call, so no install script can delete
+   it either.
+2. **NEITHER DOES AN UNINSTALL.** Bench Dogs Ext ``0.9.42-rc23`` was
+   uninstalled cleanly (16/16 steps, no error, tables retained) and **not one
+   copied ``custom/Extension`` file was removed** — every ``bd_*`` field this
+   package ships, on every module, survived the uninstall AND two full Quick
+   Repairs. The uninstall log contains no file-removal line at all.
 
-The language-fragment check is not decoration: ``git grep bd_shipped_value``
-does NOT find ``en_us.bd_shipped_value.php``, whose only content is
-``LBL_BD_SHIPPED_VALUE``. A footprint survey that greps the field name alone
-misses the labels and reports a clean removal that left two files behind.
+``0.9.42-rc24`` deleted these six files from the build and was therefore
+**INERT**: it installed 19/19 with a clean scan and a synced Quick Repair, and
+``bd_shipped_value`` was still in vardefs and still on the record view.
+
+So the rule is wider than BD-L-0005 states: **on Sugar Cloud, neither omitting
+a file nor uninstalling the package removes a copied ``custom/Extension``
+file. Only OVERWRITING it does.** The retirement is therefore delivered by
+shipping the six paths as stubs that declare nothing — the mechanism
+``Contacts/Ext/Vardefs/bd_contact_sync_fields.php`` already used and proved
+live, where all three fields it retired read absent on the tenant.
+
+A filename ban would forbid exactly the mechanism that delivers the fix. So
+the ban is now on **DECLARATIONS, not names**, and emptiness is asserted
+**positively and behaviourally**: each stub is executed the way Sugar's
+Extension compile would execute it, with the superglobal seeded, and must
+contribute **zero** fields, layout entries or strings
+(``bench_shipped_stub_probe.php``). Pattern-matching a name is what the old
+test did; running the file is strictly stronger.
+
+``test_the_probe_itself_detects_a_non_empty_fragment`` guards the instrument:
+it runs the probe against rc23's real fragments and requires it to FIND them.
+A check that cannot fail proves nothing — an assertion in the previous version
+of this file passed vacuously for exactly that reason, with all six files
+still present.
+
+THE LANGUAGE FRAGMENTS ARE NOT DECORATION
+=========================================
+``git grep bd_shipped_value`` does NOT find ``en_us.bd_shipped_value.php``,
+whose only content was ``LBL_BD_SHIPPED_VALUE``. A footprint survey that greps
+the field name alone misses the labels and reports a clean removal that left
+two files behind. They get stubs too, and their own probe.
 """
 
 from pathlib import Path
+import json
 import re
+import subprocess
 import unittest
 import zipfile
 
 
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = ROOT / "sugar-sell/BenchDogs-Ext"
+PROBE = Path(__file__).resolve().parent / "bench_shipped_stub_probe.php"
+
+#: ERP-Core owns these two modules.
+CORE_ORDER_MODULES = ("ERP_OrderLines", "ERP_Orders")
+
+#: The six fragments decision 59 retired, each mapped to the probe mode that
+#: proves it inert. These paths MUST be shipped — as stubs — because only an
+#: overwrite removes them from an installed tenant.
+RETIRED_STUBS = {
+    "custom/Extension/modules/ERP_OrderLines/Ext/Vardefs/"
+    "bd_shipped_value.php": "vardefs",
+    "custom/Extension/modules/ERP_OrderLines/Ext/Language/"
+    "en_us.bd_shipped_value.php": "language",
+    "custom/Extension/modules/ERP_OrderLines/Ext/clients/base/views/"
+    "record/bd_shipped_value.php": "viewdefs",
+    "custom/Extension/modules/ERP_Orders/Ext/Vardefs/"
+    "bd_shipped_value_total.php": "vardefs",
+    "custom/Extension/modules/ERP_Orders/Ext/Language/"
+    "en_us.bd_shipped_value_total.php": "language",
+    "custom/Extension/modules/ERP_Orders/Ext/clients/base/views/"
+    "record/bd_shipped_value_total.php": "viewdefs",
+}
 
 #: Field names, label constants and the dictionary/viewdef keys built from
 #: them. ``bd_shipped`` deliberately covers ``bd_shipped_quantity`` too.
-FORBIDDEN = (
-    "bd_shipped",
-    "BD_SHIPPED",
-    "shipped_value",
-    "SHIPPED_VALUE",
-)
+#: Applied ONLY to comment-stripped executable code — never to file names,
+#: which the stubs must be free to carry.
+FORBIDDEN = ("bd_shipped", "BD_SHIPPED", "shipped_value", "SHIPPED_VALUE")
 
-#: ERP-Core owns these two modules. This package is allowed to ship nothing
-#: for them at all after decision 59 — but the assertion is written against
-#: the shipped surface rather than the module, so an unrelated future
-#: fragment is not gratuitously forbidden.
-CORE_ORDER_MODULES = ("ERP_OrderLines", "ERP_Orders")
-
-#: ``'default' => 0``, ``'default' => 0.0``, ``"default" => 0.00``, with any
-#: spacing. Matches the zero only — a genuine non-zero default is a different
-#: argument and this test does not pretend to have it.
+#: ``'default' => 0``, with any spacing. Matches the zero only.
 DEFAULT_ZERO = re.compile(r"""['"]default['"]\s*=>\s*0(?:\.0+)?\s*[,)]""")
+
+
+def _probe(mode, path):
+    """Run the PHP probe and return its parsed JSON."""
+    out = subprocess.run(
+        ["php", str(PROBE), mode, str(path)],
+        capture_output=True, text=True, check=True,
+    )
+    return json.loads(out.stdout)
+
+
+def _code(path):
+    """The file's executable code, with every comment removed.
+
+    Uses PHP's own tokenizer, so a field name MENTIONED in a docblock — which
+    every stub does, at length, to explain why it exists — is never mistaken
+    for a declaration.
+    """
+    return _probe("strip", path)["code"]
 
 
 def _source_php():
@@ -90,15 +149,96 @@ def _source_php():
 
 class BenchShippedIsAQuantityNotMoneyTest(unittest.TestCase):
 
+    # ------------------------------------------------- the stubs must EXIST
+
+    def test_the_six_retired_fragments_are_shipped_as_stubs(self):
+        """The inversion. Absence would be a NON-delivery.
+
+        Deleting these files leaves them on every installed tenant, where
+        Quick Repair recompiles the field straight back. Shipping them as
+        stubs is what actually retires them.
+        """
+        for rel in sorted(RETIRED_STUBS):
+            with self.subTest(path=rel):
+                self.assertTrue(
+                    (PACKAGE / rel).is_file(),
+                    f"{rel} must be SHIPPED as an empty stub, not deleted — "
+                    "only overwriting a copied Extension file removes it "
+                    "from an installed tenant.",
+                )
+
+    def test_each_retired_stub_contributes_nothing_when_executed(self):
+        """POSITIVE emptiness, asserted behaviourally rather than by name.
+
+        Each stub is executed as Sugar's Extension compile would execute it,
+        with ``$dictionary`` / ``$viewdefs`` / ``$mod_strings`` seeded. It
+        passes only if it contributed ZERO entries.
+        """
+        for rel, mode in sorted(RETIRED_STUBS.items()):
+            result = _probe(mode, PACKAGE / rel)
+            with self.subTest(path=rel, mode=mode):
+                self.assertEqual(
+                    0, result["count"],
+                    f"{rel} must declare nothing; it contributed {result}",
+                )
+
+    def test_each_retired_stub_contains_no_executable_code_at_all(self):
+        """Stricter than "declares no field": declares NOTHING.
+
+        A stub that ran any code could acquire a side effect later without
+        tripping the per-mode probes.
+        """
+        for rel in sorted(RETIRED_STUBS):
+            with self.subTest(path=rel):
+                self.assertEqual("", _code(PACKAGE / rel).replace("<?php", "").strip())
+
+    def test_the_probe_itself_detects_a_non_empty_fragment(self):
+        """GUARDS THE INSTRUMENT. A check that cannot fail proves nothing.
+
+        Runs the probe against rc23's REAL fragments — the ones that did
+        declare the field — and requires it to find them. Without this, a
+        broken probe would report every stub inert and the suite would go
+        green with the field still shipping. An assertion in the previous
+        version of this file passed vacuously for exactly that reason.
+        """
+        control = PACKAGE / "releases" / "sugarai_benchdogs_ext-0.9.42-rc23.zip"
+        if not control.is_file():
+            self.skipTest(f"known-bad control archive absent: {control.name}")
+        import tempfile
+        with zipfile.ZipFile(control) as archive:
+            names = set(archive.namelist())
+            for rel, mode in sorted(RETIRED_STUBS.items()):
+                with self.subTest(path=rel, mode=mode):
+                    self.assertIn(rel, names, "control archive must carry the original")
+                    with tempfile.TemporaryDirectory() as tmp:
+                        out = Path(tmp) / "original.php"
+                        out.write_bytes(archive.read(rel))
+                        self.assertGreater(
+                            _probe(mode, out)["count"], 0,
+                            f"probe failed to detect the ORIGINAL {rel} — "
+                            "the instrument is broken, not the package",
+                        )
+
     # ---------------------------------------------------------------- source
 
     def test_no_source_file_declares_a_bench_shipped_field_or_label(self):
-        """The whole package, not just the two module directories.
+        """Banned in CODE, not in file names.
 
-        A resurrection is as likely to arrive as a report, a dashlet or a
-        post_install metadata write as it is to arrive as a vardef.
+        The stubs' own names carry ``bd_shipped`` by necessity and their
+        docblocks discuss the field at length; neither is a declaration. This
+        checks comment-stripped executable code across the whole package,
+        because a resurrection is as likely to arrive as a report, a dashlet
+        or a post_install metadata write as it is to arrive as a vardef.
         """
-        for path in _source_php() + sorted(PACKAGE.rglob("*.js")):
+        for path in _source_php():
+            code = _code(path)
+            for token in FORBIDDEN:
+                with self.subTest(path=path.relative_to(PACKAGE), token=token):
+                    self.assertNotIn(token, code)
+
+    def test_no_javascript_declares_a_bench_shipped_field_or_label(self):
+        """JS has no docblock-stripping problem: ban the raw token."""
+        for path in sorted(PACKAGE.rglob("*.js")):
             if "releases" in path.parts:
                 continue
             source = path.read_text(encoding="utf-8", errors="replace")
@@ -106,66 +246,48 @@ class BenchShippedIsAQuantityNotMoneyTest(unittest.TestCase):
                 with self.subTest(path=path.relative_to(PACKAGE), token=token):
                     self.assertNotIn(token, source)
 
-    def test_no_source_path_names_a_bench_shipped_fragment(self):
-        """Catches the language fragments, whose CONTENT is only the label.
-
-        ``en_us.bd_shipped_value.php`` contains no occurrence of the field
-        name; only the file name and ``LBL_BD_SHIPPED_VALUE`` betray it.
-        """
-        for path in sorted(PACKAGE.rglob("*")):
-            if not path.is_file() or "releases" in path.parts:
-                continue
-            for token in FORBIDDEN:
-                with self.subTest(path=path.relative_to(PACKAGE), token=token):
-                    self.assertNotIn(token, path.name)
-
-    def test_this_package_ships_nothing_for_cores_order_modules(self):
+    def test_this_package_ships_only_inert_stubs_for_cores_order_modules(self):
         """Decision 59: one shipped surface, owned by core.
 
-        Recorded as a positive assertion rather than left implicit, so that
-        adding anything back to these two modules is a deliberate act that
-        has to change this test and explain itself.
+        The package may ship, for these two modules, EXACTLY the six retired
+        stubs and nothing else. Anything new is a deliberate act that has to
+        change this test and explain itself.
         """
         for module in CORE_ORDER_MODULES:
             # ``**/*`` and not ``*``: the fragments live several directories
-            # down (``Ext/clients/base/views/record/...``), so a single-level
-            # glob matches only the ``Ext`` DIRECTORY, which ``is_file()``
-            # rejects — and the assertion would pass vacuously with all six
-            # files still present. Measured: it did, before this was fixed.
+            # down, so a single-level glob matches only the ``Ext`` DIRECTORY,
+            # which ``is_file()`` rejects — and the assertion would pass
+            # vacuously. Measured: it did, before this was fixed.
             found = sorted(
                 str(p.relative_to(PACKAGE))
                 for p in PACKAGE.rglob(f"Extension/modules/{module}/**/*")
                 if p.is_file()
             )
+            expected = sorted(r for r in RETIRED_STUBS if f"modules/{module}/" in r)
             with self.subTest(module=module):
-                self.assertEqual([], found)
+                self.assertEqual(expected, found)
 
     def test_no_order_module_fragment_defaults_a_field_to_zero(self):
         """A vardef default manufactures data before the connector speaks.
 
-        Scoped to the two core order modules, where a fabricated zero is a
-        shipped or money figure. Kept even though the directories are now
-        empty: the point is the rule, and an empty directory passes it
-        vacuously today and meaningfully the moment someone adds a file.
+        Now meaningful rather than vacuous: the directories hold files again.
         """
         for module in CORE_ORDER_MODULES:
             for path in PACKAGE.rglob(f"Extension/modules/{module}/**/*.php"):
-                source = path.read_text(encoding="utf-8", errors="replace")
                 with self.subTest(path=path.relative_to(PACKAGE)):
-                    self.assertIsNone(DEFAULT_ZERO.search(source))
+                    self.assertIsNone(DEFAULT_ZERO.search(_code(path)))
 
     def test_no_fragment_shadows_cores_shipped_quantity(self):
         """Core's field must reach the seller unmodified.
 
-        Redeclaring ``shipped_quantity`` in a Bench vardef fragment, or
-        naming it in a Bench viewdef fragment, would let this package put a
-        default back on it or move it off a layout without ever using a
-        ``bd_`` name — the removal would look complete and would not be.
+        Redeclaring ``shipped_quantity`` in a Bench vardef, or naming it in a
+        Bench viewdef, would let this package put a default back on it or move
+        it off a layout without ever using a ``bd_`` name. Checked against
+        stripped code: the stubs name it in prose to explain who owns it.
         """
         for path in _source_php():
-            source = path.read_text(encoding="utf-8", errors="replace")
             with self.subTest(path=path.relative_to(PACKAGE)):
-                self.assertNotIn("shipped_quantity", source)
+                self.assertNotIn("shipped_quantity", _code(path))
 
     # ------------------------------------------------------------- built zip
 
@@ -173,67 +295,76 @@ class BenchShippedIsAQuantityNotMoneyTest(unittest.TestCase):
         version = (PACKAGE / "version").read_text().strip()
         return PACKAGE / "releases" / f"sugarai_benchdogs_ext-{version}.zip"
 
-    def test_built_archive_carries_no_bench_shipped_field_label_or_layout(self):
+    def test_built_archive_ships_the_six_stubs_byte_identical_to_source(self):
+        """The zip is where a half-removal survives.
+
+        A stub emptied in source but stale inside the archive would ship the
+        field anyway — the exact half-removal this test exists to catch, now
+        in the opposite direction.
+        """
+        with zipfile.ZipFile(self._archive()) as archive:
+            names = set(archive.namelist())
+            for rel in sorted(RETIRED_STUBS):
+                with self.subTest(path=rel):
+                    self.assertIn(rel, names)
+                    self.assertEqual(
+                        (PACKAGE / rel).read_bytes(), archive.read(rel),
+                        f"{rel} in the zip differs from source",
+                    )
+
+    def test_built_archive_declares_no_bench_shipped_field_or_label(self):
+        """Every PHP file in the zip, comment-stripped, across all modules.
+
+        ``manifest.php`` is EXEMPT, and the exemption is the point rather than
+        a concession: the manifest's ``copy`` array must NAME all six stub
+        paths, or they are never written to the tenant and the original files
+        survive — which is precisely how rc24 came to install clean and change
+        nothing. The manifest names file paths, not field declarations, and it
+        has its own dedicated assertion in
+        ``test_manifest_carries_a_copy_entry_for_every_stub``, which requires
+        the very strings this test would otherwise forbid. Exempting it here
+        keeps the two from contradicting each other.
+        """
+        import tempfile
         with zipfile.ZipFile(self._archive()) as archive:
             for name in archive.namelist():
-                for token in FORBIDDEN:
-                    with self.subTest(name=name, token=token):
-                        self.assertNotIn(token, name)
-                if not name.endswith((".php", ".js")):
+                if name == "manifest.php":
                     continue
-                source = archive.read(name).decode("utf-8", errors="replace")
+                if not name.endswith(".php"):
+                    if name.endswith(".js"):
+                        source = archive.read(name).decode("utf-8", errors="replace")
+                        for token in FORBIDDEN:
+                            with self.subTest(name=name, token=token):
+                                self.assertNotIn(token, source)
+                    continue
+                with tempfile.TemporaryDirectory() as tmp:
+                    out = Path(tmp) / "packaged.php"
+                    out.write_bytes(archive.read(name))
+                    code = _code(out)
                 for token in FORBIDDEN:
                     with self.subTest(name=name, token=token):
-                        self.assertNotIn(token, source)
+                        self.assertNotIn(token, code)
 
-    def test_built_archive_has_no_installdef_for_cores_order_modules(self):
-        """The manifest is where a dangling copy entry would survive.
+    def test_manifest_carries_a_copy_entry_for_every_stub(self):
+        """THE MECHANISM. Without the copy entry nothing is overwritten.
 
-        ``pack.php`` globs ``custom/``, so a deleted file leaves no installdef
-        behind — but that is a property of the current builder, and this
-        asserts the outcome rather than trusting the mechanism.
+        This is the assertion that would have caught rc24. A stub that is not
+        in the manifest's ``copy`` array is never written to the tenant, so
+        the ORIGINAL file stays on disk and Quick Repair recompiles the field
+        straight back — the package installs clean and changes nothing.
         """
         with zipfile.ZipFile(self._archive()) as archive:
             manifest = archive.read("manifest.php").decode("utf-8")
-        for module in CORE_ORDER_MODULES:
-            with self.subTest(module=module):
-                self.assertNotIn(f"modules/{module}/", manifest)
-
-    def test_the_retired_fragments_are_absent_from_the_upgrade_boundary(self):
-        """Named file by file, so the removal is legible in the test itself.
-
-        These are the six files decision 59 retired.
-
-        THEIR ABSENCE FROM THE ZIP IS NECESSARY BUT NOT SUFFICIENT. Lesson
-        BD-L-0005 (``docs/knowledge/lessons/``) is explicit: omitting a copied
-        file does NOT remove it on an in-place upgrade — Module Loader owns the
-        copied-file inventory and never deletes a path the new package simply
-        stops shipping. So this assertion proves a fresh install is clean and
-        that an upgraded tenant CAN be cleaned; it does not prove any tenant
-        HAS been. Taking these six off an installed tenant needs the supported
-        boundary the same lesson prescribes and rc12 already used: uninstall
-        the current package with data tables RETAINED, verify the files are
-        gone, then install this one.
-        """
-        retired = {
-            "custom/Extension/modules/ERP_OrderLines/Ext/Vardefs/"
-            "bd_shipped_value.php",
-            "custom/Extension/modules/ERP_OrderLines/Ext/Language/"
-            "en_us.bd_shipped_value.php",
-            "custom/Extension/modules/ERP_OrderLines/Ext/clients/base/views/"
-            "record/bd_shipped_value.php",
-            "custom/Extension/modules/ERP_Orders/Ext/Vardefs/"
-            "bd_shipped_value_total.php",
-            "custom/Extension/modules/ERP_Orders/Ext/Language/"
-            "en_us.bd_shipped_value_total.php",
-            "custom/Extension/modules/ERP_Orders/Ext/clients/base/views/"
-            "record/bd_shipped_value_total.php",
-        }
-        with zipfile.ZipFile(self._archive()) as archive:
-            names = set(archive.namelist())
-        for name in sorted(retired):
-            with self.subTest(name=name):
-                self.assertNotIn(name, names)
+        for rel in sorted(RETIRED_STUBS):
+            with self.subTest(path=rel):
+                # assertTrue, not assertIn: assertIn dumps the entire manifest
+                # (~30 KB) into the failure report and buries the message.
+                self.assertTrue(
+                    f"'to' => '{rel}'" in manifest,
+                    f"{rel} has no manifest copy entry: it would never "
+                    "overwrite the installed original, so the field would "
+                    "survive exactly as it did under rc24.",
+                )
 
 
 if __name__ == "__main__":
