@@ -438,9 +438,33 @@ class BdQuoteReflectionHook
                 require_once $file;
             }
             $opportunity = $this->linkedOpportunity($quote);
-            if ($opportunity === null
-                || !isset($opportunity->field_defs['bd_governing_origin'])
-            ) {
+            if ($opportunity === null) {
+                return;
+            }
+            // RE-READ UNCACHED IMMEDIATELY BEFORE WRITING - the same discipline
+            // writeOpportunityDirect() keeps three methods below, and for the
+            // same reason it keeps it.
+            //
+            // QuoteOpportunityAmount::refresh() ran moments ago on THIS quote.
+            // It retrieves the Opportunity with use_cache => false, and
+            // BeanFactory::getBean does NOT registerBean an uncached load
+            // (SugarEnt-Full 26.1.0, data/BeanFactory.php:121-123), so the
+            // instance it just saved the new amount on is NOT the instance
+            // linkedOpportunity() hands back - that one can be an older cached
+            // copy still carrying the previous amount. SugarBean::save() writes
+            // every field, not only the dirty ones, so saving the stale copy
+            // here would REVERT the headline the shared writer had just
+            // corrected, in the same request, and the marker would be the only
+            // evidence anything happened.
+            $fresh = BeanFactory::retrieveBean(
+                'Opportunities',
+                $opportunity->id,
+                ['use_cache' => false]
+            );
+            if ($fresh && !empty($fresh->id)) {
+                $opportunity = $fresh;
+            }
+            if (!isset($opportunity->field_defs['bd_governing_origin'])) {
                 return;
             }
             $origin = BdGoverningAutoSelect::classify($bean);

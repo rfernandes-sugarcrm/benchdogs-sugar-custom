@@ -82,8 +82,16 @@ class TestLink {
 }
 class BeanFactory {
     public static $beans = [];
+    // Sugar's own semantics, which the earlier double hid: getBean does NOT
+    // registerBean an uncached load (SugarEnt-Full 26.1.0
+    // data/BeanFactory.php:121-123), so a caller that omits use_cache can get
+    // an older instance than the one a use_cache => false caller just saved.
+    public static $stale = [];
     public static function retrieveBean($module, $id, $options = []) {
-        return self::$beans[$module][$id] ?? null;
+        if (($options['use_cache'] ?? true) === false) {
+            return self::$beans[$module][$id] ?? null;
+        }
+        return self::$stale[$module][$id] ?? self::$beans[$module][$id] ?? null;
     }
     public static function newBean($module) { throw new Exception('no newBean: ' . $module); }
 }
@@ -167,6 +175,35 @@ foreach ($lines as $l) { if (!empty($l->governing)) { $selected[] = $l->id; } }
 ''', "['selected' => $selected, 'saves' => $GLOBALS['saves']]")
         self.assertEqual(observed["selected"], ["b"], observed)
         self.assertEqual(observed["saves"][0]["origin"], "auto", observed)
+
+    def test_every_shape_sugar_delivers_the_parent_link_in_is_matched(self):
+        """Sugar hands the link under `link_name` on some relationship events
+        and `link` on others, and BdQuoteLineRefreshHook::refreshOnLink - the
+        live-proven twin of this filter - reads both plus `relationship`.
+
+        Matching only one of them would make the forward behaviour SILENTLY
+        INERT for every connector-born quote: the create fires before the
+        parent exists, the link never matches, nothing is ever selected, and
+        there is no error to notice. That is the failure this pins.
+        """
+        for args in ("['link_name' => 'bd01_erp_quote_lines']",
+                     "['link' => 'bd01_erp_quote_lines']",
+                     "['relationship' => 'bd01_erp_quote_lines']"):
+            with self.subTest(args=args):
+                observed = self.php(r'''
+$lines = [$mkLine('a', 9600, false, '', 1), $mkLine('b', 6400, false, '', 2)];
+$erp = new SugarBean();
+$erp->id = 'erp-1';
+$erp->bd01_erp_quote_lines = new TestLink($lines);
+BeanFactory::$beans['bd01_ERP_Quote']['erp-1'] = $erp;
+$line = $lines[0];
+$line->bd01_erp_quote_lines = new TestLink([], ['erp-1']);
+(new BdGoverningAutoSelectHook())->autoSelectOnLink(
+    $line, 'after_relationship_add', ''' + args + r''');
+$selected = [];
+foreach ($lines as $l) { if (!empty($l->governing)) { $selected[] = $l->id; } }
+''', "['selected' => $selected]")
+                self.assertEqual(observed["selected"], ["b"], observed)
 
     def test_only_the_parent_quote_link_triggers_the_relationship_route(self):
         observed = self.php(r'''
@@ -409,6 +446,59 @@ BeanFactory::$beans['Opportunities']['opp-1'] = $opp;
 (new BdQuoteReflectionHook())->refreshOpportunityAmount($erp);
 ''', "['marker' => $opp->bd_governing_origin ?? null, 'errors' => $GLOBALS['log']->errors]")
         self.assertIsNone(observed["marker"], observed)
+        self.assertEqual(observed["errors"], [], observed)
+
+    @unittest.skipUnless(SHARED_HOOK.is_file(), "requires sibling shared Sugar checkout")
+    def test_the_marker_write_cannot_revert_the_amount_just_written(self):
+        """The marker must never cost the tenant its forecast.
+
+        QuoteOpportunityAmount::refresh() retrieves the Opportunity with
+        use_cache => false and saves the new amount on THAT instance, which
+        BeanFactory never registers. A marker writer that then re-read through
+        the cache would be holding an older copy, and SugarBean::save() writes
+        EVERY field - so the stale amount would overwrite the correct one in
+        the same request, with the marker as the only sign anything happened.
+
+        The double below hands out a stale clone to any cached read, which is
+        exactly the condition the earlier fixture could not express.
+        """
+        observed = self.php(r'''
+$lines = [$mkLine('a', 6400, true, 'auto', 1)];
+$erp = new SugarBean();
+$erp->id = 'erp-1';
+$erp->sugar_quote_id = 'q-1';
+$erp->quote_num = 1193;
+$erp->date_quote_expires = '2026-12-01';
+$erp->bd01_erp_quote_lines = new TestLink($lines);
+$opp = new Opportunity();
+$opp->id = 'opp-1';
+$opp->amount = 0;
+$opp->sales_stage = 'Proposal/Price Quote';
+$opp->field_defs = ['bd_governing_origin' => []];
+// The copy an earlier read in this request would have cached: same row, old
+// amount, and no idea the shared writer has since corrected it.
+$staleOpp = clone $opp;
+$quote = new SugarBean();
+$quote->id = 'q-1';
+$quote->total = 6400;
+$quote->tax = 0;
+$quote->shipping = 0;
+$quote->erp_is_primary_quote = true;
+$quote->date_quote_expires = '2026-12-01';
+$quote->opportunities = new TestLink([], ['opp-1']);
+$quote->bd01_erp_quote_quotes = new TestLink([$erp]);
+BeanFactory::$beans['Quotes']['q-1'] = $quote;
+BeanFactory::$beans['Opportunities']['opp-1'] = $opp;
+BeanFactory::$stale['Opportunities']['opp-1'] = $staleOpp;
+(new BdQuoteReflectionHook())->refreshOpportunityAmount($erp);
+''', "['live_amount' => $opp->amount, 'live_marker' => (string) ($opp->bd_governing_origin ?? ''), "
+     "'stale_marker' => (string) ($staleOpp->bd_governing_origin ?? ''), "
+     "'errors' => $GLOBALS['log']->errors]")
+        # The amount the shared writer computed survives...
+        self.assertEqual(observed["live_amount"], 6400, observed)
+        # ...and the marker landed on the SAME instance, not the stale clone.
+        self.assertEqual(observed["live_marker"], "auto", observed)
+        self.assertEqual(observed["stale_marker"], "", observed)
         self.assertEqual(observed["errors"], [], observed)
 
     # ------------------------------------------------------- static guarantees

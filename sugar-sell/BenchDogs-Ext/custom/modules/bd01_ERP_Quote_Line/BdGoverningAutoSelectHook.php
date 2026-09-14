@@ -93,7 +93,17 @@ class BdGoverningAutoSelectHook
     public function autoSelectOnLink(SugarBean $bean, string $event, array $arguments): void
     {
         try {
-            if (($arguments['link'] ?? '') !== 'bd01_erp_quote_lines') {
+            // Read EXACTLY as BdQuoteLineRefreshHook::refreshOnLink does, and
+            // for the reason that hook is the live-proven twin of this filter:
+            // Sugar delivers the link under `link_name` on some relationship
+            // events and `link` on others, and the connector's create-then-link
+            // sequence is the only way a Kinetic-born quote ever reaches the
+            // selector. Matching on `link` alone would have made the whole
+            // forward behaviour SILENTLY INERT for every connector-born quote -
+            // no error, no log line, just nothing ever selected.
+            $link = (string) ($arguments['link_name'] ?? $arguments['link'] ?? '');
+            $relationship = (string) ($arguments['relationship'] ?? '');
+            if ($link !== 'bd01_erp_quote_lines' && $relationship !== 'bd01_erp_quote_lines') {
                 return;
             }
             $this->run($bean);
