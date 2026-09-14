@@ -1,3 +1,83 @@
+# 0.9.42-rc26 — `post_install.php` actually runs (the post_execute unwrap), and it can no longer force-uninstall itself
+
+Built from `0577bc0` (rc25 + the D29-R1 atomic governing-selection fix). One file
+changes behaviour; nothing is added to or removed from the payload.
+
+### The defect
+
+`scripts/post_install.php` wrapped its entire body in
+
+```php
+if (function_exists('post_execute') === false) { function post_execute() { ... } }
+```
+
+and **nothing ever called it**. `manifest.php` registers the file under the
+`post_execute` installdef, but `ModuleInstaller::post_execute()`
+(`ModuleInstall/ModuleInstaller.php:426-440`, read in SugarEnt-Full 25.2.0 and
+26.1.0) only `require_once`s each registered file — it never calls a global
+function named after the installdef key. So on `0.9.41` and the whole `0.9.42`
+line, every layout write, button write, QLI-column write, customer-group
+placement, demo dashboard and dropdown install in that file was dead code, and
+Module Loader reported a clean 19/19 either way.
+
+`scripts/pre_uninstall.php:40-53` had already reasoned this out in full and both
+uninstall scripts were converted to top-level code. This one finally follows
+them. The control that proves the mechanism rather than asserting it:
+ERP-Epicor's `scripts/post_execute.php` is plain top-level code and its work
+lands, on the same tenant, with the same installer, in the same install cycle.
+
+### The unwrap is fail-safe, which is not optional here
+
+On the `post_execute` path an uncaught throw is a **failed install**, and Module
+Loader's failure path **force-uninstalls the package**. The final block used to
+rethrow a `RuntimeException` when the stage domains did not verify. While the
+body was unreachable that was harmless; live it would mean a missing dropdown
+key deletes the package and its deployed metadata. So:
+
+- every block keeps its own `try`/`catch (Throwable)` and its own
+  `file_exists`/`class_exists` guard, as `pre_uninstall.php` does;
+- the stage-language verification **logs and returns** instead of rethrowing.
+  The five keys it checks are also shipped declaratively by the copy'd
+  `custom/Extension/application/Ext/Language/en_us.bd_stage_doms.php`, which is
+  the route that has actually been working on SugarCloud all along;
+- `scripts/tests/test_post_install_stage_languages.py` asserts both properties
+  **statically** — no `function post_execute`, no `function_exists('post_execute')`,
+  no `throw` anywhere in the file — as well as behaviourally.
+
+### Proof of life, at fatal
+
+A successful Module Loader run is not evidence that this file ran, and
+`->error()` lines do not survive an instance whose log level is `fatal`. The
+script now logs `BenchDogs-Ext: post_install running - writing deployed metadata`
+on entry and `... post_install finished` on exit, and **every per-step failure
+line is at `fatal` too**, so "it ran but `DeployedMetaDataImplementation` threw"
+is distinguishable from "it never ran". Those two produce identical deployed
+metadata and were confused for a whole release cycle.
+
+### Every local is `bd`-prefixed
+
+`require_once` inside `ModuleInstaller::post_execute()` executes this file in
+that **method's** scope, which has already run `extract($data)` over the
+manifest. An unprefixed `$manifest` / `$installdefs` / `$modules` would overwrite
+the installer's own locals mid-install. `pre_uninstall.php` prefixes for the same
+reason.
+
+### Known consequence, stated before installing
+
+`writeButtons()` **removes** `advanced_quote_button`, `create_erp_order_button`
+and `refresh_price_availability_button` from the deployed Quotes record view.
+All three are live on a Bench tenant today **only because this code never ran**.
+Partial Fulfillment 1.0.15's proven button placement anchors on
+`create_erp_order_button` with `refresh_price_availability_button` as its left
+neighbour, so a successful rc26 install **invalidates that standing PASS**.
+
+### Also stale, corrected in the same pass
+
+The comment block that justified the relationship rebuild still described a
+`quotes_erp_orders` cardinality override. The package ships no TableDictionary
+file and no `zzz_` file any more (`post_install.php`'s own note at the Accounts
+block says so); what remains is the generic cache/relationship rebuild.
+
 # 0.9.42-rc24 — shipped is a quantity, not money (user decisions 55 / 59)
 
 Not installed on QA and not approved for production. Sequenced with ERP-Epicor
