@@ -1,6 +1,6 @@
 # 0.9.42-rc23 — `bd_country` label survives ERP upgrades; retired governing label hidden
 
-Not built, not installed on QA and not approved for production.
+Not installed on QA and not approved for production.
 
 rc23 is rc22 with two display fixes.
 
