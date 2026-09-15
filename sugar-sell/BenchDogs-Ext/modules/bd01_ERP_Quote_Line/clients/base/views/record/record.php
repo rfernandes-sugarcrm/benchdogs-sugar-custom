@@ -148,7 +148,8 @@ array (
               5 => 'doc_unit_price',
               6 => 'doc_ext_price',
               7 => 'governing',
-              8 => 'erp_sync_key',
+              8 => 'bd_governing_origin',
+              9 => 'erp_sync_key',
             ),
           ),
           2 =>

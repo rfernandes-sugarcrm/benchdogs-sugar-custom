@@ -1,9 +1,10 @@
 <?php
 
-// Labels for the Bench Dogs custom Quote fields, plus the bd_erp_stage_list
-// dropdown. A brand-new list defined inline in a module Language ext is the
-// simple, proven mechanism (exact precedent: ERP-Core's
-// en_us.erp_quote_type.php, which defines erp_quote_type_list the same way).
+// Labels for the Bench Dogs custom Quote fields. Only $mod_strings belongs
+// here: bd_erp_stage's own option list ships from
+// custom/Extension/application/Ext/Language/en_us.bd_erp_stage_list.php,
+// because a module Language ext is included with `global $mod_strings` alone
+// and an $app_list_strings assignment in it is discarded.
 
 $mod_strings['LBL_BD_ERP_TOTAL'] = 'ERP Quote Total';
 $mod_strings['LBL_BD_ERP_STAGE'] = 'ERP Quote Stage';
@@ -18,14 +19,3 @@ $mod_strings['LBL_BD_PRINT_REQUESTED_AT'] = 'ERP Print Requested At';
 $mod_strings['LBL_BD_PRINT_STATUS'] = 'ERP Print Status';
 $mod_strings['LBL_BD_PRINT_LINK'] = 'ERP Print Link';
 $mod_strings['LBL_RECORDVIEW_PANEL_BENCHDOGS'] = 'Bench Dogs ERP';
-
-$app_list_strings['bd_erp_stage_list'] = array(
-    '' => '',
-    'draft' => 'Draft',
-    'in_estimating' => 'In Estimating',
-    'priced' => 'Priced',
-    'revision' => 'Revision',
-    'accepted' => 'Accepted',
-    'ordered' => 'Ordered',
-    'lost' => 'Lost',
-);

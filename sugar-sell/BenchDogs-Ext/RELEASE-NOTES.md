@@ -1,3 +1,124 @@
+# 0.9.42-rc26 — `post_install.php` actually runs (the post_execute unwrap), and it can no longer force-uninstall itself
+
+Built from `0577bc0` (rc25 + the D29-R1 atomic governing-selection fix). One file
+changes behaviour; nothing is added to or removed from the payload.
+
+### The defect
+
+`scripts/post_install.php` wrapped its entire body in
+
+```php
+if (function_exists('post_execute') === false) { function post_execute() { ... } }
+```
+
+and **nothing ever called it**. `manifest.php` registers the file under the
+`post_execute` installdef, but `ModuleInstaller::post_execute()`
+(`ModuleInstall/ModuleInstaller.php:426-440`, read in SugarEnt-Full 25.2.0 and
+26.1.0) only `require_once`s each registered file — it never calls a global
+function named after the installdef key. So on `0.9.41` and the whole `0.9.42`
+line, every layout write, button write, QLI-column write, customer-group
+placement, demo dashboard and dropdown install in that file was dead code, and
+Module Loader reported a clean 19/19 either way.
+
+`scripts/pre_uninstall.php:40-53` had already reasoned this out in full and both
+uninstall scripts were converted to top-level code. This one finally follows
+them. The control that proves the mechanism rather than asserting it:
+ERP-Epicor's `scripts/post_execute.php` is plain top-level code and its work
+lands, on the same tenant, with the same installer, in the same install cycle.
+
+### The unwrap is fail-safe, which is not optional here
+
+On the `post_execute` path an uncaught throw is a **failed install**, and Module
+Loader's failure path **force-uninstalls the package**. The final block used to
+rethrow a `RuntimeException` when the stage domains did not verify. While the
+body was unreachable that was harmless; live it would mean a missing dropdown
+key deletes the package and its deployed metadata. So:
+
+- every block keeps its own `try`/`catch (Throwable)` and its own
+  `file_exists`/`class_exists` guard, as `pre_uninstall.php` does;
+- the stage-language verification **logs and returns** instead of rethrowing.
+  The five keys it checks are also shipped declaratively by the copy'd
+  `custom/Extension/application/Ext/Language/en_us.bd_stage_doms.php`, which is
+  the route that has actually been working on SugarCloud all along;
+- `scripts/tests/test_post_install_stage_languages.py` asserts both properties
+  **statically** — no `function post_execute`, no `function_exists('post_execute')`,
+  no `throw` anywhere in the file — as well as behaviourally.
+
+### Proof of life, at fatal
+
+A successful Module Loader run is not evidence that this file ran, and
+`->error()` lines do not survive an instance whose log level is `fatal`. The
+script now logs `BenchDogs-Ext: post_install running - writing deployed metadata`
+on entry and `... post_install finished` on exit, and **every per-step failure
+line is at `fatal` too**, so "it ran but `DeployedMetaDataImplementation` threw"
+is distinguishable from "it never ran". Those two produce identical deployed
+metadata and were confused for a whole release cycle.
+
+### Every local is `bd`-prefixed
+
+`require_once` inside `ModuleInstaller::post_execute()` executes this file in
+that **method's** scope, which has already run `extract($data)` over the
+manifest. An unprefixed `$manifest` / `$installdefs` / `$modules` would overwrite
+the installer's own locals mid-install. `pre_uninstall.php` prefixes for the same
+reason.
+
+### Known consequence, stated before installing
+
+`writeButtons()` **removes** `advanced_quote_button`, `create_erp_order_button`
+and `refresh_price_availability_button` from the deployed Quotes record view.
+All three are live on a Bench tenant today **only because this code never ran**.
+Partial Fulfillment 1.0.15's proven button placement anchors on
+`create_erp_order_button` with `refresh_price_availability_button` as its left
+neighbour, so a successful rc26 install **invalidates that standing PASS**.
+
+### Also stale, corrected in the same pass
+
+The comment block that justified the relationship rebuild still described a
+`quotes_erp_orders` cardinality override. The package ships no TableDictionary
+file and no `zzz_` file any more (`post_install.php`'s own note at the Accounts
+block says so); what remains is the generic cache/relationship rebuild.
+
+# 0.9.42-rc24 — shipped is a quantity, not money (user decisions 55 / 59)
+
+Not installed on QA and not approved for production. Sequenced with ERP-Epicor
+`1.1.24-rc23` and with `connector_ext_benchdogs` `cb5ec60`.
+
+rc24 is rc23 with six files deleted and nothing added to the payload.
+
+### The Bench shipped-money duplicate is retired
+
+ERP-Core retired `ERP_OrderLines.shipped_value` and
+`ERP_Orders.shipped_value_total` in `1.1.24-rc23` (user decision 55, *"lets
+change shiped as quanmitity not money"*). This package carried its own
+`bd_shipped_value` / `bd_shipped_value_total` on the **same two core modules**,
+so the decision landed half-delivered on Bench. User decision 59 —
+*"they shoudl both be based on quanity and if core does a good job you dont need
+the extension"* — settles it as a **removal**, not a rename to
+`bd_shipped_quantity`.
+
+- Deleted: the vardef, language fragment and record-view fragment for each of
+  the two fields. The package now ships **nothing** for `ERP_OrderLines` or
+  `ERP_Orders`; both Extension directories are gone.
+- The only shipped surface on a Bench tenant is core's line-level
+  **quantity**, `ERP_OrderLines.shipped_quantity`, rendered by core's
+  `erp-fulfillment` field as "12 of 15" — unchanged by this release, and
+  never touched by this package (the retired record-view fragments appended
+  by panel name and removed nothing).
+- Both retired vardefs carried `'default' => 0.0`, and the connector module
+  that would have written them is gated OFF on the QA tenants
+  (`SUGARAI_BD_MLP_FIELDS: "account_group"`). So since 0.9.41 the record view
+  has been rendering **"Shipped Value (not invoiced): $0.00" with no writer at
+  all** — a fabricated zero, indistinguishable from a measured one.
+- Guarded by `scripts/tests/test_bench_shipped_is_a_quantity_not_money.py`
+  (source, built zip and manifest; `bd_shipped*` and `LBL_BD_SHIPPED*`; any
+  `'default' => 0` on those two modules; shadowing `shipped_quantity`).
+- No `pack.php` change: every file under `custom/` is still a `copy`
+  installdef, so the six `copy` entries left the manifest by themselves.
+
+**This is not an in-place upgrade.** BD-L-0005: omitting a copied file does not
+remove it on upgrade. Uninstall rc23 with data tables RETAINED, verify the six
+paths are gone, then install rc24. See `docs/release-0.9.42-rc24.md`.
+
 # 0.9.42-rc23 — `bd_country` label survives ERP upgrades; retired governing label hidden
 
 Not installed on QA and not approved for production.

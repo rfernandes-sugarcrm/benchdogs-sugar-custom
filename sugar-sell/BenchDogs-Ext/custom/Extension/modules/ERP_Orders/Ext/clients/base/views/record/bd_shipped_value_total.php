@@ -1,43 +1,31 @@
 <?php
 
 /**
- * Put bd_shipped_value_total on the ERP_Orders record view.
+ * RETIRED. This file intentionally adds nothing to any layout.
  *
- * Sits immediately beside order_total in ORDER DETAILS on purpose: the
- * shipped figure only means anything read AGAINST the ordered one, and a
- * partially shipped order is otherwise indistinguishable from an unshipped
- * one on screen (Epicor leaves the order status 'Open' either way, so the
- * status badge cannot carry it).
+ * It used to append bd_shipped_value_total to the ERP_Orders record view,
+ * into a panel found by name.
  *
- * Panel found BY NAME and no-op without base viewdefs, for the same reasons
- * as ERP_OrderLines::bd_shipped_value.
+ * Together with its ERP_OrderLines counterpart, this fragment is what made
+ * the defect visible: the vardef put a fabricated 0.00 in the database, and
+ * this put it on the seller's screen. Retired by USER DECISION 59 along with
+ * the vardef and the label. See the sibling
+ * Ext/Vardefs/bd_shipped_value_total.php for the measurements.
+ *
+ * NOTE FOR ANYONE VERIFYING THE REMOVAL ON A TENANT. Emptying this fragment
+ * removes the entry this PACKAGE appended. If ERP_Orders has ever been
+ * customised in Studio, the live layout is
+ * custom/modules/ERP_Orders/clients/base/views/record/record.php, which
+ * belongs to no package and which no package can clean. Check the live
+ * record-view metadata, not just the field list, before calling the removal
+ * done.
+ *
+ * WHY IT IS EMPTIED RATHER THAN DELETED. On Sugar Cloud, neither omitting a
+ * file from the new manifest (lesson BD-L-0005) NOR uninstalling the package
+ * removes a copied custom/Extension file. Both were measured on Bench on
+ * 2026-09-14. Only overwriting the file does anything. This stub is that
+ * overwrite.
+ *
+ * Safe to delete this stub outright once every instance has taken a release
+ * at or after this one.
  */
-
-$bdModule = 'ERP_Orders';
-$bdPanel  = 'LBL_RECORDVIEW_PANEL_ORDER_DETAIL';
-
-if (!empty($viewdefs[$bdModule]['base']['view']['record']['panels'])) {
-    foreach ($viewdefs[$bdModule]['base']['view']['record']['panels'] as $bdI => $bdP) {
-        if (empty($bdP['name']) || $bdP['name'] !== $bdPanel) {
-            continue;
-        }
-        $bdSeen = false;
-        foreach ((array) ($bdP['fields'] ?? array()) as $bdF) {
-            $bdName = is_array($bdF) ? ($bdF['name'] ?? '') : $bdF;
-            if ($bdName === 'bd_shipped_value_total') {
-                $bdSeen = true;
-                break;
-            }
-        }
-        if (!$bdSeen) {
-            $viewdefs[$bdModule]['base']['view']['record']['panels'][$bdI]['fields'][] = array(
-                'name' => 'bd_shipped_value_total',
-                'label' => 'LBL_BD_SHIPPED_VALUE_TOTAL',
-                'readonly' => true,
-                'related_fields' => array('currency_id', 'base_rate'),
-            );
-        }
-        break;
-    }
-}
-unset($bdModule, $bdPanel, $bdI, $bdP, $bdF, $bdName, $bdSeen);

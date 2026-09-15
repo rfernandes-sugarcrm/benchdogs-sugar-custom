@@ -25,7 +25,10 @@ if ($scenario === 'languages' || $scenario === 'missing_current_language') {
     $sugar_config['default_language'] = 'de_DE';
 }
 $app_list_strings = ['sales_stage_dom' => ['Customer Stage' => 'Keep me']];
-class TestLog { public function error($s) { $GLOBALS['errors'][] = $s; } }
+class TestLog {
+    public function error($s) { $GLOBALS['errors'][] = $s; }
+    public function fatal($s) { $GLOBALS['errors'][] = $s; }
+}
 $GLOBALS['log'] = new TestLog();
 class BdDemoDashboards { public function install() {} }
 class SugarAutoLoader { public static function load($p) {} }
@@ -66,11 +69,14 @@ function return_app_list_strings_language($language, $useCache = true) {
     if ($GLOBALS['scenario'] === 'missing_current_language' && $language === 'fr_FR') return [];
     return $doms;
 }
-require 'scripts/post_install.php';
+// The installer script is TOP-LEVEL CODE (0.9.42-rc26): requiring it IS running
+// it, exactly as ModuleInstaller::post_execute() does. Nothing calls a function
+// named post_execute, here or on a tenant - that was the defect. `require`
+// rather than `require_once` so the repeat scenario models a second install.
 $failure = null;
 try {
-    post_execute();
-    if ($scenario === 'repeat') post_execute();
+    require 'scripts/post_install.php';
+    if ($scenario === 'repeat') require 'scripts/post_install.php';
 } catch (Throwable $e) { $failure = $e->getMessage(); }
 echo json_encode(['failure' => $failure, 'events' => $events, 'errors' => $errors, 'compiled' => $compiled]);
 '''
@@ -132,20 +138,51 @@ class PostInstallStageLanguagesTest(unittest.TestCase):
             "Partial Production Closed": "Partial Production Closed",
         })
 
-    def test_missing_or_wrong_required_domains_fail_closed(self):
+    def test_missing_or_wrong_required_domains_are_reported_without_failing_the_install(self):
+        # Reported, never thrown. On the post_execute path an uncaught throw is a
+        # failed install AND a force-uninstall, so a missing stage domain used to
+        # be punished by deleting the package and its deployed metadata.
         for scenario in ("missing_quote", "missing_sales", "missing_production",
                          "missing_probability", "missing_prototype_probability",
                          "wrong_probability", "missing_current_language"):
             with self.subTest(scenario=scenario):
                 observed = self.execute(scenario)
-                self.assertEqual(observed["failure"], "BenchDogs-Ext: required stage language verification failed")
+                self.assertIsNone(observed["failure"])
+                self.assertIn("BenchDogs-Ext: required stage language verification failed",
+                              observed["errors"])
+                self.assertIn("BenchDogs-Ext: post_install finished", observed["errors"])
 
-    def test_rebuild_or_refresh_exception_is_neutral_and_fails_install(self):
+    def test_rebuild_or_refresh_exception_is_neutral_and_does_not_fail_the_install(self):
         for scenario in ("rebuild_exception", "refresh_exception"):
             with self.subTest(scenario=scenario):
                 observed = self.execute(scenario)
-                self.assertEqual(observed["failure"], "BenchDogs-Ext: required stage language verification failed")
+                self.assertIsNone(observed["failure"])
+                self.assertIn("BenchDogs-Ext: required stage language verification failed",
+                              observed["errors"])
                 self.assertNotIn("PRIVATE DETAILS", json.dumps(observed))
+
+    def test_the_installer_body_is_top_level_code_that_cannot_kill_an_install(self):
+        # The rc26 fix, asserted statically. Until rc25 the whole body sat inside
+        # `if (function_exists('post_execute') === false) { function post_execute() {...} }`
+        # and ModuleInstaller::post_execute() only require_once's the file - it
+        # never calls a function named for the installdef key - so none of it had
+        # ever run on a tenant. Re-wrapping it would be silent and invisible
+        # again, and a re-introduced throw would force-uninstall the package.
+        source = (PACKAGE / "scripts/post_install.php").read_text()
+        code = "\n".join(
+            line for line in source.splitlines()
+            if not line.lstrip().startswith(("*", "/*", "//", "*/"))
+        )
+        self.assertNotIn("function post_execute", code)
+        self.assertNotIn("function_exists('post_execute')", code)
+        self.assertNotRegex(code, r"\bthrow\b")
+        self.assertIn("BenchDogs-Ext: post_install running", code)
+
+    def test_proof_of_life_is_logged_at_fatal_so_it_survives_the_log_level(self):
+        observed = self.execute()
+        self.assertEqual(observed["errors"][0],
+                         "BenchDogs-Ext: post_install running - writing deployed metadata")
+        self.assertEqual(observed["errors"][-1], "BenchDogs-Ext: post_install finished")
 
     def test_installer_does_not_repair_revenue_line_items(self):
         self.assertNotIn("RLI_REPAIR", self.execute()["events"])
