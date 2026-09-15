@@ -17,10 +17,12 @@
  * counterpart: a defaulted column reads back as a value nobody wrote, and that
  * is how 994 fabricated `0.00` rows happened in this release.
  *
- * Not placed on the quote-line record view or its subpanel. The line already
- * shows `governing` itself, and adding a second column to that grid would be
- * touching the detail row, which this change does not do. The visible marker
- * decision 72 asked for is the Opportunity one.
+ * Placed on the quote line's own RECORD view, next to `governing` - the marker
+ * is a fact about this row and belonged on it. It is deliberately kept OFF the
+ * lines subpanel: that grid is where a seller reads and toggles `governing`
+ * itself, and a second column there would widen the detail row for a fact that
+ * only qualifies the flag beside it. The marker decision 72 asked for by name
+ * is still the Opportunity one, which is unchanged.
  */
 $dictionary['bd01_ERP_Quote_Line']['fields']['bd_governing_origin'] = array(
     'name' => 'bd_governing_origin',
