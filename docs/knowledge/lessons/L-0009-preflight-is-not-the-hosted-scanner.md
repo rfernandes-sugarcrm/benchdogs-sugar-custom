@@ -41,3 +41,42 @@ hash in the release note.
 **Related.** Shared `erp-integration-sugar` lesson L-0032 (scanner refuses
 dynamic calls) and L-0079 (a lint rule must be proven against the real
 scanner).
+
+---
+
+## AMENDED 2026-09-15 — the known-bad control is **necessary and not sufficient**: it proves the scanner CAN refuse, it cannot prove you scanned the right BYTES
+
+**What changed.** The rule above says to *"scan a known-rejected package in the same run so an inactive gate
+cannot look like a pass."* **That is still correct and is not withdrawn.** It closes exactly one failure —
+a gate that is switched off. It does **not** close the failure found on 2026-09-15, and the vault must not be
+read as though it did.
+
+**What happened.** A re-scan of a Bench Dogs candidate reported **105 files and TEN deny-list findings**
+("dynamically-named function call"). The result was terrifying and entirely false: **it was not the artifact
+that had been built.** `pack.php` **refuses to overwrite an existing zip**, and the rebuild had been run as
+`php pack.php >/dev/null 2>&1`, which **silences the refusal and leaves the old zip in place, looking like a
+successful build**. The scan had run against a superseded-design artifact.
+
+**The known-bad control was green in that same run.** It could not have helped: it proves the scanner refuses
+a planted `eval()` / `shell_exec`, and the scanner did — **on the wrong zip.** The trap was caught by the
+**FILE COUNT** (105 against an expected 174), which is an identity check, not a gate check.
+
+Two more instances of the same shape, both from the same release:
+- A scan harness was found with `moduleInstaller.packageScan` **UNSET**, which short-circuits
+  `rectorScanPreparedPackage()` to return true **without scanning anything** — the stack as found would have
+  reported a clean PASS for any package whatsoever.
+- The opposite failure on the same leg: it then **REFUSED a known-GOOD artifact** demonstrably running on
+  three tenants. **A probe that can only say NO is exactly as useless as one that can only say YES.**
+
+**Amended rule.** A scan result is trustworthy only when **three** things are asserted in the same run:
+1. **the gate is active** — a known-bad control is REFUSED, and its twin with the plant removed PASSES, so the
+   refusal is attributable to the plant and not to a rename;
+2. **the bytes are the right bytes** — delete the exact zip, **read the "Done. Wrote" line**, and assert the
+   **file count and the sha256 recorded next to the verdict**. **Never silence a build.** A rebuild of
+   identical source yields a **different sha256** (ZipArchive stores mtimes), so re-hash the artifact on disk
+   rather than trusting a hash recorded earlier;
+3. **the leg can express both answers** — if it refuses an artifact already installed on a tenant, it is not a
+   gate and its PASS means nothing.
+
+**Related.** `BD-L-0010` (a superseded decision's file still ships), `BD-L-0013` (a proof of application must
+prove *where* it landed) — the same failure in the mutation-testing register.
