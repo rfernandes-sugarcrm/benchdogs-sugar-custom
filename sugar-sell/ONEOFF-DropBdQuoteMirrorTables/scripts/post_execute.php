@@ -129,14 +129,33 @@ $bdDropCandidates = array(
     'bd01_erp_quote_cstm',
     'bd01_erp_quote_line',
     'bd01_erp_quote_line_cstm',
-    'bd01_erp_quote_cost',
-    'bd01_erp_quote_cost_cstm',
 
-    // The join tables of the four retired relationships, and only those four.
+    // DECISION 110/111, 2026-09-15 - bd01_erp_quote_cost and its _cstm sibling are
+    // DELIBERATELY NOT IN THIS LIST AND MUST NEVER BE ADDED BACK.
+    //
+    // The cost worksheet is NOT a mirror. It duplicates nothing: material, labour,
+    // both burdens, subcontract, misc, hours, profit and gross-margin percent per
+    // quantity break, and native Products has ONE cost field. Measured on Bench:
+    // 473 rows, 159 of them costed across 42 quotes, labor_cost summing 245,952.15
+    // and material_cost 342,172.63. THERE IS NO OTHER COPY IN SUGAR.
+    //
+    // The owner decided it stays a Bench Dogs module permanently (promotion to core
+    // was REJECTED, not deferred) and re-parents onto the native rung. This package
+    // is explicitly irreversible, so listing those tables here would have destroyed
+    // the only copy the first time anyone built and ran it. It had never been built,
+    // so nothing was lost - but the list was written BEFORE those decisions and
+    // silently contradicted them.
+
+    // The join tables of the retired relationships.
     'bd01_erp_quote_quotes_c',
     'bd01_erp_quote_accounts_c',
     'bd01_erp_quote_lines_c',
-    'bd01_erp_line_costs_c',
+
+    // bd01_erp_line_costs_c is ALSO withheld, for a different reason. It is the OLD
+    // link from the retired line module to the cost worksheet. After the re-parent it
+    // is dead weight - but until the re-parent onto Products is PROVEN on the tenant,
+    // it is the only record of which cost row belonged to which rung, i.e. the
+    // reversibility path. Drop it only as a separate, later, deliberate step.
 );
 
 /**

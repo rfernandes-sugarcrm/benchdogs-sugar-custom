@@ -17,11 +17,13 @@ $packageLabel   = 'One-off: Drop Bench Dogs Quote Mirror Tables (DELETES DATA)';
 // Refers to the retired modules only in lower case, as table names. A
 // description that spells them the way a module is spelled reads as a claim to
 // INSTALL those modules, which is what MLP008 checks for.
-$description    = 'One-off, and it DELETES DATA. Drops the ten retired bench dogs quote '
-    . 'mirror tables: bd01_erp_quote, bd01_erp_quote_line, bd01_erp_quote_cost, their '
-    . 'three _cstm siblings, and the four join tables of the relationships that '
+$description    = 'One-off, and it DELETES DATA. Drops the retired bench dogs quote '
+    . 'mirror tables: bd01_erp_quote and bd01_erp_quote_line, their two _cstm '
+    . 'siblings, and three join tables of the relationships that '
     . 'ONEOFF-RetireBdQuoteMirror retires. Take a database backup first; there is no '
-    . 'undo. Refuses to run while any mirror module is still registered or any of the '
+    . 'undo. It does NOT touch bd01_erp_quote_cost - the cost worksheet is not a '
+    . 'mirror, it has no other copy, and decision 110 keeps it. '
+    . 'Refuses to run while any mirror module is still registered or any of the '
     . 'four relationship definitions is still on disk, so it cannot be run out of '
     . 'order. Every table is checked against the schema and its row count logged before '
     . 'it is dropped. Installs no files and can be uninstalled immediately afterwards.';
