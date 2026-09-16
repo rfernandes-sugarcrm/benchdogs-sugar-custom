@@ -61,11 +61,11 @@ function return_app_list_strings_language($language, $useCache = true) {
     if (!$GLOBALS['refreshed'] || $useCache) return [];
     $doms = $GLOBALS['compiled'];
     if ($GLOBALS['scenario'] === 'missing_quote') unset($doms['quote_stage_dom']['Partially Fulfilled']);
-    if ($GLOBALS['scenario'] === 'missing_sales') unset($doms['sales_stage_dom']['Prototype Closed']);
-    if ($GLOBALS['scenario'] === 'missing_production') unset($doms['sales_stage_dom']['Partial Production Closed']);
-    if ($GLOBALS['scenario'] === 'missing_probability') unset($doms['sales_probability_dom']['Partial Production Closed']);
-    if ($GLOBALS['scenario'] === 'missing_prototype_probability') unset($doms['sales_probability_dom']['Prototype Closed']);
-    if ($GLOBALS['scenario'] === 'wrong_probability') $doms['sales_probability_dom']['Prototype Closed'] = 5;
+    if ($GLOBALS['scenario'] === 'missing_sales') unset($doms['sales_stage_dom']['Prototype Ordered']);
+    if ($GLOBALS['scenario'] === 'missing_production') unset($doms['sales_stage_dom']['Partial Production Ordered']);
+    if ($GLOBALS['scenario'] === 'missing_probability') unset($doms['sales_probability_dom']['Partial Production Ordered']);
+    if ($GLOBALS['scenario'] === 'missing_prototype_probability') unset($doms['sales_probability_dom']['Prototype Ordered']);
+    if ($GLOBALS['scenario'] === 'wrong_probability') $doms['sales_probability_dom']['Prototype Ordered'] = 5;
     if ($GLOBALS['scenario'] === 'missing_current_language' && $language === 'fr_FR') return [];
     return $doms;
 }
@@ -134,8 +134,8 @@ class PostInstallStageLanguagesTest(unittest.TestCase):
         self.assertIsNone(observed["failure"])
         self.assertEqual(observed["events"].count(["verify", "en_us", False]), 2)
         self.assertEqual(observed["compiled"]["sales_stage_dom"], {
-            "Customer Stage": "Keep me", "Prototype Closed": "Prototype Closed",
-            "Partial Production Closed": "Partial Production Closed",
+            "Customer Stage": "Keep me", "Prototype Ordered": "Prototype Ordered",
+            "Partial Production Ordered": "Partial Production Ordered",
         })
 
     def test_missing_or_wrong_required_domains_are_reported_without_failing_the_install(self):

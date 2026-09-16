@@ -36,20 +36,20 @@ echo json_encode($app_dropdowns_style['sales_stage_dom_style']);
         styles = json.loads(result.stdout)
         self.assertEqual(styles["Customer Stage"]["backgroundColor"], "#123456")
         self.assertIs(styles["applyFormatting"], True)
-        self.assertEqual(styles["Prototype Closed"]["backgroundColor"], "#FEF08A")
-        self.assertEqual(styles["Partial Production Closed"]["backgroundColor"], "#A7F3D0")
-        self.assertEqual(styles["Prototype Closed"]["icon"]["class"], "check-circle")
-        self.assertEqual(styles["Partial Production Closed"]["icon"]["class"], "check-circle")
+        self.assertEqual(styles["Prototype Ordered"]["backgroundColor"], "#FEF08A")
+        self.assertEqual(styles["Partial Production Ordered"]["backgroundColor"], "#A7F3D0")
+        self.assertEqual(styles["Prototype Ordered"]["icon"]["class"], "check-circle")
+        self.assertEqual(styles["Partial Production Ordered"]["icon"]["class"], "check-circle")
 
     def test_extension_preserves_existing_same_key_tenant_style(self):
         fixture = rf'''<?php
 $app_dropdowns_style = [
     'sales_stage_dom_style' => [
-        'Prototype Closed' => [
+        'Prototype Ordered' => [
             'backgroundColor' => '#123456',
             'icon' => ['class' => 'tenant-icon'],
         ],
-        'Partial Production Closed' => null,
+        'Partial Production Ordered' => null,
         'applyFormatting' => true,
     ],
 ];
@@ -61,11 +61,11 @@ echo json_encode($app_dropdowns_style['sales_stage_dom_style']);
             ["php"], input=fixture, text=True, capture_output=True, check=True,
         )
         styles = json.loads(result.stdout)
-        self.assertEqual(styles["Prototype Closed"], {
+        self.assertEqual(styles["Prototype Ordered"], {
             "backgroundColor": "#123456",
             "icon": {"class": "tenant-icon"},
         })
-        self.assertIsNone(styles["Partial Production Closed"])
+        self.assertIsNone(styles["Partial Production Ordered"])
         self.assertIs(styles["applyFormatting"], True)
 
     def test_built_package_contains_exact_style_extension(self):

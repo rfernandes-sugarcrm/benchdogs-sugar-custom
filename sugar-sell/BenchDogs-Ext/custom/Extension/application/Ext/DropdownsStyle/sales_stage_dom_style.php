@@ -9,16 +9,16 @@
  * sales_stage_dom label are correct. Keep these entries append-only: the
  * shared ERP package and the tenant own every other stage style.
  *
- * Prototype Closed remains an open-pipeline milestone, so it reuses Sugar's
- * native Proposal yellow. Partial Production Closed uses Sugar's native
+ * Prototype Ordered remains an open-pipeline milestone, so it reuses Sugar's
+ * native Proposal yellow. Partial Production Ordered uses Sugar's native
  * successful-milestone green. Both use the stock check-circle icon rather
  * than introducing a second visual vocabulary.
  */
 if (!array_key_exists(
-    'Prototype Closed',
+    'Prototype Ordered',
     $app_dropdowns_style['sales_stage_dom_style'] ?? array()
 )) {
-    $app_dropdowns_style['sales_stage_dom_style']['Prototype Closed'] = array(
+    $app_dropdowns_style['sales_stage_dom_style']['Prototype Ordered'] = array(
         'backgroundColor' => '#FEF08A',
         'text' => array(
             'isBold' => true,
@@ -35,10 +35,10 @@ if (!array_key_exists(
 }
 
 if (!array_key_exists(
-    'Partial Production Closed',
+    'Partial Production Ordered',
     $app_dropdowns_style['sales_stage_dom_style'] ?? array()
 )) {
-    $app_dropdowns_style['sales_stage_dom_style']['Partial Production Closed'] = array(
+    $app_dropdowns_style['sales_stage_dom_style']['Partial Production Ordered'] = array(
         'backgroundColor' => '#A7F3D0',
         'text' => array(
             'isBold' => true,

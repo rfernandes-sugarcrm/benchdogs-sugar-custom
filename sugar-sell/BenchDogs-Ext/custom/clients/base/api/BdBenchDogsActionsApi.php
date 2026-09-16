@@ -27,7 +27,7 @@
  *     moves quote_stage to 'Partially Fulfilled' (a stage this package adds)
  *     - deliberately NOT 'Closed Accepted', so QuoteAcceptSiblingReject never
  *     fires and sibling quotes/lines stay live. The opportunity stays open
- *     too, its stage advanced to 'Prototype Closed' / 'Partial Production
+ *     too, its stage advanced to 'Prototype Ordered' / 'Partial Production
  *     Closed' - the exact stage-expression answer REQ-22's discussion
  *     records as the agreed direction.
  *
@@ -500,8 +500,8 @@ if (file_exists($parentApiFile)) {
             // Live verification straight from the rebuilt app strings.
             $doms = return_app_list_strings_language('en_us');
             $steps['verify_quote_stage_dom'] = isset($doms['quote_stage_dom']['Partially Fulfilled']) ? 'present' : 'MISSING';
-            $steps['verify_sales_stage_dom'] = (isset($doms['sales_stage_dom']['Prototype Closed'])
-                && isset($doms['sales_stage_dom']['Partial Production Closed'])) ? 'present' : 'MISSING';
+            $steps['verify_sales_stage_dom'] = (isset($doms['sales_stage_dom']['Prototype Ordered'])
+                && isset($doms['sales_stage_dom']['Partial Production Ordered'])) ? 'present' : 'MISSING';
 
             return array('status' => 'success', 'steps' => $steps);
         }

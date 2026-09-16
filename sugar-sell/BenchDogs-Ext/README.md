@@ -67,8 +67,8 @@ behind and also tempts Bench code to duplicate shared currency semantics.
 ### Release-stage ownership
 
 Bench supplies `ErpOpportunityReleaseStagePolicy` through Partial
-Fulfillment's fixed neutral seam. It returns Prototype Closed/80 when the only
-ordered release is the prototype, and Partial Production Closed/90 once any
+Fulfillment's fixed neutral seam. It returns Prototype Ordered/80 when the only
+ordered release is the prototype, and Partial Production Ordered/90 once any
 production option is ordered. The provider never saves an Opportunity.
 Partial Fulfillment 1.0.13 validates and performs the only release-stage write.
 ERP-Epicor 1.1.24-rc9 returns that writer's neutral outcome as

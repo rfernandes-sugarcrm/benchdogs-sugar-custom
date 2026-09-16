@@ -217,7 +217,7 @@ try {
 }
 
 // Stage dropdown keys (quote_stage_dom 'Partially Fulfilled',
-// sales_stage_dom 'Prototype Closed'/'Partial Production Closed') via
+// sales_stage_dom 'Prototype Ordered'/'Partial Production Ordered') via
 // ModuleInstaller::install_languages() - the scanner-safe route
 // ERP-Core's BaseErpDropdown documents. Append-only, idempotent.
 try {
@@ -337,16 +337,56 @@ try {
     foreach ($bdLanguages as $bdLanguage) {
         $bdDoms = return_app_list_strings_language($bdLanguage, false);
         if (!isset($bdDoms['quote_stage_dom']['Partially Fulfilled'])
-            || !isset($bdDoms['sales_stage_dom']['Prototype Closed'])
-            || !isset($bdDoms['sales_stage_dom']['Partial Production Closed'])
-            || (string) ($bdDoms['sales_probability_dom']['Prototype Closed'] ?? '') !== '80'
-            || (string) ($bdDoms['sales_probability_dom']['Partial Production Closed'] ?? '') !== '90') {
+            || !isset($bdDoms['sales_stage_dom']['Prototype Ordered'])
+            || !isset($bdDoms['sales_stage_dom']['Partial Production Ordered'])
+            || (string) ($bdDoms['sales_probability_dom']['Prototype Ordered'] ?? '') !== '80'
+            || (string) ($bdDoms['sales_probability_dom']['Partial Production Ordered'] ?? '') !== '90') {
             $GLOBALS['log']->fatal('BenchDogs-Ext: required stage language verification failed');
             break;
         }
     }
 } catch (Throwable $e) {
     $GLOBALS['log']->fatal('BenchDogs-Ext: required stage language verification failed');
+}
+
+// DECISION 314 - stage rename data migration. The two release stages were
+// renamed from '<slice> Closed' to '<slice> Ordered' because the code that
+// writes them branches on $product->erp_ordered: the semantics were always
+// "this slice has been ORDERED", and the opportunity deliberately stays OPEN
+// (probabilities 80/90; only Closed Won/Closed Lost are terminal). Records
+// written before the rename still hold the old literal in sales_stage, and a
+// stage whose key is absent from sales_stage_dom renders blank.
+//
+// DELIBERATELY RAW SQL, NOT BEANS. Loading and save()-ing an Opportunity
+// fires the valuation hooks - the same writers that re-pointed a fixture's
+// amount to $0.00 on 2026-09-15 (decision 311/313). A migration must not
+// recompute anything; it only renames a stored key. Raw SQL fires no hooks.
+//
+// Idempotent: the WHERE clause matches only the old literals, so a re-install
+// is a no-op. The _audit trail is deliberately NOT rewritten - it is history,
+// and the old key is what those rows genuinely recorded at the time.
+try {
+    $bdDb = DBManagerFactory::getInstance();
+    $bdStageRenames = array(
+        'Prototype Closed' => 'Prototype Ordered',
+        'Partial Production Closed' => 'Partial Production Ordered',
+    );
+    foreach ($bdStageRenames as $bdOldStage => $bdNewStage) {
+        $bdSql = 'UPDATE opportunities SET sales_stage = '
+            . $bdDb->quoted($bdNewStage)
+            . ' WHERE sales_stage = ' . $bdDb->quoted($bdOldStage);
+        $bdResult = $bdDb->query($bdSql);
+        $bdMoved = (int) $bdDb->getAffectedRowCount($bdResult);
+        $GLOBALS['log']->fatal(
+            'BenchDogs-Ext: stage migration ' . $bdOldStage . ' -> ' . $bdNewStage
+            . ' applied to ' . $bdMoved . ' row(s)'
+        );
+    }
+} catch (Throwable $e) {
+    // Never fail the install on the migration: the package is still correct
+    // for every record written from now on, and an unmigrated old row is
+    // visible and fixable. Loud, not fatal.
+    $GLOBALS['log']->fatal('BenchDogs-Ext: stage rename migration failed: ' . $e->getMessage());
 }
 
 $GLOBALS['log']->fatal('BenchDogs-Ext: post_install finished');

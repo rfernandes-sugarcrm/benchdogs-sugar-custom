@@ -78,7 +78,7 @@ $quote->bd01_erp_quote_quotes = new TestLink([$erp]);
 $quote->products = new TestLink([$make('qli-proto', 1, false, true)]);
 ''')
         self.assertEqual(observed["decision"], {
-            "sales_stage": "Prototype Closed", "probability": 80,
+            "sales_stage": "Prototype Ordered", "probability": 80,
         })
         self.assertEqual(observed["retrievals"], [
             ["bd01_ERP_Quote", "erp-quote", {"use_cache": False}],
@@ -98,7 +98,7 @@ $quote->products = new TestLink([
 ]);
 ''')
         self.assertEqual(observed["decision"], {
-            "sales_stage": "Partial Production Closed", "probability": 90,
+            "sales_stage": "Partial Production Ordered", "probability": 90,
         })
 
     def test_linked_bench_quote_with_no_visible_release_refuses_and_logs_upstream(self):
@@ -121,7 +121,7 @@ $fresh->erp_ordered = true;
 BeanFactory::$beans[$fresh->id] = $fresh;
 ''')
         self.assertEqual(observed["decision"], {
-            "sales_stage": "Prototype Closed", "probability": 80,
+            "sales_stage": "Prototype Ordered", "probability": 80,
         })
         self.assertEqual(observed["retrievals"], [
             ["bd01_ERP_Quote", "erp-quote", {"use_cache": False}],
@@ -143,7 +143,7 @@ $freshErp->bd01_erp_quote_lines = new TestLink([$freshLine]);
 BeanFactory::$beans[$freshErp->id] = $freshErp;
 ''')
         self.assertEqual(observed["decision"], {
-            "sales_stage": "Prototype Closed", "probability": 80,
+            "sales_stage": "Prototype Ordered", "probability": 80,
         })
         self.assertEqual(observed["retrievals"], [
             ["bd01_ERP_Quote", "erp-quote", {"use_cache": False}],

@@ -1459,8 +1459,8 @@ class BdQuoteReflectionHook
             'Perception Analysis' => 55,
             'Proposal/Price Quote' => 65,
             'Negotiation/Review' => 70,
-            'Prototype Closed' => 80,
-            'Partial Production Closed' => 90,
+            'Prototype Ordered' => 80,
+            'Partial Production Ordered' => 90,
             'Closed Won' => 100,
         ];
         return $ranks[$stage] ?? 0;

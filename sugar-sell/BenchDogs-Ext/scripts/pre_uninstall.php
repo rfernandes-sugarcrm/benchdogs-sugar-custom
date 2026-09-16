@@ -215,7 +215,7 @@ try {
 // they cost nothing but disk.
 //
 // The stage dropdown keys post_install.php appends (quote_stage_dom's
-// 'Partially Fulfilled', sales_stage_dom's 'Prototype Closed' and 'Partial
+// 'Partially Fulfilled', sales_stage_dom's 'Prototype Ordered' and 'Partial
 // Production Closed') are also left alone, for a stronger reason: quotes and
 // opportunities on this instance HOLD those values. Removing the key would
 // leave those records displaying a raw string with no label, which is worse
