@@ -11,7 +11,7 @@
 // not 'Closed Accepted', so the remaining ladder lines stay live.
 $app_list_strings['quote_stage_dom']['Partially Fulfilled'] = 'Partially Fulfilled';
 // REQ-22: the opportunity stays open and its stage says which slice closed.
-$app_list_strings['sales_stage_dom']['Prototype Closed'] = 'Prototype Closed';
-$app_list_strings['sales_stage_dom']['Partial Production Closed'] = 'Partial Production Closed';
-$app_list_strings['sales_probability_dom']['Prototype Closed'] = 80;
-$app_list_strings['sales_probability_dom']['Partial Production Closed'] = 90;
+$app_list_strings['sales_stage_dom']['Prototype Ordered'] = 'Prototype Ordered';
+$app_list_strings['sales_stage_dom']['Partial Production Ordered'] = 'Partial Production Ordered';
+$app_list_strings['sales_probability_dom']['Prototype Ordered'] = 80;
+$app_list_strings['sales_probability_dom']['Partial Production Ordered'] = 90;

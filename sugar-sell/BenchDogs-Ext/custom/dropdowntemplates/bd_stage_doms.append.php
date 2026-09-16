@@ -8,7 +8,7 @@
  * bd-order-winning-line sets it; QuoteAcceptSiblingReject ignores it (that
  * hook fires only on 'Closed Accepted'), which is exactly the point.
  *
- * sales_stage_dom 'Prototype Closed' / 'Partial Production Closed' -
+ * sales_stage_dom 'Prototype Ordered' / 'Partial Production Ordered' -
  * REQ-22's agreed answer: express what closed in the OPPORTUNITY STAGE
  * rather than splitting records. Neither key is in the forecast
  * won/lost sets, so the remainder stays open pipeline.
@@ -23,8 +23,8 @@
 
 $app_list_strings['quote_stage_dom']['Partially Fulfilled'] = 'Partially Fulfilled';
 
-$app_list_strings['sales_stage_dom']['Prototype Closed'] = 'Prototype Closed';
-$app_list_strings['sales_stage_dom']['Partial Production Closed'] = 'Partial Production Closed';
+$app_list_strings['sales_stage_dom']['Prototype Ordered'] = 'Prototype Ordered';
+$app_list_strings['sales_stage_dom']['Partial Production Ordered'] = 'Partial Production Ordered';
 
-$app_list_strings['sales_probability_dom']['Prototype Closed'] = 80;
-$app_list_strings['sales_probability_dom']['Partial Production Closed'] = 90;
+$app_list_strings['sales_probability_dom']['Prototype Ordered'] = 80;
+$app_list_strings['sales_probability_dom']['Partial Production Ordered'] = 90;

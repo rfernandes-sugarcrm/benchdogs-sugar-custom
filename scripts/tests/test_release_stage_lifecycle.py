@@ -91,8 +91,8 @@ $GLOBALS['log'] = new class {
 $GLOBALS['app_list_strings'] = [
     'sales_stage_dom' => [
         'Proposal/Price Quote' => 'Proposal/Price Quote',
-        'Prototype Closed' => 'Prototype Closed',
-        'Partial Production Closed' => 'Partial Production Closed',
+        'Prototype Ordered' => 'Prototype Ordered',
+        'Partial Production Ordered' => 'Partial Production Ordered',
         'Closed Won' => 'Closed Won',
         'Closed Lost' => 'Closed Lost',
     ],
@@ -138,10 +138,10 @@ echo json_encode(['first' => $first, 'second' => $second,
             )
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
             observed = json.loads(result.stdout)
-            self.assertEqual(observed["first"], ["same-opportunity", "Prototype Closed", 80])
+            self.assertEqual(observed["first"], ["same-opportunity", "Prototype Ordered", 80])
             self.assertEqual(
                 observed["second"],
-                ["same-opportunity", "Partial Production Closed", 90],
+                ["same-opportunity", "Partial Production Ordered", 90],
             )
             self.assertEqual(observed["rli_reads"], 0)
 

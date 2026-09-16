@@ -131,13 +131,13 @@ class ErpOpportunityReleaseStagePolicy
 
         if ($hasProduction) {
             return [
-                'sales_stage' => 'Partial Production Closed',
+                'sales_stage' => 'Partial Production Ordered',
                 'probability' => 90,
             ];
         }
         if ($hasPrototype) {
             return [
-                'sales_stage' => 'Prototype Closed',
+                'sales_stage' => 'Prototype Ordered',
                 'probability' => 80,
             ];
         }
