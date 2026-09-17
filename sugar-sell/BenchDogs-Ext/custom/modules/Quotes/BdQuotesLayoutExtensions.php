@@ -107,11 +107,30 @@ class BdQuotesLayoutExtensions
         $existing = array_column($buttons, 'name');
 
         // Bench Dogs owns the quote header: ONE entry point per action.
-        // The product's whole-quote buttons (Advanced Quote / Submit Order /
-        // Refresh Price & Availability) and the superseded winning-line
-        // button are REMOVED below - the per-line model replaces them.
+        // The product's whole-quote buttons (Submit Order / Refresh Price &
+        // Availability) and the superseded winning-line button are REMOVED
+        // below - the per-line model replaces them.
+        //
+        // 🛑 'advanced_quote_button' IS NO LONGER REMOVED (owner ruling, D2-BTN).
+        //
+        // A seller was seeing TWO estimating buttons: this package's blue
+        // "Quote Estimate" and ERP-Core's "Send to Estimation", side by side,
+        // doing the same thing - create the Kinetic quote and move the stage to
+        // In Estimating. The owner ruled the PRODUCT button survives and this
+        // package's duplicate goes.
+        //
+        // 🚩 WHY BOTH WERE VISIBLE, WHICH IS NOT WHAT IT LOOKS LIKE. This list
+        // stripped advanced_quote_button on every Bench install - so the
+        // duplicate was never supposed to exist. It appeared because ERP-Epicor
+        // is installed AFTER Bench Dogs and its QuotesLayout::install() ADDS
+        // that button back. The duplicate is an INSTALL-ORDER artifact, not two
+        // packages both asking for a button.
+        //
+        // 📌 So removing ours is only half the fix: leaving
+        // advanced_quote_button in $unwanted would strip the one button we are
+        // keeping on every Bench install, and a seller would have NO estimating
+        // action until the next ERP-Epicor install happened to re-add it.
         $unwanted = [
-            'advanced_quote_button',
             'create_erp_order_button',
             'refresh_price_availability_button',
             'bd_order_winning_button',
@@ -121,19 +140,16 @@ class BdQuotesLayoutExtensions
             // well as dropped from $wanted because the button is already in the
             // deployed viewdefs and $wanted alone would not take it back out.
             'bd_best_pricing_button',
+            // The retired duplicate. Listed here for exactly the reason
+            // bd_best_pricing_button is: it is already in the deployed
+            // viewdefs on every Bench tenant, and dropping it from $wanted
+            // alone would leave it sitting there forever.
+            'bd_send_estimating_button',
         ];
 
-        $wanted = [
-            [
-                'type' => 'bd-send-estimating',
-                'event' => 'button:bd_send_estimating_button:click',
-                'name' => 'bd_send_estimating_button',
-                'label' => 'LBL_BD_SEND_ESTIMATING_BUTTON',
-                'css_class' => 'rowaction actionbuttons actionbuttons-button btn btn-primary ml-2',
-                'showOn' => 'view',
-                'acl_action' => 'edit',
-            ],
-        ];
+        // Nothing of this package's own is placed on the Quotes header any
+        // more: the estimating action is ERP-Core's 'Send to Estimation'.
+        $wanted = [];
 
 
         $kept = [];
