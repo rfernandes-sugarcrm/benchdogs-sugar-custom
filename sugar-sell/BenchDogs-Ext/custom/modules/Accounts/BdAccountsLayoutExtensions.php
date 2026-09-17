@@ -1,5 +1,7 @@
 <?php
 
+use Sugarcrm\Sugarcrm\MetaData\ViewdefManager;
+
 // phpcs:disable PSR1.Classes.ClassDeclaration.MissingNamespace
 
 /**
@@ -11,7 +13,7 @@
  * a panel - it only appends to the buttons array or to the end of a panel's
  * field list if not already present (see post_install.php's docblock).
  *
- * Same DeployedMetaDataImplementation get -> mutate -> set -> deploy
+ * Same ViewdefManager load -> mutate -> save
  * mechanism as BdQuotesLayoutExtensions, and self-contained for the same
  * "Cannot redeclare class" reason documented there.
  */
@@ -19,9 +21,6 @@ class BdAccountsLayoutExtensions
 {
     public static function writeButtons(): void
     {
-        require_once 'modules/ModuleBuilder/parsers/constants.php';
-        require_once 'modules/ModuleBuilder/parsers/views/DeployedMetaDataImplementation.php';
-
         // The deployed Accounts record view (ERP-Epicor's AccountsLayout)
         // ships no 'buttons' key at all - Sidecar falls back to the BASE
         // record template's buttons at render time, so the view looks
@@ -37,8 +36,10 @@ class BdAccountsLayoutExtensions
             $baseDefaults = $viewdefs['base']['view']['record']['buttons'] ?? array();
         }
 
-        $deploy = new DeployedMetaDataImplementation(MB_RECORDVIEW, 'Accounts', 'base');
-        $viewdefs = $deploy->getViewdefs();
+        $viewdefs = self::loadRecordView('Accounts');
+        if ($viewdefs === null) {
+            return;
+        }
 
         if (empty($viewdefs['base']['view']['record']['buttons'])
             || !is_array($viewdefs['base']['view']['record']['buttons'])
@@ -72,8 +73,7 @@ class BdAccountsLayoutExtensions
             $buttons[] = $button;
         }
 
-        $deploy->setViewdefs($viewdefs);
-        $deploy->deploy($viewdefs);
+        self::deployRecordView('Accounts', $viewdefs);
     }
 
     /**
@@ -91,15 +91,15 @@ class BdAccountsLayoutExtensions
      * view's panels in replace mode, so this method never reorders, never
      * removes and never rewrites a panel - it adds two fields to the end of
      * the body panel if they are not already somewhere on the view. Appending
-     * a field to a deployed grid is the one DeployedMetaDataImplementation
+     * a field to a deployed grid is the one viewdef
      * operation that has proved reliable here; reordering has not.
      */
     public static function writeCustomerGroupField(): void
     {
-        require_once 'modules/ModuleBuilder/parsers/views/DeployedMetaDataImplementation.php';
-
-        $deploy = new DeployedMetaDataImplementation(MB_RECORDVIEW, 'Accounts', 'base');
-        $viewdefs = $deploy->getViewdefs();
+        $viewdefs = self::loadRecordView('Accounts');
+        if ($viewdefs === null) {
+            return;
+        }
 
         if (empty($viewdefs['base']['view']['record']['panels'])
             || !is_array($viewdefs['base']['view']['record']['panels'])
@@ -156,8 +156,7 @@ class BdAccountsLayoutExtensions
             'label' => 'LBL_BD_CUSTOMER_GROUP_CODE',
         );
 
-        $deploy->setViewdefs($viewdefs);
-        $deploy->deploy($viewdefs);
+        self::deployRecordView('Accounts', $viewdefs);
     }
 
     /**
@@ -182,11 +181,10 @@ class BdAccountsLayoutExtensions
      */
     public static function remove(): void
     {
-        require_once 'modules/ModuleBuilder/parsers/constants.php';
-        require_once 'modules/ModuleBuilder/parsers/views/DeployedMetaDataImplementation.php';
-
-        $deploy = new DeployedMetaDataImplementation(MB_RECORDVIEW, 'Accounts', 'base');
-        $viewdefs = $deploy->getViewdefs();
+        $viewdefs = self::loadRecordView('Accounts');
+        if ($viewdefs === null) {
+            return;
+        }
         $changed = false;
 
         if (!empty($viewdefs['base']['view']['record']['buttons'])
@@ -237,7 +235,64 @@ class BdAccountsLayoutExtensions
             return;
         }
 
-        $deploy->setViewdefs($viewdefs);
-        $deploy->deploy($viewdefs);
+        self::deployRecordView('Accounts', $viewdefs);
     }
+
+    /**
+     * The deployed record viewdef for $module — the tenant's custom copy when
+     * it has one, else stock — in the SAME ``['base']['view']['record']``
+     * shape the ModuleBuilder parser used to hand every caller, so every
+     * mutation in this class is untouched by the swap. null when the module
+     * has no such view: a caller must not write a nearly empty custom file
+     * over a view that was never there.
+     *
+     * 🚩 MLP019. Naming DeployedMetaDataImplementation makes SugarCloud's
+     * Rector scan resolve it through the tenant's own autoloader, which has
+     * no rule for modules/ModuleBuilder/parsers/views/, and the WHOLE package
+     * is refused before anything installs — `Class
+     * "AbstractMetaDataImplementation" not found`. Guarding the include,
+     * deferring it into a constructor and class_exists() were all tried and
+     * all still failed on a hosted tenant; not naming the class is what
+     * actually removes the risk. ViewdefManager is namespaced and autoloads
+     * through src/. This mirrors ERP-Core's BaseErpLayout, which has shipped
+     * the same pair through the hosted scan.
+     */
+    private static function loadRecordView(string $module): ?array
+    {
+        $defs = (new ViewdefManager())->loadViewdef('base', $module, 'record');
+        if (empty($defs)) {
+            return null;
+        }
+
+        return ['base' => ['view' => ['record' => $defs]]];
+    }
+
+    /**
+     * Write the record view back, and clear the same caches the parser's
+     * deploy() cleared, so the change is visible without a repair.
+     *
+     * Three things deploy() also did are deliberately NOT carried over:
+     * saveHistory(), which only feeds Studio's "restore previous layout";
+     * the Studio working-copy unlink(), because a package may not call
+     * unlink() at all (MLP002 — one occurrence rejects the upload) and a
+     * working copy only matters to a Studio session left open mid-edit, not
+     * to what renders; and cleanDependentLayoutMetadataFiles(), which only
+     * concerns role- and dropdown-based layout variants this package never
+     * creates.
+     */
+    private static function deployRecordView(string $module, array $viewdefs): void
+    {
+        (new ViewdefManager())->saveViewdef(
+            $viewdefs['base']['view']['record'],
+            $module,
+            'base',
+            'record'
+        );
+
+        MetaDataFiles::clearModuleClientCache($module, 'view');
+        MetaDataFiles::clearModuleClientCache($module, 'layout');
+        include_once 'include/TemplateHandler/TemplateHandler.php';
+        TemplateHandler::clearCache($module);
+    }
+
 }
