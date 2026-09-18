@@ -130,21 +130,39 @@ $bdDropCandidates = array(
     'bd01_erp_quote_line',
     'bd01_erp_quote_line_cstm',
 
-    // DECISION 110/111, 2026-09-15 - bd01_erp_quote_cost and its _cstm sibling are
-    // DELIBERATELY NOT IN THIS LIST AND MUST NEVER BE ADDED BACK.
+    // 🔄 DECISION 901 (2026-09-18) SUPERSEDES 110/111 - THE COST TABLES GO TOO.
     //
-    // The cost worksheet is NOT a mirror. It duplicates nothing: material, labour,
-    // both burdens, subcontract, misc, hours, profit and gross-margin percent per
-    // quantity break, and native Products has ONE cost field. Measured on Bench:
-    // 473 rows, 159 of them costed across 42 quotes, labor_cost summing 245,952.15
-    // and material_cost 342,172.63. THERE IS NO OTHER COPY IN SUGAR.
+    // 110 rejected promoting the cost worksheet to core and 111 ruled
+    // bd01_erp_quote_cost KEEP, on the reasoning that it "duplicates nothing -
+    // native Products has ONE cost field". The OWNER REVERSED BOTH: "change my
+    // 110 111 decision retire and delte the cost form benchdog and move it to
+    // core", "we decided to move braks to core", "and reseed the costs data so
+    // thigs dont break".
     //
-    // The owner decided it stays a Bench Dogs module permanently (promotion to core
-    // was REJECTED, not deferred) and re-parents onto the native rung. This package
-    // is explicitly irreversible, so listing those tables here would have destroyed
-    // the only copy the first time anyone built and ran it. It had never been built,
-    // so nothing was lost - but the list was written BEFORE those decisions and
-    // silently contradicted them.
+    // The measurement that settles it (decision 902): Epicor's QuoteQty row IS
+    // the quantity break AND carries the whole build-up - TotalMtlCost,
+    // TotalLbrCost, TotalBurCost, TotalMtlBurCost, TotalSubCost, MiscCost,
+    // TotalCost. Cost and break are the SAME ERP record, so 111's "duplicates
+    // nothing" was true of native Products and beside the point about QuoteQty.
+    //
+    // 🚩 WHAT IS AND IS NOT ALREADY IN CORE, STATED PLAINLY:
+    //   * TOTAL cost per break IS live - quote_lines.py projects total_cost to
+    //     Sugar's native `cost_price`, guarded by is_rolled_up() so an uncosted
+    //     rung is never written as 0 and never reads as 100% margin.
+    //   * The 6-bucket BREAKDOWN and the two markup/profit percentages are read
+    //     into the model and DROPPED. They have no core home yet.
+    // So dropping these tables loses the breakdown from Sugar until that
+    // projection ships. It is RECOVERABLE: the values derive from QuoteQty, so
+    // a re-read reproduces them - "you dont need to extracct you can reseed
+    // from epicor". A 473-row JSON snapshot was also taken before the drop.
+    'bd01_erp_quote_cost',
+    'bd01_erp_quote_cost_cstm',
+
+    // bd01_erp_line_costs_c is STILL withheld, and for its original reason: it
+    // is the OLD link from the retired line module to the cost worksheet, and
+    // until the re-parent onto Products is PROVEN on the tenant it is the only
+    // record of which cost row belonged to which rung, i.e. the reversibility
+    // path. Drop it only as a separate, later, deliberate step.
 
     // The join tables of the retired relationships.
     'bd01_erp_quote_quotes_c',
