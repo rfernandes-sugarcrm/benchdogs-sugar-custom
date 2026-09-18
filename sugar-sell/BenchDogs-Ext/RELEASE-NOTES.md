@@ -1,3 +1,62 @@
+# Unreleased — the bd01 quote mirror is RETIRED (decisions 901/903/904/905)
+
+No version bump and no artifact yet: this entry records the package change so
+the sections below are read as history.
+
+`bd01_ERP_Quote`, `bd01_ERP_Quote_Line` and `bd01_ERP_Quote_Cost` are gone —
+module trees, `custom/Extension` and `custom/modules` subtrees, all four
+relationship definitions, the three subpanel declarations on the live Quotes
+and Accounts layouts, the `beans` installdef, the `moduleList` entries and the
+`relationships`/`vardefs`/`layoutdefs` build plumbing in `pack.php`. The
+package now installs no bean, no table and no module tab.
+
+What replaced them:
+
+- `ErpQuoteOpportunityContribution` and `ErpOpportunityReleaseStagePolicy` read
+  the **native Sugar quote lines** (`erp_total_role` for what counts toward the
+  money, `erp_governing` for the one winning production option) instead of
+  walking `$quote -> mirror quote -> mirror lines`. Rewriting them was a
+  prerequisite, not a follow-up: their first guard was a `load_relationship`
+  that every quote satisfies once the module is gone, so shipping the deletion
+  without the rewrite would have silently stopped valuing the pipeline.
+
+What was removed with no replacement in this package, deliberately:
+
+- **`POST Quotes/:record/bd-sync-quote-tiers`** (`BdBenchDogsActionsApi::
+  syncQuoteTiers`) and its `pickErpQuote()` helper. It backfilled a Sugar line
+  item for every Kinetic quantity break that had none and reconciled the
+  `erp_ordered` flags, entirely by reading the mirror and calling
+  `BdQuoteReflectionHook::backfillMissingQuoteLines` /
+  `refreshOpportunityAmount`. With the mirror gone it could only return a false
+  "not linked to a Kinetic quote" error or fatal on a `require_once` of a
+  deleted file, so the endpoint is removed rather than stubbed. No UI in this
+  package or its siblings called it.
+- **The REQ-13 turnaround stamp.** `stampSentToEstimating()` and
+  `findErpQuotesByScopedKey()` created or found the mirror row for the scoped
+  Kinetic key and wrote `bd_sent_to_estimating_at` on it. That field lived on
+  the mirror, so nothing writes it now. `bd-send-to-estimating` no longer
+  returns `estimating_timestamp_status`, and `bd-send-estimating.js` no longer
+  shows "Turnaround timing is pending exact ERP mirror verification".
+- **`BdDemoDashboards::uninstall()`**, `removeOne()` and `doomedModules()`,
+  plus the call to them in `pre_uninstall.php`. Their only job was stripping
+  tiles that listed a module this uninstall deletes, and this package now
+  deletes no module. An instance that ran `0.9.42-rc44` or earlier keeps three
+  Home tiles ("ERP Quotes", "ERP Quote Lines", "ERP Quote Costs") pointing at
+  the retired modules; they must now be deleted from the dashboard by hand.
+- **`scripts/bd_governing_backfill.php`**, a one-off backfill for the retired
+  mirror, deleted. It was wired to no installdef, hook or schedule.
+- The three Home dashlets that listed the mirror modules. The Account "ERP
+  Quote Pipeline" tile stays — it lists native Quotes.
+
+Also gone with the mirror, and worth knowing before reading older entries:
+`BdQuoteReflectionHook` was the ERP-sync writer of `bd_erp_stage` and
+`bd_erp_total`. The only write left anywhere in the package is
+`bd-send-to-estimating` setting `bd_erp_stage = in_estimating`;
+**nothing writes `bd_erp_total` at all any more**, so the `bd_erp_total` column
+on the Account "ERP Quote Pipeline" tile shows only values a previous install
+already stored. `BdEstimatingNotificationHook` reads both fields and writes
+neither. This ended with the mirror deletion, not with the reference cleanup.
+
 # 0.9.42-rc26 — `post_install.php` actually runs (the post_execute unwrap), and it can no longer force-uninstall itself
 
 Built from `0577bc0` (rc25 + the D29-R1 atomic governing-selection fix). One file
@@ -159,7 +218,9 @@ gone after the additive rc17 and the Bench Dogs rc21 upgrade. Offline diagnosis:
 
 - Nothing writes `Quotes.bd_governing_line`. Under decision 29 the governing
   selection is the explicit `bd01_ERP_Quote_Line.governing` flag, which
-  `ErpQuoteOpportunityContribution` reads fail-closed. The Quote-level label
+  `ErpQuoteOpportunityContribution` reads fail-closed. (That flag was retired
+  with the mirror — see decision 901 at the top of this file; the selection is
+  now `erp_governing` on the native quote line.) The Quote-level label
   therefore only ever showed an empty or stale value.
 - `BdQuotesLayoutExtensions::write()` now removes it from the Bench Dogs Quotes
   panel on every install. That includes upgraded tenants, where the append path
@@ -173,7 +234,8 @@ gone after the additive rc17 and the Bench Dogs rc21 upgrade. Offline diagnosis:
   from Studio. Nothing in core, the SDK or either Sugar repo maps or reads the
   field.
 - Unchanged: `BdGoverningLineHook`, `bd01_ERP_Quote_Line.governing` and the
-  contribution itself.
+  contribution itself. (Both the hook and the flag were retired later — see
+  decision 901 at the top of this file.)
 
 Verification still owed on Bench after install:
 - The served `/lang/en_us` `app_list_strings.erp_lookup_type_list.bd_country`

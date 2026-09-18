@@ -264,11 +264,9 @@ class BdDemoDashboards
             // --- Bench Dogs content ---
             //
             // Reached through the stock `quotes` link on Accounts, which is the
-            // only route from an Account to Bench Dogs data: bd01_ERP_Quote hangs
-            // off Quotes (bd01_erp_quote_quotes), not off Accounts, so a tile
-            // pointed straight at bd01_ERP_Quote has nothing to filter by here.
-            // The bd_* fields are this package's own reflection of the ERP quote,
-            // so the Epicor total and stage show on the account either way.
+            // only route from an Account to this package's data now that the
+            // quote mirror is retired: the bd_* fields live on the Quote itself,
+            // so the Epicor total and stage show on the account through it.
             [
                 'id' => 'bd010001-4d1a-4a4c-9a7f-0d3b6f5b9101',
                 'own_type' => false,
@@ -389,124 +387,6 @@ class BdDemoDashboards
                 ],
                 'context' => [],
             ],
-            // --- Bench Dogs content ---
-            //
-            // Home is module scope rather than record scope, so these can point
-            // straight at the reflection modules and the whole quote ladder is
-            // on screen without a drill-down: the quote, its lines (the
-            // prototype and the three quantity breaks) and the cost breakdown
-            // behind them.
-            [
-                'id' => 'bd010002-4d1a-4a4c-9a7f-0d3b6f5b9102',
-                'own_type' => false,
-                'width' => 12,
-                'height' => 5,
-                'view' => [
-                    'label' => 'ERP Quotes',
-                    'type' => 'dashablelist',
-                    'module' => 'bd01_ERP_Quote',
-                    'link' => null,
-                    'display_columns' => [
-                        'name',
-                        'quote_num',
-                        'current_stage',
-                        'quote_amt',
-                        'quote_total',
-                        'due_date',
-                    ],
-                    'orderBy' => [
-                        'field' => 'quote_num',
-                        'direction' => 'desc',
-                    ],
-                    'last_state' => [
-                        'id' => 'dashable-list',
-                    ],
-                    'limit' => 10,
-                    'freeze_first_column' => true,
-                    'templateEdit' => 'edit',
-                    'skipFetch' => true,
-                ],
-                'context' => [
-                    'module' => 'bd01_ERP_Quote',
-                    'link' => null,
-                    'skipFetch' => true,
-                ],
-            ],
-            [
-                'id' => 'bd010003-4d1a-4a4c-9a7f-0d3b6f5b9103',
-                'own_type' => false,
-                'width' => 12,
-                'height' => 6,
-                'view' => [
-                    'label' => 'ERP Quote Lines',
-                    'type' => 'dashablelist',
-                    'module' => 'bd01_ERP_Quote_Line',
-                    'link' => null,
-                    'display_columns' => [
-                        'line_num',
-                        'part_num',
-                        'selling_qty',
-                        'doc_unit_price',
-                        'doc_ext_price',
-                        'governing',
-                        'prototype',
-                    ],
-                    'orderBy' => [
-                        'field' => 'line_num',
-                        'direction' => 'asc',
-                    ],
-                    'last_state' => [
-                        'id' => 'dashable-list',
-                    ],
-                    'limit' => 10,
-                    'freeze_first_column' => true,
-                    'templateEdit' => 'edit',
-                    'skipFetch' => true,
-                ],
-                'context' => [
-                    'module' => 'bd01_ERP_Quote_Line',
-                    'link' => null,
-                    'skipFetch' => true,
-                ],
-            ],
-            [
-                'id' => 'bd010004-4d1a-4a4c-9a7f-0d3b6f5b9104',
-                'own_type' => false,
-                'width' => 12,
-                'height' => 5,
-                'view' => [
-                    'label' => 'ERP Quote Costs',
-                    'type' => 'dashablelist',
-                    'module' => 'bd01_ERP_Quote_Cost',
-                    'link' => null,
-                    'display_columns' => [
-                        'qty_num',
-                        'quantity',
-                        'material_cost',
-                        'labor_cost',
-                        'material_burden',
-                        'labor_burden',
-                        'misc_cost',
-                        'gross_margin_pct',
-                    ],
-                    'orderBy' => [
-                        'field' => 'qty_num',
-                        'direction' => 'asc',
-                    ],
-                    'last_state' => [
-                        'id' => 'dashable-list',
-                    ],
-                    'limit' => 10,
-                    'freeze_first_column' => true,
-                    'templateEdit' => 'edit',
-                    'skipFetch' => true,
-                ],
-                'context' => [
-                    'module' => 'bd01_ERP_Quote_Cost',
-                    'link' => null,
-                    'skipFetch' => true,
-                ],
-            ],
         ],
     ],
     ];
@@ -525,105 +405,18 @@ class BdDemoDashboards
         }
     }
 
-    /**
-     * Remove only the tiles that point at a module this uninstall is deleting.
-     *
-     * An earlier version of this method did nothing, on the reasoning that a
-     * dashlet type disappears with its own package. That is true of the TYPE and
-     * false of the target: the Bench Dogs filler tiles are stock `dashablelist`
-     * dashlets, so their type survives the uninstall perfectly well while the
-     * module each one lists - bd01_ERP_Quote and friends - does not. The result
-     * is a tile that renders an error where a list used to be, on the Accounts
-     * focus drawer and the Home dashboard, which is precisely the broken-tile
-     * outcome the class comment says is worse than a missing one.
-     *
-     * The old reasoning still holds for everything else, and is why this is
-     * narrow. Tiles this script placed on another package's behalf
-     * (erp-account-snapshot, saah-*, the BAQ dashlet, sales-targets-chart) stay:
-     * they belong to packages that are still installed. Tiles an admin added
-     * stay. Positions of surviving tiles are left exactly as they are rather
-     * than re-flowed, because re-flowing would move somebody else's work to
-     * close a cosmetic gap that the grid closes by itself.
-     */
-    public function uninstall(): void
-    {
-        foreach (self::DASHBOARDS as $spec) {
-            try {
-                $this->removeOne($spec);
-            } catch (\Exception $e) {
-                $GLOBALS['log']->error(
-                    "BdDemoDashboards: could not clean {$spec['dashboard_module']}/"
-                    . "{$spec['view_name']} - " . $e->getMessage()
-                );
-            }
-        }
-    }
-
-    /**
-     * The modules that go away with this package, whose tiles therefore cannot
-     * survive it. Kept in one place so it stays in step with pack.php's `beans`
-     * installdef, which is the list that actually removes them.
-     *
-     * @return array<int, string>
-     */
-    private function doomedModules(): array
-    {
-        return ['bd01_ERP_Quote', 'bd01_ERP_Quote_Line', 'bd01_ERP_Quote_Cost'];
-    }
-
-    private function removeOne(array $spec): void
-    {
-        $bean = $this->findDefaultDashboard($spec);
-        if (!$bean) {
-            return;
-        }
-
-        $doomedModules = $this->doomedModules();
-
-        // Ids of the tiles THIS spec declares against a doomed module. Matching
-        // on id as well as on module means a tile we wrote is recognised even if
-        // an admin has since retargeted it, and the module check below catches a
-        // copy an admin made that carries a different id.
-        $doomedIds = [];
-        foreach ($spec['dashlets'] as $tile) {
-            $module = $tile['context']['module'] ?? '';
-            if ($module !== '' && in_array($module, $doomedModules, true)) {
-                $doomedIds[] = $tile['id'];
-            }
-        }
-
-        $metadata = $this->decodeMetadata($bean->metadata);
-        $existing = isset($metadata['dashlets']) && is_array($metadata['dashlets'])
-            ? $metadata['dashlets']
-            : [];
-
-        $kept = [];
-        $removed = 0;
-        foreach ($existing as $tile) {
-            $id = is_array($tile) ? ($tile['id'] ?? '') : '';
-            $module = is_array($tile) ? ($tile['context']['module'] ?? '') : '';
-            if (($id !== '' && in_array($id, $doomedIds, true))
-                || ($module !== '' && in_array($module, $doomedModules, true))) {
-                $removed++;
-                continue;
-            }
-            $kept[] = $tile;
-        }
-
-        if ($removed === 0) {
-            return;
-        }
-
-        $metadata['dashlets'] = array_values($kept);
-        $bean->metadata = json_encode($metadata);
-        $bean->save();
-
-        $GLOBALS['log']->info(
-            "BdDemoDashboards: removed {$removed} tile(s) from {$spec['name']} that "
-            . 'listed a module this uninstall deletes, and left ' . count($kept)
-            . ' other tile(s) exactly where they were'
-        );
-    }
+    // NO uninstall() ANY MORE. Its whole job was to strip tiles that listed a
+    // module this package deletes, and since decisions 901/903/904/905 retired
+    // the quote mirror this package deletes no module: every tile the spec
+    // above writes lists a stock module that outlives the uninstall, which the
+    // class comment already says needs no cleanup. An empty uninstall() would
+    // be a silent no-op pretending to clean, so it is gone and pre_uninstall.php
+    // no longer calls it.
+    //
+    // Consequence for an instance that ran 0.9.42-rc44 or earlier: the three
+    // "ERP Quotes"/"ERP Quote Lines"/"ERP Quote Costs" tiles that version pinned
+    // to the Home dashboard are no longer removable by this package. They must
+    // be deleted from the dashboard by hand.
 
     private function applyOne(array $spec): void
     {
