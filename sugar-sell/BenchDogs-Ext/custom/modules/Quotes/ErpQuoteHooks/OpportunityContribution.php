@@ -68,13 +68,19 @@ class ErpQuoteOpportunityContribution
         // Fail closed on an ambiguous ladder, exactly as before. More than one
         // governing rung is a selection bug, and guessing which one wins would
         // put a wrong number on a forecast.
-        $governing = array_values(array_filter(
-            $lines,
-            static function (SugarBean $l): bool {
-                return !empty($l->erp_governing);
+        //
+        // Counted with a plain loop on purpose: ModuleScanner DENYLISTS
+        // array_filter (it takes a callable), and a package that uses it is
+        // refused by the SugarCloud hosted scan - "Code attempted to call
+        // denylisted function array_filter" - so the whole release fails to
+        // install. Measured on Bench 2026-09-18, not guessed from the docs.
+        $governingCount = 0;
+        foreach ($lines as $line) {
+            if (!empty($line->erp_governing)) {
+                $governingCount++;
             }
-        ));
-        if (count($governing) > 1) {
+        }
+        if ($governingCount > 1) {
             throw new UnexpectedValueException(
                 'Exactly one governing production option is required'
             );
