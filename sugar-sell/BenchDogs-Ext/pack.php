@@ -2,15 +2,22 @@
 <?php
 /**
  * BenchDogs-Ext Package Builder
- * Bench Dogs ERP reflection modules (bd01_ERP_Quote / _Line / _Cost), their
- * relationships, Quotes bd_* reflection fields, and the after_save reflection
- * hook. Modeled on CORE-ShippingAddresses/pack.php, with the relationship
- * installdefs blocks from ERP-Epicor/pack.php.
+ *
+ * Extension-only package: the bd_* fields on Quotes, Accounts, Opportunities,
+ * Products and Contacts, the ERP_Orders / ERP_OrderLines record surfaces, the
+ * Bench Dogs quote-led REST actions, the estimating notification hook, and the
+ * layout / dashboard deploy scripts. Modeled on CORE-ShippingAddresses/pack.php.
+ *
+ * It ships NO modules of its own. Decisions 901/903/904/905 retired the bd01
+ * quote-mirror modules, which is why there are no `beans`, `relationships`,
+ * `vardefs` or `layoutdefs` installdefs here any more: the Opportunity
+ * contribution and release-stage contracts read the native Sugar quote lines
+ * instead.
  */
 
 $packageID      = 'sugarai_benchdogs_ext';
 $packageLabel   = 'SugarAI: Bench Dogs Extensions';
-$description    = 'Bench Dogs ERP quote reflection: bd01_ERP_Quote/_Line/_Cost modules synced from the ERP, bd_* reflection fields on Quotes, and an after_save hook that reflects ERP stage/totals onto the linked Quote and its primary Opportunity.';
+$description    = 'Bench Dogs quote-led extensions for Sugar Sell: bd_* fields on Quotes, Accounts, Opportunities, Products and Contacts, the quote-led REST actions (create Opportunity + Quote, send to estimating), the estimating notification hook, and the Opportunity contribution / release-stage contracts resolved from the native Sugar quote lines.';
 $supportedVersionRegex = '(26|25|14)\\..*$';
 $acceptableSugarFlavors = array('ENT', 'ULT', 'PRO');
 
@@ -58,26 +65,9 @@ $manifest = array(
 
 $installdefs = array(
     'id'           => $packageID,
-    'beans'        => array(
-        array(
-            'module' => 'bd01_ERP_Quote',
-            'class'  => 'bd01_ERP_Quote',
-            'path'   => 'modules/bd01_ERP_Quote/bd01_ERP_Quote.php',
-            'tab'    => true,
-        ),
-        array(
-            'module' => 'bd01_ERP_Quote_Line',
-            'class'  => 'bd01_ERP_Quote_Line',
-            'path'   => 'modules/bd01_ERP_Quote_Line/bd01_ERP_Quote_Line.php',
-            'tab'    => true,
-        ),
-        array(
-            'module' => 'bd01_ERP_Quote_Cost',
-            'class'  => 'bd01_ERP_Quote_Cost',
-            'path'   => 'modules/bd01_ERP_Quote_Cost/bd01_ERP_Quote_Cost.php',
-            'tab'    => true,
-        ),
-    ),
+    // Empty since the quote mirror was retired: this package installs no bean
+    // of its own, so it creates no table and no module tab.
+    'beans'        => array(),
     'copy'         => array(),
     'post_execute' => array('<basepath>/scripts/post_install.php'),
     // The uninstall counterpart to post_execute, in two halves because the two
@@ -94,30 +84,10 @@ $installdefs = array(
     'post_uninstall' => array('<basepath>/scripts/post_uninstall.php'),
 );
 
-// Add the new modules' own files
-$modulesReal = realpath('modules');
-if ($modulesReal) {
-    $it = new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator($modulesReal, RecursiveDirectoryIterator::SKIP_DOTS),
-        RecursiveIteratorIterator::LEAVES_ONLY
-    );
-    foreach ($it as $file) {
-        if (!$file->isFile()) {
-            continue;
-        }
-        $real = $file->getRealPath();
-        $relInZip = 'modules' . str_replace($modulesReal, '', $real);
-        $relInZip = str_replace(DIRECTORY_SEPARATOR, '/', $relInZip);
-        $installdefs['copy'][] = array(
-            'from' => "<basepath>/{$relInZip}",
-            'to'   => $relInZip,
-        );
-    }
-}
-
-// Add custom/ files (Extension seams: Quotes bd_* fields + dropdown, the
-// dual-path relationship vardef copies, the hook registration + class, and
-// the layout script class)
+// Add custom/ files (Extension seams: the bd_* fields + dropdowns, the hook
+// registrations and their classes, the REST action class, the Opportunity
+// contribution / release-stage contract classes, and the layout script
+// classes). There is no modules/ tree to add: the package ships no module.
 $customReal = realpath('custom');
 if ($customReal) {
     $it = new RecursiveIteratorIterator(
@@ -175,90 +145,6 @@ if ($scriptsReal) {
 }
 
 // ---------------------------------------------------------------------------
-// Relationships (Studio-style metadata) - block shapes from ERP-Epicor/pack.php
-// ---------------------------------------------------------------------------
-
-$knownModules = array('bd01_ERP_Quote_Line', 'bd01_ERP_Quote_Cost', 'bd01_ERP_Quote', 'Quotes', 'Accounts');
-usort($knownModules, function ($a, $b) { return strlen($b) - strlen($a); });
-
-$extractTrailing = function (string $base) use ($knownModules) {
-    foreach ($knownModules as $m) {
-        $needle = '_' . $m;
-        if (substr($base, -strlen($needle)) === $needle) {
-            return $m;
-        }
-    }
-    return null;
-};
-
-$extractLeading = function (string $base) use ($knownModules) {
-    foreach ($knownModules as $m) {
-        $needle = $m . '.';
-        if (strpos($base, $needle) === 0) {
-            return $m;
-        }
-    }
-    return null;
-};
-
-$installdefs['relationships'] = array();
-foreach (glob('relationships/relationships/*MetaData.php') as $f) {
-    $rel = str_replace(DIRECTORY_SEPARATOR, '/', $f);
-    $installdefs['relationships'][] = array(
-        'meta_data' => "<basepath>/{$rel}",
-    );
-}
-
-$installdefs['vardefs'] = array();
-foreach (glob('relationships/vardefs/*.php') as $f) {
-    $rel  = str_replace(DIRECTORY_SEPARATOR, '/', $f);
-    $base = basename($f, '.php');
-    $toModule = $extractTrailing($base);
-    if ($toModule === null) {
-        die("ERROR: cannot determine to_module for {$rel}\n");
-    }
-    $installdefs['vardefs'][] = array('from' => "<basepath>/{$rel}", 'to_module' => $toModule);
-}
-
-$installdefs['layoutdefs'] = array();
-foreach (glob('relationships/layoutdefs/*.php') as $f) {
-    $rel  = str_replace(DIRECTORY_SEPARATOR, '/', $f);
-    $base = basename($f, '.php');
-    $toModule = $extractTrailing($base);
-    if ($toModule === null) {
-        die("ERROR: cannot determine to_module for {$rel}\n");
-    }
-    $installdefs['layoutdefs'][] = array('from' => "<basepath>/{$rel}", 'to_module' => $toModule);
-}
-
-$installdefs['language'] = array();
-foreach (glob('relationships/language/*.php') as $f) {
-    $rel  = str_replace(DIRECTORY_SEPARATOR, '/', $f);
-    $base = basename($f, '.php');
-    $toModule = $extractLeading($base);
-    if ($toModule === null) {
-        die("ERROR: cannot determine to_module for {$rel}\n");
-    }
-    $installdefs['language'][] = array(
-        'from'      => "<basepath>/{$rel}",
-        'to_module' => $toModule,
-        'language'  => 'en_us',
-    );
-}
-
-// moduleList entries: without an 'application' language file the modules have
-// no route and Studio will not list them, however cleanly the beans install.
-foreach (glob('language/application/*.lang.php') as $f) {
-    $rel      = str_replace(DIRECTORY_SEPARATOR, '/', $f);
-    $language = preg_replace('/\.lang\.php$/', '', basename($f));
-    $installdefs['language'][] = array(
-        'from'      => "<basepath>/{$rel}",
-        'to_module' => 'application',
-        'language'  => $language,
-    );
-}
-
-// ---------------------------------------------------------------------------
 // Build the zip
 // ---------------------------------------------------------------------------
 
@@ -298,13 +184,10 @@ $addTree = function (string $rootName) use ($zip) {
     }
 };
 
-// modules/ + custom/ + relationships/ + language/ + scripts/ all ship at the
-// zip root: copy entries and the relationship/vardef/layoutdef/language/
-// post_execute installdef paths all resolve against <basepath>.
-$addTree('modules');
+// custom/ + scripts/ both ship at the zip root: the copy entries and the
+// post_execute / pre_uninstall / post_uninstall installdef paths all resolve
+// against <basepath>.
 $addTree('custom');
-$addTree('relationships');
-$addTree('language');
 $addTree('scripts');
 
 $zip->addFromString('manifest.php', $manifestContent);

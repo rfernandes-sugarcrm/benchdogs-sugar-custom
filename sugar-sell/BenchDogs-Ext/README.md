@@ -1,30 +1,46 @@
 # BenchDogs-Ext
 
-Bench Dogs MLP package for Sugar Sell: the bd01 ERP reflection modules
-(`bd01_ERP_Quote`, `bd01_ERP_Quote_Line`, `bd01_ERP_Quote_Cost`), their
-relationships, the `bd_*` reflection fields on Quotes, and the logic hooks
-that make the reflected data drive the pipeline. Extension-only: every file
-installs through Module Loader into `custom/` or as new modules — nothing
-overrides a stock Sugar file.
+Bench Dogs MLP package for Sugar Sell: the `bd_*` fields on Quotes, Accounts,
+Opportunities, Products and Contacts, the quote-led REST actions, the logic
+hooks that drive the pipeline, and Bench's implementations of the Opportunity
+contribution and release-stage contracts. Extension-only: every file installs
+through Module Loader into `custom/` — nothing overrides a stock Sugar file,
+and the package ships no module of its own.
+
+> ### The bd01 quote mirror is RETIRED
+>
+> Decisions 901/903/904/905 removed the `bd01_ERP_Quote`, `bd01_ERP_Quote_Line`
+> and `bd01_ERP_Quote_Cost` modules, their four relationships, their subpanels,
+> their hooks (`BdQuoteReflectionHook`, `BdGoverningLineHook`,
+> `BdGoverningAutoSelect`) and their dashlets. The package no longer installs a
+> bean, a table or a module tab.
+>
+> Everything that used to walk the mirror now reads the **native Sugar quote
+> lines**: `erp_total_role` says whether a line belongs in the quote's money,
+> and `erp_governing` marks the one winning production option. Where this
+> document still describes the mirror, it is describing history.
 
 ## Logic hooks
 
 | Module | Hook class | Fires on | Does |
 |---|---|---|---|
-| `bd01_ERP_Quote` | `BdQuoteReflectionHook` | after_save | Reflects ERP fields onto the linked Quote and maintains Bench stage/forecast behavior; shared ERP-Core owns Opportunity headline amount and its currency conversion in Opportunities-only mode |
-| `bd01_ERP_Quote_Line` | `BdGoverningLineHook` | after_save | Demotes governing siblings and requests a reflection refresh; installed single-session governing-amount behavior passes, while concurrent uniqueness remains unverified |
 | `Quotes` | `BdEstimatingNotificationHook` | after_save | Creates a Notifications record when `bd_erp_stage` enters `in_estimating` |
+
+The two mirror hooks that used to head this table, `BdQuoteReflectionHook` on
+`bd01_ERP_Quote` and `BdGoverningLineHook` on `bd01_ERP_Quote_Line`, were
+retired with the modules they fired on.
 
 ### Governing-line rollup (REQ-5 / REQ-6)
 
-`bd01_ERP_Quote_Line.governing` is editable on the module's record view,
-list view, and the lines subpanel under `bd01_ERP_Quote`. Marking a line
-governing:
+The governing selection is `erp_governing` on the **native Sugar quote line**,
+set by a person on the quoted line items. `ErpQuoteOpportunityContribution`
+reads it fail-closed: more than one governing line on a quote raises rather
+than guessing which option wins.
 
-1. clears the flag on sibling lines of the same ERP quote through sequential
-   saves (`BdGoverningLineHook`, after_save); this is not an atomic guarantee
-   against concurrent edits;
-2. requests `BdQuoteReflectionHook::refreshOpportunityAmount`.
+Sibling demotion went with the mirror. Nothing in this package clears the flag
+on the other lines any more, and nothing requests a reflection refresh —
+exactly one governing line per quote is the caller's responsibility, and the
+contribution refuses the quote when that does not hold.
 
 Both QA profiles use **Opportunities-only**, with Quote line items and no
 Opportunity Revenue Line Items. This is a package invariant, not a runtime
@@ -48,16 +64,17 @@ Missing/multiple selection, multiple prototypes and multiple linked ERP quotes
 refuse instead of guessing or reverting to the summed display total.
 
 The release contract for this selection is **decision 29** (2026-09-13): an
-explicit selection in Sugar, fail-closed. A person sets
-`bd01_ERP_Quote_Line.governing`. Nothing reads a governing field from the
-Kinetic Quote header, and no UD01 marker is created. EPIC06 has no such field,
+explicit selection in Sugar, fail-closed. A person sets `erp_governing` on the
+native quote line. Nothing reads a governing field from the Kinetic Quote
+header, and no UD01 marker is created. EPIC06 has no such field,
 and a real Kinetic UD column is a later follow-up with an external owner.
 Automatic ERP-driven selection is therefore not a release requirement.
 Concurrent selection edits and revision lineage remain open acceptance items.
 
 The Quote-level `bd_governing_line` label is retired, because nothing writes it
 under decision 29. rc23 removes it from the Bench Dogs Quotes panel on every
-install and from the Account "ERP Quote Pipeline" dashlet. The vardef and
+install and from the Account "ERP Quote Pipeline" dashlet (which survives the
+mirror's retirement: it lists native Quotes, not mirror rows). The vardef and
 column stay for existing data.
 
 The shared amount writer must run before the Bench forecast refresh on a
@@ -175,9 +192,11 @@ not, with the In Estimating view as the safe operational fallback.
 When a Quote's `bd_erp_stage` transitions into `in_estimating` (the closest
 `bd_erp_stage_list` key to "ready for estimating" — the list deliberately
 has no separate `ready_for_estimating` value), `BdEstimatingNotificationHook`
-creates a Sugar **Notifications** record. Because `bd_erp_stage` is normally
-written by `BdQuoteReflectionHook`, the notification fires on the ERP sync
-path as well as on manual stage edits.
+creates a Sugar **Notifications** record. `BdQuoteReflectionHook` used to write
+`bd_erp_stage` on the ERP sync path; with the mirror retired the only writer
+left in this package is the `bd-send-to-estimating` action, which sets
+`in_estimating`, so the notification fires on that action and on manual stage
+edits.
 
 Outbound recipient, in order:
 

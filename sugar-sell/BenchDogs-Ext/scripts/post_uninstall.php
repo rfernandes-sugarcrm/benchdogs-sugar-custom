@@ -30,11 +30,10 @@
 // Proof of life - see the matching note in pre_uninstall.php.
 $GLOBALS['log']->fatal('BenchDogs-Ext: post_uninstall running - rebuilding caches');
 
-// The stock modules this package extended with fields, hooks or layouts. Its
-// OWN three modules (bd01_ERP_Quote and friends) are deliberately not listed:
-// by now the uninstaller has dropped their beans, and asking the repair to
-// rebuild a module that no longer exists is the one call here likely to throw
-// rather than no-op.
+// The stock modules this package extended with fields, hooks or layouts. That
+// is now the whole list: since the bd01 quote mirror was retired the package
+// installs no module of its own, so there is no bean of ours left for the
+// uninstaller to drop and nothing else to repair.
 $bdModules = array(
     'Quotes',
     'Products',

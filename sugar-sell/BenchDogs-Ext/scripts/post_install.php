@@ -178,9 +178,9 @@ try {
 // has moved the field keeps their placement.
 //
 // This block SELECTS NOTHING and VALUES NOTHING. It writes deployed metadata
-// only. No install path in this package calls BdGoverningAutoSelect; the
-// retroactive route is scripts/bd_governing_backfill.php, which is dry-run by
-// default and is wired to no installdef, hook or schedule.
+// only. There is no automatic selection left to run: BdGoverningAutoSelect and
+// the one-off bd_governing_backfill.php script went with the retired quote
+// mirror, so bd_governing_origin is only ever set by a person.
 try {
     $bdOppsHelper = 'custom/modules/Opportunities/BdOpportunitiesLayoutExtensions.php';
     if (file_exists($bdOppsHelper)) {
@@ -275,7 +275,7 @@ try {
 
 try {
     SugarAutoLoader::load('modules/Administration/QuickRepairAndRebuild.php');
-    $bdRepairModules = ['Quotes', 'Opportunities', 'Accounts', 'bd01_ERP_Quote', 'bd01_ERP_Quote_Line', 'bd01_ERP_Quote_Cost'];
+    $bdRepairModules = ['Quotes', 'Opportunities', 'Accounts'];
     $bdRac = new RepairAndClear();
     $bdRac->show_output = false;
     $bdRac->module_list = $bdRepairModules;

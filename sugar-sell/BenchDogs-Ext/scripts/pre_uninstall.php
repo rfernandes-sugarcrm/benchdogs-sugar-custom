@@ -176,37 +176,19 @@ try {
     $GLOBALS['log']->error('BenchDogs-Ext: QLI columns cleanup failed: ' . $e->getMessage());
 }
 
-// 4. Dashboard tiles that list a module this uninstall deletes.
+// 4. Dashboard tiles: NOTHING TO DO, and deliberately no call here.
 //
-// GUARD THE CLASS, NOT THE PATH. BdDemoDashboards.php exists at two paths on an
-// installed instance - beside this script in the extracted package, and at
-// custom/include/bd_scripts/ where the copy installdef put it - and
-// post_install.php reaches for the first. require_once dedupes by RESOLVED
-// PATH, not by class name, so on an uninstall_before_upgrade run, which
-// executes this file and post_install.php in ONE request, both copies would
-// load and PHP would fatal with "Cannot redeclare class BdDemoDashboards". That
-// kills the run outright, and Module Loader's own failure handling makes it
-// look like anything but what it is. The sibling repository lost a demo
-// instance to exactly this defect on 2026-09-11; scripts/mlp_lint.py MLP001
-// exists because of it and flagged this file before it ever shipped.
-try {
-    if (!class_exists('BdDemoDashboards', false)) {
-        $bdDashboards = __DIR__ . '/BdDemoDashboards.php';
-        if (!file_exists($bdDashboards)) {
-            $bdDashboards = 'custom/include/bd_scripts/BdDemoDashboards.php';
-        }
-        if (file_exists($bdDashboards)) {
-            require_once $bdDashboards;
-        }
-    }
-    if (class_exists('BdDemoDashboards')) {
-        (new BdDemoDashboards())->uninstall();
-    } else {
-        $GLOBALS['log']->error('BenchDogs-Ext: BdDemoDashboards not available; dashboard tiles not cleaned up');
-    }
-} catch (Throwable $e) {
-    $GLOBALS['log']->error('BenchDogs-Ext: dashboard cleanup failed: ' . $e->getMessage());
-}
+// Until the quote mirror was retired (decisions 901/903/904/905) this step ran
+// BdDemoDashboards::uninstall() to strip the tiles that listed a module the
+// uninstall was about to delete. This package now deletes no module of its
+// own, so every tile it pins lists a stock module that outlives the uninstall -
+// the case BdDemoDashboards' own class comment says needs no cleanup. That
+// method is gone rather than emptied, so nothing here pretends to clean.
+//
+// An instance that ran 0.9.42-rc44 or earlier still has three Home tiles
+// ("ERP Quotes", "ERP Quote Lines", "ERP Quote Costs") pointing at the retired
+// modules. This package can no longer remove them; they have to be deleted
+// from the dashboard by hand.
 
 // WHAT THIS DELIBERATELY DOES NOT DO
 //
