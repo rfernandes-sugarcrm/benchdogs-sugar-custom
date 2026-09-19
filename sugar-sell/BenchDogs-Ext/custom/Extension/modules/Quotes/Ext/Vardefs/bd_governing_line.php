@@ -1,20 +1,26 @@
 <?php
 
-// RETIRED - nothing writes this field. Decision 29 (2026-09-13): the governing
-// selection is an explicit flag a person sets in Sugar, read fail-closed by
-// ErpQuoteOpportunityContribution. Since decisions 901/903 retired the quote
-// mirror that flag is `erp_governing` on the NATIVE Sugar quote line. No
-// Quote-level label is derived from it, and no Kinetic header or UD01 field
-// is read. Kept rather than deleted: an upgrade never removes a copied vardef
-// file (BD-L-0005), and the column may still hold old values. Not placed on any
-// Bench layout or dashboard (BdQuotesLayoutExtensions::RETIRED_PANEL_FIELDS),
-// and hidden from Studio so it is not re-placed by hand.
-$dictionary['Quote']['fields']['bd_governing_line'] = array(
-    'name' => 'bd_governing_line',
-    'vname' => 'LBL_BD_GOVERNING_LINE',
-    'type' => 'varchar',
-    'len' => 255,
-    'comment' => 'Retired: no writer (decision 29); kept for existing data',
-    'reportable' => true,
-    'studio' => false,
-);
+/**
+ * RETIRED. This file intentionally declares no fields.
+ *
+ * It used to declare one field on Quotes:
+ *
+ *   bd_governing_line   the governing price break, as a Quote-level label
+ *
+ * 🔒 1044 retired it. The governing flag moved OUT of this package: it is `Products.erp_governing` (bool), declared by ERP-Epicor-PartialFulfillment and enforced by that package's ErpQuoteHooks/OpportunityContribution.php together with ERP-Core's QuoteOpportunityAmount.php. Bench ships no governing logic at all any more — no hook, no API, no transformer. This Quote-level copy had NO WRITER and was already stripped from the Bench panel by RETIRED_PANEL_FIELDS, so it only ever rendered empty or stale.
+ *
+ * WHY THIS FILE IS EMPTIED RATHER THAN DELETED. On Sugar Cloud, neither
+ * omitting a file from the build nor uninstalling the package removes a
+ * custom/Extension file a previous install already copied — proven on Bench
+ * 2026-09-14, when rc24 dropped six such files and was INERT: installed clean,
+ * fields still present. ONLY OVERWRITING THE FILE RETIRES IT. This stub is that
+ * overwrite; see ERP_OrderLines/Ext/Vardefs/bd_shipped_value.php for the full
+ * measurement.
+ *
+ * EXISTING DATA. Removing a vardef does not drop the column; stored values stay
+ * until someone removes them deliberately, which is harmless — with no vardef
+ * Sugar neither reads nor displays them. With no writer, every row is null.
+ *
+ * Safe to delete this stub outright once every instance has taken a release at
+ * or after this one.
+ */

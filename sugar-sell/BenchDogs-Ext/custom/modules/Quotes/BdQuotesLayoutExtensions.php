@@ -438,7 +438,6 @@ class BdQuotesLayoutExtensions
             'fields' => [
                 ['name' => 'bd_erp_total', 'label' => 'LBL_BD_ERP_TOTAL', 'readonly' => true],
                 ['name' => 'bd_erp_stage', 'label' => 'LBL_BD_ERP_STAGE', 'readonly' => true],
-                ['name' => 'bd_priced_at', 'label' => 'LBL_BD_PRICED_AT', 'readonly' => true],
                 ['name' => 'bd_reason_code', 'label' => 'LBL_BD_REASON_CODE', 'readonly' => true],
             ],
         ];
@@ -458,7 +457,7 @@ class BdQuotesLayoutExtensions
      * otherwise returns early and would keep the old entry forever. An admin
      * who placed the field on another panel keeps it.
      */
-    private const RETIRED_PANEL_FIELDS = ['bd_governing_line'];
+    private const RETIRED_PANEL_FIELDS = ['bd_governing_line', 'bd_priced_at'];
 
     private static function dropRetiredPanelFields(array &$panel): bool
     {
