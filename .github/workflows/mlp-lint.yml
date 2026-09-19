@@ -108,6 +108,37 @@ jobs:
       - name: Check the artifact is loadable
         run: python3 scripts/check_built_packages.py
 
+      # 🚩 THE WHOLE SUITE, and it runs HERE rather than in `rules` for a
+      # measured reason: 10 of these tests assert things that are only true of a
+      # BUILT package (manifest contents, installdefs, stage policy), so before
+      # `Build every package` above they fail with FileNotFoundError on
+      # releases/*.zip. After it: 166 passed, 1 skipped.
+      #
+      # 🛑 UNTIL NOW CI RAN EXACTLY ONE FILE — `scripts/tests/test_mlp_lint.py`.
+      # There are 19. **156 passing tests never executed in CI**, which is the
+      # same hole PR #52 found in erp-integration-sugar, where `unittest
+      # discover` silently collected 652 of 892. A test that never runs is
+      # documentation, not a guard: the G15 duplicate-button retirement had no
+      # coverage at all until this commit, and nothing would have caught it
+      # coming back.
+      - name: The whole test suite
+        run: |
+          pip3 install --quiet --break-system-packages pytest || pip3 install --quiet pytest
+          python3 -m pytest scripts/tests -q
+
+      # A collected-count floor. Asserting the exit code alone cannot see a
+      # runner that silently stops collecting - exactly how the 652-of-892 hole
+      # stayed invisible. Raise this number when the suite genuinely grows.
+      - name: The suite actually collected its tests
+        run: |
+          COUNT=$(python3 -m pytest scripts/tests --collect-only -q 2>/dev/null | tail -1 | grep -oE '^[0-9]+' || echo 0)
+          echo "collected: $COUNT"
+          if [ "${COUNT:-0}" -lt 160 ]; then
+            echo "::error::only $COUNT tests collected; expected >= 160. A collector that "
+            echo "::error::silently declines to collect is indistinguishable from a passing suite."
+            exit 1
+          fi
+
       # The same rules again, this time over the real generated manifest.
       - name: Audit the built zip
         run: python3 scripts/mlp_lint.py --zips-from sugar-sell
