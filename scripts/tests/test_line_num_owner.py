@@ -43,43 +43,21 @@ GRID = PKG / "custom/modules/Quotes/BdQliColumnsLayout.php"
 VARDEF = PKG / "custom/Extension/modules/Products/Ext/Vardefs/bd_line_order_fields.php"
 LABELS = PKG / "custom/Extension/modules/Products/Ext/Language/en_us.bd_line_order.php"
 
-#: NOT SCANNED, and the exclusion is the point rather than an oversight.
-#: ``custom/modules/bd01_ERP_Quote/BdQuoteReflectionHook.php`` still reads AND
-#: writes the retired field. That file belongs to the bd01 mirror retirement,
-#: a separate thread, and is deliberately not edited here.
-#:
-#: 🛑 CORRECTION, AND IT IS NOT COSMETIC. This comment first said those writes
-#: "become no-ops once the vardef is gone … so it is inert rather than wrong."
-#: THAT WAS WRONG, and it was wrong in the direction that hides a regression.
-#: The WRITE is indeed dropped, but ``joinErpLinesToQlis()`` also READS the
-#: field, and that read is PASS 1 — the join its own docstring calls "the only
-#: join that is certain, because something deliberately wrote it". With the
-#: vardef gone the read is always null, ``$lineNum`` is always 0, the exact
-#: map is always empty, and EVERY ERP line falls through to PASS 2's tolerant
-#: ``(part number, quantity)`` match. PASS 2 refuses an ambiguous pair on
-#: purpose, so those lines are never placed at all. The stamp-back that used to
-#: heal the xref for the next run dies with the write, so the tolerant match is
-#: redone from scratch every time and never converges. Two live callers
-#: (BdQuoteReflectionHook.php:863 and :1149).
-#:
-#: ➡️ THE FIX IS ONE LINE AND IT MAKES PASS 1 STRONGER, NOT WEAKER: point that
-#: read at ``erp_quote_line_num``. Core populates it on 515 of 521
-#: connector-owned rows against the 6 this column ever reached, so the "certain"
-#: join becomes certain far more often — and the stamp-back stops being needed,
-#: because core rewrites the value every sync.
-#:
-#: ➡️ SEQUENCING: the RETIREMENT commit on this branch must not land until that
-#: hook is repointed or the bd01 directory is retired. The reader-repoint commit
-#: before it is safe on its own.
-UNOWNED = PKG / "custom/modules/bd01_ERP_Quote"
+#: RESOLVED. This used to carve `custom/modules/bd01_ERP_Quote/` out of the scan,
+#: because `BdQuoteReflectionHook.php` still READ and WROTE the retired field and
+#: repointing it belonged to the bd01 mirror retirement rather than to 🔒 1032.
+#: That sequencing obligation - "the RETIREMENT commit must not land until that
+#: hook is repointed or the bd01 directory is retired" - was discharged by the
+#: retirement: decision 901/903 removed the directory outright, so there is no
+#: longer a file to exclude and the scan below now covers everything the package
+#: ships. The exclusion was deleted rather than left in place pointing at
+#: nothing, because a filter that matches no path reads as coverage of a risk
+#: that is no longer being managed.
 
 
 def _php_sources():
-    """Every PHP file this package ships, minus the bd01 mirror (see UNOWNED)."""
-    for path in PKG.rglob("*.php"):
-        if UNOWNED in path.parents:
-            continue
-        yield path
+    """Every PHP file this package ships. Nothing is excluded — see above."""
+    return PKG.rglob("*.php")
 
 
 def _code_without_comments(source) -> str:
@@ -132,33 +110,33 @@ class BenchKeepsNoCopyOfTheErpLineNumber(unittest.TestCase):
         ]
         self.assertEqual(offenders, [], offenders)
 
-    def test_both_readers_now_read_cores_field(self):
-        """Anti-vacuity for every test above: the two readers must still be
-        reading SOMETHING. A suite that only checks absence passes just as well
-        on a package that deleted the feature outright."""
-        policy = _code_without_comments(POLICY)
-        self.assertIn(f"$product->{CORE_FIELD}", policy)
-        self.assertIn("no unambiguous ERP quote-line identity", POLICY.read_text())
+    def test_the_surviving_readers_still_read_something(self):
+        """Anti-vacuity for every test above: a suite that only checks ABSENCE
+        passes just as well on a package that deleted the feature outright.
 
-        # THE REFUSAL THAT MAKES AN UNKNOWN LINE SAFE MUST SURVIVE THE REPOINT,
-        # and it has to be pinned on the WHOLE condition, not on `<= 0` alone.
-        # `$lineNum <= 0` appears TWICE in this file — once in the ERP-line loop
-        # above and once in the ordered-line guard here — so a bare substring
-        # check passes while either survives. Measured: softening the FIRST one
-        # to `< 0` left that check green. The `!array_key_exists` half is what
-        # makes this occurrence unique.
-        self.assertIn(
-            "$lineNum <= 0 || !array_key_exists($lineNum, $lineKinds)", policy
-        )
-        # And the ERP-line loop's own duplicate/identity refusal, the other
-        # `<= 0`, which the above deliberately does not stand in for.
-        self.assertIn(
-            "$lineNum <= 0 || array_key_exists($lineNum, $lineKinds)", policy
-        )
-
+        🛑 THIS USED TO ASSERT *BOTH* READERS READ THE CORE FIELD, and that is no
+        longer true of one of them. When 🔒 1032 repointed Bench off
+        ``bd_erp_line_num``, the release-stage policy read a line NUMBER to map
+        each ordered line onto a prototype/production role. Decision 901/903
+        retired the ``bd01_*`` mirror that supplied the roles, and the policy was
+        rewritten to COUNT COMMITTED LINES instead - it no longer needs an
+        identity per line, so it reads no line number at all. Re-adding one to
+        satisfy this test would put back a read the code has no use for. The grid
+        remains the reader of the core field, and the policy is pinned on what it
+        actually reads now.
+        """
         grid = _code_without_comments(GRID)
         self.assertIn(f"'{CORE_FIELD}'", grid)
         self.assertIn("bdOrderFieldNames", grid)
+
+        # The policy still reads the native line, and still refuses rather than
+        # classifying off a partial read. Both halves are pinned so that the
+        # retirement above cannot quietly become "reads nothing".
+        policy = _code_without_comments(POLICY)
+        self.assertIn("$product->erp_ordered", policy)
+        self.assertIn("BeanFactory::retrieveBean(", policy)
+        self.assertIn("No committed Quote line is visible", policy)
+        self.assertNotIn(RETIRED_FIELD, policy)
 
     def test_the_grid_injects_exactly_the_core_column(self):
         """Pins the list itself, not merely that the name appears: an extra

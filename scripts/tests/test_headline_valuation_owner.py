@@ -1,16 +1,41 @@
-"""Cross-package headline ownership regression using real PHP hook methods.
+"""ERP-Core owns the primary Quote's Opportunity headline amount.
 
 Run with PHP 8.2 and the sibling erp-integration-sugar checkout present. The
 beans/relationships are isolated doubles: this never loads Sugar, connects to
-an API/database, or creates Revenue Line Items. The public Bench refresh path
-is real, including its mode/primary guards and deliverable computation.
+an API/database, or creates Revenue Line Items.
 
-These assertions express the accepted single-owner contract, not the current
-bug. A single matching ERP line avoids deciding REQ-5 alternative-break policy.
-Native tax/shipping materialization is explicitly pending: an earlier fake
-save omitted SugarLogic and incorrectly suggested deployed corruption. Sugar
-26.2 SugarBean::save calls updateCalculatedFields, so effective vardefs and
-native model integration must be validated before changing recalculation.
+WHAT THIS FILE USED TO BE, AND WHY IT SHRANK
+--------------------------------------------
+It was a CROSS-PACKAGE ownership regression: ERP-Core's ``QuoteOpportunityAmount``
+against Bench's competing writer ``BdQuoteReflectionHook::refreshOpportunityAmount``,
+proving the shared owner's number survived the Bench one. Decision 901/903 retired
+the ``bd01_*`` quote mirror and 🔒 1044 retired the Bench estimating layer with it,
+so ``BdQuoteReflectionHook`` no longer exists and Bench has no second writer to
+lose to. Every assertion of the form "the Bench refresh cannot replace the shared
+total" was deleted rather than repointed: there is no second writer to constrain,
+and a test that constrains nothing reads as coverage without being any.
+
+Deleted with it were the forecast-provenance assertions (``best_case`` /
+``worst_case`` / ``bd_forecast_managed_value`` / ``bd_*_origin``). Their writer was
+the same retired Bench hook. ``bd_forecast_managed_value`` in particular is an
+ORPHAN - ERP-Core's ``QuoteOpportunityAmount.php`` contains zero references to any
+``bd_`` field - so asserting it equals the headline was asserting behaviour that
+nothing implements.
+
+WHAT REMAINS is the half that has a live owner: ERP-Core publishes the headline
+from the primary Quote's own native total, converts currency through
+``SugarCurrency``, and refuses to touch a closed or non-primary Opportunity.
+
+Native tax/shipping materialization was an obligation of the retired Bench
+materialization path and went with it; ERP-Core reads the Quote's stored
+``total``, which Sugar has already calculated.
+
+NOTE ON THE CONTRIBUTION CONTRACT: ``QuoteOpportunityAmount::contribution()``
+probes ``file_exists('custom/modules/Quotes/ErpQuoteHooks/OpportunityContribution.php')``
+relative to the CWD. These tests run with ``cwd=WORKSPACE``, so that probe misses
+and the writer falls back to ``(float) $quote->total`` - which is exactly the
+behaviour under test here. The provider itself is exercised directly, with its own
+doubles, in ``test_governing_contribution.py``.
 """
 
 import json
@@ -22,6 +47,12 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKSPACE = ROOT.parent
+# This checkout's own directory name. The PHP below runs with cwd=WORKSPACE so it
+# can require BOTH this repo and the sibling erp-integration-sugar checkout by
+# path. Hardcoding "benchdogs-sugar-custom" made every such test read whatever
+# tree happened to carry that name - a git worktree ran its own tests against a
+# DIFFERENT commit's source and could not see its own changes.
+REPO = ROOT.name
 SHARED_HOOK = (
     WORKSPACE / "erp-integration-sugar/sugar-sell/ERP-Core/src/custom/modules"
     / "Quotes/QuoteOpportunityAmount.php"
@@ -48,8 +79,7 @@ class SugarBean {
     }
 }
 class Opportunity extends SugarBean {
-    // Shared ERP-Core owns this mode check. The Bench implementation is
-    // independently scanned to prove that it never calls this method.
+    // Shared ERP-Core owns this mode check.
     public static function usingRevenueLineItems() { return false; }
 }
 class SugarConfig {
@@ -72,7 +102,14 @@ class BeanFactory {
         return self::$beans[$module][$id]
             ?? throw new Exception('Unexpected record read: ' . $module . '/' . $id);
     }
+    // Creation stays refused by default: the shared writer must never create a
+    // record. A consumer that legitimately needs a seed bean (the contribution
+    // provider seeds a Products query) opts in per module, so the guard still
+    // holds everywhere it is not explicitly waived.
     public static function newBean($module) {
+        if (in_array($module, $GLOBALS['new_bean_modules'] ?? [], true)) {
+            return new SugarBean();
+        }
         throw new Exception('Unexpected record creation: ' . $module);
     }
 }
@@ -83,7 +120,7 @@ $GLOBALS['log'] = new class {
     public function error($message) { $this->errors[] = $message; }
 };
 $GLOBALS['relationship_reads'] = [];
-require 'benchdogs-sugar-custom/sugar-sell/BenchDogs-Ext/custom/modules/bd01_ERP_Quote/BdQuoteReflectionHook.php';
+$GLOBALS['new_bean_modules'] = [];
 require 'erp-integration-sugar/sugar-sell/ERP-Core/src/custom/modules/Quotes/QuoteOpportunityAmount.php';
 $opp = new Opportunity();
 $opp->id = 'owned-opportunity';
@@ -106,38 +143,12 @@ $product->erp_quote_line_num = 1;
 $product->quantity = 2;
 $product->discount_price = 125;
 $quote->products = new TestLink([$product]);
-$erp = new SugarBean();
-$erp->id = 'owned-erp-quote';
-$erp->quote_num = 42;
-$erp->sugar_quote_id = $quote->id;
-$line = new SugarBean();
-$line->id = 'owned-erp-line';
-$line->line_num = 1;
-$line->doc_ext_price = 250;
-$line->selling_qty = 2;
-$line->part_num = 'OWNED-PART';
-$erp->bd01_erp_quote_lines = new TestLink([$line]);
 BeanFactory::$beans = [
     'Opportunities' => [$opp->id => $opp],
     'Quotes' => [$quote->id => $quote],
 ];
 $shared = new QuoteOpportunityAmount();
-$bench = new BdQuoteReflectionHook();
 $trace = [];
-'''
-
-MATERIALIZED = r'''
-$GLOBALS['quote_save_hook'] = true;
-$erp->sugar_quote_id = '';
-$erp->bd_materialized_quote_id = $quote->id;
-$erp->bd_materialize_status = 'materialized';  // legacy quote this package built
-$line->name = 'Owned ERP line';
-$line->doc_unit_price = 125;
-$product->name = $line->name;
-$bundle = new SugarBean();
-$bundle->id = 'owned-bundle';
-$bundle->products = new TestLink([$product]);
-$quote->product_bundles = new TestLink([$bundle]);
 '''
 
 
@@ -154,11 +165,6 @@ echo json_encode([
     'quote_total' => $quote->total,
     'quote_saves' => $quote->saves,
     'stage' => $opp->sales_stage,
-    'best_case' => $opp->best_case ?? null,
-    'worst_case' => $opp->worst_case ?? null,
-    'managed_value' => $opp->bd_forecast_managed_value ?? null,
-    'best_origin' => $opp->bd_best_case_origin ?? null,
-    'worst_origin' => $opp->bd_worst_case_origin ?? null,
     'relationship_reads' => $GLOBALS['relationship_reads'],
     'errors' => $GLOBALS['log']->errors,
 ]);
@@ -170,210 +176,45 @@ echo json_encode([
         self.assertEqual(len(observed["errors"]), expected_errors, observed)
         return observed
 
-    def test_shared_owner_control_preserves_native_tax_and_shipping(self):
+    def test_shared_owner_preserves_native_tax_and_shipping(self):
+        """The headline is the Quote's stored total, which already carries tax
+        and shipping - not a re-derived sum of the lines."""
         observed = self.execute("$shared->refresh($quote);")
         self.assertEqual(observed["amount"], 280)
         self.assertEqual(observed["saves"], 1)
 
-    def test_equal_subtotal_control_cannot_expose_the_competing_writer(self):
-        observed = self.execute(r'''
-$quote->total = 250;
-$quote->tax = 0;
-$quote->shipping = 0;
-$shared->refresh($quote);
-$bench->refreshOpportunityAmount($erp);
-''')
-        self.assertEqual(observed["amount"], 250)
-        self.assertEqual(observed["saves"], 1)
-
-    def test_nonprimary_control_does_not_take_headline_ownership(self):
+    def test_nonprimary_quote_does_not_take_headline_ownership(self):
         observed = self.execute(r'''
 $quote->erp_is_primary_quote = false;
 $opp->amount = 99;
 $shared->refresh($quote);
-$bench->refreshOpportunityAmount($erp);
 ''')
         self.assertEqual(observed["amount"], 99)
         self.assertEqual(observed["saves"], 0)
 
-    def test_bench_refresh_cannot_replace_shared_native_total_with_subtotal(self):
-        observed = self.execute(r'''
-$shared->refresh($quote);
-$bench->refreshOpportunityAmount($erp);
-''')
-        self.assertEqual(observed["amount"], 280, observed)
-
-    def test_alternating_public_triggers_converge_without_headline_oscillation(self):
-        observed = self.execute(r'''
-$shared->refresh($quote);
-$trace[] = $opp->amount;
-$bench->refreshOpportunityAmount($erp);
-$trace[] = $opp->amount;
-$shared->refresh($quote);
-$trace[] = $opp->amount;
-''')
-        self.assertEqual(observed["trace"], [280, 280, 280], observed)
-        self.assertEqual(observed["saves"], 1, observed)
-
-    def test_repriced_quote_cannot_be_reverted_by_old_erp_line_observation(self):
+    def test_repriced_quote_publishes_the_new_total(self):
         observed = self.execute(r'''
 $quote->total = 530;
 $product->discount_price = 250;
 $shared->refresh($quote);
-// ERP reflection still holds 250 until its next sync; it is not the Quote total.
-$bench->refreshOpportunityAmount($erp);
 ''')
         self.assertEqual(observed["amount"], 530, observed)
 
-    def test_closed_lost_guard_is_not_undone_by_bench_refresh(self):
+    def test_closed_lost_opportunity_is_never_revalued(self):
         observed = self.execute(r'''
 $opp->sales_stage = 'Closed Lost';
 $opp->amount = 99;
 $shared->refresh($quote);
-$bench->refreshOpportunityAmount($erp);
 ''')
         self.assertEqual(observed["amount"], 99, observed)
         self.assertEqual(observed["saves"], 0, observed)
 
-    def test_opportunities_only_refresh_never_accesses_revenue_line_items(self):
-        observed = self.execute("$bench->refreshOpportunityAmount($erp);")
-        self.assertNotIn("revenuelineitems", observed["relationship_reads"])
-
-    def test_ordered_release_does_not_give_bench_a_second_stage_writer(self):
-        observed = self.execute(r'''
-$product->erp_ordered = true;
-$product->erp_quote_line_num = 1;
-$line->prototype = true;
-$opp->sales_stage = 'Proposal/Price Quote';
-$opp->probability = 65;
-$bench->refreshOpportunityAmount($erp);
-''')
-        self.assertEqual(observed["stage"], "Proposal/Price Quote", observed)
-        self.assertEqual(observed["amount"], 280, observed)
-
-    def test_currency_converted_headline_is_not_replaced_by_unconverted_sum(self):
+    def test_headline_is_currency_converted_not_published_raw(self):
         observed = self.execute(r'''
 $quote->currency_id = 'owned-other-currency';
 $shared->refresh($quote);
-$bench->refreshOpportunityAmount($erp);
 ''')
         self.assertEqual(observed["amount"], 560, observed)
-
-    def test_bench_stage_and_independent_human_forecast_override_remain(self):
-        observed = self.execute(r'''
-$opp->sales_stage = 'Prospecting';
-$opp->field_defs = ['best_case' => [], 'worst_case' => []];
-$opp->best_case = 0;
-$opp->worst_case = 75; // Human value: never infer permission to overwrite it.
-$shared->refresh($quote);
-$bench->refreshOpportunityAmount($erp);
-''')
-        self.assertEqual(observed["amount"], 280, observed)
-        self.assertEqual(observed["stage"], "Proposal/Price Quote", observed)
-        self.assertEqual(observed["best_case"], 280, observed)
-        self.assertEqual(observed["worst_case"], 75, observed)
-        self.assertEqual(observed["managed_value"], 280, observed)
-        self.assertEqual(observed["best_origin"], "system", observed)
-        self.assertEqual(observed["worst_origin"], "human", observed)
-
-    def test_system_forecasts_follow_repriced_shared_headline_in_one_pass(self):
-        observed = self.execute(r'''
-$opp->field_defs = ['best_case' => [], 'worst_case' => []];
-$opp->best_case = 0;
-$opp->worst_case = 0;
-$shared->refresh($quote);
-$bench->refreshOpportunityAmount($erp);
-$quote->total = 530;
-$bench->refreshOpportunityAmount($erp);
-''')
-        self.assertEqual(observed["amount"], 530, observed)
-        self.assertEqual(observed["best_case"], 530, observed)
-        self.assertEqual(observed["worst_case"], 530, observed)
-        self.assertEqual(observed["managed_value"], 530, observed)
-        self.assertEqual(observed["best_origin"], "system", observed)
-        self.assertEqual(observed["worst_origin"], "system", observed)
-
-    def test_system_forecasts_reuse_shared_currency_conversion(self):
-        observed = self.execute(r'''
-$opp->field_defs = ['best_case' => [], 'worst_case' => []];
-$opp->best_case = 0;
-$opp->worst_case = 0;
-$quote->currency_id = 'owned-other-currency';
-$bench->refreshOpportunityAmount($erp);
-''')
-        self.assertEqual(observed["amount"], 560, observed)
-        self.assertEqual(observed["best_case"], 560, observed)
-        self.assertEqual(observed["worst_case"], 560, observed)
-        self.assertEqual(observed["managed_value"], 560, observed)
-
-    def test_human_takeover_of_one_case_does_not_freeze_the_other(self):
-        observed = self.execute(r'''
-$opp->field_defs = ['best_case' => [], 'worst_case' => []];
-$opp->best_case = 0;
-$opp->worst_case = 0;
-$shared->refresh($quote);
-$bench->refreshOpportunityAmount($erp);
-// A person changes only Best after the system recorded exact provenance.
-$opp->best_case = 999;
-$quote->total = 530;
-$bench->refreshOpportunityAmount($erp);
-''')
-        self.assertEqual(observed["amount"], 530, observed)
-        self.assertEqual(observed["best_case"], 999, observed)
-        self.assertEqual(observed["worst_case"], 530, observed)
-        self.assertEqual(observed["managed_value"], 530, observed)
-        self.assertEqual(observed["best_origin"], "human", observed)
-        self.assertEqual(observed["worst_origin"], "system", observed)
-
-    def test_unknown_provenance_never_authorizes_forecast_overwrite(self):
-        observed = self.execute(r'''
-$opp->field_defs = ['best_case' => [], 'worst_case' => []];
-$opp->best_case = 999;
-$opp->worst_case = 0;
-$opp->bd_best_case_origin = 'foreign';
-$bench->refreshOpportunityAmount($erp);
-''')
-        self.assertEqual(observed["amount"], 280, observed)
-        self.assertEqual(observed["best_case"], 999, observed)
-        self.assertEqual(observed["worst_case"], 280, observed)
-        self.assertEqual(observed["best_origin"], "human", observed)
-        self.assertEqual(observed["worst_origin"], "system", observed)
-
-    def test_upgrade_adopts_legacy_all_options_value_then_converges(self):
-        observed = self.execute(r'''
-$opp->field_defs = ['best_case' => [], 'worst_case' => []];
-$opp->amount = 7100.63;
-$opp->best_case = 250;
-$opp->worst_case = 250;
-$bench->refreshOpportunityAmount($erp);
-''')
-        self.assertEqual(observed["amount"], 280, observed)
-        self.assertEqual(observed["best_case"], 280, observed)
-        self.assertEqual(observed["worst_case"], 280, observed)
-        self.assertEqual(observed["best_origin"], "system", observed)
-        self.assertEqual(observed["worst_origin"], "system", observed)
-
-    def test_materialization_public_trigger_refreshes_shared_headline(self):
-        observed = self.execute(MATERIALIZED + r'''
-$quote->total = 0;
-$quote->tax = 0;
-$quote->shipping = 0;
-$bench->refreshOpportunityAmount($erp);
-''')
-        self.assertEqual(observed["quote_total"], 250, observed)
-        self.assertEqual(observed["amount"], 250, observed)
-        self.assertGreater(observed["quote_saves"], 0, observed)
-
-    @unittest.skip(
-        "UNVERIFIED: native materialization tax/shipping needs real SugarLogic "
-        "and effective vardefs; the isolated save double cannot prove it"
-    )
-    def test_native_materialization_preserves_calculated_tax_and_shipping(self):
-        # Required integration obligation, not a passed assertion or a known
-        # product failure. Exercise the public custom refresh on real native
-        # beans, re-read Quote/bundle/Opportunity and check native tax, shipping,
-        # discounts and currency. Do not replace SugarLogic with a guessed sum.
-        pass
 
 
 if __name__ == "__main__":

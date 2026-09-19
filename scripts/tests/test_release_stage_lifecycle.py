@@ -1,4 +1,29 @@
-"""Composed shared-writer/Bench-policy prototype-to-production lifecycle."""
+"""Composed shared-writer / Bench-policy release staging.
+
+🛑 THIS FILE USED TO BE A PROTOTYPE-TO-PRODUCTION LIFECYCLE, AND THAT LIFECYCLE
+NO LONGER EXISTS. It drove PF's `ErpOpportunityValuation::afterLinesOrdered`
+twice - first with only the prototype line ordered (expecting `Prototype Ordered`
+/ 80), then with production ordered too (`Partial Production Ordered` / 90) - and
+Bench's policy supplied the prototype/production roles from the `bd01_*` quote
+mirror. Decisions 901/903 retired the mirror, and the policy's own header records
+that its prototype lookup had been dead since D16 anyway. The shipped policy now
+has ONE outcome, so there is no progression left to compose.
+
+What is still worth composing, and is all this file now asserts, is that the
+SHARED writer and the BENCH policy agree on the Opportunity: one opportunity,
+staged from native quote lines, with revenue line items never read.
+
+ALSO DELETED: `test_kinetic_dispatch_is_edge_triggered_and_uses_neutral_hook`,
+which read `BdQuoteReflectionHook.php` to prove Bench fired the neutral hook only
+on an edge. Bench no longer dispatches at all - `ErpQuoteHooks::fireAfterLinesOrdered`
+is called by ERP-Epicor's own `QuotesErpActionsApi`, so that guard belongs in
+`erp-integration-sugar`, not here, and keeping a copy pointed at a deleted file
+would have been coverage of nothing.
+
+🚩 REPORTED, NOT FIXED HERE: Bench still ships `Prototype Ordered` (probability
+80) in `bd_stage_doms.append.php` and `en_us.bd_stage_doms.php`, a stage no code
+can now produce. Removing it is a decision about `custom/`.
+"""
 
 from pathlib import Path
 import json
@@ -24,16 +49,7 @@ PROVIDER = (
 @unittest.skipUnless(shutil.which("php"), "requires PHP 8.2 build-test image")
 @unittest.skipUnless(SHARED.is_file(), "requires sibling shared Sugar checkout")
 class ReleaseStageLifecycleTest(unittest.TestCase):
-    def test_kinetic_dispatch_is_edge_triggered_and_uses_neutral_hook(self):
-        source = (
-            ROOT / "sugar-sell/BenchDogs-Ext/custom/modules/bd01_ERP_Quote"
-            / "BdQuoteReflectionHook.php"
-        ).read_text(encoding="utf-8")
-        self.assertIn("if ($reconciledReleaseLines > 0)", source)
-        self.assertIn("ErpQuoteHooks::fireAfterLinesOrdered", source)
-        self.assertIn("if (!empty($product->erp_ordered))", source)
-
-    def test_same_opportunity_moves_prototype_then_production_without_rlis(self):
+    def test_composed_writer_and_policy_stage_one_opportunity_without_rlis(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             quote_dir = root / "custom/modules/Quotes"
@@ -72,13 +88,9 @@ class TestAdmin { public function getConfigForModule($category) { return []; } }
 class BeanFactory {
     public static $opp;
     public static $products = [];
-    public static $erpQuotes = [];
-    public static $erpLines = [];
     public static function getBean($module) { return new TestAdmin(); }
     public static function retrieveBean($module, $id, $options = []) {
         if ($module === 'Products') { return self::$products[$id] ?? null; }
-        if ($module === 'bd01_ERP_Quote') { return self::$erpQuotes[$id] ?? null; }
-        if ($module === 'bd01_ERP_Quote_Line') { return self::$erpLines[$id] ?? null; }
         return self::$opp;
     }
 }
@@ -105,12 +117,6 @@ $quote = new SugarBean();
 $quote->id = 'same-quote';
 $quote->erp_is_primary_quote = false;
 $quote->opportunities = new TestLink([], [$opp->id]);
-$erp = new SugarBean();
-$erp->id = 'erp-quote';
-$proto = new SugarBean(); $proto->id = 'erp-proto'; $proto->line_num = 1; $proto->prototype = true;
-$production = new SugarBean(); $production->id = 'erp-production'; $production->line_num = 2; $production->prototype = false;
-$erp->bd01_erp_quote_lines = new TestLink([$proto, $production]);
-$quote->bd01_erp_quote_quotes = new TestLink([$erp]);
 $protoQli = new SugarBean();
 $protoQli->id = 'proto-qli'; $protoQli->erp_quote_line_num = 1; $protoQli->erp_ordered = true;
 $productionQli = new SugarBean();
@@ -119,8 +125,6 @@ $productionQli->erp_ordered = false;
 $quote->products = new TestLink([$protoQli, $productionQli], [$protoQli->id, $productionQli->id]);
 BeanFactory::$opp = $opp;
 BeanFactory::$products = [$protoQli->id => $protoQli, $productionQli->id => $productionQli];
-BeanFactory::$erpQuotes = [$erp->id => $erp];
-BeanFactory::$erpLines = [$proto->id => $proto, $production->id => $production];
 require 'custom/modules/Quotes/ErpOpportunityValuation.php';
 $writer = new ErpOpportunityValuation();
 $writer->afterLinesOrdered($quote, true);
@@ -138,11 +142,11 @@ echo json_encode(['first' => $first, 'second' => $second,
             )
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
             observed = json.loads(result.stdout)
-            self.assertEqual(observed["first"], ["same-opportunity", "Prototype Ordered", 80])
-            self.assertEqual(
-                observed["second"],
-                ["same-opportunity", "Partial Production Ordered", 90],
-            )
+            staged = ["same-opportunity", "Partial Production Ordered", 90]
+            # One committed line already stages it; committing the second does
+            # not move it again, because there is one outcome to reach.
+            self.assertEqual(observed["first"], staged)
+            self.assertEqual(observed["second"], staged)
             self.assertEqual(observed["rli_reads"], 0)
 
 
