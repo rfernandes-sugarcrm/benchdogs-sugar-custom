@@ -1,52 +1,26 @@
 <?php
 
 /**
- * Decision 72's marker: was this Opportunity's amount valued from a line a
- * PERSON chose, or from one the system auto-selected because nobody had?
+ * RETIRED. This file intentionally declares no fields.
  *
- * THREE STATES, AND THE EMPTY ONE IS LOAD-BEARING
+ * It used to declare one field on Opportunities:
  *
- *   'auto'  - exactly one governing line, and this package selected it because
- *             the quote arrived with none. Nobody has reviewed this number.
- *   'human' - exactly one governing line, and something other than this
- *             package's auto-selector put it there. Somebody is accountable
- *             for the number.
- *   ''      - nothing to report: no ERP quote, no governing line, or the
- *             ambiguous two-selected state that still fails closed.
+ *   bd_governing_origin   decision 72 provenance: auto | human | empty
  *
- * THERE IS NO 'default' KEY HERE, AND THERE MUST NEVER BE ONE.
+ * 🔒 1044 retired it. ORPHANED BY ITS OWN WRITER'S RETIREMENT. Added by 993aa66 alongside the Bench estimating layer; that layer was retired by 6e483c1 ('retire the Bench estimating layer; core owns it now') and the bd01_* module trees by 55bf113, but this vardef survived both. Measured across connector_ext_benchdogs, the Bench MLP and erp-integration-sugar: ZERO writers. Provenance for a governing selection this package no longer makes.
  *
- * A vardef default is precisely what produced 994 fabricated `0.00` rows in
- * this release (decision 59): a column that has never been written reads back
- * as a value somebody then treats as a measurement. An Opportunity this
- * package has never evaluated must read EMPTY - not 'human', which would claim
- * a person reviewed it, and not 'auto', which would put it on the review
- * report it does not belong on. Empty reads empty.
+ * WHY THIS FILE IS EMPTIED RATHER THAN DELETED. On Sugar Cloud, neither
+ * omitting a file from the build nor uninstalling the package removes a
+ * custom/Extension file a previous install already copied — proven on Bench
+ * 2026-09-14, when rc24 dropped six such files and was INERT: installed clean,
+ * fields still present. ONLY OVERWRITING THE FILE RETIRES IT. This stub is that
+ * overwrite; see ERP_OrderLines/Ext/Vardefs/bd_shipped_value.php for the full
+ * measurement.
  *
- * The value is DERIVED from the ERP quote's lines on every rollup
- * (BdQuoteReflectionHook::refreshGoverningOrigin), never remembered, so it
- * cannot drift away from what the rows actually say.
+ * EXISTING DATA. Removing a vardef does not drop the column; stored values stay
+ * until someone removes them deliberately, which is harmless — with no vardef
+ * Sugar neither reads nor displays them. With no writer, every row is null.
  *
- * WHY varchar AND NOT enum. An enum needs an app_list_strings domain, and
- * whole-array dropdown writes are exactly the surface that ERP-Epicor's
- * SalesStageDomDropdown can clobber on its next install. A varchar has no such
- * exposure, and Reports filters it with a plain "equals auto" just as well.
+ * Safe to delete this stub outright once every instance has taken a release at
+ * or after this one.
  */
-$dictionary['Opportunity']['fields']['bd_governing_origin'] = array(
-    'name' => 'bd_governing_origin',
-    'vname' => 'LBL_BD_GOVERNING_ORIGIN',
-    'type' => 'varchar',
-    'len' => 8,
-    'comment' => 'Decision 72: auto = machine-selected governing line, human = person-selected, empty = not evaluated',
-    // Reportable is the POINT of this field, not a detail. The on-screen
-    // marker helps whoever opens one record; the saved report
-    // (BdAutoSelectedReport) is what surfaces every unreviewed quote at once,
-    // including the ones nobody thinks to open.
-    'reportable' => true,
-    'audited' => true,
-    'importable' => false,
-    'massupdate' => false,
-    // Read-only to a person: it records what happened, and editing it by hand
-    // would only make it disagree with the lines it is derived from.
-    'studio' => false,
-);
