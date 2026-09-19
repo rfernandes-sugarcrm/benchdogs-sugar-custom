@@ -103,7 +103,6 @@ $GLOBALS['log'] = new class {
 $GLOBALS['app_list_strings'] = [
     'sales_stage_dom' => [
         'Proposal/Price Quote' => 'Proposal/Price Quote',
-        'Prototype Ordered' => 'Prototype Ordered',
         'Partial Production Ordered' => 'Partial Production Ordered',
         'Closed Won' => 'Closed Won',
         'Closed Lost' => 'Closed Lost',
