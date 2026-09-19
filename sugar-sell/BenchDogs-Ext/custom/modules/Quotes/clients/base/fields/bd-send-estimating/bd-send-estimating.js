@@ -43,23 +43,17 @@
             success: function(data) {
                 app.alert.dismiss('bd-send-estimating');
                 var succeeded = data && data.status === 'success';
-                var timestampStatus = data && data.estimating_timestamp_status;
-                var timestampPending = succeeded && timestampStatus &&
-                    timestampStatus !== 'stamped' && timestampStatus !== 'already_stamped';
                 var notificationStatus = data && data.notification_status;
                 var notificationDelivered = notificationStatus === 'created' ||
                     notificationStatus === 'already_created';
                 var notificationWarning = succeeded && !notificationDelivered;
                 var message = (data && data.message) || 'Send to estimating failed.';
-                if (timestampPending) {
-                    message += ' Turnaround timing is pending exact ERP mirror verification.';
-                }
                 if (notificationWarning) {
                     message += ' ' + ((data && data.notification_message) ||
                         'The hand-off completed, but Sugar could not confirm the in-app notification. Use the In Estimating view and ask an administrator to inspect notification delivery.');
                 }
                 app.alert.show('bd-send-estimating-done', {
-                    level: (timestampPending || notificationWarning) ?
+                    level: notificationWarning ?
                         'warning' : (succeeded ? 'success' : 'error'),
                     messages: message,
                     autoClose: !notificationWarning

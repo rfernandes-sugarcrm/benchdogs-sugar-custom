@@ -145,6 +145,30 @@ $bdMirrorRelationships = array(
     'bd01_erp_quote_accounts',
     'bd01_erp_quote_lines',
     'bd01_erp_line_costs',
+
+    // 🚩 bd01_erp_rung_costs — THE FIFTH, AND THE ONE THAT WAS MISSED.
+    //
+    // It is NOT in the current BenchDogs-Ext source at all: it is an orphan
+    // from an older installed version, so a census of the package would never
+    // have found it. Only the TENANT knew about it.
+    //
+    // What it was costing, measured from sugarcrm.log on 2026-09-18:
+    //   18 x "Related table is undefined for bd01_erp_rung_costs relationship"
+    // and one of them is a FATAL that takes the quote PDF out:
+    //   M2MRelationship->load() <- Link2->get()
+    //   <- PdfManagerHelper::parseBeanFields()  (PdfManagerHelper.php:486)
+    //   <- SugarpdfPdfmanager->preDisplay()     (sugarpdf.pdfmanager.php:148)
+    //   <- QuotesViewSugarpdf->display()
+    // PdfManagerHelper walks the quote's links to resolve template fields, hits
+    // this dead one, and dies. The request still answers HTTP 200 with a
+    // ZERO-BYTE body, so the browser shows "Generating PDF" forever with no
+    // error -- the owner's exact report. Same fault family as the quote DELETE
+    // 500 the other four caused (decision 908), different victim.
+    //
+    // Census note: the log named THREE failing relationships -- quote_quotes
+    // (26), quote_accounts (14) and rung_costs (18). The first two were already
+    // on this list and are fixed; this is the remainder.
+    'bd01_erp_rung_costs',
 );
 
 $bdInstaller = new ModuleInstaller();

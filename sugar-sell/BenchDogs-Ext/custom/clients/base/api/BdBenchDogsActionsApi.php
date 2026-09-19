@@ -56,7 +56,7 @@ if (file_exists($parentApiFile)) {
         /**
          * The write-back entity registered by the Bench Dogs extension container
          * (connector_ext_benchdogs.writeback.quotes.OrderFromQuoteWriteBack).
-         * Its transform orders ONLY the governing bd01_ERP_Quote_Line rows -
+         * Its transform orders ONLY the governing quote lines -
          * partial-by-construction; see governing_lines() there.
          */
 
@@ -95,18 +95,6 @@ if (file_exists($parentApiFile)) {
                     'shortHelp' => 'Admin-only: re-runs the Bench Dogs UI deploy steps (buttons, stage dropdowns) and reports each step verbatim.',
                     'exceptions' => array(
                         'SugarApiExceptionNotAuthorized',
-                    ),
-                ),
-                'bdSyncQuoteTiers' => array(
-                    'reqType' => 'POST',
-                    'path' => array('Quotes', '?', 'bd-sync-quote-tiers'),
-                    'pathVars' => array('module', 'record', ''),
-                    'method' => 'syncQuoteTiers',
-                    'shortHelp' => 'Adds a line item for every Kinetic quantity break this quote is missing, and marks the breaks Kinetic has already ordered. Never edits or removes an existing line.',
-                    'exceptions' => array(
-                        'SugarApiExceptionNotAuthorized',
-                        'SugarApiExceptionInvalidParameter',
-                        'SugarApiExceptionNotFound',
                     ),
                 ),
             );
@@ -346,8 +334,6 @@ if (file_exists($parentApiFile)) {
             ) {
                 return $this->estimatingStageFailure($result);
             }
-            $result['estimating_timestamp_status'] = $this->stampSentToEstimating($persisted);
-
             // The Kinetic write and persisted Bench stage are the primary
             // hand-off. The after_save hook's in-app Notification is a
             // secondary delivery: report it independently and never turn its
@@ -504,211 +490,6 @@ if (file_exists($parentApiFile)) {
                 && isset($doms['sales_stage_dom']['Partial Production Ordered'])) ? 'present' : 'MISSING';
 
             return array('status' => 'success', 'steps' => $steps);
-        }
-
-        /**
-         * Start the REQ-13 turnaround clock on the ERP quote row this send just
-         * raised in Kinetic.
-         *
-         * Core stamps both the bare QuoteNum and the exact
-         * <COMPANY>__<QuoteNum> key onto the Quote before the shared action
-         * returns. The scoped key is the only safe lookup/create identity. A
-         * bare QuoteNum is not globally unique; borrowing a company prefix
-         * from an unrelated row can stamp the wrong company and is forbidden.
-         *
-         * The mirror often does not exist yet, so create only from that exact
-         * scoped identity. A later connector sync upserts onto the same key.
-         */
-        private function stampSentToEstimating(SugarBean $quote): string
-        {
-            try {
-                $quoteNum = trim((string) ($quote->erp_display_sync_key ?? ''));
-                $scopedKey = trim((string) ($quote->erp_sync_key ?? ''));
-                $suffix = '__' . $quoteNum;
-                if ($quoteNum === ''
-                    || !ctype_digit($quoteNum)
-                    || $scopedKey === $suffix
-                    || substr($scopedKey, -strlen($suffix)) !== $suffix
-                ) {
-                    return 'pending_exact_mirror';
-                }
-
-                $matches = $this->findErpQuotesByScopedKey($scopedKey);
-                if (count($matches) > 1) {
-                    $GLOBALS['log']->warn(
-                        'BdBenchDogsActionsApi: ambiguous_exact_mirror for scoped Kinetic quote'
-                    );
-                    return 'ambiguous_exact_mirror';
-                }
-                if ($matches === array()) {
-                    $erpQuote = BeanFactory::newBean('bd01_ERP_Quote');
-                    $erpQuote->name = 'Quote ' . $quoteNum;
-                    $erpQuote->quote_num = (int) $quoteNum;
-                    $erpQuote->erp_sync_key = $scopedKey;
-                    $erpQuote->sugar_quote_id = $quote->id;
-                } else {
-                    $erpQuote = $matches[0];
-                }
-
-                if (!empty($erpQuote->bd_sent_to_estimating_at)) {
-                    return 'already_stamped';
-                }
-                $erpQuote->bd_sent_to_estimating_at = TimeDate::getInstance()->nowDb();
-                $sentAt = $erpQuote->bd_sent_to_estimating_at;
-                if (!$erpQuote->save()) {
-                    $GLOBALS['log']->error(
-                        'BdBenchDogsActionsApi: exact ERP quote timestamp save returned no id'
-                    );
-                    return 'pending_timestamp_persistence';
-                }
-
-                $verified = $this->findErpQuotesByScopedKey($scopedKey);
-                if (count($verified) !== 1
-                    || (string) ($verified[0]->bd_sent_to_estimating_at ?? '') !== $sentAt
-                ) {
-                    $GLOBALS['log']->error(
-                        'BdBenchDogsActionsApi: exact ERP quote timestamp was not persisted'
-                    );
-                    return count($verified) > 1
-                        ? 'ambiguous_exact_mirror'
-                        : 'pending_timestamp_persistence';
-                }
-
-                $GLOBALS['log']->info(
-                    'BdBenchDogsActionsApi: bd_sent_to_estimating_at stamped on bd01_ERP_Quote '
-                    . $erpQuote->id . ' for Kinetic quote ' . $quoteNum
-                );
-                return 'stamped';
-            } catch (Throwable $e) {
-                // A missing KPI stamp must never fail the hand-off itself.
-                $GLOBALS['log']->error(
-                    'BdBenchDogsActionsApi: could not stamp bd_sent_to_estimating_at: ' . $e->getMessage()
-                );
-                return 'pending_exact_mirror';
-            }
-        }
-
-        /** @return SugarBean[] exact scoped-key matches; more than one is corruption. */
-        private function findErpQuotesByScopedKey(string $scopedKey): array
-        {
-            $query = new SugarQuery();
-            $query->select(array('id'));
-            $query->from(BeanFactory::newBean('bd01_ERP_Quote'));
-            $query->where()->equals('erp_sync_key', $scopedKey);
-            $query->limit(2);
-            $matches = array();
-            foreach ($query->execute() as $row) {
-                $bean = BeanFactory::retrieveBean(
-                    'bd01_ERP_Quote',
-                    (string) ($row['id'] ?? ''),
-                    array('use_cache' => false)
-                );
-                if ($bean && !empty($bean->id)) {
-                    $matches[] = $bean;
-                }
-            }
-            return $matches;
-        }
-
-        /**
-         * The bd01_ERP_Quote this Sugar Quote reflects. More than one can be
-         * linked after re-estimates; the highest quote_num is the live one -
-         * the same rule the container's _pick_live_quote applies, for the same
-         * confirmed-live reason (an abandoned lower-numbered shell once won).
-         */
-        private function pickErpQuote(SugarBean $bean): ?SugarBean
-        {
-            if (!$bean->load_relationship('bd01_erp_quote_quotes')) {
-                return null;
-            }
-            $best = null;
-            foreach ($bean->bd01_erp_quote_quotes->getBeans() as $erpQuote) {
-                if ($best === null || (int) $erpQuote->quote_num > (int) $best->quote_num) {
-                    $best = $erpQuote;
-                }
-            }
-            return $best;
-        }
-
-        /**
-         * Bring a quote's line items into line with the Kinetic quote behind it.
-         *
-         * Two things, both additive:
-         *
-         *   1. a line item for every Kinetic quantity break that has none, so
-         *      each break can be ordered, valued and reported separately;
-         *   2. erp_ordered on any break Kinetic has ALREADY ordered, read off the
-         *      sales orders already synced against this quote.
-         *
-         * Nothing is edited and nothing is removed. A rep who deleted a break
-         * they are not quoting will get it back if they run this, which is why it
-         * is an action they invoke rather than something a sync does behind them.
-         *
-         * This is the repair path for a quote that predates per-line ordering, or
-         * that was worked in Kinetic first - the case the tiered model cannot
-         * otherwise see, because it reads everything off the Sugar line items.
-         */
-        public function syncQuoteTiers(ServiceBase $api, array $args)
-        {
-            if (empty($args['record'])) {
-                throw new SugarApiExceptionInvalidParameter('Missing record id');
-            }
-            $bean = BeanFactory::retrieveBean('Quotes', $args['record']);
-            if ($bean === null || empty($bean->id)) {
-                throw new SugarApiExceptionNotFound('Quote not found: ' . $args['record']);
-            }
-            if (!$bean->ACLAccess('edit')) {
-                throw new SugarApiExceptionNotAuthorized('No edit access to this quote');
-            }
-
-            $erpQuote = $this->pickErpQuote($bean);
-            if ($erpQuote === null) {
-                return array(
-                    'status' => 'error',
-                    'message' => 'This quote is not linked to a Kinetic quote, so there are no quantity breaks to sync.',
-                );
-            }
-
-            require_once 'custom/modules/bd01_ERP_Quote/BdQuoteReflectionHook.php';
-            $hook = new BdQuoteReflectionHook();
-
-            $created = $hook->backfillMissingQuoteLines($erpQuote, $bean);
-
-            // Re-value through the ordinary reflection path, which also runs the
-            // ordered reconciliation - so the opportunity forecast and the
-            // ordered flags both land from one code path rather than this action
-            // inventing its own arithmetic.
-            $hook->refreshOpportunityAmount($erpQuote);
-
-            $ordered = 0;
-            $fresh = BeanFactory::retrieveBean('Quotes', $bean->id, array('use_cache' => false));
-            if ($fresh !== null && $fresh->load_relationship('products')) {
-                foreach ($fresh->products->getBeans() as $product) {
-                    if (!empty($product->erp_ordered)) {
-                        $ordered++;
-                    }
-                }
-            }
-
-            return array(
-                'status' => 'success',
-                'lines_added' => $created,
-                'lines_ordered' => $ordered,
-                'message' => $created > 0
-                    ? sprintf(
-                        'Added %d line item%s from Kinetic quote %s. %d line%s now marked ordered.',
-                        $created,
-                        $created === 1 ? '' : 's',
-                        (string) ($erpQuote->name ?? ''),
-                        $ordered,
-                        $ordered === 1 ? '' : 's'
-                    )
-                    : sprintf(
-                        'Every Kinetic quantity break already has a line item. %d line%s marked ordered.',
-                        $ordered,
-                        $ordered === 1 ? '' : 's'
-                    ),
-            );
         }
     }
 }

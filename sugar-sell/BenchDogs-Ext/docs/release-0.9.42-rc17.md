@@ -59,7 +59,9 @@ Offline, recorded in the commit that introduced this document:
 Still required before any acceptance claim: fresh authorization for this new
 artifact, then upload, install and verification on the Bench QA tenant only
 (served `bd-send-estimating.js`/`bd-best-pricing.js`,
-`bd01_ERP_Quote.quoted`/`date_quoted` metadata, module reads).
+`bd01_ERP_Quote.quoted`/`date_quoted` metadata, module reads). Those module
+reads are no longer possible: the mirror modules were retired by decision 901,
+so this line records what rc17 needed, not what a current build verifies.
 
 ## Rollback
 

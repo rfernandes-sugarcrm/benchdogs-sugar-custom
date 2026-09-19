@@ -448,7 +448,8 @@ class BdQuotesLayoutExtensions
      * Fields earlier versions placed on this panel that nothing writes any more.
      *
      * bd_governing_line: decision 29 (2026-09-13) makes the governing selection
-     * the bd01_ERP_Quote_Line.governing flag a person sets in Sugar, read
+     * an explicit flag a person sets in Sugar - since decisions 901/903 retired
+     * the quote mirror, `erp_governing` on the native Sugar quote line - read
      * fail-closed by ErpQuoteOpportunityContribution. No writer derives a
      * Quote-level label from it, so the field only ever showed an empty or
      * stale value.
