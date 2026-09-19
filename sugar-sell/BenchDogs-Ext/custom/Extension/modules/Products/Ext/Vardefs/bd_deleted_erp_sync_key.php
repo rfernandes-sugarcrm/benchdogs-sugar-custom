@@ -31,4 +31,4 @@
 // and are harmless with no vardef to read them.
 //
 // 🛑 DO NOT RE-ADD, and DO NOT DELETE THIS FILE.
-// `scripts/tests/test_products_vardef_orphans.py` fails if it goes missing.
+// `scripts/tests/test_vardef_orphans.py` fails if it goes missing.

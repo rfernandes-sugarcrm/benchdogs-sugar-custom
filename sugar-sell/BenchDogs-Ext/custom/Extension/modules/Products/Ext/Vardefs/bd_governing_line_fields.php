@@ -52,7 +52,7 @@
 // Sugar neither reads nor displays them. With no writer, every row is null.
 //
 // 🛑 DO NOT RE-ADD, and DO NOT DELETE THIS FILE. Deleting it is precisely the
-// mistake being corrected. `scripts/tests/test_products_vardef_orphans.py`
+// mistake being corrected. `scripts/tests/test_vardef_orphans.py`
 // fails if the file goes missing or if the declaration reappears.
 //
 // Safe to delete this stub outright once every instance has taken a release at

@@ -53,6 +53,10 @@ QUOTE_ORPHANS = {
     "bd_print_requested_at.php": "bd_print_requested_at",
     "bd_print_status.php": "bd_print_status",
     "bd_quantity_breaks.php": "bd_quantity_breaks",
+    # 🚩 SAME FIELD NAME AS THE PRODUCTS STUB, DIFFERENT MODULE. A field name is
+    # not a key: the first census mapped field -> file by first match and this
+    # declaration stayed hidden behind the Products one. Map (module, field).
+    "bd_deleted_erp_sync_key.php": "bd_deleted_erp_sync_key",
 }
 
 # NOT retired — RESTORED. The connector writes these on every quote sync from
