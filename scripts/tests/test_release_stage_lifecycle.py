@@ -112,9 +112,9 @@ $production = new SugarBean(); $production->id = 'erp-production'; $production->
 $erp->bd01_erp_quote_lines = new TestLink([$proto, $production]);
 $quote->bd01_erp_quote_quotes = new TestLink([$erp]);
 $protoQli = new SugarBean();
-$protoQli->id = 'proto-qli'; $protoQli->bd_erp_line_num = 1; $protoQli->erp_ordered = true;
+$protoQli->id = 'proto-qli'; $protoQli->erp_quote_line_num = 1; $protoQli->erp_ordered = true;
 $productionQli = new SugarBean();
-$productionQli->id = 'production-qli'; $productionQli->bd_erp_line_num = 2;
+$productionQli->id = 'production-qli'; $productionQli->erp_quote_line_num = 2;
 $productionQli->erp_ordered = false;
 $quote->products = new TestLink([$protoQli, $productionQli], [$protoQli->id, $productionQli->id]);
 BeanFactory::$opp = $opp;

@@ -102,7 +102,7 @@ $quote->erp_is_primary_quote = true;
 $quote->opportunities = new TestLink([], [$opp->id]);
 $product = new SugarBean();
 $product->id = 'owned-product';
-$product->bd_erp_line_num = 1;
+$product->erp_quote_line_num = 1;
 $product->quantity = 2;
 $product->discount_price = 125;
 $quote->products = new TestLink([$product]);
@@ -242,7 +242,7 @@ $bench->refreshOpportunityAmount($erp);
     def test_ordered_release_does_not_give_bench_a_second_stage_writer(self):
         observed = self.execute(r'''
 $product->erp_ordered = true;
-$product->bd_erp_line_num = 1;
+$product->erp_quote_line_num = 1;
 $line->prototype = true;
 $opp->sales_stage = 'Proposal/Price Quote';
 $opp->probability = 65;

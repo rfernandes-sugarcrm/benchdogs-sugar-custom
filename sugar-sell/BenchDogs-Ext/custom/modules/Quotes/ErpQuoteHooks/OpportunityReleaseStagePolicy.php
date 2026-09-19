@@ -116,7 +116,23 @@ class ErpOpportunityReleaseStagePolicy
             if (!empty($product->deleted) || empty($product->erp_ordered)) {
                 continue;
             }
-            $lineNum = (int) ($product->bd_erp_line_num ?? 0);
+            // 🔒 1032 — READS CORE'S FIELD, NOT A BENCH COPY. This was
+            // `bd_erp_line_num`, a Bench-owned column whose only writer
+            // (BdQuoteReflectionHook) went with the retired quote mirror. The
+            // ERP line number is now projected by connector-core's
+            // QuoteLineCoreTransformer onto `Products.erp_quote_line_num`.
+            //
+            // MEASURED on sugar.local.dev 2026-09-18, before the promotion:
+            // `bd_erp_line_num` survived on 6 of 655 quote line items, and 13
+            // of the 14 ORDERED lines this loop walks reached the throw below.
+            // Core can supply 515 of the 521 connector-owned rows.
+            //
+            // 🛑 `<= 0` IS DELIBERATE AND MUST STAY. Core types this field
+            // `int | None` and OMITS it when the ERP line is undeterminable,
+            // precisely so an unknown line never arrives here as 0 and is
+            // never mistaken for line zero. A `?? 0` reading an absent field
+            // still lands on 0, which is why this refuses rather than guesses.
+            $lineNum = (int) ($product->erp_quote_line_num ?? 0);
             if ($lineNum <= 0 || !array_key_exists($lineNum, $lineKinds)) {
                 throw new UnexpectedValueException(
                     'Ordered Quote line has no unambiguous ERP quote-line identity'

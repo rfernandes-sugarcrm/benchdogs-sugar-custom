@@ -45,7 +45,10 @@ $make = function ($id, $lineNum, $prototype = false, $ordered = false) {
     $row = new SugarBean();
     $row->id = $id;
     $row->line_num = $lineNum;
-    $row->bd_erp_line_num = $lineNum;
+    // 🔒 1032 — core's field, not Bench's retired bd_erp_line_num. The policy
+    // reads ONLY this name now, so a fixture still stamping the old one would
+    // keep passing against a field the code no longer looks at.
+    $row->erp_quote_line_num = $lineNum;
     $row->prototype = $prototype;
     $row->erp_ordered = $ordered;
     return $row;
