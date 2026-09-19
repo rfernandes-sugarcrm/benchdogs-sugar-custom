@@ -1,20 +1,23 @@
 <?php
 
 /**
- * Refuse saving an Account billing country that no Epicor country matches
- * (Bench Dogs REQ-15, option c).
+ * RETIRED. This file intentionally registers no hook.
  *
- * Registration only - the class lives at custom/modules/Accounts/ (outside this
- * Ext/ tree) on purpose. Sugar's Ext-merge concatenates this file's raw content
- * into the compiled logichooks.ext.php, and LogicHook::loadHookClass()
- * separately require_once()s the filename below at hook-fire time; a class
- * declared in this file would be declared twice and fatal with "Cannot
- * redeclare class" (same reason as bd_governing_line.php).
+ * It used to register BdAccountCountryGuard on Accounts.
+ *
+ * ERP-Core owns the billing-country guard and its hook IS registered and live:
+ * ERP-Core/src/custom/modules/Accounts/ErpAccountCountryGuard.php, wired by
+ * ERP-Core/src/custom/Extension/modules/Accounts/Ext/LogicHooks/
+ * erp_account_country_guard.php. Core's guard reads the country lookup types
+ * from a REGISTRY rather than naming any one package's rows, which is exactly
+ * what lets a customer package publish its own country rows and be picked up
+ * by the same check — no second guard required.
+ *
+ * TWO GUARDS ON ONE FIELD IS WORSE THAN ONE. They can disagree, and the seller
+ * sees whichever ran last with no way to tell which rule refused them.
+ *
+ * WHY EMPTIED RATHER THAN DELETED. §CW / G37 — on Sugar Cloud, dropping a
+ * custom/Extension file from the build leaves the previously-installed copy in
+ * place and the package INERT (rc24, Bench, 2026-09-14). Only overwriting it
+ * retires it.
  */
-$hook_array['before_save'][] = array(
-    1,
-    'Refuse an Account billing country unknown to Epicor',
-    'custom/modules/Accounts/BdAccountCountryGuard.php',
-    'BdAccountCountryGuard',
-    'refuseUnknownCountry',
-);

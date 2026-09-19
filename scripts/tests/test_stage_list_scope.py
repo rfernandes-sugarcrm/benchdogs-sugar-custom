@@ -65,11 +65,22 @@ class StageListScopeTest(unittest.TestCase):
         ]
         self.assertEqual(declarations, [STAGE_LIST])
 
-    def test_the_vardef_options_name_the_declared_list(self):
-        self.assertIn(
-            "'options' => 'bd_erp_stage_list'",
-            STAGE_VARDEF.read_text(encoding="utf-8"),
-        )
+    def test_the_vardef_is_RETIRED_and_names_no_list(self):
+        """INVERTED 2026-09-19, not deleted.
+
+        bd_erp_stage is retired (🔒 1044): the ERP-side stage belongs to
+        ERP-Core. The field was also a TRAP — it spells a value 'accepted' of
+        its own, distinct from quote_stage's stored 'Closed Accepted'.
+
+        The list itself still ships at APPLICATION scope (asserted above) and
+        that is deliberate: this package has already paid once for declaring a
+        dropdown at MODULE scope, where it rendered blank. Retiring the field
+        must not quietly re-scope the list.
+        """
+        code = STAGE_VARDEF.read_text(encoding="utf-8")
+        self.assertTrue(STAGE_VARDEF.exists(), "the stub must still ship (§CW / G37)")
+        self.assertNotIn("$dictionary", code, "the vardef must declare nothing")
+        self.assertNotIn("'options' => 'bd_erp_stage_list'", code)
 
 
 @unittest.skipUnless(shutil.which("php"), "requires PHP 8.2 or later")

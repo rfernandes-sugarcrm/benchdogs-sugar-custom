@@ -104,12 +104,24 @@ class AccountCountryGuardTest(unittest.TestCase):
 
 
 class AccountCountryGuardPackagingTest(unittest.TestCase):
-    def test_hook_registers_the_class_file_and_method_only(self):
-        hook = HOOK.read_text()
-        self.assertIn("$hook_array['before_save'][]", hook)
-        self.assertIn("'custom/modules/Accounts/BdAccountCountryGuard.php'", hook)
-        self.assertIn("'refuseUnknownCountry'", hook)
-        self.assertNotRegex(re.sub(r"/\*.*?\*/", "", hook, flags=re.S), r"\bclass\s+\w+")
+    def test_the_hook_is_RETIRED_and_registers_nothing(self):
+        """INVERTED 2026-09-19, not deleted.
+
+        This used to assert the hook registered BdAccountCountryGuard. ERP-Core
+        owns the billing-country guard now and its hook is registered and live
+        (ErpAccountCountryGuard, 21 refs). Two guards on one field can disagree
+        and the seller sees whichever ran last, so this package registers none.
+
+        The assertion is INVERTED rather than removed because the file must keep
+        SHIPPING as an emptied stub: §CW / G37 — on Sugar Cloud, dropping a
+        custom/Extension file from the build leaves the installed copy in place
+        and the package inert. Deleting this test would stop noticing if the
+        stub itself were dropped.
+        """
+        hook = re.sub(r"/\*.*?\*/", "", HOOK.read_text(), flags=re.S)
+        self.assertTrue(HOOK.exists(), "the stub must still ship, or the tenant keeps the old hook")
+        self.assertNotIn("$hook_array", hook, "this package must register no hook")
+        self.assertNotRegex(hook, r"\bclass\s+\w+")
 
     def test_hook_body_has_a_throwable_guard_and_refuses_with_the_passthrough_exception(self):
         guard = GUARD.read_text()
