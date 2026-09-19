@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Decision 29: the Quote-level bd_governing_line label is retired.
 
-The governing selection is bd01_ERP_Quote_Line.governing, a person's choice in
-Sugar that ErpQuoteOpportunityContribution reads fail-closed. Nothing writes
+The governing selection is `Products.erp_governing` on the NATIVE Sugar quote
+line - a person's choice, read fail-closed by ErpQuoteOpportunityContribution.
+(It was `bd01_ERP_Quote_Line.governing` until decisions 901/903 retired the quote
+mirror; the Quote-level label was already dead either way.) Nothing writes
 Quotes.bd_governing_line, so it must not be shown anywhere:
 - on the Bench Dogs Quotes panel of a fresh install;
 - left behind on an upgraded tenant, whose panel the append path otherwise
@@ -11,6 +13,7 @@ Quotes.bd_governing_line, so it must not be shown anywhere:
 """
 
 import json
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -24,7 +27,11 @@ LAYOUT = PKG / "custom/modules/Quotes/BdQuotesLayoutExtensions.php"
 DASHBOARDS = PKG / "scripts/BdDemoDashboards.php"
 VARDEF = PKG / "custom/Extension/modules/Quotes/Ext/Vardefs/bd_governing_line.php"
 PANEL = "LBL_RECORDVIEW_PANEL_BENCHDOGS"
-PACKAGED = ["bd_erp_total", "bd_erp_stage", "bd_priced_at", "bd_reason_code"]
+#: The Bench panel as the package ships it. `bd_priced_at` left this list
+#: when 🔒 1044 gave it a core owner (`erp_priced_at`); it is now retired FROM
+#: the panel rather than placed on it, so it appears in RETIRED_PANEL_FIELDS
+#: below instead.
+PACKAGED = ["bd_erp_total", "bd_erp_stage", "bd_reason_code"]
 
 HARNESS = r'''
 namespace Sugarcrm\Sugarcrm\MetaData {
@@ -92,16 +99,36 @@ class GoverningLineRetiredStaticTest(unittest.TestCase):
         body = source.split("private static function benchDogsPanel", 1)[1]
         body = body.split("private const RETIRED_PANEL_FIELDS", 1)[0]
         self.assertNotIn("'name' => 'bd_governing_line'", body)
-        self.assertIn("private const RETIRED_PANEL_FIELDS = ['bd_governing_line'];", source)
+        # Membership, not an exact literal: the list legitimately grows as other
+        # fields are retired from this panel (bd_priced_at joined it at 🔒 1044).
+        # What must not change is that the removal mechanism exists and still
+        # names THIS field - pinning the whole literal made an unrelated
+        # retirement look like a regression in this one.
+        retired = re.search(
+            r"private const RETIRED_PANEL_FIELDS = \[(.*?)\];", source, re.S
+        )
+        self.assertIsNotNone(retired, "the removal mechanism is gone")
+        self.assertIn("bd_governing_line", re.findall(r"'([a-z0-9_]+)'", retired.group(1)))
 
     def test_account_dashlet_no_longer_lists_the_retired_label(self):
         self.assertNotIn("bd_governing_line", DASHBOARDS.read_text(encoding="utf-8"))
 
-    def test_vardef_is_kept_but_marked_retired(self):
+    def test_vardef_is_kept_but_declares_nothing(self):
+        """🛑 THIS USED TO ASSERT `'studio' => false` ON A LIVE DECLARATION.
+        That was the old retirement: keep the field, hide it from Studio. 🔒 1044
+        retired the field outright, and §0.2's mechanism is to EMPTY the vardef
+        file to a comment-only stub rather than delete it - on Sugar Cloud only
+        an overwrite removes an Extension file a previous install copied, so
+        deleting the stub would resurrect the field on every upgraded tenant.
+
+        So the file must still exist, must still be reachable by the installer,
+        and must declare NOTHING."""
         source = VARDEF.read_text(encoding="utf-8")
-        self.assertIn("RETIRED", source)
-        self.assertIn("decision 29", source.lower())
-        self.assertIn("'studio' => false", source)
+        self.assertTrue(VARDEF.exists(), "keep the file - it overwrites the stale declaration")
+        self.assertIn("RETIRED", source.upper())
+        self.assertIn("bd_governing_line", source, "the stub must say what it retired")
+        code = re.sub(r"/\*.*?\*/", "", source, flags=re.S)
+        self.assertNotIn("$dictionary", code, code)
 
 
 @unittest.skipUnless(shutil.which("php"), "requires the PHP build-test image")

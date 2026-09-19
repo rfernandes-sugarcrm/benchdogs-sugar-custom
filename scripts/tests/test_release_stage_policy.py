@@ -1,4 +1,29 @@
-"""Bench release-stage policy: identity-safe classification, no writes."""
+"""Bench release-stage policy: identity-safe classification, no writes.
+
+THE POLICY NOW READS NATIVE QUOTE LINES, AND HAS ONE OUTCOME. It used to walk the
+`bd01_*` quote mirror to build a `line_num => 'prototype'|'production'` lookup and
+could answer either `Prototype Ordered` (80) or `Partial Production Ordered` (90).
+Decision 901/903 retired the mirror; the policy's own header records that the
+lookup was ALREADY dead - the mirror's `prototype` boolean lost its writer at D16,
+so every ordered line had been reading as production since then.
+
+So `Prototype Ordered` is not a branch the code can reach any more, and the two
+tests that asserted it (`test_prototype_only_release`,
+`test_preloaded_erp_graph_cannot_hide_line_identity_or_prototype_role`) were
+deleted rather than repointed. Restoring that milestone needs a real writer on the
+native line, which is a decision about `custom/`, not a test that can be made to
+pass here.
+
+What remains is what the shipped `resolve()` actually decides:
+
+  * any committed (`erp_ordered`) native line stages the Opportunity at
+    `Partial Production Ordered` / 90;
+  * nothing committed REFUSES rather than guessing a stage;
+  * every line is re-read with `use_cache => false`, because Order Selected Lines
+    loads `products` before it stamps the selected Product and a Link2 snapshot
+    once showed `erp_ordered=false` after the order had actually succeeded;
+  * the policy never writes - it classifies.
+"""
 
 from pathlib import Path
 import json
@@ -13,6 +38,8 @@ PROVIDER = (
     ROOT / "sugar-sell/BenchDogs-Ext/custom/modules/Quotes/ErpQuoteHooks"
     / "OpportunityReleaseStagePolicy.php"
 )
+
+ORDERED = {"sales_stage": "Partial Production Ordered", "probability": 90}
 
 FIXTURE = r'''
 #[AllowDynamicProperties]
@@ -41,21 +68,15 @@ class TestLink {
     }
 }
 require '__PROVIDER__';
-$make = function ($id, $lineNum, $prototype = false, $ordered = false) {
+$make = function ($id, $ordered = false, $deleted = false) {
     $row = new SugarBean();
     $row->id = $id;
-    $row->line_num = $lineNum;
-    // 🔒 1032 — core's field, not Bench's retired bd_erp_line_num. The policy
-    // reads ONLY this name now, so a fixture still stamping the old one would
-    // keep passing against a field the code no longer looks at.
-    $row->erp_quote_line_num = $lineNum;
-    $row->prototype = $prototype;
     $row->erp_ordered = $ordered;
+    $row->deleted = $deleted;
     return $row;
 };
 $quote = new SugarBean();
-$erp = new SugarBean();
-$erp->id = 'erp-quote';
+$quote->id = 'owned-quote';
 '''.replace("__PROVIDER__", PROVIDER.as_posix())
 
 
@@ -74,116 +95,71 @@ echo json_encode(['decision' => $decision ?? null, 'error' => $error ?? null,
         self.assertEqual(result.stderr, "")
         return json.loads(result.stdout)
 
-    def test_prototype_only_release(self):
-        observed = self.execute(r'''
-$erp->bd01_erp_quote_lines = new TestLink([$make('erp-proto', 1, true)]);
-$quote->bd01_erp_quote_quotes = new TestLink([$erp]);
-$quote->products = new TestLink([$make('qli-proto', 1, false, true)]);
-''')
-        self.assertEqual(observed["decision"], {
-            "sales_stage": "Prototype Ordered", "probability": 80,
-        })
+    def test_a_committed_line_stages_the_opportunity_and_writes_nothing(self):
+        observed = self.execute(
+            "$quote->products = new TestLink([$make('qli-production', true)]);"
+        )
+        self.assertEqual(observed["decision"], ORDERED, observed)
         self.assertEqual(observed["retrievals"], [
-            ["bd01_ERP_Quote", "erp-quote", {"use_cache": False}],
-            ["bd01_ERP_Quote_Line", "erp-proto", {"use_cache": False}],
-            ["Products", "qli-proto", {"use_cache": False}],
+            ["Products", "qli-production", {"use_cache": False}],
         ])
         self.assertEqual(observed["quote_saves"], 0)
 
-    def test_any_ordered_production_outranks_prototype(self):
+    def test_one_committed_line_among_uncommitted_ones_is_enough(self):
         observed = self.execute(r'''
-$erp->bd01_erp_quote_lines = new TestLink([
-    $make('erp-proto', 1, true), $make('erp-production', 2)
-]);
-$quote->bd01_erp_quote_quotes = new TestLink([$erp]);
 $quote->products = new TestLink([
-    $make('qli-proto', 1, false, true), $make('qli-production', 2, false, true)
+    $make('qli-a', false), $make('qli-b', true), $make('qli-c', false)
 ]);
 ''')
-        self.assertEqual(observed["decision"], {
-            "sales_stage": "Partial Production Ordered", "probability": 90,
-        })
+        self.assertEqual(observed["decision"], ORDERED, observed)
 
-    def test_linked_bench_quote_with_no_visible_release_refuses_and_logs_upstream(self):
-        observed = self.execute(r'''
-$erp->bd01_erp_quote_lines = new TestLink([$make('erp-production', 2)]);
-$quote->bd01_erp_quote_quotes = new TestLink([$erp]);
-$quote->products = new TestLink([$make('qli-production', 2)]);
-''')
+    def test_no_visible_release_refuses_and_logs_upstream(self):
+        observed = self.execute(
+            "$quote->products = new TestLink([$make('qli-production', false)]);"
+        )
+        self.assertIsNone(observed["decision"])
+        self.assertIn("No committed Quote line", observed["error"])
+
+    def test_a_deleted_line_is_not_a_committed_release(self):
+        observed = self.execute(
+            "$quote->products = new TestLink([$make('qli-gone', true, true)]);"
+        )
         self.assertIsNone(observed["decision"])
         self.assertIn("No committed Quote line", observed["error"])
 
     def test_preloaded_relationship_snapshot_cannot_hide_committed_release(self):
+        """The stale Link2 bean says uncommitted; the committed row says ordered.
+        Reading through BeanFactory with `use_cache => false` is what makes the
+        second one win."""
         observed = self.execute(r'''
-$erp->bd01_erp_quote_lines = new TestLink([$make('erp-proto', 1, true)]);
-$quote->bd01_erp_quote_quotes = new TestLink([$erp]);
-$stale = $make('qli-proto', 1, false, false);
+$stale = $make('qli-production', false);
 $quote->products = new TestLink([$stale]);
 $fresh = clone $stale;
 $fresh->erp_ordered = true;
 BeanFactory::$beans[$fresh->id] = $fresh;
 ''')
-        self.assertEqual(observed["decision"], {
-            "sales_stage": "Prototype Ordered", "probability": 80,
-        })
+        self.assertEqual(observed["decision"], ORDERED, observed)
         self.assertEqual(observed["retrievals"], [
-            ["bd01_ERP_Quote", "erp-quote", {"use_cache": False}],
-            ["bd01_ERP_Quote_Line", "erp-proto", {"use_cache": False}],
-            ["Products", "qli-proto", {"use_cache": False}],
+            ["Products", "qli-production", {"use_cache": False}],
         ])
 
-    def test_preloaded_erp_graph_cannot_hide_line_identity_or_prototype_role(self):
-        observed = self.execute(r'''
-$staleLine = $make('erp-proto', 0, false);
-$staleErp = clone $erp;
-$staleErp->bd01_erp_quote_lines = new TestLink([$staleLine]);
-$quote->bd01_erp_quote_quotes = new TestLink([$staleErp]);
-$quote->products = new TestLink([$make('qli-proto', 1, false, true)]);
-
-$freshLine = $make('erp-proto', 1, true);
-$freshErp = clone $erp;
-$freshErp->bd01_erp_quote_lines = new TestLink([$freshLine]);
-BeanFactory::$beans[$freshErp->id] = $freshErp;
-''')
-        self.assertEqual(observed["decision"], {
-            "sales_stage": "Prototype Ordered", "probability": 80,
-        })
-        self.assertEqual(observed["retrievals"], [
-            ["bd01_ERP_Quote", "erp-quote", {"use_cache": False}],
-            ["bd01_ERP_Quote_Line", "erp-proto", {"use_cache": False}],
-            ["Products", "qli-proto", {"use_cache": False}],
-        ])
-
-    def test_ambiguous_or_missing_identity_refuses(self):
-        scenarios = [
-            r'''
-$erp->bd01_erp_quote_lines = new TestLink([$make('erp', 1)]);
-$quote->bd01_erp_quote_quotes = new TestLink([$erp, clone $erp]);
-$quote->products = new TestLink([$make('qli', 1, false, true)]);
+    def test_unreadable_lines_refuse_rather_than_classify_on_a_partial_read(self):
+        scenarios = {
+            # The relationship will not load at all.
+            "no products link": "",
+            # A line identity that resolves to no row: a partial read, not an
+            # empty release.
+            "unresolvable line": r'''
+$quote->products = new TestLink([$make('qli-present', true)]);
+unset(BeanFactory::$beans['qli-present']);
 ''',
-            r'''
-$erp->bd01_erp_quote_lines = new TestLink([$make('erp-a', 1), $make('erp-b', 1)]);
-$quote->bd01_erp_quote_quotes = new TestLink([$erp]);
-$quote->products = new TestLink([$make('qli', 1, false, true)]);
-''',
-            r'''
-$erp->bd01_erp_quote_lines = new TestLink([$make('erp', 1)]);
-$quote->bd01_erp_quote_quotes = new TestLink([$erp]);
-$quote->products = new TestLink([$make('qli', 0, false, true)]);
-''',
-            r'''
-$erp->bd01_erp_quote_lines = new TestLink([
-    $make('proto-a', 1, true), $make('proto-b', 2, true)
-]);
-$quote->bd01_erp_quote_quotes = new TestLink([$erp]);
-$quote->products = new TestLink([$make('qli', 1, false, true)]);
-''',
-        ]
-        for scenario in scenarios:
-            with self.subTest(scenario=scenario):
+        }
+        for name, scenario in scenarios.items():
+            with self.subTest(scenario=name):
                 observed = self.execute(scenario)
                 self.assertTrue(observed["error"], observed)
                 self.assertIsNone(observed["decision"])
+                self.assertEqual(observed["quote_saves"], 0)
 
     def test_built_package_contains_policy_and_partial_dependency(self):
         package = ROOT / "sugar-sell/BenchDogs-Ext"

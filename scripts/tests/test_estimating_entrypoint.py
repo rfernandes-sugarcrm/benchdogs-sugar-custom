@@ -1,4 +1,23 @@
-"""Exercise the Bench estimating route against the shared action boundary."""
+"""Exercise the Bench estimating route against the shared action boundary.
+
+THE HAND-OFF NO LONGER STAMPS A MIRROR. `sendToEstimating` used to locate the
+`bd01_ERP_Quote` mirror row by exact scoped key and stamp `bd_sent_to_estimating_at`
+on it, reporting the outcome as `estimating_timestamp_status`
+(stamped / pending_exact_mirror / ambiguous_exact_mirror /
+pending_timestamp_persistence). Decision 901/903 retired the mirror and the shipped
+route no longer reads, creates or stamps one: it delegates `advanced_quote` to the
+shared `QuotesErpActionsApi`, stamps `bd_erp_stage = in_estimating` on the NATIVE
+Quote, re-reads to prove persistence, and reports `erp_handoff_status` plus an
+independent `notification_status`.
+
+The five tests that covered the mirror stamp (exact-key company disambiguation,
+mismatched identity, duplicate identity, stamp-once-on-retry, and save/readback
+failure) were deleted rather than repointed - there is no mirror for them to be
+about, and `estimating_timestamp_status` is no longer a key the route returns.
+
+`BeanFactory::newBean` in the harness now THROWS: the mirror was the only record
+this route ever created, so a creation here means one has been reintroduced.
+"""
 
 from __future__ import annotations
 
@@ -28,29 +47,11 @@ class TestQuote extends SugarBean {
     public $id = 'quote-1';
     public $bd_erp_stage = INITIAL_STAGE;
     public $erp_display_sync_key = INITIAL_ERP_ID;
-    public $erp_sync_key = INITIAL_SCOPED_ID;
     public $saves = 0;
     public function save() {
         $this->saves++;
         if (THROW_SAVE) throw new Exception('private database details');
         return SAVE_RESULT ? $this->id : false;
-    }
-}
-class TestErpQuote extends SugarBean {
-    public $id = '';
-    public $name = '';
-    public $quote_num = 0;
-    public $erp_sync_key = '';
-    public $sugar_quote_id = '';
-    public $bd_sent_to_estimating_at = '';
-    public $saves = 0;
-    public function save() {
-        $this->saves++;
-        if ($this->id === '') $this->id = 'created-' . count($GLOBALS['new_beans']);
-        if (!ERP_SAVE_RESULT) return false;
-        $GLOBALS['erp_beans'][$this->id] = $this;
-        if (ERP_LOSE_PERSISTENCE) $this->bd_sent_to_estimating_at = '';
-        return $this->id;
     }
 }
 if (LOAD_NOTIFICATION_HOOK) {
@@ -74,33 +75,14 @@ class BeanFactory {
             }
             return $GLOBALS['quote'];
         }
-        return $GLOBALS['erp_beans'][$id] ?? null;
+        return null;
     }
+    // sendToEstimating delegates and stamps a stage; it creates nothing. The
+    // retired bd01_* mirror was the only thing it ever built, so a creation
+    // here now means a mirror has been reintroduced.
     public static function newBean($module) {
-        $bean = new TestErpQuote();
-        if ($module === 'bd01_ERP_Quote') $GLOBALS['new_beans'][] = $bean;
-        return $bean;
+        throw new Exception('Unexpected record creation: ' . $module);
     }
-}
-class SugarQueryWhere {
-    public function equals($field, $value) { $GLOBALS['query_key'] = $value; return $this; }
-}
-class SugarQuery {
-    public function select($fields) { return $this; }
-    public function from($bean) { return $this; }
-    public function where() { return new SugarQueryWhere(); }
-    public function limit($limit) { return $this; }
-    public function execute() {
-        $rows = [];
-        foreach ($GLOBALS['erp_beans'] as $id => $bean) {
-            if ($bean->erp_sync_key === $GLOBALS['query_key']) $rows[] = ['id' => $id];
-        }
-        return array_slice($rows, 0, 2);
-    }
-}
-class TimeDate {
-    public static function getInstance() { return new self(); }
-    public function nowDb() { return '2026-09-12 12:34:56'; }
 }
 class TestLog { public function info($message) {} public function warn($message) {} public function error($message) {} }
 $GLOBALS['log'] = new TestLog();
@@ -108,20 +90,7 @@ $GLOBALS['quote'] = new TestQuote();
 $GLOBALS['retrievals'] = [];
 $GLOBALS['quote_retrievals'] = 0;
 $GLOBALS['delegated'] = [];
-$GLOBALS['erp_beans'] = [];
-$GLOBALS['new_beans'] = [];
-$GLOBALS['query_key'] = '';
 $GLOBALS['notification_consumes'] = [];
-$mirrorMode = MIRROR_MODE;
-if ($mirrorMode === 'two_companies') {
-    $other = new TestErpQuote(); $other->id = 'other'; $other->quote_num = 1201; $other->erp_sync_key = 'OTHER__1201';
-    $exact = new TestErpQuote(); $exact->id = 'exact'; $exact->quote_num = 1201; $exact->erp_sync_key = 'EPIC06__1201';
-    $GLOBALS['erp_beans'] = ['other' => $other, 'exact' => $exact];
-} elseif ($mirrorMode === 'duplicate_exact') {
-    $a = new TestErpQuote(); $a->id = 'a'; $a->quote_num = 1201; $a->erp_sync_key = 'EPIC06__1201';
-    $b = new TestErpQuote(); $b->id = 'b'; $b->quote_num = 1201; $b->erp_sync_key = 'EPIC06__1201';
-    $GLOBALS['erp_beans'] = ['a' => $a, 'b' => $b];
-}
 $GLOBALS['delegate_result'] = DELEGATE_RESULT;
 require 'custom/clients/base/api/BdBenchDogsActionsApi.php';
 $endpoint = new BdBenchDogsActionsApi();
@@ -129,15 +98,6 @@ $routes = $endpoint->registerApiRest();
 $results = [];
 for ($i = 0; $i < CALLS; $i++) {
     $results[] = $endpoint->sendToEstimating(new ServiceBase(), ['record' => 'quote-1', 'caller' => 'bench']);
-}
-$erp = [];
-$seenErp = [];
-foreach (array_merge(array_values($GLOBALS['erp_beans']), $GLOBALS['new_beans']) as $bean) {
-    if ($bean->erp_sync_key === '') continue;
-    if (isset($seenErp[$bean->id])) continue;
-    $seenErp[$bean->id] = true;
-    $erp[] = ['id' => $bean->id, 'key' => $bean->erp_sync_key,
-              'stamp' => $bean->bd_sent_to_estimating_at, 'saves' => $bean->saves];
 }
 echo json_encode([
     'route_method' => $routes['bdSendToEstimating']['method'] ?? '',
@@ -148,7 +108,6 @@ echo json_encode([
     'stage' => $GLOBALS['quote']->bd_erp_stage,
     'saves' => $GLOBALS['quote']->saves,
     'retrievals' => $GLOBALS['retrievals'],
-    'erp' => $erp,
     'notification_consumes' => $GLOBALS['notification_consumes'],
 ]);
 }
@@ -160,7 +119,6 @@ class QuotesErpActionsApi extends BaseErpActionsApi {
     public function runErpAction(ServiceBase $api, array $args): array {
         $GLOBALS['delegated'][] = $args;
         if (DELEGATE_DISPLAY_ID !== '') $GLOBALS['quote']->erp_display_sync_key = DELEGATE_DISPLAY_ID;
-        if (DELEGATE_SCOPED_ID !== '') $GLOBALS['quote']->erp_sync_key = DELEGATE_SCOPED_ID;
         return $GLOBALS['delegate_result'];
     }
 }
@@ -174,13 +132,8 @@ class EstimatingEntrypointTest(unittest.TestCase):
         *,
         initial_stage: str = "draft",
         initial_erp_id: str = "",
-        initial_scoped_id: str = "",
         delegate_display_id: str = "1201",
-        delegate_scoped_id: str = "EPIC06__1201",
-        mirror_mode: str = "none",
         calls: int = 1,
-        erp_save_result: bool = True,
-        erp_lose_persistence: bool = False,
         save_result: bool = True,
         throw_save: bool = False,
         lose_persistence: bool = False,
@@ -201,13 +154,8 @@ class EstimatingEntrypointTest(unittest.TestCase):
             replacements = {
                 "INITIAL_STAGE": repr(initial_stage),
                 "INITIAL_ERP_ID": repr(initial_erp_id),
-                "INITIAL_SCOPED_ID": repr(initial_scoped_id),
                 "DELEGATE_DISPLAY_ID": repr(delegate_display_id),
-                "DELEGATE_SCOPED_ID": repr(delegate_scoped_id),
-                "MIRROR_MODE": repr(mirror_mode),
                 "CALLS": str(calls),
-                "ERP_SAVE_RESULT": "true" if erp_save_result else "false",
-                "ERP_LOSE_PERSISTENCE": "true" if erp_lose_persistence else "false",
                 "SAVE_RESULT": "true" if save_result else "false",
                 "THROW_SAVE": "true" if throw_save else "false",
                 "LOSE_PERSISTENCE": "true" if lose_persistence else "false",
@@ -253,7 +201,6 @@ class EstimatingEntrypointTest(unittest.TestCase):
         }])
         self.assertEqual(observed["result"]["status"], "success")
         self.assertEqual(observed["result"]["erp_id"], "1201")
-        self.assertEqual(observed["result"]["estimating_timestamp_status"], "stamped")
         self.assertEqual(observed["result"]["erp_handoff_status"], "completed")
         self.assertEqual(observed["result"]["notification_status"], "created")
         self.assertEqual(observed["notification_consumes"], ["quote-1"])
@@ -263,12 +210,7 @@ class EstimatingEntrypointTest(unittest.TestCase):
             ["Quotes", "quote-1", {"use_cache": False}],
             ["Quotes", "quote-1", {"use_cache": False}],
             ["Quotes", "quote-1", {"use_cache": False}],
-            ["bd01_ERP_Quote", "created-2", {"use_cache": False}],
         ])
-        self.assertEqual(observed["erp"], [{
-            "id": "created-2", "key": "EPIC06__1201",
-            "stamp": "2026-09-12 12:34:56", "saves": 1,
-        }])
 
     def test_notification_failure_remains_a_successful_non_retryable_erp_handoff(self):
         response = {"status": "success", "message": "created", "erp_id": "1201"}
@@ -328,60 +270,6 @@ class EstimatingEntrypointTest(unittest.TestCase):
                 self.assertEqual(observed["result"]["erp_id"], "1201")
                 self.assertTrue(observed["result"]["partial_success"])
                 self.assertFalse(observed["result"]["retry_safe"])
-
-    def test_exact_scoped_key_selects_right_company_when_bare_numbers_collide(self):
-        response = {"status": "success", "message": "created", "erp_id": "1201"}
-        observed = self.execute(response, mirror_mode="two_companies")
-        self.assertEqual(observed["result"]["estimating_timestamp_status"], "stamped")
-        by_key = {row["key"]: row for row in observed["erp"]}
-        self.assertEqual(by_key["OTHER__1201"]["stamp"], "")
-        self.assertEqual(by_key["OTHER__1201"]["saves"], 0)
-        self.assertEqual(by_key["EPIC06__1201"]["stamp"], "2026-09-12 12:34:56")
-        self.assertEqual(by_key["EPIC06__1201"]["saves"], 1)
-
-    def test_missing_or_mismatched_scoped_identity_never_creates_a_mirror(self):
-        response = {"status": "success", "message": "created", "erp_id": "1201"}
-        for scoped in ("", "EPIC06__1202", "__1201"):
-            with self.subTest(scoped=scoped):
-                observed = self.execute(response, delegate_scoped_id=scoped)
-                self.assertEqual(
-                    observed["result"]["estimating_timestamp_status"],
-                    "pending_exact_mirror",
-                )
-                self.assertEqual(observed["erp"], [])
-
-    def test_duplicate_exact_scoped_identity_refuses_instead_of_guessing(self):
-        response = {"status": "success", "message": "created", "erp_id": "1201"}
-        observed = self.execute(response, mirror_mode="duplicate_exact")
-        self.assertEqual(
-            observed["result"]["estimating_timestamp_status"],
-            "ambiguous_exact_mirror",
-        )
-        self.assertTrue(all(row["saves"] == 0 for row in observed["erp"]))
-
-    def test_first_handoff_stamps_once_and_direct_retry_does_not_reset_it(self):
-        response = {"status": "success", "message": "created", "erp_id": "1201"}
-        observed = self.execute(response, calls=2)
-        self.assertEqual(len(observed["results"]), 2)
-        self.assertEqual(observed["results"][0]["estimating_timestamp_status"], "stamped")
-        self.assertNotIn("estimating_timestamp_status", observed["results"][1])
-        stamped = [row for row in observed["erp"] if row["stamp"]]
-        self.assertEqual(len(stamped), 1)
-        self.assertEqual(stamped[0]["stamp"], "2026-09-12 12:34:56")
-        self.assertEqual(stamped[0]["saves"], 1)
-
-    def test_mirror_save_or_readback_failure_never_reports_stamped(self):
-        response = {"status": "success", "message": "created", "erp_id": "1201"}
-        for scenario in (
-            {"erp_save_result": False},
-            {"erp_lose_persistence": True},
-        ):
-            with self.subTest(scenario=scenario):
-                observed = self.execute(response, **scenario)
-                self.assertEqual(
-                    observed["result"]["estimating_timestamp_status"],
-                    "pending_timestamp_persistence",
-                )
 
 
 class EntrypointSourceContractTest(unittest.TestCase):

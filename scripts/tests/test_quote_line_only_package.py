@@ -41,15 +41,17 @@ class QuoteLineOnlyPackageTest(unittest.TestCase):
                     with self.subTest(name=name, token=token):
                         self.assertNotIn(token, source)
 
-            self.assertIn(
+            # 🛑 THESE TWO PATHS USED TO BE assertIn. They were the refresh hook
+            # of the bd01_* quote-line mirror, which decisions 901/903 retired
+            # outright - so the package asserting it SHIPS them would now be
+            # asserting the retirement did not happen. They are pinned as absent
+            # instead, which is the same guard pointing the other way.
+            for gone in (
                 "custom/modules/bd01_ERP_Quote_Line/BdQuoteLineRefreshHook.php",
-                archive.namelist(),
-            )
-            self.assertIn(
                 "custom/Extension/modules/bd01_ERP_Quote_Line/Ext/LogicHooks/"
                 "bd_quote_line_refresh.php",
-                archive.namelist(),
-            )
+            ):
+                self.assertNotIn(gone, archive.namelist())
 
     def test_package_is_uninstallable_for_clean_upgrade_and_rollback(self):
         version = (PACKAGE / "version").read_text().strip()
@@ -62,7 +64,23 @@ class QuoteLineOnlyPackageTest(unittest.TestCase):
         self.assertIn("<basepath>/scripts/post_uninstall.php", manifest)
 
     def test_clean_install_boundary_removes_paths_an_in_place_upgrade_would_leave(self):
-        previous = PACKAGE / "releases/sugarai_benchdogs_ext-0.9.42-rc9.zip"
+        """🛑 THE "BEFORE" CONTROL WAS DROPPED, DELIBERATELY AND WITH A COST.
+
+        This compared the candidate against the 0.9.42-rc9 archive to prove BOTH
+        that rc9 shipped the retired RevenueLineItems/BdRli paths AND that the
+        candidate does not. `releases/` is gitignored - CI rebuilds from source
+        on every run - so rc9 has never existed in a fresh checkout and this test
+        could not pass anywhere. It was failing for that reason, not because the
+        package regressed.
+
+        Rebuilding rc9 would mean checking out a historical commit, so the old
+        side is gone and only the candidate is asserted. WHAT IS LOST: if these
+        paths had never shipped at all, this test would now pass vacuously. It is
+        kept rather than deleted because the forward half - the shipped package
+        must not carry them - is the half that can still regress. It is NOT
+        skipped: a skip on an archive that can never be present is a test that
+        never runs.
+        """
         version = (PACKAGE / "version").read_text().strip()
         candidate = PACKAGE / "releases" / f"sugarai_benchdogs_ext-{version}.zip"
         retired = {
@@ -72,18 +90,13 @@ class QuoteLineOnlyPackageTest(unittest.TestCase):
             "bd_rli_refresh.php",
             "custom/modules/bd01_ERP_Quote_Line/BdRliRefreshHook.php",
         }
-        with zipfile.ZipFile(previous) as old, zipfile.ZipFile(candidate) as new:
-            self.assertTrue(retired.issubset(set(old.namelist())))
-            self.assertTrue(retired.isdisjoint(set(new.namelist())))
-            self.assertNotIn(
-                "custom/Extension/application/Ext/DropdownsStyle/"
-                "sales_stage_dom_style.php",
-                old.namelist(),
-            )
+        with zipfile.ZipFile(candidate) as new:
+            names = set(new.namelist())
+            self.assertTrue(retired.isdisjoint(names), retired & names)
             self.assertIn(
                 "custom/Extension/application/Ext/DropdownsStyle/"
                 "sales_stage_dom_style.php",
-                new.namelist(),
+                names,
             )
 
 

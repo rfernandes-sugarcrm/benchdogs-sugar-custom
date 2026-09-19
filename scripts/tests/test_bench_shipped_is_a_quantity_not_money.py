@@ -84,6 +84,7 @@ from pathlib import Path
 import json
 import re
 import subprocess
+import tempfile
 import unittest
 import zipfile
 
@@ -192,30 +193,81 @@ class BenchShippedIsAQuantityNotMoneyTest(unittest.TestCase):
             with self.subTest(path=rel):
                 self.assertEqual("", _code(PACKAGE / rel).replace("<?php", "").strip())
 
+    #: A real declaration of each shape, written here rather than recovered from
+    #: a historical archive. Each one is what the corresponding stub looked like
+    #: BEFORE decision 59 emptied it, reduced to the single contribution the
+    #: probe is supposed to see.
+    CONTROL_FRAGMENTS = {
+        "vardefs": """<?php
+$dictionary['ERP_OrderLines']['fields']['bd_shipped_value'] = array(
+    'name' => 'bd_shipped_value',
+    'vname' => 'LBL_BD_SHIPPED_VALUE',
+    'type' => 'currency',
+);
+""",
+        "language": """<?php
+$mod_strings['LBL_BD_SHIPPED_VALUE'] = 'Shipped Value';
+""",
+        "viewdefs": """<?php
+foreach ($viewdefs['ERP_OrderLines']['base']['view']['record']['panels'] as $i => $panel) {
+    if (($panel['name'] ?? '') === 'LBL_RECORDVIEW_PANEL_LINE_ITEM_DETAIL') {
+        $viewdefs['ERP_OrderLines']['base']['view']['record']['panels'][$i]['fields'][] =
+            array('name' => 'bd_shipped_value');
+    }
+}
+""",
+    }
+
     def test_the_probe_itself_detects_a_non_empty_fragment(self):
         """GUARDS THE INSTRUMENT. A check that cannot fail proves nothing.
 
-        Runs the probe against rc23's REAL fragments — the ones that did
-        declare the field — and requires it to find them. Without this, a
-        broken probe would report every stub inert and the suite would go
-        green with the field still shipping. An assertion in the previous
-        version of this file passed vacuously for exactly that reason.
+        Runs the probe against a REAL declaration of each shape and requires it
+        to find one. Without this, a broken probe would report every stub inert
+        and the suite would go green with the field still shipping. An assertion
+        in an earlier version of this file passed vacuously for exactly that
+        reason.
+
+        🛑 THIS TEST ITSELF USED TO BE THE SAME DEFECT IT EXISTS TO PREVENT. It
+        took its controls from `releases/sugarai_benchdogs_ext-0.9.42-rc23.zip`
+        and called `self.skipTest()` when that archive was absent. `releases/` is
+        gitignored and CI rebuilds only the CURRENT version, so rc23 has never
+        been present in a fresh checkout: the guard on the instrument was itself
+        an instrument that never ran. The controls below are written inline so it
+        always runs.
+
+        ⚠️ WHAT THE INLINE CONTROLS DO NOT COVER, and it is not nothing. The
+        archive controls were real fragments, so they also proved the probe's
+        `PANEL_NAMES` list was COMPLETE - and they once caught it omitting
+        `LBL_RECORDVIEW_PANEL_ORDER_DETAIL`, which had made the probe declare a
+        genuine fragment empty. A control written here can only exercise a panel
+        name this file already knows. So the archive comparison is still run when
+        the archive happens to be present; it is simply no longer the only path.
         """
+        for mode, source in sorted(self.CONTROL_FRAGMENTS.items()):
+            with self.subTest(mode=mode, control="inline"):
+                with tempfile.TemporaryDirectory() as tmp:
+                    out = Path(tmp) / "original.php"
+                    out.write_text(source, encoding="utf-8")
+                    self.assertGreater(
+                        _probe(mode, out)["count"], 0,
+                        f"probe failed to detect a real {mode} declaration - "
+                        "the instrument is broken, not the package",
+                    )
+
         control = PACKAGE / "releases" / "sugarai_benchdogs_ext-0.9.42-rc23.zip"
         if not control.is_file():
-            self.skipTest(f"known-bad control archive absent: {control.name}")
-        import tempfile
+            return
         with zipfile.ZipFile(control) as archive:
             names = set(archive.namelist())
             for rel, mode in sorted(RETIRED_STUBS.items()):
-                with self.subTest(path=rel, mode=mode):
+                with self.subTest(path=rel, mode=mode, control="rc23"):
                     self.assertIn(rel, names, "control archive must carry the original")
                     with tempfile.TemporaryDirectory() as tmp:
                         out = Path(tmp) / "original.php"
                         out.write_bytes(archive.read(rel))
                         self.assertGreater(
                             _probe(mode, out)["count"], 0,
-                            f"probe failed to detect the ORIGINAL {rel} — "
+                            f"probe failed to detect the ORIGINAL {rel} - "
                             "the instrument is broken, not the package",
                         )
 
