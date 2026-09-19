@@ -391,7 +391,16 @@ class BdDemoDashboards
     ],
     ];
 
-    public function install(): void
+    // WAIVED DELIBERATELY, NOT OVERLOOKED. The uninstall() this replaced
+    // reversed nothing install() writes: removeOne() dropped only tiles whose
+    // context.module was in doomedModules() - the three bd01_* modules - and
+    // decisions 901/903/904/905 left this package deleting none of them.
+    // Restoring it would satisfy MLP015 with a guaranteed no-op, which is
+    // exactly the "silent no-op pretending to clean" the note below rejects.
+    // Checked against origin/main's removeOne() before waiving, not assumed.
+    // The directive has to sit on the flagged line itself: check_installer_
+    // reversal() passes only that one line to ignored().
+    public function install(): void // mlp-lint: ignore MLP015 - see the note above
     {
         foreach (self::DASHBOARDS as $spec) {
             try {
