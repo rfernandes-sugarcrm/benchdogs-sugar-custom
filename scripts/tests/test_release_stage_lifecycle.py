@@ -32,14 +32,15 @@ import subprocess
 import tempfile
 import unittest
 
+import shared_sugar
+
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKSPACE = ROOT.parent
-SHARED = (
-    WORKSPACE / "erp-integration-sugar/sugar-sell/ERP-Epicor-PartialFulfillment"
-    / "custom/modules/Quotes/ErpOpportunityValuation.php"
-)
-ROLLUP = SHARED.with_name("ErpQuoteLineRollup.php")
+# Sibling checkout when present, pinned copy otherwise - see
+# scripts/refresh_shared_fixtures.py for why CI cannot have the real tree.
+SHARED = shared_sugar.resolve("ErpOpportunityValuation.php")
+ROLLUP = shared_sugar.resolve("ErpQuoteLineRollup.php")
 PROVIDER = (
     ROOT / "sugar-sell/BenchDogs-Ext/custom/modules/Quotes/ErpQuoteHooks"
     / "OpportunityReleaseStagePolicy.php"
@@ -47,7 +48,6 @@ PROVIDER = (
 
 
 @unittest.skipUnless(shutil.which("php"), "requires PHP 8.2 build-test image")
-@unittest.skipUnless(SHARED.is_file(), "requires sibling shared Sugar checkout")
 class ReleaseStageLifecycleTest(unittest.TestCase):
     def test_composed_writer_and_policy_stage_one_opportunity_without_rlis(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -1,0 +1,20 @@
+{
+  "upstream_commit": "c6a1285bd36e0753f353ee773b2224ff25f21833",
+  "files": {
+    "QuoteOpportunityAmount.php": {
+      "source": "sugar-sell/ERP-Core/src/custom/modules/Quotes/QuoteOpportunityAmount.php",
+      "sha256": "1172b0598c3ecb2141ecb7e53f0d457e35de01c7f549083fa8d561770ef55072",
+      "bytes": 14178
+    },
+    "ErpOpportunityValuation.php": {
+      "source": "sugar-sell/ERP-Epicor-PartialFulfillment/custom/modules/Quotes/ErpOpportunityValuation.php",
+      "sha256": "7681ba3d1f8871eb5025d89ee2e8a61d0053485d142eb5b092421b10330c956f",
+      "bytes": 66404
+    },
+    "ErpQuoteLineRollup.php": {
+      "source": "sugar-sell/ERP-Epicor-PartialFulfillment/custom/modules/Quotes/ErpQuoteLineRollup.php",
+      "sha256": "9c915747bf0fe7b08aacc8d52347fbd488e65b20740beaabc0be6ae86c30f330",
+      "bytes": 19013
+    }
+  }
+}

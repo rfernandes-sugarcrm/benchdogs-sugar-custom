@@ -74,7 +74,7 @@ jobs:
       - name: Install the zip extension and python
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends libzip-dev zip unzip python3
+          apt-get install -y --no-install-recommends libzip-dev zip unzip python3 python3-pytest
           docker-php-ext-install zip
           rm -rf /var/lib/apt/lists/*
 
@@ -121,10 +121,17 @@ jobs:
       # documentation, not a guard: the G15 duplicate-button retirement had no
       # coverage at all until this commit, and nothing would have caught it
       # coming back.
+      # 🛑 NO pip HERE. This job runs in php:8.2-cli (Debian trixie), where
+      # `apt-get install python3` ships the interpreter and NOTHING else --
+      # no pip3 binary and no `pip` module. The first version of this step
+      # called `pip3 install ... pytest` and died `pip3: not found`, exit 127,
+      # before a single test ran (PR #14). pytest comes from `python3-pytest`
+      # in the apt line above instead: one layer fewer, no network install at
+      # job time, and a version pinned by the base image rather than by
+      # whatever PyPI serves that morning. The suite imports nothing outside
+      # the standard library, so pytest is only the RUNNER here.
       - name: The whole test suite
-        run: |
-          pip3 install --quiet --break-system-packages pytest || pip3 install --quiet pytest
-          python3 -m pytest scripts/tests -q
+        run: python3 -m pytest scripts/tests -q
 
       # A collected-count floor. Asserting the exit code alone cannot see a
       # runner that silently stops collecting - exactly how the 652-of-892 hole
@@ -136,6 +143,33 @@ jobs:
           if [ "${COUNT:-0}" -lt 160 ]; then
             echo "::error::only $COUNT tests collected; expected >= 160. A collector that "
             echo "::error::silently declines to collect is indistinguishable from a passing suite."
+            exit 1
+          fi
+
+      # A skip CEILING, the twin of the collected floor above. The floor cannot
+      # see a test that is collected and then skipped, and skipping is the
+      # cheapest way to make a red suite green: one `skipUnless` on a class and
+      # seven scenarios stop being evidence while the check stays green. That
+      # is not hypothetical - it is exactly what this PR nearly shipped.
+      #
+      # 3 is the number under CI conditions, and each one is named:
+      #   test_shared_fixture_drift  - by construction; it compares the pinned
+      #     copies against the real erp-integration-sugar files and can only
+      #     run where that checkout exists.
+      #   test_create_opp_quote_button_retired:197 } still want the sibling
+      #   test_mlp_lint:683 (ERP-Epicor)            } tree; not yet pinned.
+      #
+      # Everything else that used to need that private repo now runs here
+      # against fixtures/shared-sugar/ - see scripts/refresh_shared_fixtures.py.
+      # Raise this number only with a reason written beside it.
+      - name: The suite did not go quiet
+        run: |
+          SKIPPED=$(python3 -m pytest scripts/tests -q --color=no 2>/dev/null \
+            | tail -1 | grep -oE '[0-9]+ skipped' | grep -oE '^[0-9]+' || echo 0)
+          echo "skipped: $SKIPPED"
+          if [ "${SKIPPED:-0}" -gt 3 ]; then
+            echo "::error::$SKIPPED tests skipped; ceiling is 3. A test that is"
+            echo "::error::collected and then skipped is documentation, not a guard."
             exit 1
           fi
 
