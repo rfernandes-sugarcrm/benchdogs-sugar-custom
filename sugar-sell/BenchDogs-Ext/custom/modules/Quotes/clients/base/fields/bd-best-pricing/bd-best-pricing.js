@@ -1,82 +1,25 @@
 /**
- * @class View.Fields.Base.Quotes.BdBestPricing
- * @alias SUGAR.App.view.fields.BaseQuotesBdBestPricing
- * @extends View.Fields.Base.RowactionField
+ * RETIRED — this controller is intentionally empty.
  *
- * Quote header button: reprices the CATALOG-linked line items from the live
- * Epicor price lists (per customer, per quantity break) and reports, by
- * name, which lines were repriced and which were skipped because they are
- * not in the Product Catalog (engineered/free-text lines are never touched).
+ * The button it backed is no longer placed on any layout by this package:
+ * BdQuotesLayoutExtensions sets $wanted = [] and lists every one of this
+ * package's own buttons in $unwanted, so none is injected and any left in a
+ * previously-deployed viewdef is stripped on install.
  *
- * Visible on any open quote - the pricing lookup is read-only against the
- * ERP and the API guards the no-ERP-customer case with a clear message.
+ * Core owns the capability:
+ *   bd-create-opp-quote  -> ERP-Epicor's erp_create_opp_quote_button, whose
+ *                           AccountsErpActionsApi is the superset (it owns the
+ *                           ETO placeholder part for REQ-20 and types the quote
+ *                           for Advanced Quote). Shipping both rendered the
+ *                           SAME LABEL TWICE on the Accounts record view (G15).
+ *   bd-send-estimating   -> ERP-Core's 'Send to Estimation' (🔒 531).
+ *   bd-best-pricing      -> ERP-Core's refresh_price_availability, "Get Best
+ *                           Price & Availability". This controller was in any
+ *                           case already DEAD: it POSTs to
+ *                           Quotes/<id>/bd-best-pricing, an endpoint this
+ *                           package does not register.
+ *
+ * Emptied rather than deleted: §CW / G37 — on Sugar Cloud a file a previous
+ * install copied is not removed by dropping it from the build.
  */
-({
-    extendsFrom: 'RowactionField',
-
-    initialize: function(options) {
-        this._super('initialize', [options]);
-        this.type = 'rowaction';
-        this.context.on(this.def.event, this._onClicked, this);
-        this.model.on('change:quote_stage', this._checkVisibility, this);
-    },
-
-    render: function() {
-        this._super('render');
-        this._checkVisibility();
-    },
-
-    _onClicked: function() {
-        var self = this;
-        var url = app.api.buildURL('Quotes/' + this.model.get('id') + '/bd-best-pricing');
-
-        app.alert.show('bd-best-pricing', {
-            level: 'process',
-            title: app.lang.get('LBL_BD_BEST_PRICING_RUNNING', 'Quotes')
-        });
-
-        app.api.call('create', url, {}, {
-            success: function(data) {
-                app.alert.show('bd-best-pricing-done', {
-                    level: (data && data.status === 'success') ? 'success' : 'error',
-                    messages: (data && data.message) || 'Catalog pricing failed.',
-                    autoClose: false
-                });
-                self.model.fetch();
-            },
-            error: function(err) {
-                app.alert.show('bd-best-pricing-done', {
-                    level: 'error',
-                    messages: (err && err.message) || 'Catalog pricing failed.',
-                    autoClose: true
-                });
-            },
-            // Dismissed here rather than in each branch: an exception inside
-            // a success handler used to leave the spinner on screen with no
-            // way back, which reads as a hung server even though the request
-            // had already returned.
-            complete: function() {
-                app.alert.dismiss('bd-best-pricing');
-            }
-        });
-    },
-
-    _checkVisibility: function() {
-        // WITHDRAWN. Catalog best-pricing is not part of the Bench Dogs quote
-        // model on either simple or advanced quotes: the estimator's price on
-        // the quote is the only price, so a second, ERP-catalog price in the
-        // header offers an answer the story does not have. Its REST route is
-        // deliberately not registered. The button is also
-        // dropped from BdQuotesLayoutExtensions::$wanted and named in its
-        // $unwanted list; this hide is the belt to that braces, because the
-        // layout removal only reaches views the deployed viewdef writer
-        // actually rewrites, and a stale deployed viewdef would keep
-        // rendering the button. Hiding at the field means it cannot appear in
-        // ANY layout that still names it. Restore by reverting both.
-        this.$el.hide();
-    },
-
-    isAllowedDropdownButton: function() {
-        return this.view.name !== 'dashlet-toolbar';
-    }
-})
+({})
