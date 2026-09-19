@@ -152,8 +152,11 @@ try {
     $GLOBALS['log']->error('BenchDogs-Ext: review report cleanup failed: ' . $e->getMessage());
 }
 
-// 3. The quoted-line-items grid: take bd_erp_line_num back out of the
-// Quotes product_bundle_items allowlist. This one had an uninstall() method
+// 3. The quoted-line-items grid: take the injected line-number column back
+// out of the Quotes product_bundle_items allowlist. That column is now CORE'S
+// `erp_quote_line_num` rather than Bench's retired `bd_erp_line_num` (🔒 1032)
+// — this still removes it on uninstall, because Bench is what injected it;
+// ERP-Core's own ProductsLayout does not draw it. This one had an uninstall() method
 // all along and nothing ever called it. The class only defines itself when
 // ERP-Epicor is still installed (it extends BaseErpLayout), which is what
 // the class_exists guard after the require is for.

@@ -161,8 +161,18 @@ if (file_exists($parentLayoutFile)) {
         {
             // bd_to_order / bd_ordered are gone: the lock is ERP-Epicor's own
             // erp_ordered (>= 1.0.84), which core's QuotesLayout carries onto
-            // each row itself. Only the Kinetic line number is still ours.
-            return ['bd_erp_line_num'];
+            // each row itself.
+            //
+            // 🔒 1032 — the Kinetic line number is NO LONGER OURS EITHER. It
+            // is `Products.erp_quote_line_num`, an ERP-Core field written by
+            // connector-core's QuoteLineCoreTransformer; Bench's
+            // `bd_erp_line_num` copy is retired. This list is now an
+            // injection of a CORE column into the quoted-lines grid, kept here
+            // only because ERP-Core's own ProductsLayout does not draw it yet.
+            // When it does, this method has nothing left to add and the whole
+            // injection should go — do not add a Bench field back to keep it
+            // alive.
+            return ['erp_quote_line_num'];
         }
 
         /**

@@ -113,10 +113,15 @@ by the rc12 install. This is what removes the retired Opportunity-line files;
 an in-place upgrade is not accepted. Rollback uses the same supported boundary:
 uninstall rc12 with tables retained, then install the saved rc9 artifact.
 
-Classification uses the ordered Quote line item's `bd_erp_line_num` identity
+Classification uses the ordered Quote line item's `erp_quote_line_num` identity
 against exactly one linked ERP quote. Multiple revisions, duplicate ERP line
 numbers, multiple prototypes, or an ordered line without that identity refuse
-instead of guessing. A Kinetic-originated order that reconciliation newly
+instead of guessing. That identity is CORE's field (ERP-Core's
+`Products.erp_quote_line_num`, written by connector-core's
+`QuoteLineCoreTransformer`) as of 🔒 1032 — Bench's own `bd_erp_line_num` copy
+is retired, its writer having gone with the quote mirror. An ordered line
+whose ERP line is unknown carries NO value rather than a 0, which is why the
+refusal above is safe to keep. A Kinetic-originated order that reconciliation newly
 marks ordered is sent through the same shared `AfterLinesOrdered` dispatcher.
 Bench's direct reflection retains only pre-order Proposal initialization and
 forecast maintenance; it no longer advances a post-order Opportunity stage.
