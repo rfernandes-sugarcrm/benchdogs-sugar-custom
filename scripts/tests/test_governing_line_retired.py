@@ -27,40 +27,54 @@ PANEL = "LBL_RECORDVIEW_PANEL_BENCHDOGS"
 PACKAGED = ["bd_erp_total", "bd_erp_stage", "bd_priced_at", "bd_reason_code"]
 
 HARNESS = r'''
-define('MB_RECORDVIEW', 'recordview');
-class DeployedMetaDataImplementation {
-    public static $viewdefs = [];
-    public static $deploys = 0;
-    public function __construct($view, $module, $client) {}
-    public function getViewdefs() { return self::$viewdefs; }
-    public function setViewdefs($defs) { self::$viewdefs = $defs; }
-    public function deploy($defs) { self::$deploys++; self::$viewdefs = $defs; }
+namespace Sugarcrm\Sugarcrm\MetaData {
+    class ViewdefManager {
+        public static $defs = [];
+        public static $saves = 0;
+        public function loadViewdef($platform, $module, $view, $loadBase = false, $isLayout = false) {
+            return self::$defs;
+        }
+        public function saveViewdef($viewdef, $module, $platform, $view, $isLayout = false) {
+            self::$saves++;
+            self::$defs = $viewdef;
+        }
+    }
 }
-require $argv[1];
-function run(array $panels, bool $replace = false): array {
-    DeployedMetaDataImplementation::$viewdefs = ['base' => ['view' => ['record' => ['panels' => $panels]]]];
-    DeployedMetaDataImplementation::$deploys = 0;
-    BdQuotesLayoutExtensions::write($replace);
-    $panelsAfter = DeployedMetaDataImplementation::$viewdefs['base']['view']['record']['panels'];
-    $deploys = DeployedMetaDataImplementation::$deploys;
-    BdQuotesLayoutExtensions::write($replace);
-    return [
-        'panels' => $panelsAfter,
-        'deploys' => $deploys,
-        'rerun_deploys' => DeployedMetaDataImplementation::$deploys - $deploys,
-    ];
-}
-$stale = ['name' => 'LBL_RECORDVIEW_PANEL_BENCHDOGS', 'label' => 'LBL_RECORDVIEW_PANEL_BENCHDOGS', 'fields' => [
+
+namespace {
+    use Sugarcrm\Sugarcrm\MetaData\ViewdefManager;
+
+    class MetaDataFiles {
+        public static function clearModuleClientCache($modules = [], $type = '', $platforms = []) {}
+    }
+
+    require $argv[1];
+
+    function run(array $panels, bool $replace = false): array {
+        ViewdefManager::$defs = ['panels' => $panels];
+        ViewdefManager::$saves = 0;
+        BdQuotesLayoutExtensions::write($replace);
+        $panelsAfter = ViewdefManager::$defs['panels'];
+        $deploys = ViewdefManager::$saves;
+        BdQuotesLayoutExtensions::write($replace);
+        return [
+            'panels' => $panelsAfter,
+            'deploys' => $deploys,
+            'rerun_deploys' => ViewdefManager::$saves - $deploys,
+        ];
+    }
+    $stale = ['name' => 'LBL_RECORDVIEW_PANEL_BENCHDOGS', 'label' => 'LBL_RECORDVIEW_PANEL_BENCHDOGS', 'fields' => [
     ['name' => 'bd_erp_total', 'label' => 'LBL_BD_ERP_TOTAL', 'readonly' => true],
     ['name' => 'bd_governing_line', 'label' => 'LBL_BD_GOVERNING_LINE', 'readonly' => true],
     'description',
 ]];
-$adminPlaced = ['name' => 'panel_body', 'fields' => ['name', 'bd_governing_line']];
-echo json_encode([
+    $adminPlaced = ['name' => 'panel_body', 'fields' => ['name', 'bd_governing_line']];
+    echo json_encode([
     'upgrade' => run([$adminPlaced, $stale]),
     'fresh' => run([['name' => 'panel_body', 'fields' => ['name']]]),
     'replace' => run([$adminPlaced, $stale], true),
 ]);
+}
 '''
 
 
@@ -95,10 +109,11 @@ class GoverningLineRetiredInstallTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         with tempfile.TemporaryDirectory() as sugar:
-            views = Path(sugar, "modules/ModuleBuilder/parsers/views")
-            views.mkdir(parents=True)
-            Path(sugar, "modules/ModuleBuilder/parsers/constants.php").write_text("<?php\n")
-            Path(views, "DeployedMetaDataImplementation.php").write_text("<?php\n")
+            handler = Path(sugar, "include/TemplateHandler")
+            handler.mkdir(parents=True)
+            Path(handler, "TemplateHandler.php").write_text(
+                "<?php\nclass TemplateHandler { public static function clearCache($m = null, $v = null) {} }\n"
+            )
             result = subprocess.run(["php", "-r", HARNESS, str(LAYOUT)], cwd=sugar,
                                     capture_output=True, text=True, check=False)
         assert result.returncode == 0, result.stderr + result.stdout

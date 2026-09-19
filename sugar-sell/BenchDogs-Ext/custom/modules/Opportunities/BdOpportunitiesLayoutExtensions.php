@@ -1,5 +1,7 @@
 <?php
 
+use Sugarcrm\Sugarcrm\MetaData\ViewdefManager;
+
 /**
  * Put decision 72's marker where a forecaster will actually meet it: on the
  * Opportunity record view, next to the number it is a fact about.
@@ -22,7 +24,7 @@
  * is. This never reorders, never removes and never rewrites a panel: if the
  * field is already ANYWHERE on the view it returns untouched, because an admin
  * may have moved it somewhere better than we would. Appending a field to a
- * deployed grid is the one DeployedMetaDataImplementation operation that has
+ * deployed grid is the one viewdef operation that has
  * proved reliable here; reordering has not.
  *
  * NOT EXPOSED TO THE SalesStageDomDropdown HAZARD. ERP-Epicor writes
@@ -40,11 +42,10 @@ class BdOpportunitiesLayoutExtensions
 
     public static function writeGoverningOriginField(): void
     {
-        require_once 'modules/ModuleBuilder/parsers/constants.php';
-        require_once 'modules/ModuleBuilder/parsers/views/DeployedMetaDataImplementation.php';
-
-        $deploy = new DeployedMetaDataImplementation(MB_RECORDVIEW, 'Opportunities', 'base');
-        $viewdefs = $deploy->getViewdefs();
+        $viewdefs = self::loadRecordView('Opportunities');
+        if ($viewdefs === null) {
+            return;
+        }
 
         if (empty($viewdefs['base']['view']['record']['panels'])
             || !is_array($viewdefs['base']['view']['record']['panels'])
@@ -94,8 +95,7 @@ class BdOpportunitiesLayoutExtensions
             'readonly' => true,
         );
 
-        $deploy->setViewdefs($viewdefs);
-        $deploy->deploy($viewdefs);
+        self::deployRecordView('Opportunities', $viewdefs);
     }
 
     /**
@@ -109,11 +109,10 @@ class BdOpportunitiesLayoutExtensions
      */
     public static function remove(): void
     {
-        require_once 'modules/ModuleBuilder/parsers/constants.php';
-        require_once 'modules/ModuleBuilder/parsers/views/DeployedMetaDataImplementation.php';
-
-        $deploy = new DeployedMetaDataImplementation(MB_RECORDVIEW, 'Opportunities', 'base');
-        $viewdefs = $deploy->getViewdefs();
+        $viewdefs = self::loadRecordView('Opportunities');
+        if ($viewdefs === null) {
+            return;
+        }
 
         if (empty($viewdefs['base']['view']['record']['panels'])
             || !is_array($viewdefs['base']['view']['record']['panels'])
@@ -142,8 +141,7 @@ class BdOpportunitiesLayoutExtensions
             return;
         }
 
-        $deploy->setViewdefs($viewdefs);
-        $deploy->deploy($viewdefs);
+        self::deployRecordView('Opportunities', $viewdefs);
     }
 
     /** Which panel already carries the field, if any. */
@@ -162,4 +160,62 @@ class BdOpportunitiesLayoutExtensions
         }
         return null;
     }
+
+    /**
+     * The deployed record viewdef for $module — the tenant's custom copy when
+     * it has one, else stock — in the SAME ``['base']['view']['record']``
+     * shape the ModuleBuilder parser used to hand every caller, so every
+     * mutation in this class is untouched by the swap. null when the module
+     * has no such view: a caller must not write a nearly empty custom file
+     * over a view that was never there.
+     *
+     * 🚩 MLP019. Naming DeployedMetaDataImplementation makes SugarCloud's
+     * Rector scan resolve it through the tenant's own autoloader, which has
+     * no rule for modules/ModuleBuilder/parsers/views/, and the WHOLE package
+     * is refused before anything installs — `Class
+     * "AbstractMetaDataImplementation" not found`. Guarding the include,
+     * deferring it into a constructor and class_exists() were all tried and
+     * all still failed on a hosted tenant; not naming the class is what
+     * actually removes the risk. ViewdefManager is namespaced and autoloads
+     * through src/. This mirrors ERP-Core's BaseErpLayout, which has shipped
+     * the same pair through the hosted scan.
+     */
+    private static function loadRecordView(string $module): ?array
+    {
+        $defs = (new ViewdefManager())->loadViewdef('base', $module, 'record');
+        if (empty($defs)) {
+            return null;
+        }
+
+        return ['base' => ['view' => ['record' => $defs]]];
+    }
+
+    /**
+     * Write the record view back, and clear the same caches the parser's
+     * deploy() cleared, so the change is visible without a repair.
+     *
+     * Three things deploy() also did are deliberately NOT carried over:
+     * saveHistory(), which only feeds Studio's "restore previous layout";
+     * the Studio working-copy unlink(), because a package may not call
+     * unlink() at all (MLP002 — one occurrence rejects the upload) and a
+     * working copy only matters to a Studio session left open mid-edit, not
+     * to what renders; and cleanDependentLayoutMetadataFiles(), which only
+     * concerns role- and dropdown-based layout variants this package never
+     * creates.
+     */
+    private static function deployRecordView(string $module, array $viewdefs): void
+    {
+        (new ViewdefManager())->saveViewdef(
+            $viewdefs['base']['view']['record'],
+            $module,
+            'base',
+            'record'
+        );
+
+        MetaDataFiles::clearModuleClientCache($module, 'view');
+        MetaDataFiles::clearModuleClientCache($module, 'layout');
+        include_once 'include/TemplateHandler/TemplateHandler.php';
+        TemplateHandler::clearCache($module);
+    }
+
 }

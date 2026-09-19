@@ -1,11 +1,13 @@
 <?php
 
+use Sugarcrm\Sugarcrm\MetaData\ViewdefManager;
+
 // phpcs:disable PSR1.Classes.ClassDeclaration.MissingNamespace
 
 /**
  * Appends a "Bench Dogs ERP" panel to the Quotes record view at install time.
  *
- * Uses DeployedMetaDataImplementation directly (get -> mutate -> set ->
+ * Uses ViewdefManager directly (load -> mutate -> save; see MLP019 on
  * deploy), the same mechanism CORE-ShippingAddresses'
  * ShippingAddressQuotesExtensions and ERP-Core's BaseErpLayout use -
  * getViewdefs() loads the CURRENTLY DEPLOYED (merged) definition, so any
@@ -50,11 +52,10 @@ class BdQuotesLayoutExtensions
      */
     public static function write(bool $replace = false): void
     {
-        require_once 'modules/ModuleBuilder/parsers/constants.php';
-        require_once 'modules/ModuleBuilder/parsers/views/DeployedMetaDataImplementation.php';
-
-        $deploy = new DeployedMetaDataImplementation(MB_RECORDVIEW, 'Quotes', 'base');
-        $viewdefs = $deploy->getViewdefs();
+        $viewdefs = self::loadRecordView('Quotes');
+        if ($viewdefs === null) {
+            return;
+        }
         $panels =& $viewdefs['base']['view']['record']['panels'];
 
         $at = array_search(self::PANEL_NAME, array_column($panels, 'name'), true);
@@ -63,8 +64,7 @@ class BdQuotesLayoutExtensions
                 // Already deployed - keep whatever the admin has done since,
                 // except the retired fields this panel itself once shipped.
                 if (self::dropRetiredPanelFields($panels[$at])) {
-                    $deploy->setViewdefs($viewdefs);
-                    $deploy->deploy($viewdefs);
+                    self::deployRecordView('Quotes', $viewdefs);
                 }
                 return;
             }
@@ -73,10 +73,8 @@ class BdQuotesLayoutExtensions
             $panels[] = self::benchDogsPanel();
         }
 
-        $deploy->setViewdefs($viewdefs);
-        $deploy->deploy($viewdefs);
+        self::deployRecordView('Quotes', $viewdefs);
     }
-
 
     /**
      * Appends the two Bench Dogs quote-action buttons to the Quotes record
@@ -90,11 +88,10 @@ class BdQuotesLayoutExtensions
      */
     public static function writeButtons(): void
     {
-        require_once 'modules/ModuleBuilder/parsers/constants.php';
-        require_once 'modules/ModuleBuilder/parsers/views/DeployedMetaDataImplementation.php';
-
-        $deploy = new DeployedMetaDataImplementation(MB_RECORDVIEW, 'Quotes', 'base');
-        $viewdefs = $deploy->getViewdefs();
+        $viewdefs = self::loadRecordView('Quotes');
+        if ($viewdefs === null) {
+            return;
+        }
 
         if (empty($viewdefs['base']['view']['record']['buttons'])
             || !is_array($viewdefs['base']['view']['record']['buttons'])
@@ -107,11 +104,30 @@ class BdQuotesLayoutExtensions
         $existing = array_column($buttons, 'name');
 
         // Bench Dogs owns the quote header: ONE entry point per action.
-        // The product's whole-quote buttons (Advanced Quote / Submit Order /
-        // Refresh Price & Availability) and the superseded winning-line
-        // button are REMOVED below - the per-line model replaces them.
+        // The product's whole-quote buttons (Submit Order / Refresh Price &
+        // Availability) and the superseded winning-line button are REMOVED
+        // below - the per-line model replaces them.
+        //
+        // 🛑 'advanced_quote_button' IS NO LONGER REMOVED (owner ruling, D2-BTN).
+        //
+        // A seller was seeing TWO estimating buttons: this package's blue
+        // "Quote Estimate" and ERP-Core's "Send to Estimation", side by side,
+        // doing the same thing - create the Kinetic quote and move the stage to
+        // In Estimating. The owner ruled the PRODUCT button survives and this
+        // package's duplicate goes.
+        //
+        // 🚩 WHY BOTH WERE VISIBLE, WHICH IS NOT WHAT IT LOOKS LIKE. This list
+        // stripped advanced_quote_button on every Bench install - so the
+        // duplicate was never supposed to exist. It appeared because ERP-Epicor
+        // is installed AFTER Bench Dogs and its QuotesLayout::install() ADDS
+        // that button back. The duplicate is an INSTALL-ORDER artifact, not two
+        // packages both asking for a button.
+        //
+        // 📌 So removing ours is only half the fix: leaving
+        // advanced_quote_button in $unwanted would strip the one button we are
+        // keeping on every Bench install, and a seller would have NO estimating
+        // action until the next ERP-Epicor install happened to re-add it.
         $unwanted = [
-            'advanced_quote_button',
             'create_erp_order_button',
             'refresh_price_availability_button',
             'bd_order_winning_button',
@@ -121,20 +137,16 @@ class BdQuotesLayoutExtensions
             // well as dropped from $wanted because the button is already in the
             // deployed viewdefs and $wanted alone would not take it back out.
             'bd_best_pricing_button',
+            // The retired duplicate. Listed here for exactly the reason
+            // bd_best_pricing_button is: it is already in the deployed
+            // viewdefs on every Bench tenant, and dropping it from $wanted
+            // alone would leave it sitting there forever.
+            'bd_send_estimating_button',
         ];
 
-        $wanted = [
-            [
-                'type' => 'bd-send-estimating',
-                'event' => 'button:bd_send_estimating_button:click',
-                'name' => 'bd_send_estimating_button',
-                'label' => 'LBL_BD_SEND_ESTIMATING_BUTTON',
-                'css_class' => 'rowaction actionbuttons actionbuttons-button btn btn-primary ml-2',
-                'showOn' => 'view',
-                'acl_action' => 'edit',
-            ],
-        ];
-
+        // Nothing of this package's own is placed on the Quotes header any
+        // more: the estimating action is ERP-Core's 'Send to Estimation'.
+        $wanted = [];
 
         $kept = [];
         $removed = 0;
@@ -188,8 +200,7 @@ class BdQuotesLayoutExtensions
             }
         }
 
-        $deploy->setViewdefs($viewdefs);
-        $deploy->deploy($viewdefs);
+        self::deployRecordView('Quotes', $viewdefs);
     }
 
     /**
@@ -211,11 +222,10 @@ class BdQuotesLayoutExtensions
      */
     public static function remove(): void
     {
-        require_once 'modules/ModuleBuilder/parsers/constants.php';
-        require_once 'modules/ModuleBuilder/parsers/views/DeployedMetaDataImplementation.php';
-
-        $deploy = new DeployedMetaDataImplementation(MB_RECORDVIEW, 'Quotes', 'base');
-        $viewdefs = $deploy->getViewdefs();
+        $viewdefs = self::loadRecordView('Quotes');
+        if ($viewdefs === null) {
+            return;
+        }
         $changed = false;
 
         // 1. The Bench Dogs panel, and with it every bd_* field reference.
@@ -309,8 +319,7 @@ class BdQuotesLayoutExtensions
             return;
         }
 
-        $deploy->setViewdefs($viewdefs);
-        $deploy->deploy($viewdefs);
+        self::deployRecordView('Quotes', $viewdefs);
     }
 
     /**
@@ -468,4 +477,62 @@ class BdQuotesLayoutExtensions
         $panel['fields'] = $kept;
         return true;
     }
+
+    /**
+     * The deployed record viewdef for $module — the tenant's custom copy when
+     * it has one, else stock — in the SAME ``['base']['view']['record']``
+     * shape the ModuleBuilder parser used to hand every caller, so every
+     * mutation in this class is untouched by the swap. null when the module
+     * has no such view: a caller must not write a nearly empty custom file
+     * over a view that was never there.
+     *
+     * 🚩 MLP019. Naming DeployedMetaDataImplementation makes SugarCloud's
+     * Rector scan resolve it through the tenant's own autoloader, which has
+     * no rule for modules/ModuleBuilder/parsers/views/, and the WHOLE package
+     * is refused before anything installs — `Class
+     * "AbstractMetaDataImplementation" not found`. Guarding the include,
+     * deferring it into a constructor and class_exists() were all tried and
+     * all still failed on a hosted tenant; not naming the class is what
+     * actually removes the risk. ViewdefManager is namespaced and autoloads
+     * through src/. This mirrors ERP-Core's BaseErpLayout, which has shipped
+     * the same pair through the hosted scan.
+     */
+    private static function loadRecordView(string $module): ?array
+    {
+        $defs = (new ViewdefManager())->loadViewdef('base', $module, 'record');
+        if (empty($defs)) {
+            return null;
+        }
+
+        return ['base' => ['view' => ['record' => $defs]]];
+    }
+
+    /**
+     * Write the record view back, and clear the same caches the parser's
+     * deploy() cleared, so the change is visible without a repair.
+     *
+     * Three things deploy() also did are deliberately NOT carried over:
+     * saveHistory(), which only feeds Studio's "restore previous layout";
+     * the Studio working-copy unlink(), because a package may not call
+     * unlink() at all (MLP002 — one occurrence rejects the upload) and a
+     * working copy only matters to a Studio session left open mid-edit, not
+     * to what renders; and cleanDependentLayoutMetadataFiles(), which only
+     * concerns role- and dropdown-based layout variants this package never
+     * creates.
+     */
+    private static function deployRecordView(string $module, array $viewdefs): void
+    {
+        (new ViewdefManager())->saveViewdef(
+            $viewdefs['base']['view']['record'],
+            $module,
+            'base',
+            'record'
+        );
+
+        MetaDataFiles::clearModuleClientCache($module, 'view');
+        MetaDataFiles::clearModuleClientCache($module, 'layout');
+        include_once 'include/TemplateHandler/TemplateHandler.php';
+        TemplateHandler::clearCache($module);
+    }
+
 }
