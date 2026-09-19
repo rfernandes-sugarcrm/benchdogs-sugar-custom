@@ -45,12 +45,32 @@ LABELS = PKG / "custom/Extension/modules/Products/Ext/Language/en_us.bd_line_ord
 
 #: NOT SCANNED, and the exclusion is the point rather than an oversight.
 #: ``custom/modules/bd01_ERP_Quote/BdQuoteReflectionHook.php`` still reads AND
-#: writes the retired field (its PASS-1 cross-reference, and the stamp at the
-#: end of its line-matching pass). That file belongs to the bd01 mirror
-#: retirement, a separate thread, and is deliberately not edited here. Its
-#: writes become no-ops once the vardef is gone — Sugar drops an undeclared
-#: field silently — so it is inert rather than wrong, but it is NOT cleaned up
-#: and a later reader must not conclude from this suite that it was.
+#: writes the retired field. That file belongs to the bd01 mirror retirement,
+#: a separate thread, and is deliberately not edited here.
+#:
+#: 🛑 CORRECTION, AND IT IS NOT COSMETIC. This comment first said those writes
+#: "become no-ops once the vardef is gone … so it is inert rather than wrong."
+#: THAT WAS WRONG, and it was wrong in the direction that hides a regression.
+#: The WRITE is indeed dropped, but ``joinErpLinesToQlis()`` also READS the
+#: field, and that read is PASS 1 — the join its own docstring calls "the only
+#: join that is certain, because something deliberately wrote it". With the
+#: vardef gone the read is always null, ``$lineNum`` is always 0, the exact
+#: map is always empty, and EVERY ERP line falls through to PASS 2's tolerant
+#: ``(part number, quantity)`` match. PASS 2 refuses an ambiguous pair on
+#: purpose, so those lines are never placed at all. The stamp-back that used to
+#: heal the xref for the next run dies with the write, so the tolerant match is
+#: redone from scratch every time and never converges. Two live callers
+#: (BdQuoteReflectionHook.php:863 and :1149).
+#:
+#: ➡️ THE FIX IS ONE LINE AND IT MAKES PASS 1 STRONGER, NOT WEAKER: point that
+#: read at ``erp_quote_line_num``. Core populates it on 515 of 521
+#: connector-owned rows against the 6 this column ever reached, so the "certain"
+#: join becomes certain far more often — and the stamp-back stops being needed,
+#: because core rewrites the value every sync.
+#:
+#: ➡️ SEQUENCING: the RETIREMENT commit on this branch must not land until that
+#: hook is repointed or the bd01 directory is retired. The reader-repoint commit
+#: before it is safe on its own.
 UNOWNED = PKG / "custom/modules/bd01_ERP_Quote"
 
 
