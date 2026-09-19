@@ -62,7 +62,10 @@ QUOTE_ORPHANS = {
 # NOT retired — RESTORED. The connector writes these on every quote sync from
 # transformers/quotes.py, which IS reachable from the app.py core imports. The
 # package stopped declaring them at rc43 and never stopped needing them.
-RESTORED = {"bd_quoted", "bd_date_quoted"}
+RESTORED = {"bd_quoted", "bd_date_quoted"}  # historical: both RETIRED 2026-09-19,
+# owner ruling, after PR #8 reduced the Bench connector to two written fields.
+# Kept as a NAMED SET so the inverted assertions below read against something
+# concrete, and so a future reinstatement has the original pair to restore.
 
 
 def strip_comments(source: str) -> str:
@@ -168,10 +171,27 @@ class LiveKpiFieldsMustKeepShippingTest(unittest.TestCase):
     def test_the_kpi_vardef_ships(self):
         self.assertTrue(self.VARDEF.exists(), "the connector writes these fields every sync")
 
-    def test_it_declares_both_live_fields(self):
+    def test_it_declares_NOTHING_now(self):
+        """INVERTED 2026-09-19, not deleted.
+
+        OWNER RULING: *"make sure you retire this bd_quoted / bd_date_quoted"*,
+        taken with the finding recorded beside it — NO CORE TWIN EXISTS — and
+        the sequencing the owner set: the connector stops writing them FIRST,
+        then the package retires them.
+
+        THE PREMISE THAT MADE THEM "RESTORED" IS NOW FALSE. This file used to
+        say *"the connector writes these on every quote sync"*. PR #8 reduced
+        the Bench connector to exactly TWO written fields, verified on the
+        server — so nothing writes them, and a field with no writer renders
+        "not answered yet" and "never measured" identically. That is the same
+        defect class as bd_shipped_value (decision 59) and bd_priced_at.
+
+        Kept as an assertion rather than dropped so the stub itself cannot be
+        deleted unnoticed: §CW / G37, only overwriting the file retires it.
+        """
         code = strip_comments(self.VARDEF.read_text(encoding="utf-8"))
         declared = set(re.findall(r"""\[['"]fields['"]\]\[['"](bd_\w+)['"]\]""", code))
-        self.assertEqual(declared, RESTORED, f"expected exactly {sorted(RESTORED)}, got {sorted(declared)}")
+        self.assertEqual(declared, set(), f"expected no declarations, got {sorted(declared)}")
 
     def test_it_does_not_resurrect_the_retired_stage_code(self):
         """🔒 1045 retired bd_erp_stage_code; it shared this file with the two live
@@ -179,15 +199,22 @@ class LiveKpiFieldsMustKeepShippingTest(unittest.TestCase):
         code = strip_comments(self.VARDEF.read_text(encoding="utf-8"))
         self.assertNotIn("bd_erp_stage_code", code)
 
-    def test_bd_quoted_stays_a_varchar(self):
-        """A Sugar bool is forced required, defaulted to 0 by MySQL, reported
-        not-nullable and flattened by fixUpFormatting - four ways for "the source
-        did not answer" to become "the source said no". The connector sends
-        '1'/'0'/None and depends on unknown staying reachable."""
+    def test_bd_quoted_is_not_resurrected_as_a_bool(self):
+        """INVERTED 2026-09-19 — the reason it mattered is why it is kept.
+
+        bd_quoted is retired, so there is no type to assert. But if it is ever
+        reinstated, the ORIGINAL hazard is still live and still subtle: a Sugar
+        bool is forced required, defaulted to 0 by MySQL, reported not-nullable
+        and flattened by fixUpFormatting — FOUR ways for "the source did not
+        answer" to become "the source said no". It was a varchar for exactly
+        that reason.
+
+        So this now asserts absence, and carries the warning forward for
+        whoever brings it back.
+        """
         code = strip_comments(self.VARDEF.read_text(encoding="utf-8"))
-        block = code.split("['bd_quoted']", 1)[1].split("$dictionary", 1)[0]
-        self.assertIn("'type' => 'varchar'", block)
-        self.assertNotIn("'type' => 'bool'", block)
+        self.assertNotIn("['bd_quoted']", code, "bd_quoted is retired")
+        self.assertNotIn("'type' => 'bool'", code)
 
 
 if __name__ == "__main__":
