@@ -62,14 +62,19 @@ def _php_sources():
         yield path
 
 
-def _code_without_comments(path: Path) -> str:
+def _code_without_comments(source) -> str:
     """Source with ``//`` and ``/* */`` comments stripped.
+
+    Takes a ``Path`` or a raw string, so a whole file and a single extracted
+    function body go through the SAME stripper. They used to go through two
+    near-identical ones, which is how a comment-handling difference between
+    them would have gone unnoticed.
 
     The retirement NOTES name the retired field on purpose — they are what tell
     the next author why it went. Scanning raw text would make those notes fail
     the test and pressure someone into deleting the explanation.
     """
-    text = path.read_text(encoding="utf-8")
+    text = source.read_text(encoding="utf-8") if isinstance(source, Path) else source
     text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
     text = re.sub(r"(?m)//.*$", "", text)
     text = re.sub(r"(?m)^\s*#(?!\[).*$", "", text)
@@ -144,13 +149,8 @@ class BenchKeepsNoCopyOfTheErpLineNumber(unittest.TestCase):
             r"private function bdOrderFieldNames\(\): array\s*\{(.*?)\}", grid, re.S
         )
         self.assertIsNotNone(match, "bdOrderFieldNames not found")
-        names = re.findall(r"'([a-z0-9_]+)'", _code_without_comments_text(match.group(1)))
+        names = re.findall(r"'([a-z0-9_]+)'", _code_without_comments(match.group(1)))
         self.assertEqual(names, [CORE_FIELD], names)
-
-
-def _code_without_comments_text(text: str) -> str:
-    text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
-    return re.sub(r"(?m)//.*$", "", text)
 
 
 if __name__ == "__main__":
