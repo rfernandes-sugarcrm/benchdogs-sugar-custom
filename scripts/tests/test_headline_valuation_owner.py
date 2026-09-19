@@ -44,6 +44,8 @@ import shutil
 import subprocess
 import unittest
 
+import shared_sugar
+
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKSPACE = ROOT.parent
@@ -53,10 +55,11 @@ WORKSPACE = ROOT.parent
 # tree happened to carry that name - a git worktree ran its own tests against a
 # DIFFERENT commit's source and could not see its own changes.
 REPO = ROOT.name
-SHARED_HOOK = (
-    WORKSPACE / "erp-integration-sugar/sugar-sell/ERP-Core/src/custom/modules"
-    / "Quotes/QuoteOpportunityAmount.php"
-)
+# The sibling checkout when it exists, else the pinned copy under
+# fixtures/shared-sugar/. CI cannot check out erp-integration-sugar (private,
+# different org), and skipping these rather than running them would have made
+# a green check mean nothing - see scripts/refresh_shared_fixtures.py.
+SHARED_HOOK = shared_sugar.resolve("QuoteOpportunityAmount.php")
 FIXTURE = r'''
 #[AllowDynamicProperties]
 class SugarBean {
@@ -121,7 +124,7 @@ $GLOBALS['log'] = new class {
 };
 $GLOBALS['relationship_reads'] = [];
 $GLOBALS['new_bean_modules'] = [];
-require 'erp-integration-sugar/sugar-sell/ERP-Core/src/custom/modules/Quotes/QuoteOpportunityAmount.php';
+require '__SHARED_HOOK__';
 $opp = new Opportunity();
 $opp->id = 'owned-opportunity';
 $opp->amount = 0;
@@ -152,8 +155,11 @@ $trace = [];
 '''
 
 
+# Bind the resolved path into the fixture (absolute, so cwd stops mattering).
+FIXTURE = FIXTURE.replace("__SHARED_HOOK__", str(SHARED_HOOK))
+
+
 @unittest.skipUnless(shutil.which("php"), "requires PHP 8.2 build-test image")
-@unittest.skipUnless(SHARED_HOOK.is_file(), "requires sibling shared Sugar checkout")
 class HeadlineValuationOwnerTest(unittest.TestCase):
     def execute(self, scenario, expected_errors=0):
         result = subprocess.run(

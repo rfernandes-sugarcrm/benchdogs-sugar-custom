@@ -30,7 +30,7 @@ import subprocess
 import unittest
 import zipfile
 
-from test_headline_valuation_owner import FIXTURE, REPO, WORKSPACE
+from test_headline_valuation_owner import FIXTURE, REPO, SHARED_HOOK, WORKSPACE
 
 
 PROVIDER = (
@@ -95,6 +95,12 @@ $GLOBALS['products'] = [];
 '''
 
 
+# The provider under test require()s core's QuoteOpportunityAmount.php out of
+# the sibling erp-integration-sugar checkout. That file is resolved through
+# shared_sugar, which falls back to a pinned copy, so these scenarios RUN in
+# CI instead of skipping - they died `Failed opening required
+# ...QuoteOpportunityAmount.php`, returncode 255, the moment CI started
+# running the whole suite instead of one file.
 @unittest.skipUnless(shutil.which("php"), "requires PHP 8.2 build-test image")
 class GoverningContributionTest(unittest.TestCase):
     def execute(self, scenario):
