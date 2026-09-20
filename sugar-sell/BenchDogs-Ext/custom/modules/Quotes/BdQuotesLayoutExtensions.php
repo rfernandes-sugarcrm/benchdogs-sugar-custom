@@ -456,8 +456,29 @@ class BdQuotesLayoutExtensions
      * Removed from THIS panel only, on every install. The append path above
      * otherwise returns early and would keep the old entry forever. An admin
      * who placed the field on another panel keeps it.
+     *
+     * bd_sent_to_estimating_at: retired with the rest of 🔒 1044's sweep, but
+     * MISSED BY THIS LIST — so on every already-deployed tenant the append path
+     * kept handing it back. The owner found it on Bench 2026-09-20, rendering
+     * its own label key over "No data":
+     *
+     *     LBL_BD_SENT_TO_ESTIMATING_AT
+     *     No data
+     *
+     * Measured then: zero vardef declarations anywhere under custom/, zero
+     * label definitions in the whole tree, and absent from Quotes metadata —
+     * while the LIVE equivalent, core's `erp_sent_to_estimating_at`, resolves
+     * correctly as "Sent to estimation". 🛑 The fix is removal, NOT a label:
+     * this file's own language sibling records why an orphan label is worse
+     * than a missing one — it makes a dead field look supported in Studio, the
+     * report builder and column pickers. Two fields were retired here and a
+     * third was missed; that is why the list is the gate and not the comment.
      */
-    private const RETIRED_PANEL_FIELDS = ['bd_governing_line', 'bd_priced_at'];
+    private const RETIRED_PANEL_FIELDS = [
+        'bd_governing_line',
+        'bd_priced_at',
+        'bd_sent_to_estimating_at',
+    ];
 
     private static function dropRetiredPanelFields(array &$panel): bool
     {
