@@ -6,7 +6,7 @@ on it, reporting the outcome as `estimating_timestamp_status`
 (stamped / pending_exact_mirror / ambiguous_exact_mirror /
 pending_timestamp_persistence). Decision 901/903 retired the mirror and the shipped
 route no longer reads, creates or stamps one: it delegates `advanced_quote` to the
-shared `QuotesErpActionsApi`, stamps `bd_erp_stage = in_estimating` on the NATIVE
+shared `QuotesErpActionsApi`, stamps the NATIVE `quote_stage = 'In Estimating'` on the
 Quote, re-reads to prove persistence, and reports `erp_handoff_status` plus an
 independent `notification_status`.
 
@@ -45,7 +45,7 @@ class SugarApiExceptionNotAuthorized extends Exception {}
 class SugarApiExceptionInvalidParameter extends Exception {}
 class TestQuote extends SugarBean {
     public $id = 'quote-1';
-    public $bd_erp_stage = INITIAL_STAGE;
+    public $quote_stage = INITIAL_STAGE;
     public $erp_display_sync_key = INITIAL_ERP_ID;
     public $saves = 0;
     public function save() {
@@ -55,8 +55,8 @@ class TestQuote extends SugarBean {
     }
 }
 if (LOAD_NOTIFICATION_HOOK) {
-    class BdEstimatingNotificationHook {
-        public static function consumeEstimatingOutcome($quoteId) {
+    class ErpEstimatingNotificationHook {
+        public static function consumeOutcome($quoteId, $direction) {
             $GLOBALS['notification_consumes'][] = $quoteId;
             return [
                 'status' => NOTIFICATION_STATUS,
@@ -71,7 +71,7 @@ class BeanFactory {
         if ($module === 'Quotes') {
             $GLOBALS['quote_retrievals']++;
             if (LOSE_PERSISTENCE && $GLOBALS['quote_retrievals'] >= 3) {
-                $GLOBALS['quote']->bd_erp_stage = 'draft';
+                $GLOBALS['quote']->quote_stage = 'Draft';
             }
             return $GLOBALS['quote'];
         }
@@ -105,7 +105,7 @@ echo json_encode([
     'delegated' => $GLOBALS['delegated'],
     'result' => $results[0],
     'results' => $results,
-    'stage' => $GLOBALS['quote']->bd_erp_stage,
+    'stage' => $GLOBALS['quote']->quote_stage,
     'saves' => $GLOBALS['quote']->saves,
     'retrievals' => $GLOBALS['retrievals'],
     'notification_consumes' => $GLOBALS['notification_consumes'],
@@ -130,7 +130,7 @@ class EstimatingEntrypointTest(unittest.TestCase):
         self,
         result: dict,
         *,
-        initial_stage: str = "draft",
+        initial_stage: str = "Draft",
         initial_erp_id: str = "",
         delegate_display_id: str = "1201",
         calls: int = 1,
@@ -204,7 +204,7 @@ class EstimatingEntrypointTest(unittest.TestCase):
         self.assertEqual(observed["result"]["erp_handoff_status"], "completed")
         self.assertEqual(observed["result"]["notification_status"], "created")
         self.assertEqual(observed["notification_consumes"], ["quote-1"])
-        self.assertEqual(observed["stage"], "in_estimating")
+        self.assertEqual(observed["stage"], "In Estimating")
         self.assertEqual(observed["saves"], 1)
         self.assertEqual(observed["retrievals"], [
             ["Quotes", "quote-1", {"use_cache": False}],
@@ -239,7 +239,7 @@ class EstimatingEntrypointTest(unittest.TestCase):
         response = {"status": "error", "message": "ERP unavailable"}
         observed = self.execute(response)
         self.assertEqual(observed["result"], response)
-        self.assertEqual(observed["stage"], "draft")
+        self.assertEqual(observed["stage"], "Draft")
         self.assertEqual(observed["saves"], 0)
         self.assertEqual(observed["retrievals"], [[
             "Quotes", "quote-1", {"use_cache": False},
