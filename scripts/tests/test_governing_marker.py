@@ -115,8 +115,12 @@ class TheInstallRemovesRatherThanPlacesTest(unittest.TestCase):
         was not."""
         layout = code(LAYOUT)
         self.assertNotIn("function writeGoverningOriginField", layout)
-        self.assertNotIn("saveViewdef", layout.split("function remove")[0],
-                         "nothing may write the view before remove()")
+        self.assertNotIn("function indexOf", layout)
+        # One caller of saveViewdef, and it is reached only from remove().
+        # Counted rather than positioned: an assertion keyed on where the
+        # method sits in the file goes red when somebody reorders methods,
+        # which is a mystery failure rather than a finding.
+        self.assertEqual(layout.count("saveViewdef"), 1, layout)
 
     def test_post_install_REMOVES_the_marker_and_never_writes_it(self):
         """FAILS ON THE OLD BEHAVIOUR: post_install.php:191 called
