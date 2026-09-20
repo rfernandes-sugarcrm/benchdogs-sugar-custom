@@ -144,14 +144,54 @@ namespace {
     $check('benchDogsPanel() is gone', false, str_contains($src, 'function benchDogsPanel'));
     $check('dropRetiredPanelFields() is gone', false, str_contains($src, 'function dropRetiredPanelFields'));
 
-    // 6. 🛑 THE FIELDS AND THEIR WRITER ARE NOT TOUCHED. "Nothing shows it"
-    //    and "nothing writes it" are different claims. bd_erp_stage still has
-    //    a live writer, and removing the panel must not have removed it.
-    $api = __DIR__ . '/../../sugar-sell/BenchDogs-Ext/custom/clients/base/api/BdBenchDogsActionsApi.php';
-    $check('the bd_erp_stage writer still exists',
-        true, str_contains(file_get_contents($api), "bd_erp_stage = 'in_estimating'"));
-    $check('the bd_erp_total vardef still exists', true,
-        is_file(__DIR__ . '/../../sugar-sell/BenchDogs-Ext/custom/Extension/modules/Quotes/Ext/Vardefs/bd_erp_total.php'));
+    // 6. 🛑 THE FIELDS ARE GONE, NOT MERELY HIDDEN.
+    //
+    // An earlier pass removed the panel and LEFT the fields and their writer
+    // in place, reasoning that "nothing shows it" and "nothing writes it" are
+    // different claims. True, but not what was asked: the owner's words were
+    // "I asked to remove bd_erp_stage". Hiding a duplicate leaves it in
+    // Studio, the report builder and every column picker, which is how the
+    // retired bd_sent_to_estimating_at survived to reach a live quote screen.
+    //
+    // The three fields were private copies of core-owned facts (🔒 1045), and
+    // each call site moved to the core field it duplicated:
+    //   bd_erp_stage   -> native quote_stage = 'In Estimating'
+    //   bd_erp_total   -> erp_estimate_total
+    //   bd_reason_code -> erp_reason_code (no live reader remained)
+    $root = __DIR__ . '/../../sugar-sell/BenchDogs-Ext/';
+    $api = file_get_contents($root . 'custom/clients/base/api/BdBenchDogsActionsApi.php');
+    // Comments stripped: the file NAMES bd_erp_stage in the note explaining
+    // why it no longer writes it, and a blunt substring match would read that
+    // explanation as the defect it documents.
+    $apiCode = preg_replace(['~/\*.*?\*/~s', '~//[^\n]*~'], '', $api);
+    $check('the bd_erp_stage writer is GONE (executable code)',
+        false, str_contains($apiCode, 'bd_erp_stage'));
+    $check('and the API stamps core\'s native quote_stage instead',
+        true, str_contains($api, "quote_stage = self::ESTIMATING_STAGE")
+              && str_contains($api, "const ESTIMATING_STAGE = 'In Estimating'"));
+    foreach (['bd_erp_stage', 'bd_erp_total', 'bd_reason_code'] as $f) {
+        $check("the {$f} vardef is GONE", false,
+            is_file($root . 'custom/Extension/modules/Quotes/Ext/Vardefs/' . $f . '.php'));
+    }
+    $check('the bd_erp_stage_list vocabulary is GONE', false,
+        is_file($root . 'custom/Extension/application/Ext/Language/en_us.bd_erp_stage_list.php'));
+
+    // 7. 🚩 AND THE DUPLICATE NOTIFICATION HOOK WENT WITH THE FIELD IT WATCHED.
+    //
+    // BdEstimatingNotificationHook was a second implementation of ERP-Core's
+    // ErpEstimatingNotificationHook, differing only in watching bd_erp_stage
+    // rather than the native quote_stage. Core registers BOTH legs
+    // (notifyEstimating, notifyPricingReturned) on after_save and de-dupes by
+    // sync key. Repointing the Bench copy at the same field would have
+    // DOUBLE-NOTIFIED and broken the exactly-once rule this journey is graded
+    // on -- so it is retired, not repointed. This check is what stops it
+    // coming back.
+    $check('the duplicate Bench notification hook is GONE', false,
+        is_file($root . 'custom/modules/Quotes/BdEstimatingNotificationHook.php'));
+    $check('and so is its logic-hook registration', false,
+        is_file($root . 'custom/Extension/modules/Quotes/Ext/LogicHooks/bd_estimating_notification.php'));
+    $check('the API reads the outcome from CORE\'s hook',
+        true, str_contains($api, "ErpEstimatingNotificationHook::consumeOutcome"));
 
     $failed = 0;
     foreach ($checks as $n => [$name, $ok, $expected, $actual]) {

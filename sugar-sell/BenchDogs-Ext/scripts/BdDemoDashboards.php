@@ -280,8 +280,8 @@ class BdDemoDashboards
                     'display_columns' => [
                         'name',
                         'quote_num',
-                        'bd_erp_stage',
-                        'bd_erp_total',
+                        'quote_stage',
+                        'erp_estimate_total',
                         'date_modified',
                     ],
                     'orderBy' => [

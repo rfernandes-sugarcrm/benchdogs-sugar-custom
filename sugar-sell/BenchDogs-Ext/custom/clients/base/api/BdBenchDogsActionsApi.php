@@ -17,7 +17,8 @@
  *   POST Quotes/:record/bd-send-to-estimating   REQ-27 (the path the whole
  *     solution rests on) + REQ-13/UC-6: create the Kinetic quote shell for
  *     this Sugar Quote via the product's own quote_to_quote write-back, then
- *     stamp bd_erp_stage=in_estimating so BdEstimatingNotificationHook
+ *     stamp the native quote_stage='In Estimating' so ERP-Core's
+ *     ErpEstimatingNotificationHook
  *     notifies the estimating owner. Dale's own quote workbench IS the
  *     queue - no email, no folder link.
  *
@@ -53,6 +54,14 @@ if (file_exists($parentApiFile)) {
 
     class BdBenchDogsActionsApi extends BaseErpActionsApi
     {
+    /**
+     * The value core stores in the native quote_stage when a quote is with
+     * the estimator. Mirrors ERP-Core's ErpEstimatingStamps::ESTIMATING_STAGE
+     * and ErpEstimatingNotificationHook::ESTIMATING_STAGE; the KEY is the
+     * stored value, so it is never localised here.
+     */
+    const ESTIMATING_STAGE = 'In Estimating';
+
         /**
          * The write-back entity registered by the Bench Dogs extension container
          * (connector_ext_benchdogs.writeback.quotes.OrderFromQuoteWriteBack).
@@ -305,9 +314,30 @@ if (file_exists($parentApiFile)) {
                 return $this->estimatingStageFailure($result);
             }
 
+            // 🛑 STAMP CORE'S NATIVE quote_stage, NOT A BENCH COPY OF IT.
+            //
+            // bd_erp_stage held exactly one fact -- "this quote is with the
+            // estimator" -- which core already owns on the native field. The
+            // Bench vocabulary even spelled it out: bd_erp_stage_list mapped
+            // 'in_estimating' => 'In Estimating', the identical string core
+            // stores in quote_stage. Two writers, one fact, and only the core
+            // one is read by anything downstream.
+            //
+            // 🚩 THE OLD STAMP WAS WORSE THAN REDUNDANT, IT WAS INERT. Nothing
+            // outside this file consumed bd_erp_stage, so Bench's "Send to
+            // Estimating" moved a private column and left the stage a seller
+            // and every core rule actually look at UNCHANGED.
+            //
+            // Writing the native field also earns the timestamp for free:
+            // ERP-Core's ErpEstimatingStamps stamps erp_sent_to_estimating_at
+            // on the transition INTO 'In Estimating'
+            // (STAGE_FIELD = 'quote_stage', ESTIMATING_STAGE = 'In
+            // Estimating'), which is the "Sent to estimation" the owner
+            // expected to see and which the retired bd_sent_to_estimating_at
+            // was a dead stand-in for.
             $needsSave = false;
-            if (($quote->bd_erp_stage ?? '') !== 'in_estimating') {
-                $quote->bd_erp_stage = 'in_estimating';
+            if (($quote->quote_stage ?? '') !== self::ESTIMATING_STAGE) {
+                $quote->quote_stage = self::ESTIMATING_STAGE;
                 $needsSave = true;
             }
             if ($needsSave) {
@@ -330,7 +360,7 @@ if (file_exists($parentApiFile)) {
             if ($persisted === null
                 || $persisted === false
                 || empty($persisted->id)
-                || ($persisted->bd_erp_stage ?? '') !== 'in_estimating'
+                || ($persisted->quote_stage ?? '') !== self::ESTIMATING_STAGE
             ) {
                 return $this->estimatingStageFailure($result);
             }
@@ -345,10 +375,28 @@ if (file_exists($parentApiFile)) {
                     . 'notification attempt. Use the In Estimating view and ask an '
                     . 'administrator to verify the notification hook.',
             );
-            if (class_exists('BdEstimatingNotificationHook', false)) {
-                $notificationOutcome = BdEstimatingNotificationHook::consumeEstimatingOutcome(
-                    $recordId
+            // 🛑 CORE OWNS THIS NOTIFICATION. BdEstimatingNotificationHook was a
+            // SECOND implementation of ERP-Core's ErpEstimatingNotificationHook
+            // -- same two legs, same messages -- differing only in the field it
+            // watched: the private bd_erp_stage instead of the native
+            // quote_stage this API now writes. Core's registers both
+            // notifyEstimating and notifyPricingReturned on after_save and
+            // de-duplicates by sync key, so it is a superset, and keeping the
+            // Bench copy pointed at the same field would have DOUBLE-NOTIFIED
+            // and broken the exactly-once rule this journey is graded on.
+            //
+            // consumeOutcome() returns an EMPTY array when no attempt was
+            // recorded, so the "not_observed" default above stands rather than
+            // being overwritten with nothing -- the distinction the original
+            // default exists to preserve.
+            if (class_exists('ErpEstimatingNotificationHook', false)) {
+                $coreOutcome = ErpEstimatingNotificationHook::consumeOutcome(
+                    $recordId,
+                    'estimating'
                 );
+                if (!empty($coreOutcome['status'])) {
+                    $notificationOutcome = $coreOutcome;
+                }
             }
             $result['notification_status'] = (string) (
                 $notificationOutcome['status'] ?? 'not_observed'
