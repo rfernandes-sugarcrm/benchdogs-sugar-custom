@@ -5,7 +5,13 @@ use Sugarcrm\Sugarcrm\MetaData\ViewdefManager;
 // phpcs:disable PSR1.Classes.ClassDeclaration.MissingNamespace
 
 /**
- * Appends a "Bench Dogs ERP" panel to the Quotes record view at install time.
+ * Keeps the Bench Dogs surfaces on the Quotes record view: the two quote-action
+ * BUTTONS, and the REMOVAL of the retired "Bench Dogs ERP" panel.
+ *
+ * 🛑 The panel is no longer appended by this class. It is removed on install
+ * and never added back -- see write() for the field-by-field evidence and the
+ * owner's words. What remains here is button placement and the uninstall
+ * sweep.
  *
  * Uses ViewdefManager directly (load -> mutate -> save; see MLP019 on
  * deploy), the same mechanism CORE-ShippingAddresses'
@@ -50,6 +56,47 @@ class BdQuotesLayoutExtensions
      *   to avoid. Fresh installs have nothing to lose and want the packaged
      *   definition to be authoritative.
      */
+    /**
+     * 🛑 THE BENCH DOGS PANEL IS RETIRED FROM THE QUOTES RECORD VIEW. It is
+     *    now REMOVED on install and never added.
+     *
+     * Owner, on Bench 2026-09-20, looking at quote 273: *"shoudl not have BD
+     * here why we have bd"*, and separately *"wh i see this copy this should
+     * be form core"* against a panel header rendering as
+     * `LBL_RECORDVIEW_PANEL_BENCHDOGS`.
+     *
+     * THE EVIDENCE, NOT THE INTENTION. Every field this panel carried is a
+     * private Bench copy of something core already owns, and the ruling is
+     * recorded in connector_ext_benchdogs/models/crm/sell/quote_kpi.py under
+     * 🔒 1045, in these words: "only bd_customer_group /
+     * bd_customer_group_code stay in the Bench layer; everything else belongs
+     * to core and its MLPs". Measured against the connector lanes today:
+     *
+     *   bd_erp_total   RETIRED -> core's `quote_total`, off the IDENTICAL
+     *                  Epicor column DocTotalQuote.
+     *   bd_erp_stage   RETIRED -> core owns the estimating lifecycle on
+     *                  Sugar's native `quote_stage`.
+     *   bd_reason_code RETIRED -> core's `Quotes.erp_reason_code`.
+     *   bd_sent_to_estimating_at, bd_governing_line, bd_priced_at
+     *                  RETIRED, no writer at all -- a search of every
+     *                  connector lane returns ZERO python files for
+     *                  bd_sent_to_estimating_at.
+     *
+     * So the panel showed four fields nothing populates, two of them as raw
+     * label keys over "No data". Removing it is the fix; adding the missing
+     * label would only have made a dead field look supported.
+     *
+     * 🚩 THE FIELDS THEMSELVES ARE NOT TOUCHED, and that is deliberate.
+     * `bd_erp_stage` still has a live writer --
+     * BdBenchDogsActionsApi stamps `in_estimating` on it -- so this removes
+     * the panel from the RECORD VIEW only, never a vardef and never that
+     * writer. "Nothing shows it" and "nothing writes it" are different
+     * claims, and only the first one is being made here.
+     *
+     * $replace is kept in the signature: callers pass it, and both values
+     * now mean the same thing, because there is no longer a version of this
+     * panel to deploy.
+     */
     public static function write(bool $replace = false): void
     {
         $viewdefs = self::loadRecordView('Quotes');
@@ -59,20 +106,13 @@ class BdQuotesLayoutExtensions
         $panels =& $viewdefs['base']['view']['record']['panels'];
 
         $at = array_search(self::PANEL_NAME, array_column($panels, 'name'), true);
-        if ($at !== false) {
-            if (!$replace) {
-                // Already deployed - keep whatever the admin has done since,
-                // except the retired fields this panel itself once shipped.
-                if (self::dropRetiredPanelFields($panels[$at])) {
-                    self::deployRecordView('Quotes', $viewdefs);
-                }
-                return;
-            }
-            $panels[$at] = self::benchDogsPanel();
-        } else {
-            $panels[] = self::benchDogsPanel();
+        if ($at === false) {
+            // Never deployed, or already retired by an earlier install of
+            // this version. Nothing to do -- and nothing to add.
+            return;
         }
 
+        array_splice($panels, $at, 1);
         self::deployRecordView('Quotes', $viewdefs);
     }
 
@@ -426,78 +466,22 @@ class BdQuotesLayoutExtensions
         }
     }
 
-    private static function benchDogsPanel(): array
-    {
-        return [
-            'name' => self::PANEL_NAME,
-            'label' => self::PANEL_NAME,
-            'columns' => 2,
-            'placeholders' => true,
-            'newTab' => false,
-            'panelDefault' => 'expanded',
-            'fields' => [
-                ['name' => 'bd_erp_total', 'label' => 'LBL_BD_ERP_TOTAL', 'readonly' => true],
-                ['name' => 'bd_erp_stage', 'label' => 'LBL_BD_ERP_STAGE', 'readonly' => true],
-                ['name' => 'bd_reason_code', 'label' => 'LBL_BD_REASON_CODE', 'readonly' => true],
-            ],
-        ];
-    }
 
-    /**
-     * Fields earlier versions placed on this panel that nothing writes any more.
+    /*
+     * 🗑️ REMOVED WITH THE PANEL: benchDogsPanel(), RETIRED_PANEL_FIELDS and
+     * dropRetiredPanelFields().
      *
-     * bd_governing_line: decision 29 (2026-09-13) makes the governing selection
-     * an explicit flag a person sets in Sugar - since decisions 901/903 retired
-     * the quote mirror, `erp_governing` on the native Sugar quote line - read
-     * fail-closed by ErpQuoteOpportunityContribution. No writer derives a
-     * Quote-level label from it, so the field only ever showed an empty or
-     * stale value.
+     * They existed to prune dead fields OUT of a panel that is itself now
+     * removed on install, so keeping them would leave three private members
+     * that read as live machinery and can never run. This package has already
+     * paid for code that looks active and is not (a guarded class_exists that
+     * silently switched a feature off, three install cycles), so dead helpers
+     * go out with the thing they served rather than being left "just in case".
      *
-     * Removed from THIS panel only, on every install. The append path above
-     * otherwise returns early and would keep the old entry forever. An admin
-     * who placed the field on another panel keeps it.
-     *
-     * bd_sent_to_estimating_at: retired with the rest of 🔒 1044's sweep, but
-     * MISSED BY THIS LIST — so on every already-deployed tenant the append path
-     * kept handing it back. The owner found it on Bench 2026-09-20, rendering
-     * its own label key over "No data":
-     *
-     *     LBL_BD_SENT_TO_ESTIMATING_AT
-     *     No data
-     *
-     * Measured then: zero vardef declarations anywhere under custom/, zero
-     * label definitions in the whole tree, and absent from Quotes metadata —
-     * while the LIVE equivalent, core's `erp_sent_to_estimating_at`, resolves
-     * correctly as "Sent to estimation". 🛑 The fix is removal, NOT a label:
-     * this file's own language sibling records why an orphan label is worse
-     * than a missing one — it makes a dead field look supported in Studio, the
-     * report builder and column pickers. Two fields were retired here and a
-     * third was missed; that is why the list is the gate and not the comment.
+     * The field-by-field evidence they carried is preserved in write()'s
+     * docblock above, which is where a reader now asks why there is no panel.
      */
-    private const RETIRED_PANEL_FIELDS = [
-        'bd_governing_line',
-        'bd_priced_at',
-        'bd_sent_to_estimating_at',
-    ];
 
-    private static function dropRetiredPanelFields(array &$panel): bool
-    {
-        if (empty($panel['fields']) || !is_array($panel['fields'])) {
-            return false;
-        }
-        $kept = [];
-        foreach ($panel['fields'] as $field) {
-            $name = is_array($field) ? ($field['name'] ?? '') : $field;
-            if (!in_array($name, self::RETIRED_PANEL_FIELDS, true)) {
-                $kept[] = $field;
-            }
-        }
-        if (count($kept) === count($panel['fields'])) {
-            return false;
-        }
-        $panel['fields'] = $kept;
-        return true;
-    }
 
     /**
      * The deployed record viewdef for $module — the tenant's custom copy when
