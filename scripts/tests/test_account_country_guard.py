@@ -128,22 +128,53 @@ class AccountCountryGuardPackagingTest(unittest.TestCase):
         self.assertIn("catch (\\Throwable $e)", guard)
         self.assertIn("throw new SugarApiExceptionInvalidParameter($refusal)", guard)
 
-    def test_type_label_is_an_additive_list_entry(self):
-        lang = LANG.read_text()
-        self.assertIn("$app_list_strings['erp_lookup_type_list']['bd_country']", lang)
-        self.assertNotRegex(lang, r"\$app_list_strings\['erp_lookup_type_list'\]\s*=")
+    def test_the_type_label_is_RETIRED_and_declares_nothing(self):
+        """INVERTED 2026-09-20 (G50), not deleted.
 
-    def test_type_label_merges_after_erp_fragments_whatever_their_mtime(self):
-        # Sugar 26.1 sorts language fragments by is_override, then by an order-map
-        # mtime refreshed only when a file's md5 changes. ERP-Epicor upgrades keep
-        # changing (and appending to) their fragment, whose accumulated whole-array
-        # erp_lookup_type_list then wiped this key after rc16. `_override*` always
-        # merges last; the name must still contain en_us to join that merge.
+        This used to assert the fragment shipped
+        `$app_list_strings['erp_lookup_type_list']['bd_country']`. Nothing in
+        this package reads those rows any more — the hook above registers no
+        guard, and ERP-Core owns the billing-country check — so the label was
+        the last thing making a retired lookup type look supported in the
+        ERP_LookupValues list view, its filters and the report field chooser.
+
+        The assertion is INVERTED rather than removed for the same reason as
+        the hook's: the file must keep SHIPPING as an emptied stub (§CW / G37),
+        and deleting this test would stop anyone noticing if the stub were
+        dropped from the build — which leaves the label live on every tenant
+        that has it.
+
+        🚩 THIS PIN WAS THE BLOCKER. G50 was filed as "the code is gone, soft
+        delete the 12 stale bd_country rows". The code was not gone: this
+        fragment still shipped the label and this test still pinned it, so the
+        rows could not be retired first without the next install republishing
+        the name over them.
+        """
+        lang = re.sub(r"/\*.*?\*/", "", LANG.read_text(), flags=re.S)
+        lang = re.sub(r"(?m)^\s*//.*$", "", lang)
+        self.assertTrue(LANG.exists(), "the stub must still ship, or the tenant keeps the label")
+        self.assertNotIn("$app_list_strings", lang, "this package must publish no lookup type label")
+        self.assertEqual(lang.replace("<?php", "").strip(), "")
+
+    def test_the_stub_keeps_the_exact_path_the_label_was_installed_at(self):
+        # Overwriting is the ONLY thing that retires an installed
+        # custom/Extension file, and a file only overwrites the copy at its own
+        # path - so the name cannot drift, retired or not.
+        #
+        # The prefix also carried the original fix (rc23): Sugar 26.1 sorts
+        # language fragments by is_override, then by an order-map mtime
+        # refreshed only when a file's md5 changes, and ERP-Epicor's
+        # accumulated whole-array erp_lookup_type_list kept wiping this key
+        # until `_override*` put it last. `en_us` in the name is what joins
+        # that merge at all.
         self.assertTrue(LANG.name.startswith("_override_"), LANG.name)
         self.assertIn("en_us", LANG.name)
-        others = sorted(p.name for p in LANG.parent.glob("*.php")
-                        if p != LANG and "bd_country" in p.read_text())
-        self.assertEqual(others, [], "one fragment owns the bd_country label")
+        self.assertEqual(LANG.name, "_override_en_us.bd_country_lookup.php")
+
+    def test_no_fragment_anywhere_republishes_the_bd_country_label(self):
+        offenders = sorted(p.name for p in LANG.parent.glob("*.php")
+                           if "bd_country" in re.sub(r"/\*.*?\*/", "", p.read_text(), flags=re.S))
+        self.assertEqual(offenders, [], "the bd_country label is retired")
 
 
 if __name__ == "__main__":

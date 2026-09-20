@@ -57,6 +57,79 @@ on the Account "ERP Quote Pipeline" tile shows only values a previous install
 already stored. `BdEstimatingNotificationHook` reads both fields and writes
 neither. This ended with the mirror deletion, not with the reference cleanup.
 
+# 0.9.42-rc57 — G116: the retired `bd_governing_origin` stops re-arming itself, and the `bd_country` label is retired
+
+## G116 — a 🔒 1044 retirement that re-armed on EVERY install
+
+🔒 1044 retired `Opportunities.bd_governing_origin`: both
+`custom/Extension/modules/Opportunities/Ext/Vardefs/bd_governing_origin.php`
+and `.../Ext/Language/en_us.bd_governing_origin.php` were overwritten with
+stubs that declare nothing. Two surfaces went on PLACING the field anyway, once
+per install:
+
+| surface | what a tenant saw |
+| --- | --- |
+| `scripts/post_install.php:191` → `BdOpportunitiesLayoutExtensions::writeGoverningOriginField()` | a row on the Opportunity record view headed with the raw key `LBL_BD_GOVERNING_ORIGIN`, reading "No data" |
+| `scripts/post_install.php:210` → `(new BdAutoSelectedReport())->install()` | a saved report filtering on a column with no vardef — it cannot error, it renders EMPTY, and on a review queue that reads as "nothing to review" |
+
+This is the same shape as the G96/G99 raw-label defect that rc55/rc56 closed on
+Quotes. It survived that closure because the "bd_* fully retired" census read
+**Quotes** module metadata only, and this placement is on **Opportunities**.
+
+**Removing the calls would not have been enough.** Deployed metadata is covered
+by no installdef and a saved report is a row, so every tenant that installed
+rc26..rc56 would have kept both for good. The retirement has to RUN:
+
+- `BdOpportunitiesLayoutExtensions` no longer has `writeGoverningOriginField()`
+  or its `indexOf()` helper. `post_install.php` calls `remove()` — which sweeps
+  EVERY panel, so a field an admin moved is cleaned up too, and writes nothing
+  when there is nothing to remove.
+- `BdAutoSelectedReport` no longer has `reportDef()` or `install()`. Its single
+  method is `remove()`, called from `post_install.php` as well as
+  `pre_uninstall.php`. It matches the exact report name and nothing else, so an
+  admin who renamed or copied the report keeps theirs, and `mark_deleted()` is
+  a soft delete.
+- Both 1044 stubs keep shipping, unchanged: §CW / G37 — dropping a copied
+  `custom/Extension` file from the build leaves the installed copy in place and
+  the retirement inert.
+
+**On a tenant.** After installing rc57, the Opportunity record view loses the
+`LBL_BD_GOVERNING_ORIGIN` row and the saved report "Opportunities Valued From
+an Auto-Selected Quote Line" is soft-deleted. The `bd_governing_origin` COLUMN
+stays in the database, unread; with no writer left every row is null.
+
+## G50 — the `bd_country` type label is retired, in the right order
+
+`custom/Extension/application/Ext/Language/_override_en_us.bd_country_lookup.php`
+still shipped
+`$app_list_strings['erp_lookup_type_list']['bd_country'] = 'Country (Bench Dogs)'`,
+and `scripts/tests/test_account_country_guard.py:133` pinned it — so G50's
+premise ("the code is gone, soft-delete the stale rows") was false and the rows
+could not go first: the next install would have republished the name over them.
+
+Nothing in this package reads those rows. Bench's guard is registered by
+nothing (`.../Accounts/Ext/LogicHooks/bd_account_country_guard.php` is itself a
+retirement stub) because ERP-Core owns the billing-country check. The fragment
+is now an emptied stub at the SAME PATH — the `_override_` prefix and the
+`en_us` in the name are what make it overwrite the installed copy — and the two
+test pins are inverted rather than deleted.
+
+**Still to do, on the tenant, not in this package:** the 12 `ERP_LookupValues`
+rows of type `bd_country`. Until they are removed they render with the raw type
+value `bd_country` instead of a name. They are read by nothing either way.
+
+## The PHP test suites now run in CI
+
+`.github/workflows/mlp-lint.yml` runs `pytest scripts/tests`, which does not
+collect `*.php` — so `scripts/tests/bench_panel_retired_test.php` (18 checks,
+written after the owner found a raw `LBL_RECORDVIEW_PANEL_BENCHDOGS` on a live
+quote) had never executed on a pull request. `scripts/tests/test_php_suites.py`
+wraps every `*_test.php`, asserts `checks, 0 failed` as well as the exit code,
+and fails if a PHP suite exists that nothing runs.
+
+New: `scripts/tests/bench_governing_origin_retired_test.php` — 17 checks that
+RUN the removal against a view in the state rc26..rc56 left it in.
+
 # 0.9.42-rc26 — `post_install.php` actually runs (the post_execute unwrap), and it can no longer force-uninstall itself
 
 Built from `0577bc0` (rc25 + the D29-R1 atomic governing-selection fix). One file
