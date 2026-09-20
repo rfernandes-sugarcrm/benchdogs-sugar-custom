@@ -1,93 +1,153 @@
-"""Decision 72's auto-selected review report: its filter, columns and scope.
+"""G116: decision 72's marker and its review report are REMOVED on install.
 
-WHAT WENT, AND WHY THIS FILE IS NOW ONLY THE REPORT
----------------------------------------------------
-This file used to carry decision 72's BLAST RADIUS as well - the gate deciding
-WHEN `BdGoverningAutoSelectHook` could fire (created lines only, never an update
-or a resync) and WHETHER the marker could lie. Decision 901/903 retired the
-`bd01_*` quote mirror, taking `BdGoverningAutoSelect`, `BdGoverningAutoSelectHook`,
-`BdGoverningLineHook` and the one-off `bd_governing_backfill.php` with it. A gate
-on a hook that no longer exists cannot be held open or shut, so those tests were
-deleted rather than repointed. Bench no longer selects anything: the per-line
-governing pin is `Products.erp_governing`, owned by ERP-Epicor-PartialFulfillment,
-and the exactly-one rule is proved in the package that enforces it -
-`erp-integration-sugar/scripts/tests/test_line_rollup_refusal_contract.py`
-(`test_refusal_at_zero_pins_*`, `test_refusal_at_two_pins_*`).
+WHAT THIS FILE USED TO BE, AND WHY IT IS INVERTED RATHER THAN DELETED
+---------------------------------------------------------------------
+It pinned `BdAutoSelectedReport::reportDef()` — the filter, the columns and the
+joins of a saved report that listed every Opportunity still valued from an
+auto-selected quote line. Its own docstring already carried the finding that
+closed it:
 
-The cross-check test that pinned this report's literal `'auto'` against
-`BdGoverningAutoSelect::ORIGIN_AUTO` went with the selector: there is no longer a
-second definition of the constant for it to drift from.
+    🚩 REPORTED, NOT FIXED HERE: `BdAutoSelectedReport` still ships and still
+    filters Opportunities on `bd_governing_origin = 'auto'`, but the only code
+    that ever wrote 'auto' was `BdGoverningAutoSelect` ... both retired. So the
+    report is well-formed and permanently empty.
 
-🚩 REPORTED, NOT FIXED HERE: `BdAutoSelectedReport` still ships and still filters
-Opportunities on `bd_governing_origin = 'auto'`, but the only code that ever wrote
-'auto' was `BdGoverningAutoSelect`, and the only code that cleared it was
-`BdGoverningLineHook` - both retired. Bench's own `scripts/post_install.php` now
-records that "there is no automatic selection left to run". So the report is
-well-formed and permanently empty. Whether it should still ship is a decision
-about `custom/`, not about this test: the assertions below describe the report
-that IS built, and they are what would notice it silently losing its filter.
+🔒 1044 had retired `bd_governing_origin` on Opportunities — vardef AND label
+emptied to stubs that declare nothing — while TWO surfaces went on placing it
+once per install:
+
+    scripts/post_install.php -> BdOpportunitiesLayoutExtensions
+                                ::writeGoverningOriginField()   (record view)
+    scripts/post_install.php -> (new BdAutoSelectedReport)->install()  (report)
+
+The record-view one rendered the raw key `LBL_BD_GOVERNING_ORIGIN` as "No
+data" on a live tenant. The report one cannot error and cannot fill; it renders
+EMPTY, which on a review queue reads as "nothing to review".
+
+The assertions below are INVERTED, not deleted, for the reason the hook stub in
+test_account_country_guard.py gives: what regressed here was a retirement that
+re-armed itself on the next install, so the guard has to be a test that fails
+if the writer comes back. A test that pinned `reportDef()` would only pin the
+shape of a report that must no longer be built.
+
+THE BEHAVIOURAL HALF IS IN PHP, and it RUNS the code rather than scanning it:
+scripts/tests/bench_governing_origin_retired_test.php, wired into CI by
+scripts/tests/test_php_suites.py.
 """
 
-import json
-from pathlib import Path
-import shutil
-import subprocess
+import re
 import unittest
+from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-WORKSPACE = ROOT.parent
-REPO = ROOT.name
-REL = f"{REPO}/sugar-sell/BenchDogs-Ext"
+PACKAGE = ROOT / "sugar-sell" / "BenchDogs-Ext"
+REPORT = PACKAGE / "custom" / "modules" / "Opportunities" / "BdAutoSelectedReport.php"
+LAYOUT = PACKAGE / "custom" / "modules" / "Opportunities" / "BdOpportunitiesLayoutExtensions.php"
+POST_INSTALL = PACKAGE / "scripts" / "post_install.php"
+PRE_UNINSTALL = PACKAGE / "scripts" / "pre_uninstall.php"
+
+FIELD = "bd_governing_origin"
 
 
-@unittest.skipUnless(shutil.which("php"), "requires a PHP CLI")
-class AutoSelectedReportTest(unittest.TestCase):
-    def report_def(self):
-        result = subprocess.run(
-            ["php", "-d", "error_reporting=E_ALL & ~E_DEPRECATED", "-r",
-             "class SugarBean {} "
-             "require '" + REL + "/custom/modules/Opportunities/BdAutoSelectedReport.php';"
-             "echo json_encode((new BdAutoSelectedReport())->reportDef());"],
-            cwd=WORKSPACE, capture_output=True, text=True,
+def code(path: Path) -> str:
+    """The file with /* */ and // comments removed.
+
+    Every file here NAMES the retired field in the prose explaining why it no
+    longer uses it, and a blunt substring match would read that explanation as
+    the defect it documents.
+    """
+    source = re.sub(r"/\*.*?\*/", "", path.read_text(), flags=re.S)
+    return re.sub(r"(?m)//.*$", "", source)
+
+
+class TheRetiredFieldHasNoWriterLeftTest(unittest.TestCase):
+    def test_the_only_executable_mention_left_is_the_one_that_removes_it(self):
+        """FAILS ON THE OLD BEHAVIOUR: rc56 named the field in three places —
+        the record-view writer, the report's display column and the report's
+        filter. One is left, and it is the name remove() strips.
+
+        Scoped to the whole package rather than to the files that had it,
+        because the miss that produced G116 was a census that looked at one
+        module. A placement anywhere is the same defect.
+        """
+        allowed = (
+            "sugar-sell/BenchDogs-Ext/custom/modules/Opportunities/"
+            "BdOpportunitiesLayoutExtensions.php",
+            "private const FIELD = 'bd_governing_origin';",
         )
-        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
-        self.assertEqual(result.stderr, "", result.stderr)
-        return json.loads(result.stdout)
-
-    def test_the_report_filters_on_the_auto_marker_and_nothing_wider(self):
-        """A report that quietly lost its filter would list the whole pipeline
-        and read as a catastrophe rather than as a bug."""
-        definition = self.report_def()
-        self.assertEqual(definition["module"], "Opportunities")
-        self.assertEqual(definition["report_type"], "tabular")
-        primary = definition["filters_def"]["Filter_1"]["0"]
-        self.assertEqual(primary["name"], "bd_governing_origin")
-        self.assertEqual(primary["qualifier_name"], "equals")
-        self.assertEqual(primary["input_name0"], "auto")
-        self.assertEqual(primary["table_key"], "self")
-
-    def test_the_marker_is_a_visible_column_not_only_a_filter(self):
-        columns = [c["name"] for c in self.report_def()["display_columns"]]
-        self.assertIn("bd_governing_origin", columns)
-        self.assertIn("amount", columns)
-
-    def test_closed_deals_are_not_a_review_queue(self):
-        closed = self.report_def()["filters_def"]["Filter_1"]["1"]
-        self.assertEqual(closed["name"], "sales_stage")
-        self.assertEqual(closed["qualifier_name"], "not_one_of")
-        self.assertEqual(sorted(closed["input_name0"]), ["Closed Lost", "Closed Won"])
-
-    def test_every_display_column_names_a_table_the_report_joins(self):
-        """A column on a table_key absent from full_table_list renders blank."""
-        definition = self.report_def()
-        known = set(definition["full_table_list"].keys())
-        for column in definition["display_columns"]:
-            self.assertIn(column["table_key"], known, column)
-        for key, row in definition["filters_def"]["Filter_1"].items():
-            if key == "operator":
+        found = []
+        for path in sorted(PACKAGE.rglob("*.php")):
+            if "releases" in path.parts:
                 continue
-            self.assertIn(row["table_key"], known, row)
+            for line in code(path).splitlines():
+                if re.search(r"\b" + FIELD + r"\b", line):
+                    found.append((str(path.relative_to(ROOT)), line.strip()))
+        self.assertEqual(found, [allowed], found)
+
+    def test_the_label_the_placement_rendered_is_named_by_nothing(self):
+        """`LBL_BD_GOVERNING_ORIGIN` is a 1044 stub that defines no label, so
+        any file still naming it renders the raw key."""
+        offenders = []
+        for path in sorted(PACKAGE.rglob("*.php")):
+            if "releases" in path.parts:
+                continue
+            if "LBL_BD_GOVERNING_ORIGIN" in code(path):
+                offenders.append(str(path.relative_to(ROOT)))
+        self.assertEqual(offenders, [])
+
+    def test_both_halves_of_the_field_still_ship_as_stubs_that_declare_nothing(self):
+        """§CW / G37: only OVERWRITING a copied custom/Extension file retires
+        it. Deleting either stub would put the field back on every tenant that
+        has it."""
+        ext = PACKAGE / "custom" / "Extension" / "modules" / "Opportunities" / "Ext"
+        for stub in (ext / "Vardefs" / "bd_governing_origin.php",
+                     ext / "Language" / "en_us.bd_governing_origin.php"):
+            self.assertTrue(stub.exists(), f"{stub} must keep shipping")
+            body = code(stub).replace("<?php", "").strip()
+            self.assertEqual(body, "", f"{stub} must declare nothing")
+
+
+class TheInstallRemovesRatherThanPlacesTest(unittest.TestCase):
+    def test_the_placement_writer_is_GONE_from_the_layout_class(self):
+        """A member that can never run reads as live machinery. This package
+        has already paid three install cycles for code that looked active and
+        was not."""
+        layout = code(LAYOUT)
+        self.assertNotIn("function writeGoverningOriginField", layout)
+        self.assertNotIn("saveViewdef", layout.split("function remove")[0],
+                         "nothing may write the view before remove()")
+
+    def test_post_install_REMOVES_the_marker_and_never_writes_it(self):
+        """FAILS ON THE OLD BEHAVIOUR: post_install.php:191 called
+        writeGoverningOriginField() on every install, re-arming the raw label
+        after any repair or re-install."""
+        post = code(POST_INSTALL)
+        self.assertNotIn("writeGoverningOriginField", post)
+        self.assertIn("BdOpportunitiesLayoutExtensions::remove()", post)
+
+    def test_post_install_REMOVES_the_review_report_and_never_creates_one(self):
+        post = code(POST_INSTALL)
+        self.assertNotIn("BdAutoSelectedReport())->install()", post)
+        self.assertIn("(new BdAutoSelectedReport())->remove()", post)
+
+    def test_the_report_BUILDER_is_gone_and_only_the_remover_ships(self):
+        """The class keeps shipping — the report is a Reports ROW, and dropping
+        the class would leave every rc26..rc56 tenant with nothing to remove
+        it — but it must no longer be able to build one."""
+        report = code(REPORT)
+        self.assertNotIn("function reportDef", report)
+        self.assertNotIn("save_report", report)
+        self.assertNotIn("filters_def", report)
+        self.assertIn("function remove", report)
+        self.assertIn("mark_deleted", report)
+
+    def test_uninstall_still_removes_both(self):
+        """The retirement runs on install now; it must not have stopped running
+        on uninstall."""
+        pre = code(PRE_UNINSTALL)
+        self.assertIn("BdOpportunitiesLayoutExtensions::remove()", pre)
+        self.assertIn("(new BdAutoSelectedReport())->remove()", pre)
 
 
 if __name__ == "__main__":

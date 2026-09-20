@@ -143,7 +143,7 @@ try {
             require_once $bdReportHelper;
         }
         if (class_exists('BdAutoSelectedReport')) {
-            (new BdAutoSelectedReport())->uninstall();
+            (new BdAutoSelectedReport())->remove();
         }
     } else {
         $GLOBALS['log']->error("BenchDogs-Ext: {$bdReportHelper} missing; review report left behind");

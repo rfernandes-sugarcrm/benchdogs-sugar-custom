@@ -165,22 +165,25 @@ try {
     $GLOBALS['log']->fatal('BenchDogs-Ext: Accounts customer group field failed: ' . $e->getMessage());
 }
 
-// DECISION 72 - the auto-selected marker on the Opportunity record view.
+// 🛑 G116 - DECISION 72's MARKER IS REMOVED HERE, NOT PLACED.
 //
-// This placement is only deliverable because the block you are reading now
-// RUNS. Until rc25 this whole file sat inside an uncalled post_execute()
-// function, so a field placed from here would have been written by nothing and
-// rendered nowhere - a second invisible state rather than observability, which
-// is why no earlier version shipped it. It goes through the same path that
-// first proved out at 21:22:24Z on 2026-09-14.
+// Until rc56 this block called
+// BdOpportunitiesLayoutExtensions::writeGoverningOriginField(), which appended
+// `bd_governing_origin` to the Opportunity record view with the label
+// `LBL_BD_GOVERNING_ORIGIN`. 🔒 1044 had already retired BOTH halves of that
+// field - the vardef and the label are stubs that declare NOTHING - so every
+// install re-armed a row rendering the raw key and "No data": the same G96/G99
+// shape the Quotes panel retirement had just been declared closed on. It was
+// missed because that census read QUOTES module metadata only, and this
+// placement is on OPPORTUNITIES.
 //
-// Append-only and skip-if-present, like the Accounts fields above: an admin who
-// has moved the field keeps their placement.
-//
-// This block SELECTS NOTHING and VALUES NOTHING. It writes deployed metadata
-// only. There is no automatic selection left to run: BdGoverningAutoSelect and
-// the one-off bd_governing_backfill.php script went with the retired quote
-// mirror, so bd_governing_origin is only ever set by a person.
+// REMOVING THE CALL WOULD NOT HAVE BEEN ENOUGH. Deployed metadata is covered
+// by no installdef, so on every tenant that installed rc26..rc56 the row would
+// have stayed there for good. The retirement has to RUN, so this block calls
+// remove() - append-only placement replaced by a removal, exactly as
+// BdQuotesLayoutExtensions::write() removes the Bench Dogs panel and never
+// adds it. remove() sweeps EVERY panel, so an admin who moved the field is
+// cleaned up too, and it writes nothing when there is nothing to remove.
 try {
     $bdOppsHelper = 'custom/modules/Opportunities/BdOpportunitiesLayoutExtensions.php';
     if (file_exists($bdOppsHelper)) {
@@ -188,18 +191,26 @@ try {
             require_once $bdOppsHelper;
         }
         if (class_exists('BdOpportunitiesLayoutExtensions')) {
-            BdOpportunitiesLayoutExtensions::writeGoverningOriginField();
+            BdOpportunitiesLayoutExtensions::remove();
         }
     } else {
-        $GLOBALS['log']->fatal("BenchDogs-Ext: {$bdOppsHelper} missing, skipping value-source placement");
+        $GLOBALS['log']->fatal("BenchDogs-Ext: {$bdOppsHelper} missing, retired value-source marker not removed");
     }
 } catch (Throwable $e) {
-    $GLOBALS['log']->fatal('BenchDogs-Ext: value-source placement failed: ' . $e->getMessage());
+    $GLOBALS['log']->fatal('BenchDogs-Ext: value-source marker removal failed: ' . $e->getMessage());
 }
 
-// DECISION 72 item 3 - the saved report, which is the piece that actually
-// surfaces unreviewed deals in bulk. Created only if no report of that name
-// exists, so an admin's edits survive a re-install.
+// 🛑 G116, SECOND PLACEMENT OF THE SAME RETIRED FIELD. Decision 72 item 3's
+// saved report filtered Opportunities on `bd_governing_origin = 'auto'` and
+// drew it as a column. With the vardef retired that report cannot error and
+// cannot fill: it renders EMPTY, which on a review queue reads as "nothing to
+// review" rather than as a broken report - the trap rc24's operator notes
+// describe, and the reason pre_uninstall.php has always removed it. Creating
+// it on install while the field it filters no longer exists is that trap
+// re-armed once per install, so the install now REMOVES it too.
+//
+// Matched by exact name, so an admin who renamed or copied the report keeps
+// theirs; mark_deleted() is a soft delete, so a row is recoverable.
 try {
     $bdReportHelper = 'custom/modules/Opportunities/BdAutoSelectedReport.php';
     if (file_exists($bdReportHelper)) {
@@ -207,13 +218,13 @@ try {
             require_once $bdReportHelper;
         }
         if (class_exists('BdAutoSelectedReport')) {
-            (new BdAutoSelectedReport())->install();
+            (new BdAutoSelectedReport())->remove();
         }
     } else {
-        $GLOBALS['log']->fatal("BenchDogs-Ext: {$bdReportHelper} missing, skipping the review report");
+        $GLOBALS['log']->fatal("BenchDogs-Ext: {$bdReportHelper} missing, retired review report left behind");
     }
 } catch (Throwable $e) {
-    $GLOBALS['log']->fatal('BenchDogs-Ext: review report install failed: ' . $e->getMessage());
+    $GLOBALS['log']->fatal('BenchDogs-Ext: review report removal failed: ' . $e->getMessage());
 }
 
 // Stage dropdown keys (quote_stage_dom 'Partially Fulfilled',
