@@ -57,6 +57,84 @@ on the Account "ERP Quote Pipeline" tile shows only values a previous install
 already stored. `BdEstimatingNotificationHook` reads both fields and writes
 neither. This ended with the mirror deletion, not with the reference cleanup.
 
+# 0.9.42-rc58 — G97/G123: the Opportunity headline amount is the primary quote's total
+
+**Decision 708, owner verbatim 2026-09-20:** *"now opprtuntiy rollup is simple
+no need for cgoveringing line its what ever is in the quote right???/ no more
+selected wired logic...."* and *"add taht as a gap to fix on how to simply
+calaualted oppetunity roll up now form the primairy quote."*
+
+`ErpQuoteOpportunityContribution::resolve()` now returns the primary quote's
+own stored `total`. It no longer counts `erp_governing` lines, no longer sums
+`subtotal` over the `counts` lines, and no longer adds `$quote->tax` /
+`$quote->shipping` on top.
+
+## The defect this closes: −$1,848.00 on one Opportunity (G97)
+
+Measured live on Ophir 2026-09-19, Opportunity `3e9ef3f8` / quote 1250:
+
+    2026-09-19 21:16:48  erp_open_amount  237.30 -> 2,085.30   (PF rollup)  ✅
+    2026-09-19 21:16:48  amount           — NO ROW —           (this file)  ❌
+
+Quote 1250 has TWO ladder groups, `EPIC06__1250_1_1` and `EPIC06__1250_2_1`,
+each with its own legitimately governing rung: 2,016.00 + 69.30 = 2,085.30,
+exactly the quote total. The old per-QUOTE rule was "exactly one governing
+production option is required"; 2 > 1 threw, `QuoteOpportunityAmount::refresh()`
+caught and logged, and `amount` stayed frozen at 237.30.
+
+**A quote with N price-break parts legitimately has N governing lines.** The
+quote total was correct throughout, so 708 deletes the check rather than
+re-scoping it to the ladder group — §DG, make the illegal state unreachable
+rather than detectable.
+
+## Why "the quote total" does not re-admit the unselected rungs
+
+`ERP-Epicor-QuantityAlternatives` sets, in
+`custom/Extension/modules/Products/Ext/Vardefs/erp_total_role.php:110`:
+
+    $dictionary['Product']['fields']['subtotal']['formula'] =
+        'ifElse(equal($erp_total_role, "alternative"), 0, …)'
+
+calculated and enforced, and `Quotes.total` is an equally enforced
+`currencyAdd(rollupCurrencySum($product_bundles,"new_sub"), $tax, $shipping)`.
+An unselected rung therefore contributes zero to the quote total by the
+platform's own arithmetic. Verified in the vardef, not assumed.
+
+Taking the stored total is also strictly more correct than the sum it replaces:
+`ProductBundles.new_sub` is `subtotal - deal_tot`, so the old per-line sum
+over-stated every quote carrying a bundle discount.
+
+## The one refusal that survives — quote 1049
+
+A quote whose every ERP line is still `alternative` totals **0.00 by
+construction**. Quote 1049 is the live control: 4 lines, all alternative, and
+an admin typed `amount = 23.00` on 09-18. A naive "amount = total" overwrites
+that with 0.00, so the provider **throws** ("this quote is not yet priced")
+rather than returning null — throwing is what makes ERP-Core catch, log and
+write nothing, preserving the 23.00. Returning null would fall through to
+`(float) $quote->total` and destroy it.
+
+A line that *counts* at 0.00 is a measurement (a free-of-charge item) and still
+publishes 0.00. Only an all-`alternative` quote is "not yet priced".
+
+## Tests
+
+`scripts/tests/test_governing_contribution.py` rebuilt onto the new rule: 11
+scenarios, including the 1250 two-ladder-group shape, the 1049 all-alternative
+refusal, a genuinely zero-priced quote, a bundle-discounted quote, and a
+source-level anti-resurrection pin that fails if `erp_governing` or a
+`->subtotal` sum returns to the file.
+
+Mutation-checked, three ways:
+
+| mutation | result |
+|---|---|
+| reinstate `if ($governingCount > 1) throw` | 2 red (the G97 scenario throws again; the source pin sees `erp_governing`) |
+| delete the not-yet-priced refusal | 1 red (1049 publishes 0.00 over the admin's 23.00) |
+| restore the per-line `subtotal` + tax + shipping sum | 7 red |
+
+Suite: 185 passed, 1 skipped (was 182 passed, 1 skipped at rc57).
+
 # 0.9.42-rc57 — G116: the retired `bd_governing_origin` stops re-arming itself, and the `bd_country` label is retired
 
 ## G116 — a 🔒 1044 retirement that re-armed on EVERY install
