@@ -34,6 +34,8 @@
 // RETIRED_PANEL_FIELDS in custom/modules/Quotes/BdQuotesLayoutExtensions.php.
 $mod_strings['LBL_RECORDVIEW_PANEL_BENCHDOGS'] = 'Bench Dogs';
 
-$mod_strings['LBL_BD_ERP_TOTAL'] = 'ERP Quote Total';
-$mod_strings['LBL_BD_ERP_STAGE'] = 'ERP Quote Stage';
-$mod_strings['LBL_BD_REASON_CODE'] = 'ERP Reason Code';
+// 🗑️ LBL_BD_ERP_TOTAL / LBL_BD_ERP_STAGE / LBL_BD_REASON_CODE went with their
+// fields (🔒 1045). An orphan label is worse than a missing one: it makes a
+// dead field look supported in Studio, the report builder and column pickers,
+// which is exactly how the retired bd_sent_to_estimating_at survived long
+// enough for the owner to find it rendering its own key on a live quote.
