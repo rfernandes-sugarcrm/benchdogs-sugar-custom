@@ -177,5 +177,25 @@ class AccountCountryGuardPackagingTest(unittest.TestCase):
         self.assertEqual(offenders, [], "the bd_country label is retired")
 
 
+    def test_every_path_the_label_was_ever_installed_at_ships_an_empty_stub(self):
+        """G50, 2026-09-21. Retiring the CURRENT path was not enough.
+
+        Up to rc22 the label lived at en_us.bd_country_lookup.php; rc23 renamed
+        it to the _override_ path and rc57 emptied only that one. The original
+        copy was never overwritten, so it stayed on every tenant that had it,
+        and once ERP-Core stopped assigning the whole list it published
+        'Country (Bench Dogs)' again. Bench showed it live under rc58.
+
+        Both paths must keep shipping, empty. Dropping either from the build
+        hands the tenant's installed copy back.
+        """
+        for name in ("en_us.bd_country_lookup.php", "_override_en_us.bd_country_lookup.php"):
+            path = LANG.parent / name
+            self.assertTrue(path.exists(), f"{name} must ship as a stub, or the tenant keeps its copy")
+            body = re.sub(r"/\*.*?\*/", "", path.read_text(), flags=re.S)
+            body = re.sub(r"(?m)^\s*//.*$", "", body)
+            self.assertEqual(body.replace("<?php", "").strip(), "", f"{name} must define nothing")
+
+
 if __name__ == "__main__":
     unittest.main()
