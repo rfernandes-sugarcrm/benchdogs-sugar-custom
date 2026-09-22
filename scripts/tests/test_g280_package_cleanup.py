@@ -133,15 +133,35 @@ class EmptiedBecauseThePlatformLoadsThemByPath(unittest.TestCase):
                 for key, value in observed.items():
                     self.assertEqual(value, SEEDED, f"{rel} still declares {key}")
 
-    def test_control_the_legacy_column_sweep_still_names_its_columns(self):
-        """🛑 bd_to_order / bd_ordered stay in bdLegacyColumnNames(). Emptying
-        their LABEL file is the retirement; deleting the names from the REMOVAL's
-        input would turn the sweep into a silent no-op on every tenant that still
-        has the columns deployed."""
-        layout = (PKG / "custom/modules/Quotes/BdQliColumnsLayout.php").read_text(encoding="utf-8")
-        body = layout.split("bdLegacyColumnNames(): array", 1)[1][:400]
-        for column in ("bd_to_order", "bd_ordered"):
-            self.assertIn(column, body, f"the legacy column sweep no longer removes {column}")
+    def test_control_the_grid_logic_that_backed_this_stub_is_gone(self):
+        """🛑 REPLACES rc65's "the legacy column sweep still names its columns".
+
+        rc65 kept bd_to_order / bd_ordered inside
+        `BdQliColumnsLayout::bdLegacyColumnNames()` because that list was the
+        REMOVAL's input: emptying the LABEL file was the retirement, and
+        deleting the names would have made the deployed-metadata sweep a silent
+        no-op. 0.9.42-rc66 (G280 / 🔒 1508) deletes the whole grid class, so
+        there is no sweep and no input left — which is a state that has to be
+        ASSERTED rather than left implied, or the emptied label above starts
+        reading as the second half of a mechanism that no longer has a first.
+
+        Why the sweep could go: it writes to DEPLOYED METADATA, which persists
+        once written, and it has run on every install since 0.9.21 — through
+        rc65 on the only tenant that carries this package (stock has no Bench
+        Dogs by design, RELEASE-CONTROL.md:757). It was armed for instances that
+        ran 0.9.17/0.9.19; it has fired on the one that did."""
+        self.assertFalse((PKG / "custom/modules/Quotes/BdQliColumnsLayout.php").exists())
+        self.assertFalse((PKG / "custom/modules/Quotes/BdQliColumnTemplate.php").exists())
+        # CODE only. The emptied label file's retirement note NAMES the sweep it
+        # used to pair with, and a scan that counted comments would make writing
+        # down why something was removed the thing that fails the build.
+        offenders = []
+        for php in PKG.rglob("*.php"):
+            body = re.sub(r"/\*.*?\*/", "", php.read_text(encoding="utf-8"), flags=re.S)
+            body = re.sub(r"(?m)^\s*//.*$", "", body)
+            if "bdLegacyColumnNames" in body or "removeFieldsFromDataGroupListView" in body:
+                offenders.append(str(php.relative_to(PKG)))
+        self.assertEqual(offenders, [], f"the grid sweep is back: {offenders}")
 
 
 @unittest.skipUnless(shutil.which("php"), "requires php")

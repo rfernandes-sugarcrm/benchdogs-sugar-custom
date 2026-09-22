@@ -112,8 +112,14 @@ if (file_exists($parentApiFile)) {
                 // 🛑 G276 / 🔒 1504: no button step. writeButtons() (Quotes and
                 // Accounts) was removed with every other piece of record-view
                 // button logic in this package; core owns every button.
-                require_once 'custom/modules/Quotes/BdQliColumnsLayout.php';
-                (new BdQliColumnsLayout())->install();
+                //
+                // 🛑 AND NO QUOTED-LINE-GRID STEP (0.9.42-rc66, G280 / 🔒 1508).
+                // This called `(new BdQliColumnsLayout())->install()` behind a
+                // BARE require_once - no file_exists - so leaving it here while
+                // the class stops shipping would turn this whole admin route
+                // into a FATAL on any tenant that never had the file: a missing
+                // require is a compile error, which the catch below cannot see.
+                // The grid is core's now; there is no Bench step left to repair.
                 $steps['quotes_layout'] = 'ok';
             } catch (Throwable $e) {
                 $steps['quotes_layout'] = get_class($e) . ': ' . $e->getMessage();

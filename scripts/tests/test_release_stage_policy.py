@@ -1,127 +1,96 @@
 #!/usr/bin/env python3
-"""The Bench release-stage provider is RETIRED, in the one shape that works.
+"""The Bench release-stage provider no longer ships — AND MAY NEVER COME BACK
+AS AN EMPTY FILE.
 
-🛑 WHAT CHANGED (0.9.42-rc65, G280 / 🔒 1507, on top of G278 / 🔒 1506). This
-package used to answer the Opportunity release stage itself: count the Quote's
-ordered lines, return `['sales_stage' => 'Partial Production Ordered',
-'probability' => 90]`. Partial Fulfillment does the same thing generically, from
-tenant config, so Bench stops deciding — *"Donthave any logic on bench that is
-not on core"*.
+🛑 THIS FILE IS INVERTED FROM rc65, WHERE IT ASSERTED THE OPPOSITE. That is not
+a test being loosened to fit a deletion; the two versions guard the same tenant
+against two different states of it, and the sequencing rule (🔒 1508) is what
+moves the package from one to the other:
 
-🚩 AND "STOPS DECIDING" IS NOT "STOPS SHIPPING", which is the whole reason this
-file still exists. Read out of PF's source rather than assumed
-(`ERP-Epicor-PartialFulfillment/custom/modules/Quotes/ErpOpportunityValuation.php`):
+  rc65 — the tenant still held the OLD provider, which decided the stage itself.
+         Module Loader deletes nothing (§CW / G37) and `unlink()` is denied to
+         package code (MLP002), so the ONLY way to retire that class was to ship
+         a file over it. rc65 shipped one that returns null. "Stops deciding" is
+         not "stops shipping", and the old assertions were right.
+  rc66 — tenant 1 TOOK rc65 (17:17:35Z; stock carries no Bench Dogs by design,
+         RELEASE-CONTROL.md:757), so the overwrite has landed everywhere it was
+         owed. 🔒 1508: *"a file may only stop shipping once every QA tenant has
+         taken the build that emptied it."* It has. The file goes.
 
-*   `:288` finds the provider by a HARDCODED PATH with `file_exists()`. Module
-    Loader never deletes a file a later build stops shipping (§CW / G37) and
-    `unlink()` is denied to package code (MLP002), so DELETING the file would
-    leave the old provider running on every tenant that has it, still
-    outranking the config.
-*   `:297-301` — if the file exists but does NOT define
-    `ErpOpportunityReleaseStagePolicy`, PF returns `policy_provider_invalid` and
-    PRESERVES the stage, never reading the config. So an EMPTY stub is worse
-    than doing nothing: the stage would silently stop being written.
-*   `:312` + `:319` — a provider that exists and returns `null` is
-    `policy_provider_null`, which falls through to
-    `erp_integration.partial_order_sales_stage`. That is the only shape that
-    hands the decision over, and it is what this package now ships.
+WHAT THIS FILE DOES NOT DO, ON PURPOSE. It does not try to prove the removal is
+SAFE. An assertion that a deleted file is absent notices deletion and nothing
+else, and the thing that has to be true is about Partial Fulfillment, not about
+this package. That proof is
+`test_release_stage_absent_equals_null.py`, which RUNS PF's own
+`releaseStageDecision()` with the file present and absent and compares the
+decisions. This file guards the one shape that would be worse than either.
 
-So the cases below EXECUTE the shipped file: define the class, call `resolve()`,
-and assert it answers null while writing nothing. The config half is asserted in
-test_post_install_stage_languages.py.
+🚩 THE SHAPE THAT MUST STAY UNREACHABLE. PF loads the provider by hardcoded path
+(`ErpOpportunityValuation.php:288`). If a file EXISTS there and does not define
+`ErpOpportunityReleaseStagePolicy`, PF returns `policy_provider_invalid`, which
+PRESERVES the current stage and NEVER reads the config (`:297-301`) — the
+Opportunity stage would silently stop being written at all. So an empty stub is
+strictly worse than no file. Absent is fine; present-and-empty is not. Every
+case below exists to stop a future cleanup "tidying" the deletion into a stub,
+which is the same class_exists-shaped off switch this estate has paid for twice.
 
-MUTATION-VERIFIED: empty the file -> defines_the_class fails; make resolve()
-return an array -> answers_null fails; delete the file -> still_ships fails.
+MUTATION-VERIFIED: drop an empty `<?php` at the provider path -> the first two
+cases fail; restore rc65's null stub -> the first case fails and the third
+passes, i.e. the suite tells the two apart rather than just noticing a file.
 """
 
 from __future__ import annotations
 
-import json
 import os
-import shutil
-import subprocess
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PKG = Path(os.environ.get("BD_PKG", ROOT / "sugar-sell/BenchDogs-Ext"))
-POLICY = PKG / "custom/modules/Quotes/ErpQuoteHooks/OpportunityReleaseStagePolicy.php"
 
-#: PF loads the provider exactly like this: require the path, check the class,
-#: call resolve($quote). The stub must survive being handed a real-ish bean.
-HARNESS = r"""
-class SugarBean {
-    public $id = 'quote-1';
-    public $products = null;
-    public $saved = 0;
-    public function save($check = true) { $this->saved++; }
-    public function load_relationship($name) { $GLOBALS['touched'][] = 'load_relationship'; return true; }
-}
-class BeanFactory {
-    public static function retrieveBean($module, $id, $params = []) { $GLOBALS['touched'][] = 'retrieveBean'; return null; }
-    public static function newBean($module) { $GLOBALS['touched'][] = 'newBean'; return new SugarBean(); }
-}
-class TestLog { public function __call($m, $a) { $GLOBALS['logged'][] = $m; } }
-$GLOBALS['log'] = new TestLog();
-$GLOBALS['touched'] = [];
-$GLOBALS['logged'] = [];
+#: PF's hardcoded lookup path, relative to a Sugar root — and therefore the path
+#: inside this package too, because every `custom/` file is copied 1:1.
+POLICY_REL = "custom/modules/Quotes/ErpQuoteHooks/OpportunityReleaseStagePolicy.php"
+POLICY = PKG / POLICY_REL
 
-require getenv('BD_POLICY');
-$defined = class_exists('ErpOpportunityReleaseStagePolicy', false);
-$answer = 'not-called';
-$threw = null;
-if ($defined) {
-    $quote = new SugarBean();
-    try { $answer = (new ErpOpportunityReleaseStagePolicy())->resolve($quote); }
-    catch (Throwable $e) { $threw = get_class($e) . ': ' . $e->getMessage(); }
-    $saved = $quote->saved;
-} else {
-    $saved = 0;
-}
-echo json_encode([
-    'defined' => $defined,
-    'answer' => $answer,
-    'threw' => $threw,
-    'saved' => $saved,
-    'touched' => $GLOBALS['touched'],
-]);
-"""
+CLASS_NAME = "ErpOpportunityReleaseStagePolicy"
 
 
-@unittest.skipUnless(shutil.which("php"), "requires php")
-class RetiredProviderContract(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        out = subprocess.run(["php", "-r", HARNESS], capture_output=True, text=True,
-                             env={**os.environ, "BD_POLICY": str(POLICY)})
-        if "{" not in out.stdout:
-            raise AssertionError(f"harness failed: {out.stdout[-400:]} {out.stderr[-400:]}")
-        cls.observed = json.loads(out.stdout[out.stdout.index("{"):])
+class RetiredProviderDoesNotShip(unittest.TestCase):
+    def test_the_provider_path_is_not_in_the_build(self):
+        """rc66's deletion. On a tenant that took rc65 the null stub simply
+        stays on disk and PF keeps answering `policy_provider_null`; on a fresh
+        one PF answers `policy_provider_absent`. The companion probe proves
+        those two reach the same stage."""
+        self.assertFalse(
+            POLICY.exists(),
+            f"{POLICY_REL} is shipping again — either the deletion was reverted "
+            "or something re-created it; if a tenant genuinely still holds the "
+            "OLD deciding provider, ship rc65's NULL stub, never an empty file")
 
-    def test_the_file_still_ships(self):
-        """Deleting it is a no-op on any tenant that has it: PF finds the
-        provider by path, and Module Loader deletes nothing."""
-        self.assertTrue(POLICY.is_file(),
-                        "the provider path stopped shipping; the OLD provider then keeps running")
+    def test_no_file_anywhere_in_the_package_defines_the_class(self):
+        """The off-switch guard. A file at ANY path that declares the class
+        without answering would be picked up by PF only at its own hardcoded
+        path — but a class of this name defined anywhere in this package means
+        somebody is writing a provider again, which 🔒 1508 says is core's job.
+        """
+        offenders = [
+            str(p.relative_to(PKG))
+            for p in PKG.rglob("*.php")
+            if f"class {CLASS_NAME}" in p.read_text(encoding="utf-8")
+        ]
+        self.assertEqual(offenders, [], f"this package defines {CLASS_NAME} again: {offenders}")
 
-    def test_it_still_defines_the_class_pf_looks_for(self):
-        """An empty stub would be `policy_provider_invalid` — PF would preserve
-        the stage and never read the config, i.e. the stage stops being written
-        at all. This is the case that catches that mistake."""
-        self.assertTrue(self.observed["defined"],
-                        "the stub no longer defines ErpOpportunityReleaseStagePolicy")
-
-    def test_resolve_answers_null_and_writes_nothing(self):
-        self.assertIsNone(self.observed["threw"], f"resolve() threw: {self.observed['threw']}")
-        self.assertIsNone(self.observed["answer"], "the provider is deciding a stage again")
-        self.assertEqual(self.observed["saved"], 0)
-
-    def test_it_reads_no_lines_at_all(self):
-        """The old provider loaded the products link and re-read every line with
-        use_cache=false. A retired provider must not keep doing the work whose
-        answer it throws away."""
-        self.assertEqual(self.observed["touched"], [],
-                         f"the stub still touches the bean layer: {self.observed['touched']}")
+    def test_the_hooks_directory_still_carries_its_other_file(self):
+        """ANTI-VACUITY. The two cases above would also pass if the whole
+        `ErpQuoteHooks/` tree had been deleted by accident, or if `PKG` pointed
+        at nothing. `OpportunityContribution.php` is still shipped — DELIBERATELY,
+        see [[G282]]: Partial Fulfillment's copy of that same path computes a
+        DIFFERENT number, so it was not removed with the rest of rc66. If this
+        case ever fails, read G282 before 'fixing' it."""
+        contribution = PKG / "custom/modules/Quotes/ErpQuoteHooks/OpportunityContribution.php"
+        self.assertTrue(contribution.is_file(),
+                        "the ErpQuoteHooks tree is gone entirely — the cases above prove nothing")
 
 
 if __name__ == "__main__":

@@ -86,15 +86,23 @@
 // once per install request.
 $GLOBALS['log']->fatal('BenchDogs-Ext: post_install running - writing deployed metadata');
 
-// 🛑 FIRST, BECAUSE IT IS THE HALF THAT CANNOT BE REDONE LATER (G280 / 🔒 1507).
+// 🛑 FIRST, BECAUSE IT IS THE HALF THAT CANNOT BE REDONE LATER (G280 /
+// 🔒 1507, 🔒 1508).
 //
-// rc65 retired this package's Opportunity release-stage PROVIDER: the shipped
-// custom/modules/Quotes/ErpQuoteHooks/OpportunityReleaseStagePolicy.php now
-// returns null, which hands the decision to Partial Fulfillment's generic path.
-// That path reads a TENANT CONFIG key, and a config row is data - it does not
-// arrive with the package. If the provider is neutered and this key is not
-// written, the Opportunity stage silently stops being written at all, so this
-// block runs BEFORE any layout work and has its own guard.
+// rc65 retired this package's Opportunity release-stage PROVIDER to a stub that
+// returned null; 0.9.42-rc66 STOPS SHIPPING THAT FILE ENTIRELY. Both shapes
+// hand the decision to Partial Fulfillment's generic path and PF reaches the
+// SAME decision either way - `policy_provider_null` and `policy_provider_absent`
+// fall through to the identical branch (ErpOpportunityValuation.php:310-345),
+// which scripts/tests/test_release_stage_absent_equals_null.py proves by RUNNING
+// PF's own resolver both ways rather than by asserting the file is gone.
+//
+// 🚩 THIS BLOCK IS WHY THE DELETION IS SAFE AND MUST OUTLIVE IT. PF's generic
+// path reads a TENANT CONFIG key, and a config row is data - it does not arrive
+// with the package. With no provider and no key, the Opportunity stage silently
+// stops being written at all. So this runs BEFORE any layout work, with its own
+// guard, and 🔒 1508's carve-out for "one-shot migrations a tenant may not have
+// taken yet" is exactly what keeps it here.
 //
 // Written only when absent: a tenant (or an admin) that already chose a stage
 // keeps it. The probability is deliberately NOT written - PF derives it from
@@ -151,18 +159,32 @@ try {
 // a missing button and reconciles an existing one to core's current definition.
 // Install ERP-Epicor, then this package (the G273 order for the sales stages
 // already requires exactly that), and nothing here takes them away again.
-// Native-line ordering columns on the quoted-line-items grid.
-try {
-    $bdQliHelper = 'custom/modules/Quotes/BdQliColumnsLayout.php';
-    if (file_exists($bdQliHelper)) {
-        require_once $bdQliHelper;
-        if (class_exists('BdQliColumnsLayout')) {
-            (new BdQliColumnsLayout())->install();
-        }
-    }
-} catch (Throwable $e) {
-    $GLOBALS['log']->fatal('BenchDogs-Ext: QLI columns failed: ' . $e->getMessage());
-}
+// 🛑 THE QUOTED-LINE GRID IS NOT THIS PACKAGE'S ANY MORE (0.9.42-rc66,
+// G280 / 🔒 1508: *"from all the non vustomer category code we should not
+// ahve other stuff there"*). BdQliColumnsLayout and BdQliColumnTemplate are
+// DELETED and nothing replaces this call. Three things went with them, and
+// each is recorded here rather than in a release note nobody reads:
+//
+//  1. THE COLUMN ORDER, which had ALREADY STOPPED WORKING. rc65's own install
+//     on Bench logged
+//         BenchDogs-Ext: QLI columns failed: Call to private method
+//         BaseErpLayout::loadView() from scope BdQliColumnsLayout
+//     at 17:16:59Z. `loadView()` is `private` (ERP-Core BaseErpLayout.php:1778),
+//     so applyColumnOrder() could not run on this tenant and cannot run on a
+//     fresh one either. The grid a seller sees is therefore unchanged by this
+//     deletion: it is whatever is already deployed, plus core's own appends.
+//     Nothing about the removal reaches a SHIPPED viewdef - decision 803 moved
+//     the authored list to a path Sugar does not read as one, precisely so this
+//     package could never overwrite another's columns again.
+//  2. THE erp_quote_line_num FETCH INJECTION. That is CORE's field, and no
+//     viewdef in this package, ERP-Core, ERP-Epicor or Partial Fulfillment
+//     draws it - so nothing rendered it and nothing loses it. The column stays
+//     in the deployed allowlist on tenants that have it: inert, and core's.
+//  3. THE bd_to_order / bd_ordered LEGACY COLUMN SWEEP, which has run on every
+//     install since 0.9.21 and on this tenant through rc65. It removes from
+//     DEPLOYED METADATA, which persists, so it is spent where it was needed and
+//     was never armed anywhere else - stock carries no Bench Dogs by design.
+//
 // Ordering selected lines is ERP-Epicor-PartialFulfillment's own
 // route, and every Bench Dogs quote is an advanced_quote (mirrored
 // from Kinetic) - it just works once that package is installed,
@@ -228,32 +250,27 @@ try {
     $GLOBALS['log']->fatal('BenchDogs-Ext: value-source marker removal failed: ' . $e->getMessage());
 }
 
-// 🛑 G116, SECOND PLACEMENT OF THE SAME RETIRED FIELD. Decision 72 item 3's
-// saved report filtered Opportunities on `bd_governing_origin = 'auto'` and
-// drew it as a column. With the vardef retired that report cannot error and
-// cannot fill: it renders EMPTY, which on a review queue reads as "nothing to
-// review" rather than as a broken report - the trap rc24's operator notes
-// describe, and the reason pre_uninstall.php has always removed it. Creating
-// it on install while the field it filters no longer exists is that trap
-// re-armed once per install, so the install now REMOVES it too.
+// 🛑 G116's SAVED-REPORT REMOVER IS SPENT AND IS GONE (0.9.42-rc66,
+// G280 / 🔒 1508). BdAutoSelectedReport took decision 72 item 3's report
+// "Opportunities Valued From an Auto-Selected Quote Line" back off the
+// instance, because with `bd_governing_origin` retired that report renders
+// EMPTY - a review queue that reads as "nothing to review" rather than as a
+// broken report.
 //
-// Matched by exact name, so an admin who renamed or copied the report keeps
-// theirs; mark_deleted() is a soft delete, so a row is recoverable.
-try {
-    $bdReportHelper = 'custom/modules/Opportunities/BdAutoSelectedReport.php';
-    if (file_exists($bdReportHelper)) {
-        if (!class_exists('BdAutoSelectedReport', false)) {
-            require_once $bdReportHelper;
-        }
-        if (class_exists('BdAutoSelectedReport')) {
-            (new BdAutoSelectedReport())->remove();
-        }
-    } else {
-        $GLOBALS['log']->fatal("BenchDogs-Ext: {$bdReportHelper} missing, retired review report left behind");
-    }
-} catch (Throwable $e) {
-    $GLOBALS['log']->fatal('BenchDogs-Ext: review report removal failed: ' . $e->getMessage());
-}
+// 🚩 WHY IT IS SAFE TO STOP SHIPPING A REMOVAL, which is the question this
+// deletion has to answer and the one a green test cannot. Not "the class looks
+// unused" - it was called, from here and from pre_uninstall. The evidence is
+// that IT ALREADY RAN AND FOUND NOTHING, read out of the tenant's own
+// package_install.log for the rc65 install (PID 2069085, 17:16:59 -> 17:17:35):
+// the block above logs `removed retired saved report "..."` ONLY when it
+// deletes a row, and logs `missing, retired review report left behind` if the
+// file is absent. NEITHER line appears anywhere in that window, while every
+// other BenchDogs-Ext line does. So remove() executed and the row was already
+// gone. SugarQuery excludes soft-deleted rows, so a row it once deleted can
+// never be re-found; there is nothing left for a re-run to do.
+//
+// Tenant 1 is the only instance carrying this package - stock has no Bench Dogs
+// by design (RELEASE-CONTROL.md:757) - so "spent here" is "spent".
 
 // 🛑 THE STAGE VOCABULARY IS CORE'S NOW — AND THIS TAKES BENCH'S COPY BACK.
 // G278 / 🔒 1506 ("this hsoudl happen in the core") + G280 / 🔒 1507.
@@ -399,44 +416,30 @@ try {
     $GLOBALS['log']->fatal('BenchDogs-Ext: language rebuild failed: ' . $e->getMessage());
 }
 
-// DECISION 314 - stage rename data migration. The two release stages were
-// renamed from '<slice> Closed' to '<slice> Ordered' because the code that
-// writes them branches on $product->erp_ordered: the semantics were always
-// "this slice has been ORDERED", and the opportunity deliberately stays OPEN
-// (probabilities 80/90; only Closed Won/Closed Lost are terminal). Records
-// written before the rename still hold the old literal in sales_stage, and a
-// stage whose key is absent from sales_stage_dom renders blank.
+// 🛑 DECISION 314's STAGE-RENAME MIGRATION IS DRAINED AND IS GONE (0.9.42-rc66,
+// G280 / 🔒 1508). It renamed the stored `sales_stage` literals
+// 'Prototype Closed' -> 'Prototype Ordered' and 'Partial Production Closed' ->
+// 'Partial Production Ordered' in raw SQL, because a stage key that is absent
+// from sales_stage_dom renders BLANK on the record.
 //
-// DELIBERATELY RAW SQL, NOT BEANS. Loading and save()-ing an Opportunity
-// fires the valuation hooks - the same writers that re-pointed a fixture's
-// amount to $0.00 on 2026-09-15 (decision 311/313). A migration must not
-// recompute anything; it only renames a stored key. Raw SQL fires no hooks.
+// 🔒 1508 keeps "the one-shot migrations and tombstones a tenant may not have
+// taken yet" - so this one only qualifies for removal if it has taken. IT HAS,
+// and the measurement is the tenant's own package_install.log for the rc65
+// install (PID 2069085, the same window that carries post_install's `running`
+// and `finished` lines):
 //
-// Idempotent: the WHERE clause matches only the old literals, so a re-install
-// is a no-op. The _audit trail is deliberately NOT rewritten - it is history,
-// and the old key is what those rows genuinely recorded at the time.
-try {
-    $bdDb = DBManagerFactory::getInstance();
-    $bdStageRenames = array(
-        'Prototype Closed' => 'Prototype Ordered',
-        'Partial Production Closed' => 'Partial Production Ordered',
-    );
-    foreach ($bdStageRenames as $bdOldStage => $bdNewStage) {
-        $bdSql = 'UPDATE opportunities SET sales_stage = '
-            . $bdDb->quoted($bdNewStage)
-            . ' WHERE sales_stage = ' . $bdDb->quoted($bdOldStage);
-        $bdResult = $bdDb->query($bdSql);
-        $bdMoved = (int) $bdDb->getAffectedRowCount($bdResult);
-        $GLOBALS['log']->fatal(
-            'BenchDogs-Ext: stage migration ' . $bdOldStage . ' -> ' . $bdNewStage
-            . ' applied to ' . $bdMoved . ' row(s)'
-        );
-    }
-} catch (Throwable $e) {
-    // Never fail the install on the migration: the package is still correct
-    // for every record written from now on, and an unmigrated old row is
-    // visible and fixable. Loud, not fatal.
-    $GLOBALS['log']->fatal('BenchDogs-Ext: stage rename migration failed: ' . $e->getMessage());
-}
+//     17:17:35  BenchDogs-Ext: stage migration Prototype Closed ->
+//               Prototype Ordered applied to 0 row(s)
+//     17:17:35  BenchDogs-Ext: stage migration Partial Production Closed ->
+//               Partial Production Ordered applied to 0 row(s)
+//
+// 0 rows on both, on the only instance that carries this package (stock has no
+// Bench Dogs by design, RELEASE-CONTROL.md:757). Nothing writes the old
+// literals any more either: rc65 took the retired pair out of the served
+// vocabulary with uninstall_languages('zz_bd_stage_doms') ([[G268]]), and the
+// only writer left is Partial Fulfillment, from the config key post_install
+// sets ABOVE - which holds the NEW literal. A migration with no source and no
+// rows left to move is not a safeguard; it is an UPDATE that runs on every
+// install for nothing.
 
 $GLOBALS['log']->fatal('BenchDogs-Ext: post_install finished');

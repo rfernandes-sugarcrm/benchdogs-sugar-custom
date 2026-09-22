@@ -57,7 +57,7 @@
  * A missing helper or a failed repair logs and moves on; it never aborts the
  * uninstall. A half-removed package is worse than a fully removed one with one
  * layout still to tidy by hand, and an instance that has ERP-Epicor uninstalled
- * first legitimately has no BaseErpLayout for BdQliColumnsLayout to extend.
+ * first legitimately has no BaseErpLayout for a layout helper to extend.
  *
  * Removing what is not there is a no-op throughout, so this is also safe on an
  * instance that never received some of what it undoes.
@@ -131,45 +131,21 @@ try {
 } catch (Throwable $e) {
     $GLOBALS['log']->error('BenchDogs-Ext: Opportunities layout cleanup failed: ' . $e->getMessage());
 }
-try {
-    $bdReportHelper = 'custom/modules/Opportunities/BdAutoSelectedReport.php';
-    if (file_exists($bdReportHelper)) {
-        if (!class_exists('BdAutoSelectedReport', false)) {
-            require_once $bdReportHelper;
-        }
-        if (class_exists('BdAutoSelectedReport')) {
-            (new BdAutoSelectedReport())->remove();
-        }
-    } else {
-        $GLOBALS['log']->error("BenchDogs-Ext: {$bdReportHelper} missing; review report left behind");
-    }
-} catch (Throwable $e) {
-    $GLOBALS['log']->error('BenchDogs-Ext: review report cleanup failed: ' . $e->getMessage());
-}
+// 🛑 THE SAVED-REPORT REMOVAL IS GONE FROM THE UNINSTALL TOO (0.9.42-rc66,
+// G280 / 🔒 1508), and for the same reason it left post_install: the row is
+// already gone. rc65's install ran remove() and logged neither a deletion nor
+// a missing helper (tenant package_install.log, PID 2069085, 17:16:59-17:17:35),
+// so there was nothing to find - and SugarQuery cannot re-find a row it has
+// already soft-deleted. See post_install.php for the full reading.
 
-// 3. The quoted-line-items grid: take the injected line-number column back
-// out of the Quotes product_bundle_items allowlist. That column is now CORE'S
-// `erp_quote_line_num` rather than Bench's retired `bd_erp_line_num` (🔒 1032)
-// — this still removes it on uninstall, because Bench is what injected it;
-// ERP-Core's own ProductsLayout does not draw it. This one had an uninstall() method
-// all along and nothing ever called it. The class only defines itself when
-// ERP-Epicor is still installed (it extends BaseErpLayout), which is what
-// the class_exists guard after the require is for.
-try {
-    $bdQliHelper = 'custom/modules/Quotes/BdQliColumnsLayout.php';
-    if (file_exists($bdQliHelper)) {
-        if (!class_exists('BdQliColumnsLayout', false)) {
-            require_once $bdQliHelper;
-        }
-        if (class_exists('BdQliColumnsLayout')) {
-            (new BdQliColumnsLayout())->uninstall();
-        } else {
-            $GLOBALS['log']->info('BenchDogs-Ext: BdQliColumnsLayout not defined (ERP-Core absent); nothing to undo on the line items grid');
-        }
-    }
-} catch (Throwable $e) {
-    $GLOBALS['log']->error('BenchDogs-Ext: QLI columns cleanup failed: ' . $e->getMessage());
-}
+// 3. The quoted-line-items grid: NOTHING TO DO, and deliberately no call here.
+// BdQliColumnsLayout is deleted (0.9.42-rc66). Its uninstall() took CORE's
+// `erp_quote_line_num` back out of the Quotes product_bundle_items allowlist,
+// which this package had injected on core's behalf while core's own
+// ProductsLayout did not draw it. Nothing draws it in any package, so the entry
+// renders nothing and removing it was never a seller-visible act; what it WOULD
+// have been is this package continuing to edit a core field's fetch list on the
+// way out. It stays where it is: core's field, in core's collection.
 
 // 4. Dashboard tiles: NOTHING TO DO, and deliberately no call here.
 //
