@@ -1,6 +1,88 @@
-# Unreleased — the quote → Opportunity PAIRING WRITER is retired (G243, 🔒 1499)
+# 0.9.42-rc64 — G243 + G234 + G268 + G276: no Opportunity from the sync, a clean uninstall, no retired stage names, no button logic
 
-No version bump and no artifact yet.
+**Base.** Built on `c4e8874` (rc60 = rc61 content, what Bench and et run), NOT on
+main. Four items, each its own commit; the version moves only in the last one.
+Manifest `dependencies` are unchanged from rc61 (ERP-Epicor `1.1.24-rc9`, PF `1.0.13`
+minimums).
+
+| Item | Commit(s) | What changes on a tenant |
+|---|---|---|
+| **G243** (🔒 1499) | `fde1b53` | rc39's `BdKineticOpportunityHook` registration and class are OVERWRITTEN with a registration that registers nothing and a tombstone class. A connector-created quote no longer gets an Opportunity. Existing ones are not deleted (🔒 1502(b)). Section below. |
+| **G234** | `68eab4a`, `7af763f` | `pre_uninstall` removes the stage keys `install_languages` installed (the `en_us.zz_bd_stage_doms.php` file) unless records still hold them. |
+| **G268** | `b9bcd4d` | The two RETIRED stage names `Prototype Closed` / `Partial Production Closed` (decision 314) stop being served. |
+| **G276** (🔒 1503, 🔒 1504) | `326a676`, `74e09e6` | Bench Dogs no longer adds, removes, reorders or stashes ANY record-view button, on any module; it also stops re-adding the per-line ERP row actions, and its orphan button labels are emptied. |
+| integration | `ee5c254` | Test-only: G243's "no other Opportunity creator" check vs G234's read-only SugarQuery count. |
+
+### G268 — where the retired names came from, and how they go
+
+From 0.7.3 to rc37 `custom/dropdowntemplates/bd_stage_doms.append.php` declared the
+`…Closed` pair, and `post_install` hands that template to
+`ModuleInstaller::install_languages()` with id_name `zz_bd_stage_doms`. When
+`custom/Extension/application/Ext/Language/en_us.zz_bd_stage_doms.php` already exists,
+Sugar APPENDS the template to it rather than overwriting it (26.1.0
+`ModuleInstaller.php:1227-1235`). Every pre-rename Bench install therefore left its
+`…Closed` lines in that file; et's file was born after the rename. The static
+`en_us.bd_stage_doms.php` is not the leftover: it has been overwritten by every
+install since rc38.
+
+rc64's template ENDS with an `unset()` of the four retired entries
+(`sales_stage_dom` ×2, `sales_probability_dom` ×2). It is appended after every
+historical assignment in that file, so it wins. No file is removed, and nothing is
+shipped at the zz path: a stub there would make the file identical on every install,
+freeze its merge position (recorded mtime, refreshed only on an md5 change) and
+break G220/G273's "reinstall Bench Dogs after ERP-Epicor" lever. The `…Ordered` pair
+and `quote_stage_dom['Partially Fulfilled']` are untouched. `post_install` now also
+logs `BenchDogs-Ext: retired stage names still served` if any survives.
+
+### G276 — the buttons come back through CORE
+
+Removed: `BdQuotesLayoutExtensions::writeButtons()`, its stash (`benchdogs` /
+`removed_quote_buttons`) and the uninstall replay, `BdAccountsLayoutExtensions::
+writeButtons()`, both `post_install` calls, the `clearStash()` call in
+`pre_uninstall`, and both button steps of the `bd-tools/repair-ui` route.
+
+Also removed under the same ruling: `BdQliColumnTemplate.php` no longer names the
+`erp_line_links` fieldset, so the per-line **Open Line in ERP / Engineering** row
+actions — which 🔒 687 ordered gone and ERP-Core removes on every install
+(`ProductsLayout::install()` → `removeFieldsFromDataGroupListView()`, 🔒 709) — are
+no longer put back by every Bench Dogs install. And both `en_us.bd_action_buttons.php`
+label files (10 Quotes + 2 Accounts labels, all orphans) are emptied to stubs, so a
+retired action stops reading as supported in Studio and the report builder.
+
+rc64 does not put Submit Order back by itself, and must not (🔒 1504). **ERP-Epicor
+does**: every ERP-Epicor install runs `QuotesLayout::install()` →
+`addButtonsToRecordView()`, which adds a missing button and reconciles an existing
+one to core's current definition; PF then re-anchors Order Selected Lines next to it
+(`QuotesOrderSelectedLayout.php`). So on Bench and et:
+
+1. **ERP-Epicor** (a version above the installed one — a same-version re-upload is
+   refused), then
+2. **Partial Fulfillment**, then
+3. **Bench Dogs rc64 LAST** (the G273 order, for the sales stages).
+
+A fresh tab then shows `refresh_price_availability_button`,
+`erp_order_selected_button`, `create_erp_order_button`, `advanced_quote_button`.
+Installing rc64 alone restores nothing — it only stops the stripping. After rc64
+nothing strips the buttons again, so the order stops mattering for them. The stash
+row stays in config as orphaned tenant data; nothing reads it.
+
+### Post-install reads
+
+- `sales_stage_dom` (fresh tab): Prospecting, Proposal/Price Quote, Closed Won,
+  Closed Lost, Prototype Ordered, Partial Production Ordered — six, no `…Closed`;
+  `sales_probability_dom` has no `…Closed` key. sugarcrm.log has neither
+  `required stage language verification failed` nor `retired stage names still served`.
+- `custom/modules/Quotes/Ext/LogicHooks/logichooks.ext.php` has no
+  `BdKineticOpportunityHook` / `pairOnSave` / `pairOnAccountLink` entry, and a
+  connector-created quote gets no Opportunity.
+- An accepted, un-ordered quote renders BOTH Submit Order and Order Selected Lines,
+  as stock quote `df86be2c` does.
+- The quoted-line-items grid has no per-line **Open Line in ERP** / **Engineering**
+  icons (they are core's to remove; rc64 only stops re-adding them).
+
+## 0.9.42-rc64 / G243 — the quote → Opportunity PAIRING WRITER is retired (🔒 1499)
+
+Shipped in 0.9.42-rc64 (fde1b53, cherry-picked from 37d4485 onto c4e8874).
 
 🛑 **A VERSION BUMP IS NOT OPTIONAL FOR THIS ONE, IT IS THE DELIVERY.** The
 defect is a file that outlived the package that shipped it, so the fix only
