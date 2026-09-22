@@ -1,3 +1,70 @@
+# 0.9.42-rc65 — G280 / 🔒 1507: the package stops shipping what core owns
+
+**Install order is unchanged and still matters: ERP-Epicor → Partial Fulfillment
+→ Bench Dogs LAST.** New in rc65: **Partial Fulfillment must be ≥ 1.0.40** — the
+manifest now requires it, because this package no longer declares the stage
+vocabulary at all.
+
+| Item | What leaves Bench Dogs | Shape |
+|---|---|---|
+| REST `bd-create-opp-quote`, `bd-send-to-estimating` | core owns both (🔒 1044/G15, 🔒 531); no live caller anywhere | routes unregistered, **file still ships** |
+| their three `bd-*` field controllers | already `({})`, no viewdef names the types | deleted |
+| `BdAccountCountryGuard`, `BdContactSyncHook` | hook fragments are emptied stubs, so nothing loads them | deleted (fragments still ship) |
+| `en_us.bd_line_order.php` labels | fields are stubs; the grid sweep removes the columns | **emptied** |
+| `en_us.bd_erp_stage_list.php`, `RevenueLineItems/.../bd_deliverable_key.php` | retired earlier by being DROPPED, which retires nothing | **stubs added** |
+| `OpportunityReleaseStagePolicy` | PF decides the stage from config | **stub returning `null`** |
+| `BdDemoDashboards` (705 lines) | a demo layout made of other packages' dashlets | deleted |
+| the stage vocabulary + styles | PF 1.0.40 ships them in `_override_` fragments (G278 / 🔒 1506) | **emptied**, plus a one-shot removal |
+| `OpportunityContribution` | untouched on purpose — G282 | — |
+
+### The rule that decides delete vs. empty stub
+
+Module Loader copies a package's files and **never deletes** the previous
+version's (§CW / G37), and `unlink()` is denied to package code (MLP002). So a
+file the platform loads BY PATH — a `custom/Extension` fragment, a vardef, a
+language or style file — must keep shipping, emptied. A file reachable only
+through a `require_once` this package also ships can be deleted once the caller
+is gone. Two files retired earlier by simply dropping them had therefore never
+been retired at all, and ship as stubs here for the first time.
+
+### Two traps this release had to read the source to avoid
+
+1. **The release-stage provider could not be deleted, and must not be empty.**
+   PF finds it by a hardcoded path (`ErpOpportunityValuation.php:288`), so
+   deleting it leaves the OLD provider running on every tenant that has it. And
+   a file that exists but defines no class is `policy_provider_invalid`
+   (`:297-301`) — PF then PRESERVES the stage and never reads the config, so the
+   stage would silently stop being written. A provider that exists and returns
+   `null` is the only shape that hands over. `post_install` writes
+   `erp_integration.partial_order_sales_stage` FIRST, and only when absent,
+   because config is tenant data and does not arrive with the package.
+2. **The stage keys needed removing, not just not-declaring.** Until rc64
+   `post_install` APPENDED them to `en_us.zz_bd_stage_doms.php` through
+   `install_languages()`, which concatenates rather than overwrites, so every
+   past version's keys are still in that file — including decision 314's retired
+   `…Closed` pair (G268). rc65 calls `uninstall_languages()` once, the exact
+   mirror of the install that built it.
+
+### Behaviour change, recorded rather than hidden
+
+PF's generic stage path fires only while lines remain open. The retired Bench
+provider also answered on a FINAL release, stamping `Partial Production Ordered`
+on a quote with nothing left to order. That stage is core's decision now.
+
+### Post-install reads
+
+- `sales_stage_dom`: `Prototype Ordered` and `Partial Production Ordered` still
+  served (from PF), no `…Closed` pair, and `quote_stage_dom` still has
+  `Partially Fulfilled`. sugarcrm.log: `release stages served by core after this
+  install: yes` and `removed the zz_bd_stage_doms language fragment`.
+- `erp_integration.partial_order_sales_stage` = `Partial Production Ordered`
+  (Admin → config), and a partial order still moves the Opportunity to that
+  stage at 90.
+- `GET <tenant>/rest/v11/metadata?type_filter=...`: no `bd-create-opp-quote` or
+  `bd-send-to-estimating` route; `bd-tools/repair-ui` still answers for an admin.
+- The Quotes record view still shows both order buttons (rc64's G276), and the
+  quoted-line-items grid still has no per-line ERP row actions.
+
 # 0.9.42-rc64 — G243 + G234 + G268 + G276: no Opportunity from the sync, a clean uninstall, no retired stage names, no button logic
 
 **Base.** Built on `c4e8874` (rc60 = rc61 content, what Bench and et run), NOT on
