@@ -5,96 +5,28 @@ use Sugarcrm\Sugarcrm\MetaData\ViewdefManager;
 // phpcs:disable PSR1.Classes.ClassDeclaration.MissingNamespace
 
 /**
- * Appends the Bench Dogs "Create Opportunity & Quote" button, and the REQ-19
- * customer group fields, to the Accounts record view at install time.
+ * Appends the REQ-19 customer group fields to the Accounts record view at
+ * install time, and takes them off again on uninstall. Nothing else.
  *
- * Both are append-only: ERP-Epicor's AccountsLayout owns that view's ERP
- * panels in replace mode, so this class never reorders, removes or rewrites
- * a panel - it only appends to the buttons array or to the end of a panel's
- * field list if not already present (see post_install.php's docblock).
+ * APPEND ONLY: ERP-Epicor's AccountsLayout owns that view's ERP panels in
+ * replace mode, so this class never reorders, removes or rewrites a panel - it
+ * only appends to the end of a panel's field list if not already present (see
+ * post_install.php's docblock).
  *
- * Same ViewdefManager load -> mutate -> save
- * mechanism as BdQuotesLayoutExtensions, and self-contained for the same
- * "Cannot redeclare class" reason documented there.
+ * 🛑 G276 / 🔒 1504 - NO BUTTON LOGIC. Until rc64 this class also carried
+ * writeButtons(), which stripped this package's retired
+ * `bd_create_opp_quote_button` (G15) from the deployed view on every install,
+ * and remove() dropped it again on uninstall. The owner's ruling is *"remove
+ * now all button logic from bench"*, so both are gone. The Accounts header
+ * button is core's `erp_create_opp_quote_button`, placed by ERP-Epicor's
+ * AccountsLayout; nothing here adds, removes or reorders any button.
+ *
+ * Same ViewdefManager load -> mutate -> save mechanism as ERP-Core's
+ * BaseErpLayout, and self-contained for the "Cannot redeclare class" reason
+ * documented in BdQuotesLayoutExtensions.
  */
 class BdAccountsLayoutExtensions
 {
-    /**
-     * 🛑 G15 — RETIRE the Bench "Create Opportunity & Quote" button. Do not re-add it.
-     *
-     * THE DEFECT, SEEN ON SCREEN. The Accounts record view rendered the button
-     * TWICE. The header read, literally:
-     *
-     *     ADDISON WB I85L06 ... Distribution DIST
-     *     Create Opportunity & Quote  Create Opportunity & Quote  Edit
-     *
-     * WHY THE OLD GUARD DID NOT CATCH IT. This class refused to inject when a
-     * button named `bd_create_opp_quote_button` was already present. ERP-Epicor's
-     * AccountsLayout ships one named `erp_create_opp_quote_button` — a DIFFERENT
-     * name carrying an IDENTICAL label, `LBL_ERP_CREATE_OPP_QUOTE_BUTTON` =
-     * "Create Opportunity & Quote". A guard keyed on the name cannot see a
-     * duplicate keyed on the label, so each package correctly concluded it was
-     * the only one and both injected.
-     *
-     * WHY CORE'S IS THE ONE THAT SURVIVES, and this one goes:
-     *   - 🔒 1044 — the Bench layer is TWO fields, bd_customer_group{,_code}, and
-     *     the connector code that writes them. Nothing else belongs here.
-     *   - core's AccountsErpActionsApi is the SUPERSET, not an equivalent: it
-     *     carries DEFAULT_PLACEHOLDER_PART = 'ETO-PENDING' (the exact placeholder
-     *     REQ-20's oracle names), is tenant-configurable through
-     *     opp_quote_placeholder_{enabled,name,part}, and types the quote for
-     *     Advanced Quote. Retiring core's and keeping this one would LOSE those.
-     *
-     * 🚩 WHY THIS METHOD STILL EXISTS INSTEAD OF BEING DELETED — the mechanism
-     * that has cost this project the most. The button was written into the
-     * tenant's DEPLOYED viewdef by saveViewdef(). Deleting the code that wrote
-     * it does NOT remove it: a deployed custom viewdef outlives the package that
-     * created it, exactly as a copied custom/Extension file does (rc24 dropped
-     * six files, installed clean, and was INERT — the fields were still there).
-     * ONLY OVERWRITING RETIRES. So this method must keep running, and must now
-     * actively remove what it used to add.
-     *
-     * It touches nothing else: the materialised base buttons array stays (it is
-     * the stock set Sidecar would fall back to anyway), and the REQ-19 customer
-     * group fields are written by writeCustomerGroupField() and are untouched.
-     */
-    public static function writeButtons(): void
-    {
-        $viewdefs = self::loadRecordView('Accounts');
-        if ($viewdefs === null) {
-            return;
-        }
-
-        if (empty($viewdefs['base']['view']['record']['buttons'])
-            || !is_array($viewdefs['base']['view']['record']['buttons'])
-        ) {
-            return; // nothing deployed here, so nothing of ours to retire
-        }
-
-        $buttons =& $viewdefs['base']['view']['record']['buttons'];
-        $kept = array();
-        $removed = 0;
-        foreach ($buttons as $b) {
-            if (is_array($b) && ($b['name'] ?? '') === 'bd_create_opp_quote_button') {
-                $removed++;
-                continue;
-            }
-            $kept[] = $b;
-        }
-        $buttons = array_values($kept);
-        unset($buttons);
-
-        if ($removed === 0) {
-            return; // already retired; do not rewrite the view for nothing
-        }
-
-        $GLOBALS['log']->info(
-            'BenchDogs-Ext: retired ' . $removed . ' bd_create_opp_quote_button ' .
-            "from the Accounts record view (G15 - ERP-Epicor's erp_create_opp_quote_button owns this action)"
-        );
-        self::deployRecordView('Accounts', $viewdefs);
-    }
-
     /**
      * REQ-19: put the Epicor customer group on the Accounts record view.
      *
@@ -179,24 +111,22 @@ class BdAccountsLayoutExtensions
     }
 
     /**
-     * Undo both writes above, from scripts/pre_uninstall.php.
+     * Undo writeCustomerGroupField(), from scripts/pre_uninstall.php.
      *
      * Deployed metadata is not covered by any installdef, so without this the
-     * uninstall left the Accounts record view carrying a button whose field
-     * type had just been removed and two fields whose vardefs had just been
-     * removed. Nothing else on the view is ours - ERP-Epicor's AccountsLayout
-     * owns the ERP panels in replace mode - so this removes exactly four things
-     * and touches nothing else, which is the same append-only discipline the
-     * install side keeps.
+     * uninstall left the Accounts record view carrying two fields whose vardefs
+     * had just been removed. Nothing else on the view is ours - ERP-Epicor's
+     * AccountsLayout owns the ERP panels in replace mode - so this removes
+     * exactly those two fields and touches nothing else. The buttons array is
+     * not read (G276 / 🔒 1504).
      *
      * The two fields are searched for across EVERY panel rather than in the one
      * writeCustomerGroupField() put them in, because an admin may since have
      * moved them somewhere better. Leaving a moved field behind would leave
      * exactly the orphan this method exists to prevent.
      *
-     * One get -> mutate -> set -> deploy cycle for both repairs. Removing what
-     * is not there is a no-op, so this is safe on an instance that never got
-     * the fields placed.
+     * Removing what is not there is a no-op, so this is safe on an instance that
+     * never got the fields placed.
      */
     public static function remove(): void
     {
@@ -205,27 +135,6 @@ class BdAccountsLayoutExtensions
             return;
         }
         $changed = false;
-
-        if (!empty($viewdefs['base']['view']['record']['buttons'])
-            && is_array($viewdefs['base']['view']['record']['buttons'])
-        ) {
-            $buttons =& $viewdefs['base']['view']['record']['buttons'];
-            $kept = array();
-            foreach ($buttons as $b) {
-                if (is_array($b) && ($b['name'] ?? '') === 'bd_create_opp_quote_button') {
-                    $changed = true;
-                    continue;
-                }
-                $kept[] = $b;
-            }
-            $buttons = array_values($kept);
-            unset($buttons);
-        }
-
-        // The buttons array writeButtons() may have MATERIALISED from the base
-        // record template is deliberately left in place. It is the stock set,
-        // identical to what Sidecar would fall back to, so removing it would be
-        // a second change with no visible effect and some risk.
 
         if (!empty($viewdefs['base']['view']['record']['panels'])
             && is_array($viewdefs['base']['view']['record']['panels'])

@@ -319,7 +319,11 @@ catch (UnexpectedValueException $e) { $error = $e->getMessage(); }
                 manifest,
                 r"'id_name'\s*=>\s*'sugarai_erp_epicor_partialfulfillment'",
             )
-            self.assertRegex(manifest, r"'version'\s*=>\s*'1\.0\.13'")
+            # rc65 raised the Partial Fulfillment floor from 1.0.13 to 1.0.40:
+            # this package stopped shipping the stage vocabulary because PF now
+            # owns it (G278 / 🔒 1506), so an older PF would leave Bench records
+            # holding stage values no dropdown serves.
+            self.assertRegex(manifest, r"'version'\s*=>\s*'1\.0\.40'")
 
 
 if __name__ == "__main__":

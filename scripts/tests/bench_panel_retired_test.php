@@ -166,15 +166,30 @@ namespace {
     $apiCode = preg_replace(['~/\*.*?\*/~s', '~//[^\n]*~'], '', $api);
     $check('the bd_erp_stage writer is GONE (executable code)',
         false, str_contains($apiCode, 'bd_erp_stage'));
-    $check('and the API stamps core\'s native quote_stage instead',
-        true, str_contains($api, "quote_stage = self::ESTIMATING_STAGE")
-              && str_contains($api, "const ESTIMATING_STAGE = 'In Estimating'"));
+    // 0.9.42-rc65 (G280 / 🔒 1507): the stamp itself is CORE's now. This package
+    // no longer ships bd-send-to-estimating, so there is no Bench writer to
+    // check - what must hold is that it writes NEITHER stage field.
+    $check('and the API writes no quote stage at all any more',
+        false, str_contains($apiCode, '->quote_stage ='));
+    $check('the retired estimating route is unregistered', false,
+        str_contains($apiCode, 'bd-send-to-estimating'));
+    $check('and so is the duplicate opportunity-quote route', false,
+        str_contains($apiCode, 'bd-create-opp-quote'));
+    $check('while the admin repair route survives', true,
+        str_contains($apiCode, "'bd-tools', 'repair-ui'"));
     foreach (['bd_erp_stage', 'bd_erp_total', 'bd_reason_code'] as $f) {
         $check("the {$f} vardef is GONE", false,
             is_file($root . 'custom/Extension/modules/Quotes/Ext/Vardefs/' . $f . '.php'));
     }
-    $check('the bd_erp_stage_list vocabulary is GONE', false,
-        is_file($root . 'custom/Extension/application/Ext/Language/en_us.bd_erp_stage_list.php'));
+    // 🛑 INVERTED IN rc65. This used to assert the FILE was gone, which retires
+    // nothing: dropping a custom/Extension file from the build leaves the copy a
+    // previous install made live on the tenant (§CW / G37). The path must SHIP,
+    // declaring nothing - that is the only thing that takes the vocabulary away.
+    $stageList = $root . 'custom/Extension/application/Ext/Language/en_us.bd_erp_stage_list.php';
+    $check('the bd_erp_stage_list path still ships (as a stub)', true, is_file($stageList));
+    $check('and the stub declares no vocabulary', false,
+        str_contains(preg_replace(['~/\*.*?\*/~s', '~//[^\n]*~'], '', file_get_contents($stageList)),
+                     'bd_erp_stage_list'));
 
     // 7. 🚩 AND THE DUPLICATE NOTIFICATION HOOK WENT WITH THE FIELD IT WATCHED.
     //
@@ -190,8 +205,13 @@ namespace {
         is_file($root . 'custom/modules/Quotes/BdEstimatingNotificationHook.php'));
     $check('and so is its logic-hook registration', false,
         is_file($root . 'custom/Extension/modules/Quotes/Ext/LogicHooks/bd_estimating_notification.php'));
-    $check('the API reads the outcome from CORE\'s hook',
-        true, str_contains($api, "ErpEstimatingNotificationHook::consumeOutcome"));
+    // 🛑 INVERTED IN rc65. This asserted the Bench estimating route CONSUMED
+    // core's notification outcome. rc65 deleted that route (G280 / 🔒 1507):
+    // core's 'Send to Estimation' both stamps the stage and notifies, so there
+    // is no Bench reader left to keep honest. What must hold is that this
+    // package never grows a second notifier or a second reader of that seam.
+    $check('no Bench code touches the estimating notification seam', false,
+        str_contains($apiCode, 'ErpEstimatingNotificationHook'));
 
     $failed = 0;
     foreach ($checks as $n => [$name, $ok, $expected, $actual]) {

@@ -24,12 +24,16 @@ core's ``AccountsErpActionsApi`` is the SUPERSET, not an equivalent - it owns
 oracle names), is tenant-configurable, and types the quote for Advanced Quote.
 Keeping Bench's instead would show one button and LOSE all three.
 
-🛑 WHY writeButtons() STILL EXISTS INSTEAD OF BEING DELETED. The button was
-written into the tenant's DEPLOYED viewdef by ``saveViewdef``. Deleting the code
-that wrote it does NOT remove it - rc24 proved that the expensive way: it dropped
-six files, installed clean, and was INERT. ONLY OVERWRITING RETIRES. So the
-method must keep running and must actively remove what it used to add, which is
-what the behavioural cases below drive.
+🛑 SUPERSEDED IN 0.9.42-rc64 BY G276 / 🔒 1504 - THE RETIREMENT CODE IS GONE TOO.
+Before rc64 ``BdAccountsLayoutExtensions::writeButtons()`` kept running on every
+install to strip ``bd_create_opp_quote_button`` from the deployed view ("ONLY
+OVERWRITING RETIRES"). The owner then ruled *"remove now all button logic from
+bench"*, so the method is deleted and ``remove()`` no longer reads the buttons
+array. Every tenant that ran rc49..rc61 already had the Bench button stripped
+(Bench and et included), so nothing is left for it to do there. What this file
+still pins: the Bench button is never INJECTED again, the two packages still
+share one label (the root cause), the customer group fields are untouched, and
+neither the install nor the uninstall path of this class touches a button.
 """
 
 import json
@@ -38,6 +42,8 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+
+import shared_sugar
 
 ROOT = Path(__file__).resolve().parents[2]
 PKG = ROOT / "sugar-sell/BenchDogs-Ext"
@@ -51,23 +57,10 @@ _EPICOR_REL = (
 )
 
 
-def _find_epicor_labels():
-    """Walk up looking for the sibling checkout.
-
-    A git worktree sits at <repo>/.worktrees/<name>, so a fixed ``ROOT.parent``
-    resolves correctly from a normal clone and NOT from a worktree - the case
-    this test was first written in, where it silently skipped.
-    """
-    here = ROOT
-    for _ in range(4):
-        cand = here.parent / _EPICOR_REL
-        if cand.exists():
-            return cand
-        here = here.parent
-    return ROOT.parent / _EPICOR_REL
-
-
-EPICOR_LABELS = _find_epicor_labels()
+#: ERP-Epicor's label file, from the pin under fixtures/shared-sugar, so this
+#: runs in CI instead of skipping. The old walk-up finder could not see the
+#: sibling from a git worktree either.
+EPICOR_LABELS = shared_sugar.resolve("en_us.erp_create_opp_quote.php")
 
 BD_BUTTON = "bd_create_opp_quote_button"
 ERP_BUTTON = "erp_create_opp_quote_button"
@@ -109,21 +102,20 @@ namespace {
 
     function run(array $buttons): array {
         // loadViewdef() returns the INNER defs; loadRecordView() wraps them as
-        // ['base']['view']['record'] itself. Stubbing the wrapped shape here made
-        // loadRecordView double-wrap it, the buttons key went missing, and the
-        // method correctly did nothing - which read exactly like the fix failing.
-        ViewdefManager::$defs = ['buttons' => $buttons];
+        // ['base']['view']['record'] itself.
+        $panels = [['name' => 'panel_body', 'fields' => [['name' => 'website']]]];
+        ViewdefManager::$defs = ['buttons' => $buttons, 'panels' => $panels];
         ViewdefManager::$saves = 0;
-        BdAccountsLayoutExtensions::writeButtons();
-        $after  = ViewdefManager::$defs['buttons'] ?? [];
-        $saves  = ViewdefManager::$saves;
-        // Idempotence: a second run over the ALREADY-RETIRED view must not rewrite it.
-        BdAccountsLayoutExtensions::writeButtons();
+        BdAccountsLayoutExtensions::writeCustomerGroupField();   // the install path
+        $afterInstall = ViewdefManager::$defs['buttons'] ?? [];
+        BdAccountsLayoutExtensions::remove();                    // the uninstall path
+        $afterRemove = ViewdefManager::$defs['buttons'] ?? [];
         return [
-            'names'         => array_values(array_map(
-                static fn($b) => is_array($b) ? ($b['name'] ?? '?') : (string) $b, $after)),
-            'saves'         => $saves,
-            'rerun_saves'   => ViewdefManager::$saves - $saves,
+            'before'        => json_encode($buttons),
+            'after_install' => json_encode($afterInstall),
+            'after_remove'  => json_encode($afterRemove),
+            'saves'         => ViewdefManager::$saves,
+            'has_button_method' => method_exists('BdAccountsLayoutExtensions', 'writeButtons'),
         ];
     }
 
@@ -177,50 +169,28 @@ class CreateOppQuoteButtonRetiredStatic(unittest.TestCase):
             "back puts TWO identical buttons in front of the seller (G15).",
         )
 
-    def test_the_retirement_mechanism_is_still_there(self):
-        """Not adding it is NOT enough - a deployed viewdef outlives the package."""
-        src = LAYOUT.read_text(encoding="utf-8")
-        self.assertIn(BD_BUTTON, src, "the method no longer names the button it must remove")
-        self.assertRegex(
-            src, r"writeButtons\(\)\s*:\s*void",
-            "writeButtons() is gone. Deleting it does NOT remove the button from a "
-            "tenant that already has it - rc24 proved an omitted file is INERT. "
-            "ONLY OVERWRITING RETIRES.",
-        )
-
     def test_the_customer_group_fields_are_untouched(self):
         """🔒 1044: these two are the whole Bench layer. The G15 fix must not take them."""
         src = LAYOUT.read_text(encoding="utf-8")
         for field in ("bd_customer_group", "bd_customer_group_code"):
             self.assertIn(field, src, f"{field} lost from the Accounts layout (🔒 1044)")
 
-    def test_the_two_packages_still_share_one_label(self):
-        """THE ROOT CAUSE, pinned.
+    def test_the_bench_label_is_gone_and_cores_is_not(self):
+        """THE ROOT CAUSE, retired rather than merely pinned.
 
-        A name-keyed guard cannot see a duplicate keyed on the label. If this
-        assertion ever fails because the labels diverged, the original guard
-        would silently start "working" again - and the next person to re-add the
-        Bench button would not be caught by it.
+        The duplicate reached a seller because the two packages' buttons had
+        DIFFERENT names and the SAME label, so a name-keyed dedupe guard could
+        not see it. rc64 empties this package's label file (G276 / 🔒 1504): with
+        no Bench button and no Bench button logic, a Bench label could only make
+        a retired action read as supported. Core keeps its own label, so the
+        action the seller actually presses is still named.
         """
-        if not EPICOR_LABELS.exists():
-            self.skipTest("erp-integration-sugar checkout not present beside this repo")
         bd = BD_LABELS.read_text(encoding="utf-8")
+        self.assertNotIn("LBL_BD_CREATE_OPP_QUOTE_BUTTON'] =", bd,
+                         "the Bench button label is back; core's button owns this action")
         erp = EPICOR_LABELS.read_text(encoding="utf-8")
-
-        def label_of(text, key):
-            m = re.search(rf"\$mod_strings\['{key}'\]\s*=\s*'([^']+)'", text)
-            return m.group(1) if m else None
-
-        bd_label = label_of(bd, "LBL_BD_CREATE_OPP_QUOTE_BUTTON")
-        erp_label = label_of(erp, "LBL_ERP_CREATE_OPP_QUOTE_BUTTON")
-        self.assertIsNotNone(bd_label)
-        self.assertIsNotNone(erp_label)
-        self.assertEqual(
-            bd_label, erp_label,
-            "The two packages' buttons no longer share a label. That is the exact "
-            "condition under which a NAME-keyed dedupe guard looks correct and is "
-            "not - see this file's docstring.",
-        )
+        self.assertRegex(erp, r"\$mod_strings\['LBL_ERP_CREATE_OPP_QUOTE_BUTTON'\]\s*=\s*'[^']+'",
+                         "core no longer labels its own Create Opportunity & Quote button")
 
 
 class CreateOppQuoteButtonRetiredBehaviour(unittest.TestCase):
@@ -232,36 +202,21 @@ class CreateOppQuoteButtonRetiredBehaviour(unittest.TestCase):
             raise unittest.SkipTest("php not available")
         cls.r = _run_harness()
 
-    def test_it_removes_ours_from_a_duplicated_view(self):
-        d = self.r["duplicated"]
-        self.assertNotIn(BD_BUTTON, d["names"], "the Bench button survived the retirement")
-        self.assertEqual(d["names"].count(ERP_BUTTON), 1, "core's button must remain, exactly once")
-        self.assertEqual(d["saves"], 1, "the retirement must DEPLOY the view, or nothing changes")
-
-    def test_it_removes_ours_on_an_upgraded_tenant(self):
-        b = self.r["bench_only"]
-        self.assertNotIn(BD_BUTTON, b["names"])
-        self.assertEqual(b["saves"], 1)
-
-    def test_it_is_a_no_op_when_there_is_nothing_to_retire(self):
-        """No churn on a clean tenant - a needless saveViewdef is a real cost."""
-        c = self.r["core_only"]
-        self.assertEqual(c["names"].count(ERP_BUTTON), 1)
-        self.assertEqual(c["saves"], 0, "rewrote the view with nothing to remove")
-
-    def test_a_second_run_does_not_rewrite_the_view(self):
+    def test_the_install_path_leaves_every_button_alone(self):
+        """G276 / 🔒 1504: placing the customer group fields must not read or
+        rewrite the buttons array, whatever is in it - ours included."""
         for case in ("duplicated", "bench_only", "core_only"):
             with self.subTest(case=case):
-                self.assertEqual(
-                    self.r[case]["rerun_saves"], 0,
-                    "re-running the retirement deploys the view again; post_install "
-                    "runs on every upgrade, so this would churn forever",
-                )
+                self.assertEqual(self.r[case]["after_install"], self.r[case]["before"])
 
-    def test_unrelated_buttons_survive(self):
-        d = self.r["duplicated"]
-        self.assertIn("edit_button", d["names"])
-        self.assertIn("main_dropdown", d["names"])
+    def test_the_uninstall_path_leaves_every_button_alone(self):
+        for case in ("duplicated", "bench_only", "core_only"):
+            with self.subTest(case=case):
+                self.assertEqual(self.r[case]["after_remove"], self.r[case]["before"])
+
+    def test_no_button_method_remains(self):
+        self.assertFalse(self.r["core_only"]["has_button_method"],
+                         "BdAccountsLayoutExtensions::writeButtons() is back (🔒 1504)")
 
 
 if __name__ == "__main__":

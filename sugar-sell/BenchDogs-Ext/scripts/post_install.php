@@ -17,8 +17,9 @@
  * _BILLING_DETAIL, _CREDIT_DETAIL, _SYNC_STATUS) are built by ERP-Epicor's
  * AccountsLayout, which already runs in replace mode and owns every field in
  * them - this package never writes those panels or their fields. It only
- * appends its own button and the REQ-19 customer group fields (see
- * BdAccountsLayoutExtensions), which never touch those panels.
+ * appends the REQ-19 customer group fields (see BdAccountsLayoutExtensions),
+ * which never touch those panels, and it touches no record-view button at all
+ * (G276).
  *
  * TOP-LEVEL CODE, NOT A FUNCTION (0.9.42-rc26)
  *
@@ -85,6 +86,47 @@
 // once per install request.
 $GLOBALS['log']->fatal('BenchDogs-Ext: post_install running - writing deployed metadata');
 
+// 🛑 FIRST, BECAUSE IT IS THE HALF THAT CANNOT BE REDONE LATER (G280 /
+// 🔒 1507, 🔒 1508).
+//
+// rc65 retired this package's Opportunity release-stage PROVIDER to a stub that
+// returned null; 0.9.42-rc66 STOPS SHIPPING THAT FILE ENTIRELY. Both shapes
+// hand the decision to Partial Fulfillment's generic path and PF reaches the
+// SAME decision either way - `policy_provider_null` and `policy_provider_absent`
+// fall through to the identical branch (ErpOpportunityValuation.php:310-345),
+// which scripts/tests/test_release_stage_absent_equals_null.py proves by RUNNING
+// PF's own resolver both ways rather than by asserting the file is gone.
+//
+// 🚩 THIS BLOCK IS WHY THE DELETION IS SAFE AND MUST OUTLIVE IT. PF's generic
+// path reads a TENANT CONFIG key, and a config row is data - it does not arrive
+// with the package. With no provider and no key, the Opportunity stage silently
+// stops being written at all. So this runs BEFORE any layout work, with its own
+// guard, and 🔒 1508's carve-out for "one-shot migrations a tenant may not have
+// taken yet" is exactly what keeps it here.
+//
+// Written only when absent: a tenant (or an admin) that already chose a stage
+// keeps it. The probability is deliberately NOT written - PF derives it from
+// sales_probability_dom, where G278 / 🔒 1506 ships 90 for this key.
+try {
+    $bdAdmin = BeanFactory::newBean('Administration');
+    $bdErpConfig = $bdAdmin->getConfigForModule('erp_integration');
+    $bdCurrentStage = is_array($bdErpConfig)
+        ? trim((string) ($bdErpConfig['partial_order_sales_stage'] ?? ''))
+        : '';
+    if ($bdCurrentStage === '') {
+        $bdAdmin->saveSetting('erp_integration', 'partial_order_sales_stage', 'Partial Production Ordered');
+        $GLOBALS['log']->fatal(
+            'BenchDogs-Ext: erp_integration.partial_order_sales_stage set to Partial Production Ordered'
+        );
+    } else {
+        $GLOBALS['log']->fatal(
+            'BenchDogs-Ext: erp_integration.partial_order_sales_stage already set, left as is'
+        );
+    }
+} catch (Throwable $e) {
+    $GLOBALS['log']->fatal('BenchDogs-Ext: partial order stage config failed: ' . $e->getMessage());
+}
+
 $bdLayoutHelper = 'custom/modules/Quotes/BdQuotesLayoutExtensions.php';
 try {
     if (file_exists($bdLayoutHelper)) {
@@ -100,29 +142,49 @@ try {
 }
 
 
-// Bench Dogs action buttons (Quotes: Send to Estimating / Order
-// Winning Line; Accounts: Create Opportunity & Quote) - same
-// DeployedMetaDataImplementation mechanism as the panel above,
-// idempotent by button name, so safe to re-run on every install.
-try {
-    if (class_exists('BdQuotesLayoutExtensions')) {
-        BdQuotesLayoutExtensions::writeButtons();
-    }
-} catch (Throwable $e) {
-    $GLOBALS['log']->fatal('BenchDogs-Ext: Quotes buttons failed: ' . $e->getMessage());
-}
-// Native-line ordering columns on the quoted-line-items grid.
-try {
-    $bdQliHelper = 'custom/modules/Quotes/BdQliColumnsLayout.php';
-    if (file_exists($bdQliHelper)) {
-        require_once $bdQliHelper;
-        if (class_exists('BdQliColumnsLayout')) {
-            (new BdQliColumnsLayout())->install();
-        }
-    }
-} catch (Throwable $e) {
-    $GLOBALS['log']->fatal('BenchDogs-Ext: QLI columns failed: ' . $e->getMessage());
-}
+// 🛑 G276 / 🔒 1503 + 🔒 1504 - NO BUTTON LOGIC, ON ANY RECORD VIEW.
+//
+// Until rc64 a block here called BdQuotesLayoutExtensions::writeButtons(),
+// which stripped ERP-Epicor's create_erp_order_button (Submit Order) and
+// refresh_price_availability_button off the deployed Quotes view on every
+// install and stashed them in config (decision 91, rc26), and another called
+// BdAccountsLayoutExtensions::writeButtons(). Owner, verbatim: "a seller should
+// have both selected line and submited order use core dont use anything from
+// bench dog extension logic for buttons!" and "remove now all button logic from
+// bench". Both calls and both methods are gone; this package no longer adds,
+// removes, hides, reorders or stashes a record-view button anywhere.
+//
+// The buttons decision 91 stripped come back through CORE: every ERP-Epicor
+// install runs QuotesLayout::install() -> addButtonsToRecordView(), which adds
+// a missing button and reconciles an existing one to core's current definition.
+// Install ERP-Epicor, then this package (the G273 order for the sales stages
+// already requires exactly that), and nothing here takes them away again.
+// 🛑 THE QUOTED-LINE GRID IS NOT THIS PACKAGE'S ANY MORE (0.9.42-rc66,
+// G280 / 🔒 1508: *"from all the non vustomer category code we should not
+// ahve other stuff there"*). BdQliColumnsLayout and BdQliColumnTemplate are
+// DELETED and nothing replaces this call. Three things went with them, and
+// each is recorded here rather than in a release note nobody reads:
+//
+//  1. THE COLUMN ORDER, which had ALREADY STOPPED WORKING. rc65's own install
+//     on Bench logged
+//         BenchDogs-Ext: QLI columns failed: Call to private method
+//         BaseErpLayout::loadView() from scope BdQliColumnsLayout
+//     at 17:16:59Z. `loadView()` is `private` (ERP-Core BaseErpLayout.php:1778),
+//     so applyColumnOrder() could not run on this tenant and cannot run on a
+//     fresh one either. The grid a seller sees is therefore unchanged by this
+//     deletion: it is whatever is already deployed, plus core's own appends.
+//     Nothing about the removal reaches a SHIPPED viewdef - decision 803 moved
+//     the authored list to a path Sugar does not read as one, precisely so this
+//     package could never overwrite another's columns again.
+//  2. THE erp_quote_line_num FETCH INJECTION. That is CORE's field, and no
+//     viewdef in this package, ERP-Core, ERP-Epicor or Partial Fulfillment
+//     draws it - so nothing rendered it and nothing loses it. The column stays
+//     in the deployed allowlist on tenants that have it: inert, and core's.
+//  3. THE bd_to_order / bd_ordered LEGACY COLUMN SWEEP, which has run on every
+//     install since 0.9.21 and on this tenant through rc65. It removes from
+//     DEPLOYED METADATA, which persists, so it is spent where it was needed and
+//     was never armed anywhere else - stock carries no Bench Dogs by design.
+//
 // Ordering selected lines is ERP-Epicor-PartialFulfillment's own
 // route, and every Bench Dogs quote is an advanced_quote (mirrored
 // from Kinetic) - it just works once that package is installed,
@@ -137,18 +199,6 @@ try {
 // table), the bd-order-selected / bd-order-winning field JS is no
 // longer referenced by any button, and bd_order_requested_at is an
 // unread column. A fresh install never gets them at all.
-try {
-    $bdAccountsHelper = 'custom/modules/Accounts/BdAccountsLayoutExtensions.php';
-    if (file_exists($bdAccountsHelper)) {
-        require_once $bdAccountsHelper;
-        if (class_exists('BdAccountsLayoutExtensions')) {
-            BdAccountsLayoutExtensions::writeButtons();
-        }
-    }
-} catch (Throwable $e) {
-    $GLOBALS['log']->fatal('BenchDogs-Ext: Accounts button failed: ' . $e->getMessage());
-}
-
 // REQ-19 customer group fields - declared in vardefs since the
 // package's first release but never placed on the record view from
 // here; only bdRepairUi() called this method, so a fresh install
@@ -200,89 +250,94 @@ try {
     $GLOBALS['log']->fatal('BenchDogs-Ext: value-source marker removal failed: ' . $e->getMessage());
 }
 
-// 🛑 G116, SECOND PLACEMENT OF THE SAME RETIRED FIELD. Decision 72 item 3's
-// saved report filtered Opportunities on `bd_governing_origin = 'auto'` and
-// drew it as a column. With the vardef retired that report cannot error and
-// cannot fill: it renders EMPTY, which on a review queue reads as "nothing to
-// review" rather than as a broken report - the trap rc24's operator notes
-// describe, and the reason pre_uninstall.php has always removed it. Creating
-// it on install while the field it filters no longer exists is that trap
-// re-armed once per install, so the install now REMOVES it too.
+// 🛑 G116's SAVED-REPORT REMOVER IS SPENT AND IS GONE (0.9.42-rc66,
+// G280 / 🔒 1508). BdAutoSelectedReport took decision 72 item 3's report
+// "Opportunities Valued From an Auto-Selected Quote Line" back off the
+// instance, because with `bd_governing_origin` retired that report renders
+// EMPTY - a review queue that reads as "nothing to review" rather than as a
+// broken report.
 //
-// Matched by exact name, so an admin who renamed or copied the report keeps
-// theirs; mark_deleted() is a soft delete, so a row is recoverable.
-try {
-    $bdReportHelper = 'custom/modules/Opportunities/BdAutoSelectedReport.php';
-    if (file_exists($bdReportHelper)) {
-        if (!class_exists('BdAutoSelectedReport', false)) {
-            require_once $bdReportHelper;
-        }
-        if (class_exists('BdAutoSelectedReport')) {
-            (new BdAutoSelectedReport())->remove();
-        }
-    } else {
-        $GLOBALS['log']->fatal("BenchDogs-Ext: {$bdReportHelper} missing, retired review report left behind");
-    }
-} catch (Throwable $e) {
-    $GLOBALS['log']->fatal('BenchDogs-Ext: review report removal failed: ' . $e->getMessage());
-}
+// 🚩 WHY IT IS SAFE TO STOP SHIPPING A REMOVAL, which is the question this
+// deletion has to answer and the one a green test cannot. Not "the class looks
+// unused" - it was called, from here and from pre_uninstall. The evidence is
+// that IT ALREADY RAN AND FOUND NOTHING, read out of the tenant's own
+// package_install.log for the rc65 install (PID 2069085, 17:16:59 -> 17:17:35):
+// the block above logs `removed retired saved report "..."` ONLY when it
+// deletes a row, and logs `missing, retired review report left behind` if the
+// file is absent. NEITHER line appears anywhere in that window, while every
+// other BenchDogs-Ext line does. So remove() executed and the row was already
+// gone. SugarQuery excludes soft-deleted rows, so a row it once deleted can
+// never be re-found; there is nothing left for a re-run to do.
+//
+// Tenant 1 is the only instance carrying this package - stock has no Bench Dogs
+// by design (RELEASE-CONTROL.md:757) - so "spent here" is "spent".
 
-// Stage dropdown keys (quote_stage_dom 'Partially Fulfilled',
-// sales_stage_dom 'Prototype Ordered'/'Partial Production Ordered') via
-// ModuleInstaller::install_languages() - the scanner-safe route
-// ERP-Core's BaseErpDropdown documents. Append-only, idempotent.
+// 🛑 THE STAGE VOCABULARY IS CORE'S NOW — AND THIS TAKES BENCH'S COPY BACK.
+// G278 / 🔒 1506 ("this hsoudl happen in the core") + G280 / 🔒 1507.
+//
+// Partial Fulfillment 1.0.40 ships sales_stage_dom['Prototype Ordered'] and
+// ['Partial Production Ordered'] byte-exact, their 80/90 probabilities, their
+// two Sidecar styles, and has always shipped quote_stage_dom['Partially
+// Fulfilled']. It declares them in _override_ fragments, which Sugar merges
+// LAST whatever the mtimes say, so they cannot be wiped by a whole-array
+// replace (that is G220/G273's whole problem, solved at the source). The
+// manifest now requires that version.
+//
+// So this package stops declaring any of it - and "stops declaring" is not
+// enough on a hosted tenant. Until rc64 post_install APPENDED the template to
+// custom/Extension/application/Ext/Language/en_us.zz_bd_stage_doms.php through
+// ModuleInstaller::install_languages(), which CONCATENATES rather than
+// overwrites (26.1.0 ModuleInstaller.php:1227-1235). That accumulated file is
+// still on every Bench Dogs tenant, carrying every key every past version ever
+// appended - including decision 314's retired '...Closed' pair (G268).
+//
+// uninstall_languages() is the exact mirror of the install and the one removal
+// available to a package: it deletes en_us.<id_name>.php and rebuilds the
+// language cache (:1243-1265). unlink() is denied to package code by the cloud
+// scanner, so nothing else could take this file back. Same installer class,
+// same id_name, same template path as the install used.
+//
+// Idempotent: on a tenant that never had the file, sugar_is_file() is false and
+// the call only rebuilds. rc64's tenants run this once and are done.
 try {
-    $bdTpl = 'custom/dropdowntemplates/bd_stage_doms.append.php';
-    if (file_exists($bdTpl)) {
-        require_once 'ModuleInstall/ModuleInstaller.php';
-        $bdMi = new ModuleInstaller();
-        $bdMi->silent = true;
-        $bdMi->id_name = 'zz_bd_stage_doms';
-        $bdMi->base_dir = getcwd();
-        $bdMi->installdefs = array(
-            'language' => array(
-                array(
-                    'from' => $bdTpl,
-                    'to_module' => 'application',
-                    'language' => 'en_us',
-                ),
+    require_once 'ModuleInstall/ModuleInstaller.php';
+    $bdMi = new ModuleInstaller();
+    $bdMi->silent = true;
+    $bdMi->id_name = 'zz_bd_stage_doms';
+    $bdMi->base_dir = getcwd();
+    $bdMi->installdefs = array(
+        'language' => array(
+            array(
+                'from' => 'custom/dropdowntemplates/bd_stage_doms.append.php',
+                'to_module' => 'application',
+                'language' => 'en_us',
             ),
-        );
-        $bdMi->install_languages();
-    } else {
-        $GLOBALS['log']->fatal('BenchDogs-Ext: stage dom template missing, skipping dropdown install');
-    }
+        ),
+    );
+    $bdMi->uninstall_languages();
+    $GLOBALS['log']->fatal(
+        'BenchDogs-Ext: removed the zz_bd_stage_doms language fragment; the sales '
+        . 'and quote stages are Partial Fulfillment\'s'
+    );
 } catch (Throwable $e) {
-    $GLOBALS['log']->fatal('BenchDogs-Ext: stage dropdowns failed: ' . $e->getMessage());
+    $GLOBALS['log']->fatal('BenchDogs-Ext: stage fragment removal failed: ' . $e->getMessage());
 }
 
-// Pin the Accounts focus drawer and the Home dashboard. Loaded via
-// __DIR__ rather than a fixed custom/include/bd_scripts/ path: at
-// this point in the install, the separate copy installdef entries
-// (which land the permanent copy there for later manual re-runs)
-// are not guaranteed to have run yet, but addTree('scripts') always
-// extracts this file into the same temp directory as post_install.php
-// itself, so __DIR__ is the one location guaranteed present already.
+// 🛑 THE BAKED DEMO DASHBOARDS ARE GONE (G280 / 🔒 1507).
 //
-// GUARD THE CLASS, NOT THE PATH. This file reaches for __DIR__ and
-// pre_uninstall.php falls back to custom/include/bd_scripts/, so
-// BdDemoDashboards.php is reachable at two paths on an installed
-// instance. require_once dedupes by RESOLVED PATH, not by class name,
-// and an uninstall_before_upgrade run executes pre_uninstall.php and
-// this file in ONE request - so both copies would load and PHP would
-// fatal with "Cannot redeclare class BdDemoDashboards", killing the
-// install outright. The sibling repository lost a demo instance to
-// exactly this defect on 2026-09-11; scripts/mlp_lint.py MLP001 exists
-// because of it, and flagged this line.
-try {
-    if (!class_exists('BdDemoDashboards', false)) {
-        require_once __DIR__ . '/BdDemoDashboards.php';
-    }
-    (new BdDemoDashboards())->install();
-} catch (Throwable $e) {
-    $GLOBALS['log']->fatal('BenchDogs-Ext: demo dashboards failed: ' . $e->getMessage());
-}
-
+// This block composed two dashboards - the Accounts focus drawer and the Home
+// dashboard - out of OTHER packages' dashlets (ERP-Core's account-card and
+// erp-account-snapshot, the BAQ dashlet, Account Hierarchy's saah-*, sales-i's
+// recommendations-dashlet and gai-dashlet) plus one Bench-authored stock
+// `dashablelist` tile, "ERP Quote Pipeline". The owner: *"Donthave any logic on
+// bench that is not on core"* - a demo layout made of other packages' tiles is
+// exactly that, and scripts/BdDemoDashboards.php (705 lines) went with the
+// call. If the pipeline tile is wanted, it belongs in core's ErpDemoDashboards.
+//
+// A tenant that already has the dashboards keeps them: they are rows in the
+// dashboards table, written once per install, and nothing here rewrites them
+// any more. The copy of the class under custom/include/bd_scripts/ that earlier
+// installs left behind is unreachable - nothing requires it.
 
 try {
     SugarAutoLoader::load('modules/Administration/QuickRepairAndRebuild.php');
@@ -318,18 +373,16 @@ try {
     $GLOBALS['log']->fatal('BenchDogs-Ext: relationship rebuild failed: ' . $e->getMessage());
 }
 
-// A copied language fragment is not yet a usable stage domain. The
-// admin repair route explicitly compiles application languages and
-// refreshes their metadata; fresh installs and upgrades need that
-// same lifecycle before they can report this capability as ready.
-// Run after the other extension rebuilds, and verify uncached lists.
+// The language cache still has to be rebuilt, because this install EMPTIED two
+// fragments it used to declare stages in (en_us.bd_stage_doms.php and the
+// DropdownsStyle file) and deleted a third above. Until the application
+// languages are recompiled the tenant keeps serving what those files said.
 //
-// This block used to rethrow a RuntimeException on a failed verification. It
-// must not: see "NOTHING IN THIS FILE MAY THROW PAST ITS OWN CATCH" above. The
-// verification is kept, and its verdict is logged at fatal under a fixed
-// message that leaks no exception detail, so an operator can still tell a
-// half-compiled language set from a good one without the package deleting
-// itself to say so.
+// The verification that follows is a READ, logged and never thrown: it says
+// whether core is serving the two stages after this install. It is not this
+// package's contract any more - Partial Fulfillment owns the keys - but a
+// Bench Opportunity stores those strings, so an operator needs one line in the
+// log that says whether they are still there.
 try {
     require_once 'ModuleInstall/ModuleInstaller.php';
     $bdLanguages = array('en_us' => 'en_us');
@@ -347,57 +400,46 @@ try {
     MetaDataManager::refreshLanguagesCache(array_values($bdLanguages));
     foreach ($bdLanguages as $bdLanguage) {
         $bdDoms = return_app_list_strings_language($bdLanguage, false);
-        if (!isset($bdDoms['quote_stage_dom']['Partially Fulfilled'])
-            || !isset($bdDoms['sales_stage_dom']['Prototype Ordered'])
-            || !isset($bdDoms['sales_stage_dom']['Partial Production Ordered'])
-            || (string) ($bdDoms['sales_probability_dom']['Prototype Ordered'] ?? '') !== '80'
-            || (string) ($bdDoms['sales_probability_dom']['Partial Production Ordered'] ?? '') !== '90') {
-            $GLOBALS['log']->fatal('BenchDogs-Ext: required stage language verification failed');
-            break;
+        $bdServed = isset($bdDoms['sales_stage_dom']['Prototype Ordered'])
+            && isset($bdDoms['sales_stage_dom']['Partial Production Ordered']);
+        $GLOBALS['log']->fatal(
+            'BenchDogs-Ext: release stages served by core after this install: '
+            . ($bdServed ? 'yes' : 'NO - install Partial Fulfillment >= 1.0.40')
+        );
+        if (isset($bdDoms['sales_stage_dom']['Prototype Closed'])
+            || isset($bdDoms['sales_stage_dom']['Partial Production Closed'])) {
+            $GLOBALS['log']->fatal('BenchDogs-Ext: retired stage names still served');
         }
+        break;
     }
 } catch (Throwable $e) {
-    $GLOBALS['log']->fatal('BenchDogs-Ext: required stage language verification failed');
+    $GLOBALS['log']->fatal('BenchDogs-Ext: language rebuild failed: ' . $e->getMessage());
 }
 
-// DECISION 314 - stage rename data migration. The two release stages were
-// renamed from '<slice> Closed' to '<slice> Ordered' because the code that
-// writes them branches on $product->erp_ordered: the semantics were always
-// "this slice has been ORDERED", and the opportunity deliberately stays OPEN
-// (probabilities 80/90; only Closed Won/Closed Lost are terminal). Records
-// written before the rename still hold the old literal in sales_stage, and a
-// stage whose key is absent from sales_stage_dom renders blank.
+// 🛑 DECISION 314's STAGE-RENAME MIGRATION IS DRAINED AND IS GONE (0.9.42-rc66,
+// G280 / 🔒 1508). It renamed the stored `sales_stage` literals
+// 'Prototype Closed' -> 'Prototype Ordered' and 'Partial Production Closed' ->
+// 'Partial Production Ordered' in raw SQL, because a stage key that is absent
+// from sales_stage_dom renders BLANK on the record.
 //
-// DELIBERATELY RAW SQL, NOT BEANS. Loading and save()-ing an Opportunity
-// fires the valuation hooks - the same writers that re-pointed a fixture's
-// amount to $0.00 on 2026-09-15 (decision 311/313). A migration must not
-// recompute anything; it only renames a stored key. Raw SQL fires no hooks.
+// 🔒 1508 keeps "the one-shot migrations and tombstones a tenant may not have
+// taken yet" - so this one only qualifies for removal if it has taken. IT HAS,
+// and the measurement is the tenant's own package_install.log for the rc65
+// install (PID 2069085, the same window that carries post_install's `running`
+// and `finished` lines):
 //
-// Idempotent: the WHERE clause matches only the old literals, so a re-install
-// is a no-op. The _audit trail is deliberately NOT rewritten - it is history,
-// and the old key is what those rows genuinely recorded at the time.
-try {
-    $bdDb = DBManagerFactory::getInstance();
-    $bdStageRenames = array(
-        'Prototype Closed' => 'Prototype Ordered',
-        'Partial Production Closed' => 'Partial Production Ordered',
-    );
-    foreach ($bdStageRenames as $bdOldStage => $bdNewStage) {
-        $bdSql = 'UPDATE opportunities SET sales_stage = '
-            . $bdDb->quoted($bdNewStage)
-            . ' WHERE sales_stage = ' . $bdDb->quoted($bdOldStage);
-        $bdResult = $bdDb->query($bdSql);
-        $bdMoved = (int) $bdDb->getAffectedRowCount($bdResult);
-        $GLOBALS['log']->fatal(
-            'BenchDogs-Ext: stage migration ' . $bdOldStage . ' -> ' . $bdNewStage
-            . ' applied to ' . $bdMoved . ' row(s)'
-        );
-    }
-} catch (Throwable $e) {
-    // Never fail the install on the migration: the package is still correct
-    // for every record written from now on, and an unmigrated old row is
-    // visible and fixable. Loud, not fatal.
-    $GLOBALS['log']->fatal('BenchDogs-Ext: stage rename migration failed: ' . $e->getMessage());
-}
+//     17:17:35  BenchDogs-Ext: stage migration Prototype Closed ->
+//               Prototype Ordered applied to 0 row(s)
+//     17:17:35  BenchDogs-Ext: stage migration Partial Production Closed ->
+//               Partial Production Ordered applied to 0 row(s)
+//
+// 0 rows on both, on the only instance that carries this package (stock has no
+// Bench Dogs by design, RELEASE-CONTROL.md:757). Nothing writes the old
+// literals any more either: rc65 took the retired pair out of the served
+// vocabulary with uninstall_languages('zz_bd_stage_doms') ([[G268]]), and the
+// only writer left is Partial Fulfillment, from the config key post_install
+// sets ABOVE - which holds the NEW literal. A migration with no source and no
+// rows left to move is not a safeguard; it is an UPDATE that runs on every
+// install for nothing.
 
 $GLOBALS['log']->fatal('BenchDogs-Ext: post_install finished');

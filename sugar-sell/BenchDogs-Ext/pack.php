@@ -5,19 +5,24 @@
  *
  * Extension-only package: the bd_* fields on Quotes, Accounts, Opportunities,
  * Products and Contacts, the ERP_Orders / ERP_OrderLines record surfaces, the
- * Bench Dogs quote-led REST actions, the estimating notification hook, and the
- * layout / dashboard deploy scripts. Modeled on CORE-ShippingAddresses/pack.php.
+ * Bench Dogs admin repair route, and the Accounts customer-group deploy script.
+ * Modeled on CORE-ShippingAddresses/pack.php.
+ *
+ * 0.9.42-rc66 (G280 / 🔒 1508, *"from all the non vustomer category code we
+ * should not ahve other stuff there"*): the quoted-line grid classes, the
+ * retired-report remover, the stage-rename migration and the release-stage
+ * provider stub are all gone. What is left is the two customer-group fields and
+ * the files the platform gives no other way to retire.
  *
  * It ships NO modules of its own. Decisions 901/903/904/905 retired the bd01
  * quote-mirror modules, which is why there are no `beans`, `relationships`,
  * `vardefs` or `layoutdefs` installdefs here any more: the Opportunity
- * contribution and release-stage contracts read the native Sugar quote lines
- * instead.
+ * contribution contract reads the native Sugar quote lines instead.
  */
 
 $packageID      = 'sugarai_benchdogs_ext';
 $packageLabel   = 'SugarAI: Bench Dogs Extensions';
-$description    = 'Bench Dogs quote-led extensions for Sugar Sell: bd_* fields on Quotes, Accounts, Opportunities, Products and Contacts, the quote-led REST actions (create Opportunity + Quote, send to estimating), the estimating notification hook, and the Opportunity contribution / release-stage contracts resolved from the native Sugar quote lines.';
+$description    = 'Bench Dogs extensions for Sugar Sell: the two customer-group fields on Accounts and their record-view placement, the Opportunity contribution contract resolved from the native Sugar quote lines, the admin UI-repair route, and the overwrite stubs that retire this package\'s previously installed fields, hooks and labels.';
 $supportedVersionRegex = '(26|25|14)\\..*$';
 $acceptableSugarFlavors = array('ENT', 'ULT', 'PRO');
 
@@ -58,7 +63,14 @@ $manifest = array(
         ),
         array(
             'id_name' => 'sugarai_erp_epicor_partialfulfillment',
-            'version' => '1.0.13',
+            // 1.0.40 is the floor because rc65 STOPPED shipping the stage
+            // vocabulary: PF now owns sales_stage_dom['Prototype Ordered'] and
+            // ['Partial Production Ordered'], their 80/90 probabilities, their
+            // two styles (G278 / 🔒 1506) and quote_stage_dom['Partially
+            // Fulfilled'], which it has always owned. Installing this package
+            // over an older PF would leave Bench Opportunities and quotes
+            // holding stage values no dropdown serves.
+            'version' => '1.0.40',
         ),
     ),
 );
@@ -86,8 +98,7 @@ $installdefs = array(
 
 // Add custom/ files (Extension seams: the bd_* fields + dropdowns, the hook
 // registrations and their classes, the REST action class, the Opportunity
-// contribution / release-stage contract classes, and the layout script
-// classes). There is no modules/ tree to add: the package ships no module.
+// contribution contract class, and the layout script classes). There is no modules/ tree to add: the package ships no module.
 $customReal = realpath('custom');
 if ($customReal) {
     $it = new RecursiveIteratorIterator(

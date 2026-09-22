@@ -1,5 +1,24 @@
 <?php
 
+// G167 I4 reads the primary-move trigger off QuotePrimaryQuoteSoleEnforcer,
+// which is the only class that writes the flag and therefore the only one that
+// knows why it moved.
+//
+// GUARDED ON THE CLASS WITH THE REQUIRE INSIDE THE GUARD, byte-for-byte the
+// idiom QuoteAcceptSiblingReject.php documents at length, and for both of its
+// reasons. (1) A bare class_exists() with no require is an OFF SWITCH: Sugar
+// autoloads only the hook class it was asked for, so the trigger would read ''
+// on every quote and every amount would be labelled "the quote's own total
+// changed" - a fix that records a plausible falsehood, which is worse than
+// recording nothing. (2) The guard is on the CLASS, not the path, because
+// Sugar's own LogicHook::loadHookClass() require_once()s the same file by a
+// CWD-relative spelling; behind a symlinked docroot the two spellings do not
+// dedupe and the second load is a "Cannot redeclare class" fatal on every
+// Quote save (MLP001; this repo paid for it on 2026-09-11).
+if (!class_exists('QuotePrimaryQuoteSoleEnforcer', false)) {
+    require_once __DIR__ . '/QuotePrimaryQuoteSoleEnforcer.php';
+}
+
 /**
  * Shared owner of the primary Quote's Opportunity headline amount.
  *
@@ -116,14 +135,26 @@ class QuoteOpportunityAmount
 
         // Idempotent: already unvalued for the same reason writes nothing, so
         // a re-save does not re-stamp date_modified and leave the audit
-        // answering "since when" with "always".
+        // answering "since when" with "always". G167 I4 joins the condition:
+        // a record still carrying a source sentence has not finished being
+        // unvalued, whatever its amount says.
         $already = $opportunity->amount === null || $opportunity->amount === '';
-        if ($already && (string) ($opportunity->erp_amount_unvalued ?? '') === $reason) {
+        if ($already && (string) ($opportunity->erp_amount_unvalued ?? '') === $reason
+            && (string) ($opportunity->erp_amount_source ?? '') === ''
+        ) {
             return;
         }
 
         $opportunity->amount = null;
         $opportunity->erp_amount_unvalued = $reason;
+        // G167 I4 — THE TWO FIELDS ARE MUTUALLY EXCLUSIVE BY CONSTRUCTION.
+        // Leaving the old sentence here would leave the record saying "Amount
+        // from quote 1265 (hijack)" beside "the primary quote was deleted, so
+        // this forecast has no source" - simultaneously owned and unowned, and
+        // the stale half is the one a seller would believe because it names a
+        // quote. The publish path clears erp_amount_unvalued for the mirror
+        // reason; neither clearing is optional.
+        $opportunity->erp_amount_source = '';
         $opportunity->save();
 
         $GLOBALS['log']->info('QuoteOpportunityAmount: opportunity ' . $opportunity->id
@@ -175,16 +206,83 @@ class QuoteOpportunityAmount
             throw new \UnexpectedValueException('Non-finite Opportunity contribution');
         }
         $amount = round($amount, 2);
-        if ((float) ($opportunity->amount ?? 0) === $amount) {
+
+        // G167 I4 — "a change of primary leaves a reason: which quote the
+        // amount came from, and the trigger".
+        $source = $this->sourceSentence($quote);
+
+        // 🛑 THE EARLY RETURN NOW WEIGHS BOTH FACTS, AND THAT IS I4's
+        // ANTI-COINCIDENCE CLAUSE, NOT A TIDY-UP. G167's own test 2 insists the
+        // amount must MOVE when the primary moves, "or the test proves
+        // nothing". The converse is this line: when two quotes on a deal happen
+        // to total the SAME, a hijack moves the flag and the amount does not
+        // change - and an amount-only comparison would return here and record
+        // no reason for the one event I4 exists to explain. Two quotes at
+        // 5,000.00 is not an exotic fixture; it is a revised quote.
+        $amountSame = ((float) ($opportunity->amount ?? 0) === $amount);
+        $sourceSame = ((string) ($opportunity->erp_amount_source ?? '') === $source);
+        if ($amountSame && $sourceSame) {
+            // Genuinely nothing to say. Writing anyway would re-stamp
+            // date_modified and leave the audit answering "since when" with
+            // "always" - the same idempotence unvalue() keeps.
             return;
         }
+
         $opportunity->amount = $amount;
         // A real figure clears the unvalued marker: leaving it would say "no
         // source" beside a number that now has one.
         $opportunity->erp_amount_unvalued = '';
+        $opportunity->erp_amount_source = $source;
         $opportunity->save();
         $GLOBALS['log']->info('QuoteOpportunityAmount: refreshed opportunity '
-            . $opportunity->id . ' from primary quote ' . $quote->id);
+            . $opportunity->id . ' from primary quote ' . $quote->id
+            . ' - ' . $source);
+    }
+
+    /**
+     * G167 I4 — the sentence that says where this Opportunity's amount came
+     * from and what moved it.
+     *
+     * TWO FACTS, because G167 names two: WHICH QUOTE, and THE TRIGGER.
+     *
+     * 🛑 THE TRIGGER IS NOT INFERRED HERE, IT IS READ. Only
+     * QuotePrimaryQuoteSoleEnforcer moves the flag, so only it can say why; it
+     * notes the trigger against the quote id at priority 10 and this runs at
+     * 20 in the same dispatch. Guessing a trigger from the state visible here
+     * is exactly the mistake this row is about - a number whose explanation was
+     * reconstructed rather than recorded.
+     *
+     * NO TRIGGER IS A REAL ANSWER, NOT A MISSING ONE. An amount that moved
+     * because the quote's own lines changed is not a change of primary, and
+     * calling it "hijack" would put a false sentence in an audited field. It
+     * says so plainly instead.
+     *
+     * 🛑 IDENTIFIES THE QUOTE BY quote_num FIRST. The id is a UUID a seller
+     * cannot match against anything they can see; quote_num and the name are
+     * what is on the screen and on the PDF. The id is the last resort rather
+     * than the default, which is the opposite of what a log line would do -
+     * this field is read by the seller, not by me.
+     */
+    private function sourceSentence(SugarBean $quote): string
+    {
+        $num = trim((string) ($quote->quote_num ?? ''));
+        $name = trim((string) ($quote->name ?? ''));
+        if ($num !== '' && $name !== '') {
+            $label = 'quote ' . $num . ' (' . $name . ')';
+        } elseif ($num !== '') {
+            $label = 'quote ' . $num;
+        } elseif ($name !== '') {
+            $label = 'quote "' . $name . '"';
+        } else {
+            $label = 'quote ' . (string) $quote->id;
+        }
+
+        $trigger = QuotePrimaryQuoteSoleEnforcer::triggerFor((string) $quote->id);
+        if ($trigger === '') {
+            return 'Amount from ' . $label . '; the quote\'s own total changed.';
+        }
+
+        return 'Amount from ' . $label . '; ' . $trigger . '.';
     }
 
     /**

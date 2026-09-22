@@ -9,6 +9,18 @@ ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = ROOT / "sugar-sell/BenchDogs-Ext"
 
 
+#: The ONE RevenueLineItems path this package still ships, and must: it is the
+#: retirement STUB for bd_deliverable_key. fc5ec59 retired that vardef by
+#: dropping the file from the build, which retires nothing - a hosted tenant
+#: keeps the copy a previous install made and goes on compiling the vardef
+#: (§CW / G37). 0.9.42-rc65 ships the path EMPTY instead (G280 / 🔒 1507), so
+#: the token is expected here and the emptiness is asserted in
+#: test_g280_package_cleanup.py.
+RETIREMENT_STUB = (
+    "custom/Extension/modules/RevenueLineItems/Ext/Vardefs/bd_deliverable_key.php"
+)
+
+
 class QuoteLineOnlyPackageTest(unittest.TestCase):
     FORBIDDEN = (
         "RevenueLineItems",
@@ -21,6 +33,8 @@ class QuoteLineOnlyPackageTest(unittest.TestCase):
         for path in PACKAGE.rglob("*.php"):
             if "releases" in path.parts:
                 continue
+            if path.relative_to(PACKAGE).as_posix() == RETIREMENT_STUB:
+                continue  # the stub names the module in prose only; see above
             source = path.read_text(encoding="utf-8")
             for token in self.FORBIDDEN:
                 with self.subTest(path=path.relative_to(PACKAGE), token=token):
@@ -31,12 +45,17 @@ class QuoteLineOnlyPackageTest(unittest.TestCase):
         archive_path = PACKAGE / "releases" / f"sugarai_benchdogs_ext-{version}.zip"
         with zipfile.ZipFile(archive_path) as archive:
             for name in archive.namelist():
+                if name == RETIREMENT_STUB:
+                    continue  # ships on purpose, empty; see RETIREMENT_STUB
                 for token in self.FORBIDDEN:
                     with self.subTest(name=name, token=token):
                         self.assertNotIn(token, name)
                 if not name.endswith(".php"):
                     continue
                 source = archive.read(name).decode("utf-8", errors="replace")
+                # manifest.php necessarily names the retirement stub's path in
+                # its copy entry; that mention is the fix, not the regression.
+                source = source.replace(RETIREMENT_STUB, "<retirement-stub>")
                 for token in self.FORBIDDEN:
                     with self.subTest(name=name, token=token):
                         self.assertNotIn(token, source)
@@ -84,8 +103,6 @@ class QuoteLineOnlyPackageTest(unittest.TestCase):
         version = (PACKAGE / "version").read_text().strip()
         candidate = PACKAGE / "releases" / f"sugarai_benchdogs_ext-{version}.zip"
         retired = {
-            "custom/Extension/modules/RevenueLineItems/Ext/Vardefs/"
-            "bd_deliverable_key.php",
             "custom/Extension/modules/bd01_ERP_Quote_Line/Ext/LogicHooks/"
             "bd_rli_refresh.php",
             "custom/modules/bd01_ERP_Quote_Line/BdRliRefreshHook.php",
@@ -93,6 +110,12 @@ class QuoteLineOnlyPackageTest(unittest.TestCase):
         with zipfile.ZipFile(candidate) as new:
             names = set(new.namelist())
             self.assertTrue(retired.isdisjoint(names), retired & names)
+            # 🛑 AND THE ONE THAT MUST BE PRESENT. bd_deliverable_key's vardef is
+            # retired by SHIPPING ITS PATH EMPTY, not by absence: the paths above
+            # belong to a module this package no longer creates, while this one is
+            # a fragment Sugar loads by path from every tenant that ever had it.
+            self.assertIn(RETIREMENT_STUB, names,
+                          "the bd_deliverable_key retirement stub stopped shipping")
             self.assertIn(
                 "custom/Extension/application/Ext/DropdownsStyle/"
                 "sales_stage_dom_style.php",

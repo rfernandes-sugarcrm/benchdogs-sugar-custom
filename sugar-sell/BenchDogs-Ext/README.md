@@ -1,11 +1,38 @@
 # BenchDogs-Ext
 
-Bench Dogs MLP package for Sugar Sell: the `bd_*` fields on Quotes, Accounts,
-Opportunities, Products and Contacts, the quote-led REST actions, the logic
-hooks that drive the pipeline, and Bench's implementations of the Opportunity
-contribution and release-stage contracts. Extension-only: every file installs
+Bench Dogs MLP package for Sugar Sell. Extension-only: every file installs
 through Module Loader into `custom/` — nothing overrides a stock Sugar file,
 and the package ships no module of its own.
+
+> ### 🔒 1508 — this package keeps ONLY the customer-category code
+>
+> Owner, 2026-09-22: *"from all the non vustomer category code we should not
+> ahve other stuff there"*. As of **0.9.42-rc66** what ships is
+>
+> * the two customer-group fields on Account (`bd_customer_group`,
+>   `bd_customer_group_code`), their labels and their record-view placement;
+> * `ErpQuoteOpportunityContribution` — **deliberately still here**, see
+>   [[G282]]: Partial Fulfillment ships a class of the same name at the same
+>   installed path that computes a DIFFERENT number, and which of the two
+>   survives is an open owner call;
+> * the admin `bd-tools/repair-ui` route;
+> * the overwrite stubs that retire this package's own previously installed
+>   fields, hooks and labels — a hosted tenant never loses a file a later build
+>   simply omits, so an emptied file IS the retirement (§CW / G37);
+> * the deployed-METADATA retirements, which are the same duty in the other
+>   medium: `BdQuotesLayoutExtensions::write()` no longer appends the Bench Dogs
+>   quote panel, it SPLICES IT OUT (rc55/rc57), and
+>   `BdOpportunitiesLayoutExtensions` removes 🔒 1044's retired marker. Each is a
+>   one-shot that keeps shipping until it has run everywhere, and each becomes
+>   removable on the same evidence rc66 used for `BdAutoSelectedReport`: an
+>   install log showing it found nothing left to remove;
+> * one-shot tenant-data writes a tenant may not have taken yet —
+>   `erp_integration.partial_order_sales_stage`, which Partial Fulfillment needs
+>   and which does not arrive with a package.
+>
+> rc66 removed the quoted-line grid column ordering, the retired saved-report
+> remover, the `Prototype Closed → Prototype Ordered` stage migration and the
+> release-stage provider stub. **Install rc65 before rc66** — see RELEASE-NOTES.
 
 > ### The bd01 quote mirror is RETIRED
 >
@@ -81,13 +108,23 @@ The shared amount writer must run before the Bench forecast refresh on a
 governing-line trigger. Reversing that order leaves Best/Worst one selection
 behind and also tempts Bench code to duplicate shared currency semantics.
 
-### Release-stage ownership
+### Release-stage ownership — RETIRED FROM THIS PACKAGE (0.9.42-rc66)
 
-Bench supplies `ErpOpportunityReleaseStagePolicy` through Partial
-Fulfillment's fixed neutral seam. It returns Prototype Ordered/80 when the only
-ordered release is the prototype, and Partial Production Ordered/90 once any
-production option is ordered. The provider never saves an Opportunity.
-Partial Fulfillment 1.0.13 validates and performs the only release-stage write.
+Bench no longer supplies `ErpOpportunityReleaseStagePolicy` at all. rc65 reduced
+it to a provider returning `null`; rc66 stops shipping the file. Partial
+Fulfillment decides the stage generically from
+`erp_integration.partial_order_sales_stage`, which `scripts/post_install.php`
+writes when absent, at the probability PF's own `sales_probability_dom` gives.
+PF reaches the same decision whether the file is missing or present-and-null
+(`policy_provider_absent` and `policy_provider_null` share one branch) — proved
+by running PF's own resolver both ways in
+`scripts/tests/test_release_stage_absent_equals_null.py`.
+
+🛑 An EMPTY file at that path would be worse than none: PF returns
+`policy_provider_invalid`, preserves the stage and never reads the config, so
+the stage would silently stop being written.
+
+Partial Fulfillment 1.0.40+ validates and performs the only release-stage write.
 ERP-Epicor 1.1.24-rc9 returns that writer's neutral outcome as
 `release_stage_status` on the order action, allowing hosted acceptance to
 distinguish an update from a preserved stage without exposing record ids,

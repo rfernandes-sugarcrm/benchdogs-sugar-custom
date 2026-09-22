@@ -30,6 +30,12 @@ re-armed itself on the next install, so the guard has to be a test that fails
 if the writer comes back. A test that pinned `reportDef()` would only pin the
 shape of a report that must no longer be built.
 
+0.9.42-rc66 (G280 / 🔒 1508) TAKES THE REMOVER OUT TOO, and the distinction is
+the whole point of this file: the BUILDER guard stays and widens to the whole
+package, because that is the duty owed to a seller; the REMOVER guard flips,
+because a one-shot that has run and found nothing is not a safeguard. The
+evidence for "has run" is the tenant's own install log, quoted on the case.
+
 THE BEHAVIOURAL HALF IS IN PHP, and it RUNS the code rather than scanning it:
 scripts/tests/bench_governing_origin_retired_test.php, wired into CI by
 scripts/tests/test_php_suites.py.
@@ -130,28 +136,46 @@ class TheInstallRemovesRatherThanPlacesTest(unittest.TestCase):
         self.assertNotIn("writeGoverningOriginField", post)
         self.assertIn("BdOpportunitiesLayoutExtensions::remove()", post)
 
-    def test_post_install_REMOVES_the_review_report_and_never_creates_one(self):
-        post = code(POST_INSTALL)
-        self.assertNotIn("BdAutoSelectedReport())->install()", post)
-        self.assertIn("(new BdAutoSelectedReport())->remove()", post)
+    def test_the_package_builds_no_saved_report_at_all(self):
+        """THE DUTY THAT SURVIVES rc66, and the only one that was ever about a
+        seller. G116's trap is a saved report that renders EMPTY on a review
+        queue, which reads as "nothing to review" rather than as broken. The
+        REMOVER is gone (see the class docstring below); the BUILDER must stay
+        gone, and no new one may appear anywhere in the package."""
+        offenders = []
+        for php in PACKAGE.rglob("*.php"):
+            body = code(php)
+            if "save_report" in body or "filters_def" in body or "newBean('Reports')" in body:
+                offenders.append(str(php.relative_to(PACKAGE)))
+        self.assertEqual(offenders, [],
+                         f"this package builds a saved report again: {offenders}")
 
-    def test_the_report_BUILDER_is_gone_and_only_the_remover_ships(self):
-        """The class keeps shipping — the report is a Reports ROW, and dropping
-        the class would leave every rc26..rc56 tenant with nothing to remove
-        it — but it must no longer be able to build one."""
-        report = code(REPORT)
-        self.assertNotIn("function reportDef", report)
-        self.assertNotIn("save_report", report)
-        self.assertNotIn("filters_def", report)
-        self.assertIn("function remove", report)
-        self.assertIn("mark_deleted", report)
+    def test_the_spent_remover_no_longer_ships_or_is_called(self):
+        """🛑 rc66 (G280 / 🔒 1508) DELETES BdAutoSelectedReport. Read the
+        class docstring above before treating this as a loosened guard: the
+        remover is not "unused code that looked safe to drop", it is a one-shot
+        that HAS RUN AND FOUND NOTHING. The tenant's package_install.log for the
+        rc65 install (PID 2069085, 17:16:59 -> 17:17:35, the window that carries
+        post_install's own `running` and `finished` lines) contains NEITHER
+        `removed retired saved report` NOR `missing, retired review report left
+        behind`, while every other BenchDogs-Ext line of that install is there.
+        So remove() executed and the row was already gone — and SugarQuery
+        cannot re-find a row it has already soft-deleted.
 
-    def test_uninstall_still_removes_both(self):
-        """The retirement runs on install now; it must not have stopped running
-        on uninstall."""
+        Both call sites go with it. A call left behind would be worse than the
+        class: post_install guards with file_exists, but a bare require_once on
+        a missing file is a COMPILE error no try/catch can catch."""
+        self.assertFalse(REPORT.exists(), f"{REPORT.name} is shipping again")
+        for script in (POST_INSTALL, PRE_UNINSTALL):
+            with self.subTest(script=script.name):
+                self.assertNotIn("BdAutoSelectedReport", code(script),
+                                 f"{script.name} still calls the deleted remover")
+
+    def test_uninstall_still_removes_the_marker(self):
+        """ANTI-VACUITY for the case above: the uninstall cleanup as a whole
+        must not have been emptied along with the report step."""
         pre = code(PRE_UNINSTALL)
         self.assertIn("BdOpportunitiesLayoutExtensions::remove()", pre)
-        self.assertIn("(new BdAutoSelectedReport())->remove()", pre)
 
 
 if __name__ == "__main__":

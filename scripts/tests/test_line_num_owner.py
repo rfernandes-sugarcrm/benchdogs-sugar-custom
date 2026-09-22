@@ -38,8 +38,13 @@ RETIRED_FIELD = "bd_erp_line_num"
 RETIRED_LABEL = "LBL_BD_ERP_LINE_NUM"
 CORE_FIELD = "erp_quote_line_num"
 
-POLICY = PKG / "custom/modules/Quotes/ErpQuoteHooks/OpportunityReleaseStagePolicy.php"
-GRID = PKG / "custom/modules/Quotes/BdQliColumnsLayout.php"
+#: 🛑 BOTH READERS ARE GONE (0.9.42-rc66, G280 / 🔒 1508). The release-stage
+#: provider and the quoted-lines grid class were the two files this decision
+#: repointed onto core's field; rc66 deletes them, so there is no Bench reader
+#: of `erp_quote_line_num` left to pin. `test_the_surviving_readers_still_read_
+#: something` below became `test_no_reader_survives_and_none_may_return`, which
+#: is the same anti-vacuity duty pointed the other way: the risk is no longer
+#: "the retirement deleted the feature", it is "a reader comes back".
 VARDEF = PKG / "custom/Extension/modules/Products/Ext/Vardefs/bd_line_order_fields.php"
 LABELS = PKG / "custom/Extension/modules/Products/Ext/Language/en_us.bd_line_order.php"
 
@@ -110,45 +115,42 @@ class BenchKeepsNoCopyOfTheErpLineNumber(unittest.TestCase):
         ]
         self.assertEqual(offenders, [], offenders)
 
-    def test_the_surviving_readers_still_read_something(self):
-        """Anti-vacuity for every test above: a suite that only checks ABSENCE
-        passes just as well on a package that deleted the feature outright.
+    def test_no_reader_survives_and_none_may_return(self):
+        """Anti-vacuity, INVERTED for rc66 (G280 / 🔒 1508).
 
-        🛑 THIS USED TO ASSERT *BOTH* READERS READ THE CORE FIELD, and that is no
-        longer true of one of them. When 🔒 1032 repointed Bench off
-        ``bd_erp_line_num``, the release-stage policy read a line NUMBER to map
-        each ordered line onto a prototype/production role. Decision 901/903
-        retired the ``bd01_*`` mirror that supplied the roles, and the policy was
-        rewritten to COUNT COMMITTED LINES instead - it no longer needs an
-        identity per line, so it reads no line number at all. Re-adding one to
-        satisfy this test would put back a read the code has no use for. The grid
-        remains the reader of the core field, and the policy is pinned on what it
-        actually reads now.
+        🛑 WHAT THIS TEST USED TO GUARD AND WHY IT FLIPPED. A suite that only
+        checks ABSENCE passes just as well on a package that deleted the feature
+        outright, so this case existed to prove the two surviving readers still
+        read CORE's field. rc66 deletes both of them: the release-stage provider
+        (Partial Fulfillment decides the stage) and the quoted-lines grid class
+        (the fetch injection was a core column no viewdef draws). "Deleted the
+        feature outright" is now the RULING, not the accident.
+
+        So the duty turns around. The live risk is a Bench reader of a core
+        field coming back - which is the shape 🔒 1508 forbids and the shape
+        🔒 1032 spent a release repointing. Executable code is scanned;
+        comments are not, because the retirement notes have to be free to name
+        the field they retired.
         """
-        grid = _code_without_comments(GRID)
-        self.assertIn(f"'{CORE_FIELD}'", grid)
-        self.assertIn("bdOrderFieldNames", grid)
+        offenders = []
+        for php in _php_sources():
+            code = _code_without_comments(php)
+            if CORE_FIELD in code:
+                offenders.append(str(php.relative_to(ROOT)))
+        self.assertEqual(
+            offenders, [],
+            f"this package reads or injects core's {CORE_FIELD} again: {offenders}")
 
-        # The policy still reads the native line, and still refuses rather than
-        # classifying off a partial read. Both halves are pinned so that the
-        # retirement above cannot quietly become "reads nothing".
-        policy = _code_without_comments(POLICY)
-        self.assertIn("$product->erp_ordered", policy)
-        self.assertIn("BeanFactory::retrieveBean(", policy)
-        self.assertIn("No committed Quote line is visible", policy)
-        self.assertNotIn(RETIRED_FIELD, policy)
-
-    def test_the_grid_injects_exactly_the_core_column(self):
-        """Pins the list itself, not merely that the name appears: an extra
-        Bench field smuggled back into the allowlist is the re-add this guard
-        exists to stop."""
-        grid = GRID.read_text(encoding="utf-8")
-        match = re.search(
-            r"private function bdOrderFieldNames\(\): array\s*\{(.*?)\}", grid, re.S
-        )
-        self.assertIsNotNone(match, "bdOrderFieldNames not found")
-        names = re.findall(r"'([a-z0-9_]+)'", _code_without_comments(match.group(1)))
-        self.assertEqual(names, [CORE_FIELD], names)
+    def test_the_two_deleted_readers_do_not_ship(self):
+        """Named rather than inferred: these are the two files 🔒 1032 repointed
+        and 🔒 1508 removed, and a build that ships either has undone one of
+        them. Shipping the grid class again would also re-arm the fatal
+        `BaseErpLayout::loadView()` call rc65's install logged."""
+        for gone in ("custom/modules/Quotes/BdQliColumnsLayout.php",
+                     "custom/modules/Quotes/BdQliColumnTemplate.php",
+                     "custom/modules/Quotes/ErpQuoteHooks/OpportunityReleaseStagePolicy.php"):
+            with self.subTest(file=gone):
+                self.assertFalse((PKG / gone).exists(), f"{gone} is shipping again")
 
 
 if __name__ == "__main__":

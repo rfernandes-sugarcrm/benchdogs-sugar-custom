@@ -1,176 +1,96 @@
-"""Bench release-stage policy: identity-safe classification, no writes.
+#!/usr/bin/env python3
+"""The Bench release-stage provider no longer ships — AND MAY NEVER COME BACK
+AS AN EMPTY FILE.
 
-THE POLICY NOW READS NATIVE QUOTE LINES, AND HAS ONE OUTCOME. It used to walk the
-`bd01_*` quote mirror to build a `line_num => 'prototype'|'production'` lookup and
-could answer either `Prototype Ordered` (80) or `Partial Production Ordered` (90).
-Decision 901/903 retired the mirror; the policy's own header records that the
-lookup was ALREADY dead - the mirror's `prototype` boolean lost its writer at D16,
-so every ordered line had been reading as production since then.
+🛑 THIS FILE IS INVERTED FROM rc65, WHERE IT ASSERTED THE OPPOSITE. That is not
+a test being loosened to fit a deletion; the two versions guard the same tenant
+against two different states of it, and the sequencing rule (🔒 1508) is what
+moves the package from one to the other:
 
-So `Prototype Ordered` is not a branch the code can reach any more, and the two
-tests that asserted it (`test_prototype_only_release`,
-`test_preloaded_erp_graph_cannot_hide_line_identity_or_prototype_role`) were
-deleted rather than repointed. Restoring that milestone needs a real writer on the
-native line, which is a decision about `custom/`, not a test that can be made to
-pass here.
+  rc65 — the tenant still held the OLD provider, which decided the stage itself.
+         Module Loader deletes nothing (§CW / G37) and `unlink()` is denied to
+         package code (MLP002), so the ONLY way to retire that class was to ship
+         a file over it. rc65 shipped one that returns null. "Stops deciding" is
+         not "stops shipping", and the old assertions were right.
+  rc66 — tenant 1 TOOK rc65 (17:17:35Z; stock carries no Bench Dogs by design,
+         RELEASE-CONTROL.md:757), so the overwrite has landed everywhere it was
+         owed. 🔒 1508: *"a file may only stop shipping once every QA tenant has
+         taken the build that emptied it."* It has. The file goes.
 
-What remains is what the shipped `resolve()` actually decides:
+WHAT THIS FILE DOES NOT DO, ON PURPOSE. It does not try to prove the removal is
+SAFE. An assertion that a deleted file is absent notices deletion and nothing
+else, and the thing that has to be true is about Partial Fulfillment, not about
+this package. That proof is
+`test_release_stage_absent_equals_null.py`, which RUNS PF's own
+`releaseStageDecision()` with the file present and absent and compares the
+decisions. This file guards the one shape that would be worse than either.
 
-  * any committed (`erp_ordered`) native line stages the Opportunity at
-    `Partial Production Ordered` / 90;
-  * nothing committed REFUSES rather than guessing a stage;
-  * every line is re-read with `use_cache => false`, because Order Selected Lines
-    loads `products` before it stamps the selected Product and a Link2 snapshot
-    once showed `erp_ordered=false` after the order had actually succeeded;
-  * the policy never writes - it classifies.
+🚩 THE SHAPE THAT MUST STAY UNREACHABLE. PF loads the provider by hardcoded path
+(`ErpOpportunityValuation.php:288`). If a file EXISTS there and does not define
+`ErpOpportunityReleaseStagePolicy`, PF returns `policy_provider_invalid`, which
+PRESERVES the current stage and NEVER reads the config (`:297-301`) — the
+Opportunity stage would silently stop being written at all. So an empty stub is
+strictly worse than no file. Absent is fine; present-and-empty is not. Every
+case below exists to stop a future cleanup "tidying" the deletion into a stub,
+which is the same class_exists-shaped off switch this estate has paid for twice.
+
+MUTATION-VERIFIED: drop an empty `<?php` at the provider path -> the first two
+cases fail; restore rc65's null stub -> the first case fails and the third
+passes, i.e. the suite tells the two apart rather than just noticing a file.
 """
 
-from pathlib import Path
-import json
-import shutil
-import subprocess
-import unittest
-import zipfile
+from __future__ import annotations
 
+import os
+import unittest
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-PROVIDER = (
-    ROOT / "sugar-sell/BenchDogs-Ext/custom/modules/Quotes/ErpQuoteHooks"
-    / "OpportunityReleaseStagePolicy.php"
-)
+PKG = Path(os.environ.get("BD_PKG", ROOT / "sugar-sell/BenchDogs-Ext"))
 
-ORDERED = {"sales_stage": "Partial Production Ordered", "probability": 90}
+#: PF's hardcoded lookup path, relative to a Sugar root — and therefore the path
+#: inside this package too, because every `custom/` file is copied 1:1.
+POLICY_REL = "custom/modules/Quotes/ErpQuoteHooks/OpportunityReleaseStagePolicy.php"
+POLICY = PKG / POLICY_REL
 
-FIXTURE = r'''
-#[AllowDynamicProperties]
-class SugarBean {
-    public $saves = 0;
-    public function load_relationship($name) { return isset($this->$name); }
-    public function save() { $this->saves++; }
-}
-class BeanFactory {
-    public static $beans = [];
-    public static $retrievals = [];
-    public static function retrieveBean($module, $id, $options = []) {
-        self::$retrievals[] = [$module, $id, $options];
-        return self::$beans[$id] ?? null;
-    }
-}
-class TestLink {
-    public function __construct(public $beans = []) {
-        foreach ($beans as $bean) {
-            if (!empty($bean->id)) { BeanFactory::$beans[$bean->id] = $bean; }
-        }
-    }
-    public function getBeans() { return $this->beans; }
-    public function get() {
-        return array_values(array_map(function ($bean) { return $bean->id; }, $this->beans));
-    }
-}
-require '__PROVIDER__';
-$make = function ($id, $ordered = false, $deleted = false) {
-    $row = new SugarBean();
-    $row->id = $id;
-    $row->erp_ordered = $ordered;
-    $row->deleted = $deleted;
-    return $row;
-};
-$quote = new SugarBean();
-$quote->id = 'owned-quote';
-'''.replace("__PROVIDER__", PROVIDER.as_posix())
+CLASS_NAME = "ErpOpportunityReleaseStagePolicy"
 
 
-@unittest.skipUnless(shutil.which("php"), "requires PHP 8.2 build-test image")
-class ReleaseStagePolicyTest(unittest.TestCase):
-    def execute(self, scenario):
-        result = subprocess.run(
-            ["php", "-r", FIXTURE + scenario + r'''
-try { $decision = (new ErpOpportunityReleaseStagePolicy())->resolve($quote); }
-catch (UnexpectedValueException $e) { $error = $e->getMessage(); }
-echo json_encode(['decision' => $decision ?? null, 'error' => $error ?? null,
-    'quote_saves' => $quote->saves, 'retrievals' => BeanFactory::$retrievals]);
-'''], cwd=ROOT, capture_output=True, text=True,
-        )
-        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
-        self.assertEqual(result.stderr, "")
-        return json.loads(result.stdout)
+class RetiredProviderDoesNotShip(unittest.TestCase):
+    def test_the_provider_path_is_not_in_the_build(self):
+        """rc66's deletion. On a tenant that took rc65 the null stub simply
+        stays on disk and PF keeps answering `policy_provider_null`; on a fresh
+        one PF answers `policy_provider_absent`. The companion probe proves
+        those two reach the same stage."""
+        self.assertFalse(
+            POLICY.exists(),
+            f"{POLICY_REL} is shipping again — either the deletion was reverted "
+            "or something re-created it; if a tenant genuinely still holds the "
+            "OLD deciding provider, ship rc65's NULL stub, never an empty file")
 
-    def test_a_committed_line_stages_the_opportunity_and_writes_nothing(self):
-        observed = self.execute(
-            "$quote->products = new TestLink([$make('qli-production', true)]);"
-        )
-        self.assertEqual(observed["decision"], ORDERED, observed)
-        self.assertEqual(observed["retrievals"], [
-            ["Products", "qli-production", {"use_cache": False}],
-        ])
-        self.assertEqual(observed["quote_saves"], 0)
+    def test_no_file_anywhere_in_the_package_defines_the_class(self):
+        """The off-switch guard. A file at ANY path that declares the class
+        without answering would be picked up by PF only at its own hardcoded
+        path — but a class of this name defined anywhere in this package means
+        somebody is writing a provider again, which 🔒 1508 says is core's job.
+        """
+        offenders = [
+            str(p.relative_to(PKG))
+            for p in PKG.rglob("*.php")
+            if f"class {CLASS_NAME}" in p.read_text(encoding="utf-8")
+        ]
+        self.assertEqual(offenders, [], f"this package defines {CLASS_NAME} again: {offenders}")
 
-    def test_one_committed_line_among_uncommitted_ones_is_enough(self):
-        observed = self.execute(r'''
-$quote->products = new TestLink([
-    $make('qli-a', false), $make('qli-b', true), $make('qli-c', false)
-]);
-''')
-        self.assertEqual(observed["decision"], ORDERED, observed)
-
-    def test_no_visible_release_refuses_and_logs_upstream(self):
-        observed = self.execute(
-            "$quote->products = new TestLink([$make('qli-production', false)]);"
-        )
-        self.assertIsNone(observed["decision"])
-        self.assertIn("No committed Quote line", observed["error"])
-
-    def test_a_deleted_line_is_not_a_committed_release(self):
-        observed = self.execute(
-            "$quote->products = new TestLink([$make('qli-gone', true, true)]);"
-        )
-        self.assertIsNone(observed["decision"])
-        self.assertIn("No committed Quote line", observed["error"])
-
-    def test_preloaded_relationship_snapshot_cannot_hide_committed_release(self):
-        """The stale Link2 bean says uncommitted; the committed row says ordered.
-        Reading through BeanFactory with `use_cache => false` is what makes the
-        second one win."""
-        observed = self.execute(r'''
-$stale = $make('qli-production', false);
-$quote->products = new TestLink([$stale]);
-$fresh = clone $stale;
-$fresh->erp_ordered = true;
-BeanFactory::$beans[$fresh->id] = $fresh;
-''')
-        self.assertEqual(observed["decision"], ORDERED, observed)
-        self.assertEqual(observed["retrievals"], [
-            ["Products", "qli-production", {"use_cache": False}],
-        ])
-
-    def test_unreadable_lines_refuse_rather_than_classify_on_a_partial_read(self):
-        scenarios = {
-            # The relationship will not load at all.
-            "no products link": "",
-            # A line identity that resolves to no row: a partial read, not an
-            # empty release.
-            "unresolvable line": r'''
-$quote->products = new TestLink([$make('qli-present', true)]);
-unset(BeanFactory::$beans['qli-present']);
-''',
-        }
-        for name, scenario in scenarios.items():
-            with self.subTest(scenario=name):
-                observed = self.execute(scenario)
-                self.assertTrue(observed["error"], observed)
-                self.assertIsNone(observed["decision"])
-                self.assertEqual(observed["quote_saves"], 0)
-
-    def test_built_package_contains_policy_and_partial_dependency(self):
-        package = ROOT / "sugar-sell/BenchDogs-Ext"
-        version = (package / "version").read_text().strip()
-        archive = package / "releases" / f"sugarai_benchdogs_ext-{version}.zip"
-        with zipfile.ZipFile(archive) as zipped:
-            path = "custom/modules/Quotes/ErpQuoteHooks/OpportunityReleaseStagePolicy.php"
-            self.assertEqual(zipped.read(path), (package / path).read_bytes())
-            manifest = zipped.read("manifest.php").decode()
-            self.assertIn("sugarai_erp_epicor_partialfulfillment", manifest)
-            self.assertRegex(manifest, r"'version'\s*=>\s*'1\.0\.13'")
+    def test_the_hooks_directory_still_carries_its_other_file(self):
+        """ANTI-VACUITY. The two cases above would also pass if the whole
+        `ErpQuoteHooks/` tree had been deleted by accident, or if `PKG` pointed
+        at nothing. `OpportunityContribution.php` is still shipped — DELIBERATELY,
+        see [[G282]]: Partial Fulfillment's copy of that same path computes a
+        DIFFERENT number, so it was not removed with the rest of rc66. If this
+        case ever fails, read G282 before 'fixing' it."""
+        contribution = PKG / "custom/modules/Quotes/ErpQuoteHooks/OpportunityContribution.php"
+        self.assertTrue(contribution.is_file(),
+                        "the ErpQuoteHooks tree is gone entirely — the cases above prove nothing")
 
 
 if __name__ == "__main__":

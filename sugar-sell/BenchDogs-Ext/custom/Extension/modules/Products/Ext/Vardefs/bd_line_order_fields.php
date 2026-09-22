@@ -11,9 +11,10 @@
 // What stood here was the Kinetic line xref for the native quoted line items.
 // It is now CORE'S FIELD: `Products.erp_quote_line_num`, an ERP-Core vardef
 // written by connector-core's `QuoteLineCoreTransformer`. Both Bench readers
-// were repointed onto it in the same change — the release-stage policy
-// (`custom/modules/Quotes/ErpQuoteHooks/OpportunityReleaseStagePolicy.php`) and
-// the quoted-lines grid column (`custom/modules/Quotes/BdQliColumnsLayout.php`).
+// were repointed onto it in the same change — the release-stage policy and the
+// quoted-lines grid column. 0.9.42-rc66 (G280 / 🔒 1508) deleted BOTH of those
+// readers outright, so this package now names the core field nowhere at all;
+// core owns the field, its writer and its display.
 //
 // It was never a value only Bench could compute: core's `rung_key()` has always
 // built `<company>__<QuoteNum>_<QuoteLine>_<QtyNum>`, so the number sat inside

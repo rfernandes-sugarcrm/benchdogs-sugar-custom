@@ -14,20 +14,19 @@
  * custom/modules/<M>/clients/base/views/record/record.php, a file this package
  * does not ship and the uninstaller therefore never touches.
  *
- * So before this script existed, removing the package left three kinds of
- * wreckage behind, and an admin had to know they were there to fix them:
+ * So before this script existed, removing the package left deployed-metadata
+ * wreckage behind, and an admin had to know it was there to fix it:
  *
  *   1. The "Bench Dogs ERP" panel stayed on the Quotes record view, pointing at
  *      five bd_* fields whose vardefs had just been deleted.
- *   2. The Bench Dogs buttons stayed on the Quotes and Accounts record views,
- *      each pointing at a custom field type whose JavaScript had just been
- *      deleted, and the two customer group fields stayed on Accounts.
- *   3. Worst, because it damaged a DIFFERENT package: ERP-Epicor's
- *      advanced_quote_button, create_erp_order_button and
- *      refresh_price_availability_button are deleted from the deployed Quotes
- *      view at install time, and nothing ever put them back. Uninstalling Bench
- *      Dogs left ERP-Epicor three buttons short, with reinstalling ERP-Epicor
- *      the only way to recover them.
+ *   2. The two customer group fields stayed on Accounts.
+ *
+ * 🛑 G276 / 🔒 1504 - NO BUTTON LOGIC HERE EITHER. Until rc64 step 1 below also
+ * dropped this package's retired bd_* buttons and put back the ERP-Epicor
+ * buttons decision 91 had stripped and stashed, then blanked the stash. The
+ * package no longer strips anything, so there is nothing of ours to hand back,
+ * and the owner's ruling removes every add/remove/stash of a record-view
+ * button from this package. The buttons array is left exactly as deployed.
  *
  * PRE, NOT POST
  *
@@ -58,7 +57,7 @@
  * A missing helper or a failed repair logs and moves on; it never aborts the
  * uninstall. A half-removed package is worse than a fully removed one with one
  * layout still to tidy by hand, and an instance that has ERP-Epicor uninstalled
- * first legitimately has no BaseErpLayout for BdQliColumnsLayout to extend.
+ * first legitimately has no BaseErpLayout for a layout helper to extend.
  *
  * Removing what is not there is a no-op throughout, so this is also safe on an
  * instance that never received some of what it undoes.
@@ -74,9 +73,8 @@
 // to; it is emitted exactly once in the life of an installation.
 $GLOBALS['log']->fatal('BenchDogs-Ext: pre_uninstall running - cleaning up deployed metadata');
 
-// 1. Quotes record view: drop our panel and buttons, and hand ERP-Epicor
-// back the three buttons writeButtons() took. One deploy cycle, inside
-// BdQuotesLayoutExtensions::remove().
+// 1. Quotes record view: drop our retired panel. Buttons are not touched
+// (G276 / 🔒 1504); see the note at the top of this file.
 try {
     $bdQuotesHelper = 'custom/modules/Quotes/BdQuotesLayoutExtensions.php';
     if (file_exists($bdQuotesHelper)) {
@@ -85,9 +83,6 @@ try {
         }
         if (class_exists('BdQuotesLayoutExtensions')) {
             BdQuotesLayoutExtensions::remove();
-            // Only after the restore has actually run, so a failure above
-            // leaves the stash intact for a manual re-run.
-            BdQuotesLayoutExtensions::clearStash();
         }
     } else {
         $GLOBALS['log']->error("BenchDogs-Ext: {$bdQuotesHelper} missing; Quotes record view not cleaned up");
@@ -96,7 +91,7 @@ try {
     $GLOBALS['log']->error('BenchDogs-Ext: Quotes layout cleanup failed: ' . $e->getMessage());
 }
 
-// 2. Accounts record view: our button and the two REQ-19 fields.
+// 2. Accounts record view: the two REQ-19 fields.
 try {
     $bdAccountsHelper = 'custom/modules/Accounts/BdAccountsLayoutExtensions.php';
     if (file_exists($bdAccountsHelper)) {
@@ -136,47 +131,27 @@ try {
 } catch (Throwable $e) {
     $GLOBALS['log']->error('BenchDogs-Ext: Opportunities layout cleanup failed: ' . $e->getMessage());
 }
-try {
-    $bdReportHelper = 'custom/modules/Opportunities/BdAutoSelectedReport.php';
-    if (file_exists($bdReportHelper)) {
-        if (!class_exists('BdAutoSelectedReport', false)) {
-            require_once $bdReportHelper;
-        }
-        if (class_exists('BdAutoSelectedReport')) {
-            (new BdAutoSelectedReport())->remove();
-        }
-    } else {
-        $GLOBALS['log']->error("BenchDogs-Ext: {$bdReportHelper} missing; review report left behind");
-    }
-} catch (Throwable $e) {
-    $GLOBALS['log']->error('BenchDogs-Ext: review report cleanup failed: ' . $e->getMessage());
-}
+// 🛑 THE SAVED-REPORT REMOVAL IS GONE FROM THE UNINSTALL TOO (0.9.42-rc66,
+// G280 / 🔒 1508), and for the same reason it left post_install: the row is
+// already gone. rc65's install ran remove() and logged neither a deletion nor
+// a missing helper (tenant package_install.log, PID 2069085, 17:16:59-17:17:35),
+// so there was nothing to find - and SugarQuery cannot re-find a row it has
+// already soft-deleted. See post_install.php for the full reading.
 
-// 3. The quoted-line-items grid: take the injected line-number column back
-// out of the Quotes product_bundle_items allowlist. That column is now CORE'S
-// `erp_quote_line_num` rather than Bench's retired `bd_erp_line_num` (🔒 1032)
-// — this still removes it on uninstall, because Bench is what injected it;
-// ERP-Core's own ProductsLayout does not draw it. This one had an uninstall() method
-// all along and nothing ever called it. The class only defines itself when
-// ERP-Epicor is still installed (it extends BaseErpLayout), which is what
-// the class_exists guard after the require is for.
-try {
-    $bdQliHelper = 'custom/modules/Quotes/BdQliColumnsLayout.php';
-    if (file_exists($bdQliHelper)) {
-        if (!class_exists('BdQliColumnsLayout', false)) {
-            require_once $bdQliHelper;
-        }
-        if (class_exists('BdQliColumnsLayout')) {
-            (new BdQliColumnsLayout())->uninstall();
-        } else {
-            $GLOBALS['log']->info('BenchDogs-Ext: BdQliColumnsLayout not defined (ERP-Core absent); nothing to undo on the line items grid');
-        }
-    }
-} catch (Throwable $e) {
-    $GLOBALS['log']->error('BenchDogs-Ext: QLI columns cleanup failed: ' . $e->getMessage());
-}
+// 3. The quoted-line-items grid: NOTHING TO DO, and deliberately no call here.
+// BdQliColumnsLayout is deleted (0.9.42-rc66). Its uninstall() took CORE's
+// `erp_quote_line_num` back out of the Quotes product_bundle_items allowlist,
+// which this package had injected on core's behalf while core's own
+// ProductsLayout did not draw it. Nothing draws it in any package, so the entry
+// renders nothing and removing it was never a seller-visible act; what it WOULD
+// have been is this package continuing to edit a core field's fetch list on the
+// way out. It stays where it is: core's field, in core's collection.
 
 // 4. Dashboard tiles: NOTHING TO DO, and deliberately no call here.
+//
+// 0.9.42-rc65 deleted BdDemoDashboards.php and the install-side call with it
+// (G280 / 🔒 1507), so there is no longer even a class to ask. What an earlier
+// install baked into a tenant's dashboards stays; see below.
 //
 // Until the quote mirror was retired (decisions 901/903/904/905) this step ran
 // BdDemoDashboards::uninstall() to strip the tiles that listed a module the
@@ -190,8 +165,26 @@ try {
 // modules. This package can no longer remove them; they have to be deleted
 // from the dashboard by hand.
 
-// WHAT THIS DELIBERATELY DOES NOT DO
+// 5. Stage dropdown keys: NOT OURS TO REMOVE ANY MORE, and that is the fix.
 //
+// G234 built this step for a real defect: post_install had appended the stage
+// vocabulary through ModuleInstaller::install_languages() under id_name
+// 'zz_bd_stage_doms', neither uninstall route could reach that file, and a
+// clean 16/16 uninstall left stock serving "Prototype Ordered" and "Partial
+// Production Ordered" on a tenant where ZERO opportunities held either.
+//
+// 🔒 1506 removed the CAUSE instead of teaching this file to clean up after it:
+// Partial Fulfillment now owns both sales stages (and has always owned
+// quote_stage_dom's 'Partially Fulfilled'), 0.9.42-rc65 declares none of them,
+// and post_install.php deletes the accumulated zz_bd_stage_doms fragment once,
+// on install, through uninstall_languages(). Removing the KEYS here would now
+// delete ANOTHER package's vocabulary from under records that hold it - the
+// same damage G234 existed to prevent, pointed the other way. The owner's
+// instruction is explicit: a Bench Dogs uninstall must stop removing them.
+//
+// Nothing replaces this step. Uninstalling this package leaves PF's stages,
+// their probabilities and their styles exactly where they are.
+
 // The *_cstm columns behind the bd_* fields are left in the database. Removing
 // a vardef does not drop its column, and dropping them here would make the
 // uninstall destructive in a way `remove_tables => prompt` never asked about:
@@ -199,9 +192,7 @@ try {
 // way back. With the vardefs gone Sugar neither reads nor displays them, so
 // they cost nothing but disk.
 //
-// The stage dropdown keys post_install.php appends (quote_stage_dom's
-// 'Partially Fulfilled', sales_stage_dom's 'Prototype Ordered' and 'Partial
-// Production Closed') are also left alone, for a stronger reason: quotes and
-// opportunities on this instance HOLD those values. Removing the key would
-// leave those records displaying a raw string with no label, which is worse
-// than an unused dropdown entry.
+// The stage dropdown keys are left alone because they are not this package's
+// any more (step 5). No uninstall of Bench Dogs edits a record to free a key
+// either: restaging an opportunity to make a package's own cleanup possible
+// would be destructive in a way `remove_tables => prompt` never asked about.
