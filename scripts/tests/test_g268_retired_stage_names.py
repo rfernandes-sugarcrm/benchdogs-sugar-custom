@@ -170,22 +170,37 @@ def _sibling_repo():
     return None
 
 
+PF_PINNED = FIX / "pf_sales_stage_override.php"
+PF_PROVENANCE = FIX / "PF_PROVENANCE.json"
+
+
 def pf_fragment_text():
-    """PF's REAL stage fragment. The sibling checkout is usually parked on an
-    older build branch, so fall back to git history rather than skipping — a
-    control that skips whenever that is true is a control that never runs."""
+    """PF's REAL stage fragment, from the pinned copy.
+
+    Pinned rather than read live because the sibling repo is private and absent
+    in CI, and a control that skips there is not a control. The copy is compared
+    against the live file by test_the_pinned_pf_copy_matches_core whenever that
+    file is reachable, so a stale pin is loud."""
+    return PF_PINNED.read_text(encoding="utf-8")
+
+
+def pf_live_text(name: str):
+    """The live PF file, or None. It lives on a branch the sibling checkout is
+    usually not on, so fall back to git history before giving up."""
     repo = _sibling_repo()
     if repo is None:
         return None
-    live = repo / PF_STAGE_REL
+    import json as _json
+    rel = _json.loads(PF_PROVENANCE.read_text())["files"][name]["source"]
+    live = repo / rel
     if live.is_file():
         return live.read_text(encoding="utf-8", errors="replace")
     found = subprocess.run(["git", "-C", str(repo), "log", "--all", "--format=%H", "-1",
-                            "--", PF_STAGE_REL], capture_output=True, text=True)
+                            "--", rel], capture_output=True, text=True)
     shas = found.stdout.strip().splitlines()
     if not shas:
         return None
-    shown = subprocess.run(["git", "-C", str(repo), "show", f"{shas[0]}:{PF_STAGE_REL}"],
+    shown = subprocess.run(["git", "-C", str(repo), "show", f"{shas[0]}:{rel}"],
                            capture_output=True, text=True)
     return shown.stdout if shown.returncode == 0 else None
 
@@ -230,6 +245,19 @@ class RetiredStageNames(unittest.TestCase):
     def setUpClass(cls):
         cls.pf = pf_fragment_text()
 
+    def test_the_pinned_pf_copy_matches_core(self):
+        """Staleness is loud, never silent: where the real file is reachable -
+        every local run - the pin must equal it. Where it is not (CI), this
+        passes rather than skipping, and the pin is what the other cases use."""
+        import json as _json
+        for name in _json.loads(PF_PROVENANCE.read_text())["files"]:
+            live = pf_live_text(name)
+            if live is None:
+                continue
+            with self.subTest(file=name):
+                self.assertEqual((FIX / name).read_text(encoding="utf-8"), live,
+                                 f"{name} drifted from Partial Fulfillment; re-pin it")
+
     def fragments(self):
         frags = {"bd_stage_doms": (PKG / "custom/Extension/application/Ext/Language"
                                    "/en_us.bd_stage_doms.php").read_text(),
@@ -249,8 +277,6 @@ class RetiredStageNames(unittest.TestCase):
     def test_removal_is_what_retires_them(self):
         """rc65's install deletes the accumulated fragment. Serving WITHOUT it is
         what the tenant gets afterwards: no retired pair anywhere, in either dom."""
-        if not self.pf:
-            self.skipTest("erp-integration-sugar checkout not present beside this repo")
         out = run(BENCH_HISTORY + [["serve", ["bd_stage_doms", "erp_replace",
                                               "_override_en_us.partial_fulfillment_sales_stage"]]],
                   self.fragments())
@@ -264,8 +290,6 @@ class RetiredStageNames(unittest.TestCase):
         """The half that matters to a seller: Bench declares nothing now, so if
         PF's fragment did not carry the stages, every Bench Opportunity holding
         one would render a raw key."""
-        if not self.pf:
-            self.skipTest("erp-integration-sugar checkout not present beside this repo")
         out = run([["serve", ["bd_stage_doms", "erp_replace",
                               "_override_en_us.partial_fulfillment_sales_stage"]]],
                   self.fragments())

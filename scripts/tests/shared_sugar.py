@@ -12,9 +12,35 @@ pin still matches, so the fallback can never quietly drift away from core.
 from __future__ import annotations
 
 import pathlib
+import subprocess
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-WORKSPACE = ROOT.parent
+
+
+def _workspace() -> pathlib.Path:
+    """The directory the two checkouts sit in.
+
+    ROOT.parent is right for a normal clone and WRONG for a git worktree, which
+    lives under /private/tmp or .claude/worktrees - and that silently turned the
+    drift guard off for every worktree run (the same trap
+    test_create_opp_quote_button_retired documents). Git's common dir points at
+    the MAIN checkout's .git wherever the worktree happens to be, so ask git
+    first and keep ROOT.parent as the fallback.
+    """
+    try:
+        common = subprocess.run(
+            ["git", "-C", str(ROOT), "rev-parse", "--git-common-dir"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        candidate = (ROOT / common).resolve().parent.parent
+        if (candidate / "erp-integration-sugar").is_dir():
+            return candidate
+    except (OSError, subprocess.CalledProcessError):
+        pass
+    return ROOT.parent
+
+
+WORKSPACE = _workspace()
 SIBLING = WORKSPACE / "erp-integration-sugar"
 FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures/shared-sugar"
 
@@ -28,6 +54,15 @@ SOURCES = {
     "ErpQuoteLineRollup.php":
         "sugar-sell/ERP-Epicor-PartialFulfillment/custom/modules/Quotes/"
         "ErpQuoteLineRollup.php",
+    # Added 0.9.42-rc65 for G276: the Quotes record-view buttons are CORE's to
+    # add back after this package stopped stripping them, and the proof has to
+    # run core's REAL add-if-absent over core's REAL button definitions. Pinned
+    # rather than sibling-gated, for the reason this whole mechanism exists: a
+    # test that is collected and then skipped is documentation, not a guard.
+    "BaseErpLayout.php":
+        "sugar-sell/ERP-Core/scripts/BaseErpLayout.php",
+    "QuotesLayout.php":
+        "sugar-sell/ERP-Epicor/scripts/Modules/QuotesLayout.php",
 }
 
 

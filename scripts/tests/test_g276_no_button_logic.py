@@ -59,33 +59,20 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import shared_sugar
+
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 PKG = Path(os.environ.get("BD_PKG", ROOT / "sugar-sell/BenchDogs-Ext"))
 
 
-def _sibling() -> Path:
-    """erp-integration-sugar beside this repo. A git worktree lives elsewhere
-    (e.g. /private/tmp), so also look beside the MAIN checkout via git's common
-    dir; ERP_INTEGRATION_SUGAR overrides both."""
-    if os.environ.get("ERP_INTEGRATION_SUGAR"):
-        return Path(os.environ["ERP_INTEGRATION_SUGAR"]) / "sugar-sell"
-    candidates = [ROOT.parent / "erp-integration-sugar"]
-    try:
-        common = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--git-common-dir"],
-                                capture_output=True, text=True, check=True).stdout.strip()
-        candidates.append((ROOT / common).resolve().parent.parent / "erp-integration-sugar")
-    except (OSError, subprocess.CalledProcessError):
-        pass
-    for cand in candidates:
-        if (cand / "sugar-sell").is_dir():
-            return cand / "sugar-sell"
-    return candidates[0] / "sugar-sell"
-
-
-SIBLING = _sibling()
-CORE_BASE = SIBLING / "ERP-Core/scripts/BaseErpLayout.php"
-CORE_QUOTES = SIBLING / "ERP-Epicor/scripts/Modules/QuotesLayout.php"
+#: Core's layout installer and the Quotes layout that drives it. PINNED under
+#: fixtures/shared-sugar (scripts/refresh_shared_fixtures.py), so the proof that
+#: CORE restores the buttons runs in CI too - not only on a laptop that happens
+#: to have both checkouts. test_shared_fixture_drift.py fails the moment the pin
+#: and the real file diverge.
+CORE_BASE = shared_sugar.resolve("BaseErpLayout.php")
+CORE_QUOTES = shared_sugar.resolve("QuotesLayout.php")
 
 COPIED = [
     "scripts/post_install.php",
@@ -266,8 +253,6 @@ class BenchDogsInstallLeavesButtonsAlone(unittest.TestCase):
 
 
 @unittest.skipUnless(shutil.which("php"), "requires php")
-@unittest.skipUnless(CORE_BASE.is_file() and CORE_QUOTES.is_file(),
-                     "erp-integration-sugar checkout not beside this repo")
 class CoreRestoresAndBenchDogsKeeps(unittest.TestCase):
 
     def test_a_stripped_bench_view_is_restored_by_core_and_stays_restored(self):
