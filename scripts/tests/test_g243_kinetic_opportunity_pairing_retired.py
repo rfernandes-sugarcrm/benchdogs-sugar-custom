@@ -71,6 +71,7 @@ MUTATION-VERIFIED (each applied, suite re-run, listed failure observed):
 """
 
 import json
+import re
 import shutil
 import subprocess
 import tempfile
@@ -434,6 +435,15 @@ class NoOtherCreatorAndTheButtonSurvives(unittest.TestCase):
             if rel == ALLOWED_CREATOR:
                 continue
             code = _strip_php_comments(path)
+            # A bean handed straight to SugarQuery::from() is a QUERY SEED: it is
+            # never saved, so it cannot create anything. G234's pre_uninstall
+            # counts Opportunities on a Bench stage exactly this way (read-only,
+            # team security off) - integrating G243 onto G234 for rc64 is what
+            # surfaced it. Only that idiom is set aside; any other
+            # newBean('Opportunities') still fails this case.
+            code = re.sub(
+                r"->from\(\s*BeanFactory::newBean\(\s*['\"]Opportunities['\"]\s*\)",
+                "->from(<query seed>", code)
             if "'Opportunities'" in code or '"Opportunities"' in code:
                 if "newBean" in code or "getBean" in code:
                     offenders.append(rel)
