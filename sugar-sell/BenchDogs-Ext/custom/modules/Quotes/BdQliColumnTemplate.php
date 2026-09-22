@@ -135,36 +135,24 @@ $viewdefs['Products']['base']['view']['quote-data-group-list'] = array(
                         'base_rate',
                     ),
                 ),
-                array(
-                    'name' => 'erp_line_links',
-                    'type' => 'fieldset',
-                    'label' => 'LBL_ERP_LINE_LINKS',
-                    'labelModule' => 'Products',
-                    'inline' => true,
-                    'equal_spacing' => true,
-                    'show_child_labels' => false,
-                    'sortable' => false,
-                    'fields' => array(
-                        array(
-                            'name' => 'epicor_line_deeplink_url',
-                            'type' => 'erp-line-link',
-                            'url_field' => 'epicor_line_deeplink_url',
-                            'icon_class' => 'sicon-link',
-                            'tooltip_label' => 'LBL_EPICOR_LINE_DEEPLINK_URL',
-                            'drawer_title_label' => 'LBL_EPICOR_LINE_DEEPLINK_URL',
-                            'readonly' => true,
-                        ),
-                        array(
-                            'name' => 'epicor_eto_deeplink_url',
-                            'type' => 'erp-line-link',
-                            'url_field' => 'epicor_eto_deeplink_url',
-                            'icon_class' => 'sicon-settings',
-                            'tooltip_label' => 'LBL_EPICOR_ETO_DEEPLINK_URL',
-                            'drawer_title_label' => 'LBL_EPICOR_ETO_DEEPLINK_URL',
-                            'readonly' => true,
-                        ),
-                    ),
-                ),
+                // 🛑 erp_line_links IS NOT LISTED HERE ANY MORE (G276 / 🔒 1504,
+                // and 🔒 687 / 🔒 709 before it). The fieldset carried the two
+                // per-line row actions "Open Line in ERP" and "Engineering".
+                // The owner: *"dont have it at all as actiosn"*. ERP-Core acts
+                // on that by REMOVING the fieldset on every install
+                // (ProductsLayout::install() ->
+                // removeFieldsFromDataGroupListView(erpLineLinkFields())), and
+                // this package named it in the authored list, so every Bench
+                // Dogs install put it straight back - the buttons defect one
+                // level down, on grid row actions instead of header buttons.
+                //
+                // Naming it is all it took, because applyColumnOrder() merges
+                // "the template's fields in the template's order, then every
+                // deployed field the template does not name". Not naming it is
+                // therefore the whole Bench-side fix: core owns the removal,
+                // and a copy still sitting in a tenant's deployed grid is
+                // carried untouched by the merge until core's next install
+                // takes it out.
                 array(
                     'name' => 'subtotal',
                     'type' => 'currency',

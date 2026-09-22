@@ -186,33 +186,24 @@ class CreateOppQuoteButtonRetiredStatic(unittest.TestCase):
         for field in ("bd_customer_group", "bd_customer_group_code"):
             self.assertIn(field, src, f"{field} lost from the Accounts layout (🔒 1044)")
 
-    def test_the_two_packages_still_share_one_label(self):
-        """THE ROOT CAUSE, pinned.
+    def test_the_bench_label_is_gone_and_cores_is_not(self):
+        """THE ROOT CAUSE, retired rather than merely pinned.
 
-        A name-keyed guard cannot see a duplicate keyed on the label. If this
-        assertion ever fails because the labels diverged, the original guard
-        would silently start "working" again - and the next person to re-add the
-        Bench button would not be caught by it.
+        The duplicate reached a seller because the two packages' buttons had
+        DIFFERENT names and the SAME label, so a name-keyed dedupe guard could
+        not see it. rc64 empties this package's label file (G276 / 🔒 1504): with
+        no Bench button and no Bench button logic, a Bench label could only make
+        a retired action read as supported. Core keeps its own label, so the
+        action the seller actually presses is still named.
         """
+        bd = BD_LABELS.read_text(encoding="utf-8")
+        self.assertNotIn("LBL_BD_CREATE_OPP_QUOTE_BUTTON'] =", bd,
+                         "the Bench button label is back; core's button owns this action")
         if not EPICOR_LABELS.exists():
             self.skipTest("erp-integration-sugar checkout not present beside this repo")
-        bd = BD_LABELS.read_text(encoding="utf-8")
         erp = EPICOR_LABELS.read_text(encoding="utf-8")
-
-        def label_of(text, key):
-            m = re.search(rf"\$mod_strings\['{key}'\]\s*=\s*'([^']+)'", text)
-            return m.group(1) if m else None
-
-        bd_label = label_of(bd, "LBL_BD_CREATE_OPP_QUOTE_BUTTON")
-        erp_label = label_of(erp, "LBL_ERP_CREATE_OPP_QUOTE_BUTTON")
-        self.assertIsNotNone(bd_label)
-        self.assertIsNotNone(erp_label)
-        self.assertEqual(
-            bd_label, erp_label,
-            "The two packages' buttons no longer share a label. That is the exact "
-            "condition under which a NAME-keyed dedupe guard looks correct and is "
-            "not - see this file's docstring.",
-        )
+        self.assertRegex(erp, r"\$mod_strings\['LBL_ERP_CREATE_OPP_QUOTE_BUTTON'\]\s*=\s*'[^']+'",
+                         "core no longer labels its own Create Opportunity & Quote button")
 
 
 class CreateOppQuoteButtonRetiredBehaviour(unittest.TestCase):

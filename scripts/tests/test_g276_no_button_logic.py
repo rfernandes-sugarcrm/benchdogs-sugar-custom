@@ -305,6 +305,26 @@ class NoButtonLogicShipped(unittest.TestCase):
                 offenders.append(f"{path.relative_to(PKG)}: {m.group(0)}")
         self.assertEqual(offenders, [], "record-view button logic is still shipped")
 
+    @unittest.skipUnless(shutil.which("php"), "requires php")
+    def test_the_button_label_files_declare_nothing(self):
+        """A label with no action behind it keeps a retired button reading as
+        supported in Studio, the report builder and column pickers - the rule
+        this package states in en_us.bd_erp_fields.php. EXECUTED, not grepped:
+        the files are included with $mod_strings pre-seeded, and must add
+        nothing. They still SHIP, because a file a previous install copied is
+        not removed by leaving it out of a later build."""
+        for rel in ("custom/Extension/modules/Quotes/Ext/Language/en_us.bd_action_buttons.php",
+                    "custom/Extension/modules/Accounts/Ext/Language/en_us.bd_action_buttons.php"):
+            with self.subTest(file=rel):
+                path = PKG / rel
+                self.assertTrue(path.is_file(), f"{rel} must keep shipping to overwrite the tenant's copy")
+                code = ("$mod_strings = ['LBL_SEED' => 'seed'];"
+                        f"include {json.dumps(str(path))};"
+                        "echo json_encode($mod_strings);")
+                out = subprocess.run(["php", "-r", code], capture_output=True, text=True, check=True)
+                self.assertEqual(json.loads(out.stdout), {"LBL_SEED": "seed"},
+                                 f"{rel} still declares labels for retired buttons")
+
     def test_neither_layout_class_has_a_button_method(self):
         for rel in ("custom/modules/Quotes/BdQuotesLayoutExtensions.php",
                     "custom/modules/Accounts/BdAccountsLayoutExtensions.php"):

@@ -123,6 +123,20 @@ class QliColumnMergeTest(unittest.TestCase):
         names = self.out["names"]
         self.assertEqual(len(names), len(set(names)), f"duplicates in {names}")
 
+    def test_the_erp_line_row_actions_are_NOT_re_added(self):
+        """🔒 687 ("dont have it at all as actiosn") / 🔒 709, and G276 / 🔒 1504.
+
+        The erp_line_links fieldset carries the per-line "Open Line in ERP" and
+        "Engineering" row actions. ERP-Core REMOVES it on every install
+        (ProductsLayout::install() -> removeFieldsFromDataGroupListView(
+        erpLineLinkFields())). While this package named it in the authored
+        column list, every Bench Dogs install put it back - the header-button
+        defect one level down. The deployed grid handed to the harness does not
+        contain it, i.e. core has just removed it; the install must leave it
+        removed."""
+        self.assertNotIn("erp_line_links", self.out["names"],
+                         "the install re-added the per-line ERP row actions")
+
     def test_it_actually_wrote(self):
         self.assertGreaterEqual(self.out["saves"], 1)
 
