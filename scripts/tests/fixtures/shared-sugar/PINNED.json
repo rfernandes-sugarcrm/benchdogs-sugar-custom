@@ -28,6 +28,12 @@
       "sha256": "c07fb4924dfe8d9b715c9c23b75c0b895909a3ce3d426907f3b23b8c894b4077",
       "bytes": 78171,
       "pinned_from": "62c34494c22ed089e2c081aedddbb9f919dd69bc"
+    },
+    "QuotePrimaryQuoteSoleEnforcer.php": {
+      "source": "sugar-sell/ERP-Core/src/custom/modules/Quotes/QuotePrimaryQuoteSoleEnforcer.php",
+      "sha256": "c9dbf79adc9952e207614e952127b1df43df28b2d2c67bb9aac10e0b5e49df3b",
+      "bytes": 43002,
+      "pinned_from": "62c34494c22ed089e2c081aedddbb9f919dd69bc"
     }
   }
 }

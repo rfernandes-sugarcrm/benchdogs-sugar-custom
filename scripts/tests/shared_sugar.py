@@ -59,6 +59,12 @@ SOURCES = {
     # run core's REAL add-if-absent over core's REAL button definitions. Pinned
     # rather than sibling-gated, for the reason this whole mechanism exists: a
     # test that is collected and then skipped is documentation, not a guard.
+    # QuoteOpportunityAmount.php require_once's this NEIGHBOUR at load time
+    # (__DIR__ . '/QuotePrimaryQuoteSoleEnforcer.php'), so pinning one without
+    # the other is a fatal the moment the sibling checkout is absent - i.e. in
+    # CI, and only in CI.
+    "QuotePrimaryQuoteSoleEnforcer.php":
+        "sugar-sell/ERP-Core/src/custom/modules/Quotes/QuotePrimaryQuoteSoleEnforcer.php",
     "BaseErpLayout.php":
         "sugar-sell/ERP-Core/scripts/BaseErpLayout.php",
     "QuotesLayout.php":

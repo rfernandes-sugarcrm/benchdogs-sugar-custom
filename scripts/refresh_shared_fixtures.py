@@ -54,6 +54,8 @@ PINNED = {
     "ErpQuoteLineRollup.php":
         "sugar-sell/ERP-Epicor-PartialFulfillment/custom/modules/Quotes/"
         "ErpQuoteLineRollup.php",
+    "QuotePrimaryQuoteSoleEnforcer.php":
+        "sugar-sell/ERP-Core/src/custom/modules/Quotes/QuotePrimaryQuoteSoleEnforcer.php",
     "BaseErpLayout.php":
         "sugar-sell/ERP-Core/scripts/BaseErpLayout.php",
     "QuotesLayout.php":
