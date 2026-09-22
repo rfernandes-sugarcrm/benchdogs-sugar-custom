@@ -37,8 +37,13 @@ Both are there, at the lines above.
 ### 🚩 The converse, and it is an operating rule
 
 `BenchDogs-Ext` **does** ship every one of these paths through `copy`. Uninstalling *it* restores the
-bodies that were on disk when *its* zip installed — on `etsugarcube`, the rc62 vardefs this package
-just removed.
+bodies that were on disk **immediately before that zip installed** — so uninstalling et's rc62 puts
+back the **rc60-era** bodies, not rc62's. Said precisely because it is the sentence a reviewer will
+check against `copy_recursive_with_backup():2669`: the backup is taken from `$dest` at install time.
+The conclusion is unchanged and if anything worse: four of those rc60-era language files still
+**declare** keys (measured: `en_us.bd_stage_doms.php`, `Accounts/en_us.bd_action_buttons.php`,
+`Products/en_us.bd_line_order.php`, `Quotes/en_us.bd_action_buttons.php` all carry
+`$app_list_strings`/`$mod_strings` assignments at `c4e8874`, and none do at rc66 `74a846e`).
 
 > **Run this one-off AFTER any BenchDogs-Ext install or uninstall, and RE-RUN it after any future
 > BenchDogs-Ext uninstall.** It is idempotent; re-running costs nothing.
@@ -96,6 +101,34 @@ Plus, beyond the seven:
 | `.../ErpQuoteHooks/OpportunityLineRollupPolicy.php`, `OpportunityReleaseStagePolicy.php`, `OrderSelectedLinesPolicy.php`, `ResolveOrderableLines.php` | ERP-Core **contract** paths. They are orphans on a tenant, but what core does when they vanish is an ERP-Core decision, not a cleanup package's |
 | `custom/modules/ProductBundles/clients/base/views/quote-data-group-list/quote-data-group-list.js` | **ERP-Core ships this exact path** on the deployed tree. Removing it takes out the core quote grid on every tenant |
 | `custom/modules/Products/clients/base/views/quote-data-group-list/quote-data-group-list.php` | the Products grid viewdef ERP-Core also manages |
+
+### 🚩 The one mechanism here with no precedent in this codebase
+
+`dirname(__DIR__)` is used to read this package's **own** `lib/` from inside `post_execute`. Neither
+sibling one-off reads anything from its package, and `BenchDogs-Ext`'s `post_install` reads only tenant
+paths that `install_copy` has already landed. **So this is unproven on a real install and is stated as
+unproven.**
+
+Why it should hold: `post_execute` is `require_once`'d from `<base_dir>/scripts/post_execute.php`
+(`ModuleInstaller.php:435`), and `base_dir` is the unpacked package directory created by
+`ScanningPackageZipFile::createPackageDir():204-211` → `mk_temp_dir()` → `tempnam()`
+(`include/utils/file_utils.php:98-110`). `tempnam()` returns a **real filesystem path**, not a stream
+URL, so `__DIR__` is an ordinary absolute path and `require_once`, `copy()` (inside `copy_path`) and
+`md5_file()` all tolerate it.
+
+**And if it is wrong, the failure is visible, not silent.** Every use is guarded by `file_exists()`:
+K-2, K-3 and the whole blanking group report themselves under **SKIPPED**, naming the path that was
+not found, and the Extension deletions — the bulk of the work — do not use it at all.
+
+### A second mechanism, unproven by this package but proven on a tenant
+
+Driving a freshly constructed `new ModuleInstaller()` from `post_execute` is **not** novel:
+`BenchDogs-Ext/scripts/post_install.php:302-317` already does exactly that for
+`uninstall_languages()`, and **G268 is CLOSED on Bench**, so that call has run on a live tenant.
+The relevant detail is that `uninstall_languages():1248` opens with `$this->log(translate(...))`, the
+same first statement `uninstallExt():677` has — and `log():2641-2650` is safe on a fresh instance
+because `isInstalling` is declared `protected $isInstalling = false` (`:125`), so it skips
+`addInstallationMessage()`, and `silent = true` suppresses its `echo`.
 
 ---
 
@@ -181,11 +214,19 @@ Fulfillment so PF's `install_copy` overwrites the path* — never by omission an
 
 ## 6. Order of operations
 
-1. Install whatever Bench Dogs build is planned (rc67 or later), on every tenant.
-2. Install **this** package. Read its Display Log / `package_install.log`.
-3. Uninstall this package — a genuine no-op.
-4. Re-run steps 2–3 after **any** future Bench Dogs uninstall.
+**The one-off runs FIRST. rc67 is built on its evidence, not the other way round.**
 
-`etsugarcube` is the tenant this exists for: it is deliberately held at rc62 as an A/B control and has
-taken none of the emptying builds. On `ophirsx177` (rc66) the run should be close to a no-op, which is
-the control that proves the report is reading the tenant and not reciting its own worklist.
+1. **Now**, on the current state — `etsugarcube` at rc62, `ophirsx177` at rc66, `ossugarcube2` with no
+   Bench Dogs at all: install this package, read its Display Log / `package_install.log`, uninstall it.
+   This is the run that does the work, and `et` is the tenant it exists for.
+2. Repeat on every tenant until each one's log reads **`REMOVED (0): NOTHING LEFT TO REMOVE.`**
+   On `ophirsx177` (rc66) the *first* run should already be close to that — which is the control that
+   proves the report is reading the tenant and not reciting its own worklist. On `ossugarcube2` it
+   should be a complete no-op.
+3. **Then** the Sugar-package lane builds rc67 dropping the items §5 marks droppable, citing those
+   logs as the evidence — the same bar rc66 used to retire `BdAutoSelectedReport`.
+4. Install rc67. **Re-run this package**; expect a no-op. Uninstall it.
+5. Re-run it after **any** future Bench Dogs uninstall, for the `-restore` reason in §1.
+
+Step 1 does not wait on anything. Waiting for rc67 first would be circular: rc67 cannot drop an item
+until a log says the item is already gone.
