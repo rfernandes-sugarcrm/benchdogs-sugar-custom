@@ -57,6 +57,28 @@ on the Account "ERP Quote Pipeline" tile shows only values a previous install
 already stored. `BdEstimatingNotificationHook` reads both fields and writes
 neither. This ended with the mirror deletion, not with the reference cleanup.
 
+# 0.9.42-rc59 — G50: the `bd_country` label's ORIGINAL path is retired too
+
+rc57 emptied `_override_en_us.bd_country_lookup.php`, yet Bench under rc58
+still served `erp_lookup_type_list['bd_country'] = 'Country (Bench Dogs)'`.
+The source is the label's pre-rc23 path, `en_us.bd_country_lookup.php`.
+rc23 renamed it away, and a renamed file is left on the tenant (§CW / G37).
+It stayed hidden while ERP-Epicor assigned the list as a whole array. ERP-Core
+now adds its types key by key, so nothing wipes the key and the label came back.
+
+How it was found: `bd_country` is the FIRST key live, ahead of ERP-Core's `''`.
+The `_override_` file always merges last, so the key comes from an
+earlier-sorting fragment.
+
+This release ships an emptied stub at that original path. A new test pins BOTH
+paths as shipped, empty stubs (mutations: stub dropped → 1 failure, label
+restored → 2 failures).
+
+The 12 `bd_country` ERP_LookupValues rows are data, not package files; this
+release does not touch them. They are read by nothing: core's guard reads only
+`erp_country_lookup_type_list`, which registers `Country` alone, and `Country`
+holds the same 12 countries and 36 spellings.
+
 # 0.9.42-rc58 — G97/G123: the Opportunity headline amount is the primary quote's total
 
 **Decision 708, owner verbatim 2026-09-20:** *"now opprtuntiy rollup is simple
