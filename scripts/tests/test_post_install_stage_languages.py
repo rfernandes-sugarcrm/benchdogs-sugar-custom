@@ -172,10 +172,22 @@ class PostInstallStageLanguagesTest(unittest.TestCase):
     def test_respects_an_existing_choice(self):
         """A config row is tenant data. An admin (or a later decision) that set
         another stage keeps it; this package does not re-decide on every
-        install."""
+        install.
+
+        🛑 NARROWED IN 0.9.42-rc67, AND THE NARROWING IS THE POINT. This used to
+        assert NO config write at all. G294's step report now writes exactly one
+        more row - benchdogs_ext.install_report, on every install, pass or fail -
+        so a blanket "no writes" assertion would fail for a reason that has
+        nothing to do with what this test is about. It is scoped to the stage
+        key instead of deleted or relaxed to a substring: an overwrite of
+        partial_order_sales_stage still fails it, which is the defect it exists
+        for. Any OTHER unexpected category/key would slip past this, which is
+        why test_post_install_step_report.py asserts the report row's category,
+        key and contents explicitly rather than leaving it uncovered here."""
         observed = self.execute("config_present")
         writes = [e for e in observed["events"]
-                  if isinstance(e, list) and e[0] == "write_config"]
+                  if isinstance(e, list) and e[0] == "write_config"
+                  and e[2] == "partial_order_sales_stage"]
         self.assertEqual(writes, [], "the install overwrote a stage someone already chose")
         self.assertEqual(observed["settings"]["erp_integration"]["partial_order_sales_stage"],
                          "Someone Elses Stage")

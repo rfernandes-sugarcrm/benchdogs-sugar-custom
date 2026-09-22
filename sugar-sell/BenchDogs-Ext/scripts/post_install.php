@@ -61,14 +61,138 @@
  * scripts/tests/test_post_install_stage_languages.py asserts both properties
  * statically (no function wrapper, no throw) as well as behaviourally.
  *
+ * HOW A FAILED STEP IS REPORTED (0.9.42-rc67, G294)
+ *
+ * Until rc66 each of the eight blocks below caught its own Throwable and wrote
+ * ONE ->fatal() line, and that was the whole of it: no aggregation, no marker,
+ * and no channel to `installation-status`. So a step could fail while Module
+ * Loader reported N/N steps, the scanner verdict came back clean and the
+ * rendered Module Loader row said Installed - all three proofs this project
+ * uses are blind to a step that catches its own exception. That is not
+ * hypothetical: `BenchDogs-Ext: QLI columns failed: Call to private method
+ * BaseErpLayout::loadView() from scope BdQliColumnsLayout` was in the log on
+ * EVERY install from 2026-09-17 through rc65 and every gate read green.
+ *
+ * MAKING A STEP THROW IS NOT THE FIX AND WOULD BE WORSE. See the section
+ * above: PackageManager::installPackage() catches Throwable around the whole
+ * install and calls forceUninstall() (SugarEnt 25.2.0 and 26.1.0,
+ * src/PackageManager/PackageManager.php:751-769), so a throwing step does not
+ * fail back to the previous version - it takes the package OFF the tenant. So
+ * every step still catches, and the outcome is REPORTED instead of raised.
+ *
+ * Each block records into $bdStepReport - 'ok', or what went wrong verbatim -
+ * and the block at the bottom publishes that map on THREE channels, each in
+ * its own try/catch, each answering a question the other two cannot:
+ *
+ *  1. ONE AGGREGATED ->fatal() LINE: `post_install step report (<version>):
+ *     M/N applied`, naming every step that did not apply. The eight per-step
+ *     lines stay, but they stop being the only record - an operator greps ONE
+ *     line for a verdict instead of having to know all eight failure strings
+ *     in advance, which is precisely why the loadView failure was read past
+ *     for five weeks. Cheapest channel, and the one that still works when the
+ *     database is the thing that is broken.
+ *
+ *  2. A CONFIG ROW, benchdogs_ext.install_report: a JSON map of every step's
+ *     outcome with the version, the UTC timestamp and the PID. This is the
+ *     DURABLE channel, and the reason the report does not live only in a log.
+ *     A log rotates and has to be retrieved by hand; `process_status`
+ *     (channel 3) belongs to ONE UpgradeHistory row, and installPackage()
+ *     resets it at the start of the next install and mark_deleted()s the
+ *     previous row on an upgrade. A config row outlives both, is readable by
+ *     any admin route, and comes back in the SAME Diagnostic Tool run as the
+ *     log (DiagnosticRun.php:281 dumps `config` and `upgrade_history` under
+ *     the table-dump item). It is written through Administration::saveSetting(),
+ *     the same call the stage-config block at the top of this file already
+ *     makes successfully on this tenant - the mechanism is proven here, not
+ *     assumed. Written on EVERY install, pass or fail, because a clean report
+ *     is the positive evidence and channel 3 is deliberately silent on success.
+ *
+ *  3. `installation-status`, AND ONLY WHEN SOMETHING FAILED.
+ *     ModuleInstaller::post_execute() require_once's this file from inside its
+ *     own method body (ModuleInstall/ModuleInstaller.php:426, identical in
+ *     25.2.0 and 26.1.0), so $this here IS the running ModuleInstaller.
+ *     setInstallationError() is public in both and does exactly one thing:
+ *     writes a string into that UpgradeHistory row's process_status JSON - the
+ *     `error` field GET Administration/packages/<id>/installation-status
+ *     returns beside `is_done`. It aborts nothing. Force-uninstall is driven
+ *     by a thrown Throwable or an E_ERROR shutdown handler, never by this
+ *     field, and the #bwc Module Loader commit path never reads it back
+ *     (UpgradeWizard_commit.php's Install branch prints its own success
+ *     string). So this is the one channel that makes the proof that LIED -
+ *     `is_done` N/N with a clean verdict - stop lying, at no risk to the
+ *     install. Every access is guarded (isset($this), instanceof,
+ *     method_exists) and wrapped, so a Sugar that ever changes that shape
+ *     degrades to channels 1 and 2 rather than throwing.
+ *
+ * WHAT A CLEAN RUN LOOKS LIKE, which matters as much as the failure case: one
+ * `M/M applied` line with no NOT APPLIED clause, a config row whose every step
+ * is 'ok', and NOTHING in `installation-status`. The absence of an error there
+ * is deliberately NOT the proof of a clean install - absence is what the defect
+ * looked like for five weeks. The config row is the positive proof.
+ *
+ * WHERE THE OUTPUT GOES, AND HOW TO FIND IT (0.9.42-rc67, G295)
+ *
+ * NOT sugarcrm.log. Module Loader's commit step calls
+ * MlpLogger::replaceDefault() (modules/Administration/UpgradeWizard_commit.php:17,
+ * for Install AND Uninstall), which repoints the DEFAULT logger's file name to
+ * `package_install` and forces its level to debug
+ * (modules/Administration/MlpLogger.php:15-21, byte-identical in SugarEnt
+ * 25.2.0 and 26.1.0). So every $GLOBALS['log'] line this file writes lands in
+ * package_install.log - same directory as sugarcrm.log, which is how
+ * DiagnosticRun.php:318 resolves it (dirname(<sugar log path>) .
+ * '/package_install.log'). Sugar's own Module Loader footer says the same:
+ * "Download Package Install Log File in Diagnostic Tool".
+ *
+ * Until rc66 this docblock pointed operators at sugarcrm.log and told them to
+ * treat an absent line as broken, while lines further down THIS SAME FILE cited
+ * package_install.log as the real evidence. Following the old instruction gives
+ * the WRONG ANSWER, and it was measured giving it: on Bench the newest verdict
+ * in sugarcrm.log was 17:14:03, PREDATING the 17:17:35 install, so an operator
+ * obeying that rule reads a stale line and files a healthy install as broken.
+ * On a hosted tenant a missing line in sugarcrm.log proves NOTHING here.
+ *
+ * HOW TO READ IT, in order:
+ *
+ *  1. RETRIEVE THE LOG. Admin > Diagnostic Tool, tick ONLY "Package Install
+ *     Log File" - untick everything the page pre-selects - then Execute
+ *     Diagnostic and download. The defaults pull phpinfo and whole-table dumps
+ *     and turn a 30-second retrieval into a large, slow one. Tick "MySQL Table
+ *     Dumps" as well, and only then, when you also want the config row and the
+ *     upgrade_history process_status described above (DiagnosticRun.php:281).
+ *
+ *  2. FIND THIS INSTALL'S PID. Every Sugar log line is prefixed with the PID of
+ *     the process that wrote it. Locate `BenchDogs-Ext: post_install running`
+ *     for the version you installed and take the PID off that line; on Bench's
+ *     rc65 install it was 2069085.
+ *
+ *  3. SCOPE TO IT. Read only the lines carrying that PID - they are this
+ *     install and nothing else. TIMING IS NOT THE ATTRIBUTION: two installs
+ *     minutes apart interleave, and reading by timestamp is exactly what
+ *     produced the stale-line trap above. mergeModuleFiles, post_install and
+ *     the scanner verdict for one install all share one PID, which is what
+ *     makes the join sound.
+ *
+ *  4. READ THE VERDICT LINE, not the eight individual ones:
+ *     `BenchDogs-Ext: post_install step report (<version>): M/N applied`.
+ *     M == N with no `NOT APPLIED` clause is a clean install; anything else
+ *     names the steps that did not apply and why.
+ *
+ *  5. NO `post_install running` LINE AT ALL, on a package_install.log that
+ *     DOES carry that install's other lines (the scanner verdict,
+ *     mergeModuleFiles), is the one case that still means "treat the wiring as
+ *     broken" - that is what this line was always for. It is emitted exactly
+ *     once per install request.
+ *
  * WHY EVERY LINE LOGS AT FATAL
  *
- * Same reason pre_uninstall.php:67-74 gives. A successful Module Loader run is
- * not evidence that this file ran, and ->error() lines do not survive an
- * instance whose log level is fatal. After an install, grep sugarcrm.log for
- * "BenchDogs-Ext: post_install running": present means the wiring is live,
- * absent means treat it as broken again. The per-step failure lines are at the
- * same level so that "it ran but DeployedMetaDataImplementation threw" is
+ * A successful Module Loader run is not evidence that this file ran, and
+ * ->error() lines do not survive an instance whose log level is fatal. Note
+ * the caveat the rc66 text did not have: on the install route MlpLogger has
+ * already forced the level to debug, so during an install the level argument
+ * is moot. fatal is kept anyway, because these same lines are read outside an
+ * install window (a tailed log, an operator re-reading a rotated file) where
+ * the instance's own level is what applies. The per-step failure lines are at
+ * the same level so that "it ran but DeployedMetaDataImplementation threw" is
  * distinguishable from "it never ran" - those two produce identical deployed
  * metadata and were confused for a whole release cycle.
  *
@@ -85,6 +209,20 @@
 // operator whether the post_execute wiring is alive, and it is emitted exactly
 // once per install request.
 $GLOBALS['log']->fatal('BenchDogs-Ext: post_install running - writing deployed metadata');
+
+// G294. Every block below writes exactly one entry here before it leaves, and
+// the block at the bottom publishes the whole map. 'ok' means the step ran;
+// anything else is what stopped it, verbatim. Three outcomes are NOT 'ok' and
+// all three used to be invisible:
+//   FAILED:     the step threw and its own catch swallowed it (the rc65 case)
+//   MISSING:    the helper file the step needs is not on disk, so install_copy
+//               did not land it - the step never ran at all
+//   NOT-LOADED: the file is there and was require_once'd, but the class is
+//               still undefined. That is the class_exists-without-require
+//               shape pointed the other way, and it is a silent off switch:
+//               these guards are written `if (class_exists(...))` with no else,
+//               so the step simply does not happen and nothing says so.
+$bdStepReport = array();
 
 // 🛑 FIRST, BECAUSE IT IS THE HALF THAT CANNOT BE REDONE LATER (G280 /
 // 🔒 1507, 🔒 1508).
@@ -123,8 +261,10 @@ try {
             'BenchDogs-Ext: erp_integration.partial_order_sales_stage already set, left as is'
         );
     }
+    $bdStepReport['partial_order_stage_config'] = 'ok';
 } catch (Throwable $e) {
     $GLOBALS['log']->fatal('BenchDogs-Ext: partial order stage config failed: ' . $e->getMessage());
+    $bdStepReport['partial_order_stage_config'] = 'FAILED: ' . get_class($e) . ': ' . $e->getMessage();
 }
 
 $bdLayoutHelper = 'custom/modules/Quotes/BdQuotesLayoutExtensions.php';
@@ -133,12 +273,20 @@ try {
         require_once $bdLayoutHelper;
         if (class_exists('BdQuotesLayoutExtensions')) {
             BdQuotesLayoutExtensions::write();
+            $bdStepReport['quotes_layout_extensions'] = 'ok';
+        } else {
+            $GLOBALS['log']->fatal(
+                "BenchDogs-Ext: {$bdLayoutHelper} loaded but class BdQuotesLayoutExtensions is undefined"
+            );
+            $bdStepReport['quotes_layout_extensions'] = 'NOT-LOADED: class BdQuotesLayoutExtensions';
         }
     } else {
         $GLOBALS['log']->fatal("BenchDogs-Ext: {$bdLayoutHelper} missing, skipping layout extensions");
+        $bdStepReport['quotes_layout_extensions'] = 'MISSING: ' . $bdLayoutHelper;
     }
 } catch (Throwable $e) {
     $GLOBALS['log']->fatal('BenchDogs-Ext: layout extensions failed: ' . $e->getMessage());
+    $bdStepReport['quotes_layout_extensions'] = 'FAILED: ' . get_class($e) . ': ' . $e->getMessage();
 }
 
 
@@ -209,10 +357,20 @@ try {
         require_once $bdAccountsHelper;
         if (class_exists('BdAccountsLayoutExtensions')) {
             BdAccountsLayoutExtensions::writeCustomerGroupField();
+            $bdStepReport['accounts_customer_group_field'] = 'ok';
+        } else {
+            $GLOBALS['log']->fatal(
+                "BenchDogs-Ext: {$bdAccountsHelper} loaded but class BdAccountsLayoutExtensions is undefined"
+            );
+            $bdStepReport['accounts_customer_group_field'] = 'NOT-LOADED: class BdAccountsLayoutExtensions';
         }
+    } else {
+        $GLOBALS['log']->fatal("BenchDogs-Ext: {$bdAccountsHelper} missing, customer group fields not placed");
+        $bdStepReport['accounts_customer_group_field'] = 'MISSING: ' . $bdAccountsHelper;
     }
 } catch (Throwable $e) {
     $GLOBALS['log']->fatal('BenchDogs-Ext: Accounts customer group field failed: ' . $e->getMessage());
+    $bdStepReport['accounts_customer_group_field'] = 'FAILED: ' . get_class($e) . ': ' . $e->getMessage();
 }
 
 // 🛑 G116 - DECISION 72's MARKER IS REMOVED HERE, NOT PLACED.
@@ -242,12 +400,20 @@ try {
         }
         if (class_exists('BdOpportunitiesLayoutExtensions')) {
             BdOpportunitiesLayoutExtensions::remove();
+            $bdStepReport['opportunities_marker_removal'] = 'ok';
+        } else {
+            $GLOBALS['log']->fatal(
+                "BenchDogs-Ext: {$bdOppsHelper} loaded but class BdOpportunitiesLayoutExtensions is undefined"
+            );
+            $bdStepReport['opportunities_marker_removal'] = 'NOT-LOADED: class BdOpportunitiesLayoutExtensions';
         }
     } else {
         $GLOBALS['log']->fatal("BenchDogs-Ext: {$bdOppsHelper} missing, retired value-source marker not removed");
+        $bdStepReport['opportunities_marker_removal'] = 'MISSING: ' . $bdOppsHelper;
     }
 } catch (Throwable $e) {
     $GLOBALS['log']->fatal('BenchDogs-Ext: value-source marker removal failed: ' . $e->getMessage());
+    $bdStepReport['opportunities_marker_removal'] = 'FAILED: ' . get_class($e) . ': ' . $e->getMessage();
 }
 
 // 🛑 G116's SAVED-REPORT REMOVER IS SPENT AND IS GONE (0.9.42-rc66,
@@ -319,8 +485,10 @@ try {
         'BenchDogs-Ext: removed the zz_bd_stage_doms language fragment; the sales '
         . 'and quote stages are Partial Fulfillment\'s'
     );
+    $bdStepReport['stage_fragment_removal'] = 'ok';
 } catch (Throwable $e) {
     $GLOBALS['log']->fatal('BenchDogs-Ext: stage fragment removal failed: ' . $e->getMessage());
+    $bdStepReport['stage_fragment_removal'] = 'FAILED: ' . get_class($e) . ': ' . $e->getMessage();
 }
 
 // 🛑 THE BAKED DEMO DASHBOARDS ARE GONE (G280 / 🔒 1507).
@@ -348,8 +516,10 @@ try {
     $bdRac->clearVardefs();
     $bdRac->rebuildExtensions($bdRepairModules);
     MetaDataManager::refreshModulesCache($bdRepairModules);
+    $bdStepReport['repair_rebuild'] = 'ok';
 } catch (Throwable $e) {
     $GLOBALS['log']->fatal('BenchDogs-Ext: repair/rebuild failed: ' . $e->getMessage());
+    $bdStepReport['repair_rebuild'] = 'FAILED: ' . get_class($e) . ': ' . $e->getMessage();
 }
 // Generic cache and relationship rebuild. The quotes_erp_orders cardinality
 // override this block was originally written for is GONE - see the note at the
@@ -369,8 +539,10 @@ try {
     VardefManager::clearVardef('Quotes', 'Quote');
     VardefManager::clearVardef('ERP_Orders', 'ERP_Order');
     MetaDataManager::refreshModulesCache(array('Quotes', 'ERP_Orders'));
+    $bdStepReport['relationship_rebuild'] = 'ok';
 } catch (Throwable $e) {
     $GLOBALS['log']->fatal('BenchDogs-Ext: relationship rebuild failed: ' . $e->getMessage());
+    $bdStepReport['relationship_rebuild'] = 'FAILED: ' . get_class($e) . ': ' . $e->getMessage();
 }
 
 // The language cache still has to be rebuilt, because this install EMPTIED two
@@ -412,8 +584,10 @@ try {
         }
         break;
     }
+    $bdStepReport['language_rebuild'] = 'ok';
 } catch (Throwable $e) {
     $GLOBALS['log']->fatal('BenchDogs-Ext: language rebuild failed: ' . $e->getMessage());
+    $bdStepReport['language_rebuild'] = 'FAILED: ' . get_class($e) . ': ' . $e->getMessage();
 }
 
 // 🛑 DECISION 314's STAGE-RENAME MIGRATION IS DRAINED AND IS GONE (0.9.42-rc66,
@@ -441,5 +615,83 @@ try {
 // sets ABOVE - which holds the NEW literal. A migration with no source and no
 // rows left to move is not a safeguard; it is an UPDATE that runs on every
 // install for nothing.
+
+// 🛑 THE STEP REPORT (0.9.42-rc67, G294). See "HOW A FAILED STEP IS REPORTED"
+// at the top of this file for why this exists and why it must not throw.
+//
+// 🚩 EVERY LINE BELOW IS IN A CATCH OF ITS OWN, and the three publishes are
+// SEPARATE catches on purpose: the whole point of this block is that a failure
+// is not lost, so a reporting channel that is itself broken must not take the
+// other two down with it. The one thing this block may never do is raise - a
+// reporter that force-uninstalls the package is worse than the defect it
+// reports.
+$bdVersion = isset($manifest['version']) ? (string) $manifest['version'] : 'unknown';
+$bdNotApplied = array();
+$bdApplied = 0;
+foreach ($bdStepReport as $bdStepName => $bdOutcome) {
+    if ($bdOutcome === 'ok') {
+        $bdApplied++;
+    } else {
+        // Truncated: this goes into a log line and a config value, and a
+        // stack-trace-length message in either is how a report stops being read.
+        $bdNotApplied[] = $bdStepName . ' -> ' . substr((string) $bdOutcome, 0, 500);
+    }
+}
+$bdSummary = 'BenchDogs-Ext: post_install step report (' . $bdVersion . '): '
+    . $bdApplied . '/' . count($bdStepReport) . ' applied';
+if ($bdNotApplied !== array()) {
+    $bdSummary .= '; NOT APPLIED: ' . implode(' | ', $bdNotApplied);
+}
+
+// CHANNEL 1 - one aggregated line, in package_install.log with this install's PID.
+try {
+    $GLOBALS['log']->fatal($bdSummary);
+} catch (Throwable $e) {
+    // Nothing useful is left to log to.
+}
+
+// CHANNEL 2 - the durable one. Written on every install, pass or fail: a clean
+// report is the POSITIVE evidence, and channel 3 is silent on success.
+// benchdogs_ext, not erp_integration: that category is core's, and a Bench
+// diagnostic does not belong in it.
+try {
+    $bdReportAdmin = BeanFactory::newBean('Administration');
+    $bdReportAdmin->saveSetting('benchdogs_ext', 'install_report', json_encode(array(
+        'version' => $bdVersion,
+        'utc' => gmdate('Y-m-d\TH:i:s\Z'),
+        'pid' => getmypid(),
+        'applied' => $bdApplied,
+        'total' => count($bdStepReport),
+        'steps' => $bdStepReport,
+    )));
+} catch (Throwable $e) {
+    $GLOBALS['log']->fatal('BenchDogs-Ext: step report config row failed: ' . $e->getMessage());
+}
+
+// CHANNEL 3 - installation-status, ONLY when something did not apply. This is
+// the channel that makes `is_done` N/N stop reading clean over a failed step.
+// It writes a string into the UpgradeHistory row's process_status and aborts
+// nothing; see the header for why that is safe and how it was verified.
+if ($bdNotApplied !== array()) {
+    try {
+        if (isset($this)
+            && $this instanceof ModuleInstaller
+            && method_exists($this, 'setInstallationError')) {
+            // Leads with INSTALLED on purpose. The package IS on the tenant -
+            // this field is the only public way to say "and one of its steps
+            // did not apply", and an operator who reads it as "the install
+            // failed" and uninstalls would be doing damage over a partial.
+            $this->setInstallationError(
+                'Bench Dogs ' . $bdVersion . ' IS INSTALLED, but ' . count($bdNotApplied)
+                . ' of ' . count($bdStepReport) . ' post_install steps did NOT apply: '
+                . implode(' | ', $bdNotApplied)
+                . ' -- full report: config row benchdogs_ext.install_report, and'
+                . ' package_install.log under this install\'s PID.'
+            );
+        }
+    } catch (Throwable $e) {
+        $GLOBALS['log']->fatal('BenchDogs-Ext: step report to installation-status failed: ' . $e->getMessage());
+    }
+}
 
 $GLOBALS['log']->fatal('BenchDogs-Ext: post_install finished');

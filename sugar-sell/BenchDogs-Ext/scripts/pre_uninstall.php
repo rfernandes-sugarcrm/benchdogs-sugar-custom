@@ -65,12 +65,40 @@
 
 // Proof of life. Module Loader reporting a successful uninstall is not evidence
 // that this file ran - if the installdef key were wrong the uninstall would
-// complete looking perfectly clean while doing none of the cleanup. After an
-// uninstall, grep sugarcrm.log for this line: present means the cleanup ran,
-// absent means treat the wiring as broken and follow the manual runbook
+// complete looking perfectly clean while doing none of the cleanup.
+//
+// 🛑 GREP package_install.log, NOT sugarcrm.log (0.9.42-rc67, G295). The rc66
+// text here sent operators to sugarcrm.log and told them an absent line means
+// broken. On a hosted tenant that is the WRONG LOG and the instruction produces
+// a false failure: measured on Bench, sugarcrm.log's newest verdict (17:14:03)
+// PREDATED the 17:17:35 install, so obeying it reads a stale line and files a
+// healthy run as broken.
+//
+// Uninstall takes the same route as install. modules/Administration/
+// UpgradeWizard_commit.php:17 calls MlpLogger::replaceDefault() for EVERY mode,
+// Uninstall included, which repoints the default logger's file name to
+// `package_install` and forces its level to debug (modules/Administration/
+// MlpLogger.php:15-21, identical in SugarEnt 25.2.0 and 26.1.0). So this line
+// lands in package_install.log, in the same directory as sugarcrm.log
+// (DiagnosticRun.php:318). Retrieve it with Admin > Diagnostic Tool and ONLY
+// "Package Install Log File" ticked - untick everything the page pre-selects.
+//
+// Then attribute by PID, not by time: take the PID prefix off THIS line and
+// read only the lines carrying it. Two runs minutes apart interleave, and
+// reading by timestamp is exactly what produced the trap above. Absent from
+// package_install.log while that run's other lines are present is the case that
+// means treat the wiring as broken - follow the manual runbook
 // (docs/runbooks/remove-benchdogs-sugar-package.md in the connector extension
 // repo). Logged at fatal so it survives whatever log level the instance is set
-// to; it is emitted exactly once in the life of an installation.
+// to outside an uninstall window (inside one MlpLogger has already forced
+// debug, so the level argument is moot there); it is emitted exactly once in
+// the life of an installation.
+//
+// 📌 The three steps below still only ->error() their failures, one line each,
+// with no aggregation - the same reporting shape G294 fixes on the install
+// side. It is not fixed here in this change: G294 is filed against
+// post_install.php and widening the blast radius of an uninstall script was not
+// worth the risk in one pass. Flagged, not silently carried.
 $GLOBALS['log']->fatal('BenchDogs-Ext: pre_uninstall running - cleaning up deployed metadata');
 
 // 1. Quotes record view: drop our retired panel. Buttons are not touched
