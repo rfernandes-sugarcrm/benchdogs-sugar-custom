@@ -207,10 +207,21 @@ try {
 // AND IT COULD NOT HAVE TAKEN THEM BACK ANYWAY - the second layer, and the one
 // that makes a conditional rewrite of the first layer insufficient on its own.
 // post_install.php installs the template through a hand-built ModuleInstaller
-// whose id_name is 'zz_bd_stage_doms'. The zz_ prefix is load-bearing: Sugar
-// merges application language extensions in filename order, and Bench's keys
-// have to merge AFTER ERP-Epicor's replace template or they are overwritten
-// (G220). ModuleInstaller::install_languages() therefore writes
+// whose id_name is 'zz_bd_stage_doms'.
+//
+// ⚠️ THE zz_ PREFIX BUYS NOTHING ON MERGE ORDER, whatever it looks like. Sugar
+// merges application language extensions `_override` LAST, then by the mtime
+// recorded in custom/Extension/application/Ext/Language/orderMapping.php, then
+// stably - and that recorded mtime is refreshed only when a file's md5 changes
+// (ModuleInstaller.php:2417-2463 and include/utils.php:6648, identical in
+// 25.2.0 and 26.1.0). A FILENAME PLAYS NO PART. What actually keeps Bench's
+// keys alive after an ERP-Epicor replace install is that install_languages()
+// APPENDS to this file on every Bench install, so its md5 moves, so its
+// recorded mtime is refreshed and it merges last. That is why the mitigation
+// for G220 is "install Bench Dogs LAST" and why a content-identical rc60 could
+// not have moved it. The id just has to stay ours and stay stable.
+//
+// ModuleInstaller::install_languages() writes
 //
 //     custom/Extension/application/Ext/Language/en_us.zz_bd_stage_doms.php
 //
@@ -231,9 +242,13 @@ try {
 // construction, and only this script can remove it. Checked against the shipped
 // rc60 zip and the 26.1.0 source; not inferred.
 //
-// DECLARING installdefs['language'] IN THE MANIFEST IS NOT THE FIX. It would
-// make Sugar write (and remove) en_us.<manifest id>.php instead, which sorts
-// before ERP-Epicor's file and hands G220 straight back. The id has to stay zz_.
+// DECLARING installdefs['language'] IN THE MANIFEST IS NOT THE FIX - and not
+// for the ordering reason, which does not exist (see above). It is not the fix
+// because Sugar's uninstall_languages() is UNCONDITIONAL: it would delete the
+// keys on every uninstall, including the Bench instance whose opportunities
+// hold them, which is precisely the case rc60 was protecting and the half of
+// this gap that is a policy question rather than a mechanism. A removal that
+// has to consult the data has to be ours.
 //
 // THE REMOVAL IS THE EXACT MIRROR OF THE INSTALL: same hand-built installer,
 // same id_name, same one-entry installdefs - uninstall_languages() where
