@@ -1,3 +1,71 @@
+# Unreleased — the quote → Opportunity PAIRING WRITER is retired (G243, 🔒 1499)
+
+No version bump and no artifact yet.
+
+🛑 **A VERSION BUMP IS NOT OPTIONAL FOR THIS ONE, IT IS THE DELIVERY.** The
+defect is a file that outlived the package that shipped it, so the fix only
+reaches a tenant when Module Loader copies the replacements over it — and
+Module Loader refuses the same or a lower version under one `id_name`
+(`RELEASE-CONTROL.md` §11). Bench carries **0.9.42-rc60**, so the number that
+delivers this is **above rc60**; anything at or below it installs nowhere and
+the sync keeps creating Opportunities with no diff to point at.
+
+**What was wrong.** `BdKineticOpportunityHook` — `BdQuoteReflectionHook::
+ensureOpportunity()` relocated onto the native Quote by `fe18b38` — created and
+linked a brand-new Opportunity for every Kinetic-born quote above a history
+floor. It shipped in **0.9.42-rc39** (what Bench had installed; the rc40 install
+died at 13/19 and rolled back) from a build branch that was never merged to
+main. 🔒 1473 said the sync never touches Opportunities; 🔒 1499 ruled on the
+measurement in the owner's own words: *"YES — the sync must never create one"*.
+An Opportunity is forecastable, so one per synced ERP quote inflates the
+pipeline with deals no seller made and no seller owns.
+
+**Why "we stopped shipping it" was not the fix, and is the whole lesson here.**
+rc60 already ships no `custom/Extension/modules/Quotes/Ext/LogicHooks/*` at all,
+and the pairing kept running on Bench regardless: **Module Loader copies a
+package's files and never deletes the previous version's.** rc39's registration
+and class sat on disk and stayed compiled into
+`custom/modules/Quotes/Ext/LogicHooks/logichooks.ext.php`. This is rc24's
+lesson, already written down in `test_create_opp_quote_button_retired.py` —
+**ONLY OVERWRITING RETIRES** — and deleting a file is not available to us
+anyway: `ModuleScanner` blacklists `unlink`/`rmdir` and `SugarAutoLoader::
+unlink`, so a package that sweeps does not install.
+
+**So two files now ship, both empty of behaviour:**
+
+- `custom/Extension/modules/Quotes/Ext/LogicHooks/bd_kinetic_opportunity.php`
+  registers **nothing**. `install_copy` overwrites rc39's copy and
+  `install_extensions` — which runs *before* `post_execute` — rebuilds the
+  compiled hook file without `pairOnSave`/`pairOnAccountLink`.
+- `custom/modules/Quotes/BdKineticOpportunityHook.php` is a **tombstone**: same
+  class, same three public entry points, none of which reach the bean layer.
+  This is the half that holds when the first half does not run, which is
+  precisely the failure being fixed.
+
+**What did NOT change, deliberately.** The seller's "Create Opportunity &
+Quote" button is ERP-Epicor's (`AccountsErpActionsApi::createOppQuote`; Bench's
+duplicate was retired by 🔒 1044 / G15). It never routed through this hook, it
+is in another package, and it still creates and saves its Opportunity —
+asserted as a control in the new suite.
+
+⚠️ **The Opportunities this hook already created on Bench are untouched** by
+this change and by everything in this package. Leaving them keeps the forecast
+inflated; deleting them strands their synced quotes. 🔒 1499 explicitly does not
+cover it, and it is tenant data, not code.
+
+⚠️ **rc39 left FIVE more Quotes logic-hook registrations on any tenant that had
+it** — `bd_primary_quote`, `bd_sync_key_release`, `bd_estimating_turnaround`,
+`bd_quote_kpi`, `bd_quote_carrier_canonical` — each still pointing at an rc39
+class that rc60 no longer ships. Only the Opportunity creator is retired here,
+because it is the one 🔒 1499 ruled on. The other five are the same shape and
+are still live on Bench; they are named here so the sweep is a decision someone
+takes, not something nobody noticed.
+
+New: `scripts/tests/test_g243_kinetic_opportunity_pairing_retired.py` (9 cases,
+8 mutations killed) — it *includes* the registration and *calls* the tombstone
+rather than reading either, because this file is mostly prose and a text search
+could be fooled in both directions.
+
 # Unreleased — the bd01 quote mirror is RETIRED (decisions 901/903/904/905)
 
 No version bump and no artifact yet: this entry records the package change so
