@@ -24,12 +24,16 @@ core's ``AccountsErpActionsApi`` is the SUPERSET, not an equivalent - it owns
 oracle names), is tenant-configurable, and types the quote for Advanced Quote.
 Keeping Bench's instead would show one button and LOSE all three.
 
-🛑 WHY writeButtons() STILL EXISTS INSTEAD OF BEING DELETED. The button was
-written into the tenant's DEPLOYED viewdef by ``saveViewdef``. Deleting the code
-that wrote it does NOT remove it - rc24 proved that the expensive way: it dropped
-six files, installed clean, and was INERT. ONLY OVERWRITING RETIRES. So the
-method must keep running and must actively remove what it used to add, which is
-what the behavioural cases below drive.
+🛑 SUPERSEDED IN 0.9.42-rc64 BY G276 / 🔒 1504 - THE RETIREMENT CODE IS GONE TOO.
+Before rc64 ``BdAccountsLayoutExtensions::writeButtons()`` kept running on every
+install to strip ``bd_create_opp_quote_button`` from the deployed view ("ONLY
+OVERWRITING RETIRES"). The owner then ruled *"remove now all button logic from
+bench"*, so the method is deleted and ``remove()`` no longer reads the buttons
+array. Every tenant that ran rc49..rc61 already had the Bench button stripped
+(Bench and et included), so nothing is left for it to do there. What this file
+still pins: the Bench button is never INJECTED again, the two packages still
+share one label (the root cause), the customer group fields are untouched, and
+neither the install nor the uninstall path of this class touches a button.
 """
 
 import json
@@ -109,21 +113,20 @@ namespace {
 
     function run(array $buttons): array {
         // loadViewdef() returns the INNER defs; loadRecordView() wraps them as
-        // ['base']['view']['record'] itself. Stubbing the wrapped shape here made
-        // loadRecordView double-wrap it, the buttons key went missing, and the
-        // method correctly did nothing - which read exactly like the fix failing.
-        ViewdefManager::$defs = ['buttons' => $buttons];
+        // ['base']['view']['record'] itself.
+        $panels = [['name' => 'panel_body', 'fields' => [['name' => 'website']]]];
+        ViewdefManager::$defs = ['buttons' => $buttons, 'panels' => $panels];
         ViewdefManager::$saves = 0;
-        BdAccountsLayoutExtensions::writeButtons();
-        $after  = ViewdefManager::$defs['buttons'] ?? [];
-        $saves  = ViewdefManager::$saves;
-        // Idempotence: a second run over the ALREADY-RETIRED view must not rewrite it.
-        BdAccountsLayoutExtensions::writeButtons();
+        BdAccountsLayoutExtensions::writeCustomerGroupField();   // the install path
+        $afterInstall = ViewdefManager::$defs['buttons'] ?? [];
+        BdAccountsLayoutExtensions::remove();                    // the uninstall path
+        $afterRemove = ViewdefManager::$defs['buttons'] ?? [];
         return [
-            'names'         => array_values(array_map(
-                static fn($b) => is_array($b) ? ($b['name'] ?? '?') : (string) $b, $after)),
-            'saves'         => $saves,
-            'rerun_saves'   => ViewdefManager::$saves - $saves,
+            'before'        => json_encode($buttons),
+            'after_install' => json_encode($afterInstall),
+            'after_remove'  => json_encode($afterRemove),
+            'saves'         => ViewdefManager::$saves,
+            'has_button_method' => method_exists('BdAccountsLayoutExtensions', 'writeButtons'),
         ];
     }
 
@@ -177,17 +180,6 @@ class CreateOppQuoteButtonRetiredStatic(unittest.TestCase):
             "back puts TWO identical buttons in front of the seller (G15).",
         )
 
-    def test_the_retirement_mechanism_is_still_there(self):
-        """Not adding it is NOT enough - a deployed viewdef outlives the package."""
-        src = LAYOUT.read_text(encoding="utf-8")
-        self.assertIn(BD_BUTTON, src, "the method no longer names the button it must remove")
-        self.assertRegex(
-            src, r"writeButtons\(\)\s*:\s*void",
-            "writeButtons() is gone. Deleting it does NOT remove the button from a "
-            "tenant that already has it - rc24 proved an omitted file is INERT. "
-            "ONLY OVERWRITING RETIRES.",
-        )
-
     def test_the_customer_group_fields_are_untouched(self):
         """🔒 1044: these two are the whole Bench layer. The G15 fix must not take them."""
         src = LAYOUT.read_text(encoding="utf-8")
@@ -232,36 +224,21 @@ class CreateOppQuoteButtonRetiredBehaviour(unittest.TestCase):
             raise unittest.SkipTest("php not available")
         cls.r = _run_harness()
 
-    def test_it_removes_ours_from_a_duplicated_view(self):
-        d = self.r["duplicated"]
-        self.assertNotIn(BD_BUTTON, d["names"], "the Bench button survived the retirement")
-        self.assertEqual(d["names"].count(ERP_BUTTON), 1, "core's button must remain, exactly once")
-        self.assertEqual(d["saves"], 1, "the retirement must DEPLOY the view, or nothing changes")
-
-    def test_it_removes_ours_on_an_upgraded_tenant(self):
-        b = self.r["bench_only"]
-        self.assertNotIn(BD_BUTTON, b["names"])
-        self.assertEqual(b["saves"], 1)
-
-    def test_it_is_a_no_op_when_there_is_nothing_to_retire(self):
-        """No churn on a clean tenant - a needless saveViewdef is a real cost."""
-        c = self.r["core_only"]
-        self.assertEqual(c["names"].count(ERP_BUTTON), 1)
-        self.assertEqual(c["saves"], 0, "rewrote the view with nothing to remove")
-
-    def test_a_second_run_does_not_rewrite_the_view(self):
+    def test_the_install_path_leaves_every_button_alone(self):
+        """G276 / 🔒 1504: placing the customer group fields must not read or
+        rewrite the buttons array, whatever is in it - ours included."""
         for case in ("duplicated", "bench_only", "core_only"):
             with self.subTest(case=case):
-                self.assertEqual(
-                    self.r[case]["rerun_saves"], 0,
-                    "re-running the retirement deploys the view again; post_install "
-                    "runs on every upgrade, so this would churn forever",
-                )
+                self.assertEqual(self.r[case]["after_install"], self.r[case]["before"])
 
-    def test_unrelated_buttons_survive(self):
-        d = self.r["duplicated"]
-        self.assertIn("edit_button", d["names"])
-        self.assertIn("main_dropdown", d["names"])
+    def test_the_uninstall_path_leaves_every_button_alone(self):
+        for case in ("duplicated", "bench_only", "core_only"):
+            with self.subTest(case=case):
+                self.assertEqual(self.r[case]["after_remove"], self.r[case]["before"])
+
+    def test_no_button_method_remains(self):
+        self.assertFalse(self.r["core_only"]["has_button_method"],
+                         "BdAccountsLayoutExtensions::writeButtons() is back (🔒 1504)")
 
 
 if __name__ == "__main__":

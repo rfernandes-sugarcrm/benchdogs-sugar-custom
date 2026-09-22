@@ -425,7 +425,7 @@ if (file_exists($parentApiFile)) {
          * Re-runs the post_install UI deploy steps with NOTHING swallowed: every
          * step's exception text comes back in the response. post_install logs
          * failures to sugarcrm.log, which SugarCloud keeps out of reach - this
-         * route exists because the buttons/dropdown steps failed there silently.
+         * route exists because the layout/dropdown steps failed there silently.
          * Admin-only; every mutation is the same idempotent core-class call the
          * installer makes.
          */
@@ -446,21 +446,14 @@ if (file_exists($parentApiFile)) {
                 // it is there) - an install whose post_execute did not run, or a
                 // core upgrade in between, leaves the record view without it.
                 BdQuotesLayoutExtensions::write(false);
-                BdQuotesLayoutExtensions::writeButtons();
-                    require_once 'custom/modules/Quotes/BdQliColumnsLayout.php';
-                    (new BdQliColumnsLayout())->install();
-                $steps['quotes_buttons'] = 'ok';
+                // 🛑 G276 / 🔒 1504: no button step. writeButtons() (Quotes and
+                // Accounts) was removed with every other piece of record-view
+                // button logic in this package; core owns every button.
+                require_once 'custom/modules/Quotes/BdQliColumnsLayout.php';
+                (new BdQliColumnsLayout())->install();
+                $steps['quotes_layout'] = 'ok';
             } catch (Throwable $e) {
-                $steps['quotes_buttons'] = get_class($e) . ': ' . $e->getMessage();
-            }
-
-            try {
-                $helper = 'custom/modules/Accounts/BdAccountsLayoutExtensions.php';
-                require_once $helper;
-                BdAccountsLayoutExtensions::writeButtons();
-                $steps['accounts_button'] = 'ok';
-            } catch (Throwable $e) {
-                $steps['accounts_button'] = get_class($e) . ': ' . $e->getMessage();
+                $steps['quotes_layout'] = get_class($e) . ': ' . $e->getMessage();
             }
 
             try {

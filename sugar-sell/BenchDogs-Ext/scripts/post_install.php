@@ -17,8 +17,9 @@
  * _BILLING_DETAIL, _CREDIT_DETAIL, _SYNC_STATUS) are built by ERP-Epicor's
  * AccountsLayout, which already runs in replace mode and owns every field in
  * them - this package never writes those panels or their fields. It only
- * appends its own button and the REQ-19 customer group fields (see
- * BdAccountsLayoutExtensions), which never touch those panels.
+ * appends the REQ-19 customer group fields (see BdAccountsLayoutExtensions),
+ * which never touch those panels, and it touches no record-view button at all
+ * (G276).
  *
  * TOP-LEVEL CODE, NOT A FUNCTION (0.9.42-rc26)
  *
@@ -100,17 +101,23 @@ try {
 }
 
 
-// Bench Dogs action buttons (Quotes: Send to Estimating / Order
-// Winning Line; Accounts: Create Opportunity & Quote) - same
-// DeployedMetaDataImplementation mechanism as the panel above,
-// idempotent by button name, so safe to re-run on every install.
-try {
-    if (class_exists('BdQuotesLayoutExtensions')) {
-        BdQuotesLayoutExtensions::writeButtons();
-    }
-} catch (Throwable $e) {
-    $GLOBALS['log']->fatal('BenchDogs-Ext: Quotes buttons failed: ' . $e->getMessage());
-}
+// 🛑 G276 / 🔒 1503 + 🔒 1504 - NO BUTTON LOGIC, ON ANY RECORD VIEW.
+//
+// Until rc64 a block here called BdQuotesLayoutExtensions::writeButtons(),
+// which stripped ERP-Epicor's create_erp_order_button (Submit Order) and
+// refresh_price_availability_button off the deployed Quotes view on every
+// install and stashed them in config (decision 91, rc26), and another called
+// BdAccountsLayoutExtensions::writeButtons(). Owner, verbatim: "a seller should
+// have both selected line and submited order use core dont use anything from
+// bench dog extension logic for buttons!" and "remove now all button logic from
+// bench". Both calls and both methods are gone; this package no longer adds,
+// removes, hides, reorders or stashes a record-view button anywhere.
+//
+// The buttons decision 91 stripped come back through CORE: every ERP-Epicor
+// install runs QuotesLayout::install() -> addButtonsToRecordView(), which adds
+// a missing button and reconciles an existing one to core's current definition.
+// Install ERP-Epicor, then this package (the G273 order for the sales stages
+// already requires exactly that), and nothing here takes them away again.
 // Native-line ordering columns on the quoted-line-items grid.
 try {
     $bdQliHelper = 'custom/modules/Quotes/BdQliColumnsLayout.php';
@@ -137,18 +144,6 @@ try {
 // table), the bd-order-selected / bd-order-winning field JS is no
 // longer referenced by any button, and bd_order_requested_at is an
 // unread column. A fresh install never gets them at all.
-try {
-    $bdAccountsHelper = 'custom/modules/Accounts/BdAccountsLayoutExtensions.php';
-    if (file_exists($bdAccountsHelper)) {
-        require_once $bdAccountsHelper;
-        if (class_exists('BdAccountsLayoutExtensions')) {
-            BdAccountsLayoutExtensions::writeButtons();
-        }
-    }
-} catch (Throwable $e) {
-    $GLOBALS['log']->fatal('BenchDogs-Ext: Accounts button failed: ' . $e->getMessage());
-}
-
 // REQ-19 customer group fields - declared in vardefs since the
 // package's first release but never placed on the record view from
 // here; only bdRepairUi() called this method, so a fresh install

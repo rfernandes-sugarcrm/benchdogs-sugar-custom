@@ -14,20 +14,19 @@
  * custom/modules/<M>/clients/base/views/record/record.php, a file this package
  * does not ship and the uninstaller therefore never touches.
  *
- * So before this script existed, removing the package left three kinds of
- * wreckage behind, and an admin had to know they were there to fix them:
+ * So before this script existed, removing the package left deployed-metadata
+ * wreckage behind, and an admin had to know it was there to fix it:
  *
  *   1. The "Bench Dogs ERP" panel stayed on the Quotes record view, pointing at
  *      five bd_* fields whose vardefs had just been deleted.
- *   2. The Bench Dogs buttons stayed on the Quotes and Accounts record views,
- *      each pointing at a custom field type whose JavaScript had just been
- *      deleted, and the two customer group fields stayed on Accounts.
- *   3. Worst, because it damaged a DIFFERENT package: ERP-Epicor's
- *      advanced_quote_button, create_erp_order_button and
- *      refresh_price_availability_button are deleted from the deployed Quotes
- *      view at install time, and nothing ever put them back. Uninstalling Bench
- *      Dogs left ERP-Epicor three buttons short, with reinstalling ERP-Epicor
- *      the only way to recover them.
+ *   2. The two customer group fields stayed on Accounts.
+ *
+ * 🛑 G276 / 🔒 1504 - NO BUTTON LOGIC HERE EITHER. Until rc64 step 1 below also
+ * dropped this package's retired bd_* buttons and put back the ERP-Epicor
+ * buttons decision 91 had stripped and stashed, then blanked the stash. The
+ * package no longer strips anything, so there is nothing of ours to hand back,
+ * and the owner's ruling removes every add/remove/stash of a record-view
+ * button from this package. The buttons array is left exactly as deployed.
  *
  * PRE, NOT POST
  *
@@ -74,9 +73,8 @@
 // to; it is emitted exactly once in the life of an installation.
 $GLOBALS['log']->fatal('BenchDogs-Ext: pre_uninstall running - cleaning up deployed metadata');
 
-// 1. Quotes record view: drop our panel and buttons, and hand ERP-Epicor
-// back the three buttons writeButtons() took. One deploy cycle, inside
-// BdQuotesLayoutExtensions::remove().
+// 1. Quotes record view: drop our retired panel. Buttons are not touched
+// (G276 / 🔒 1504); see the note at the top of this file.
 try {
     $bdQuotesHelper = 'custom/modules/Quotes/BdQuotesLayoutExtensions.php';
     if (file_exists($bdQuotesHelper)) {
@@ -85,9 +83,6 @@ try {
         }
         if (class_exists('BdQuotesLayoutExtensions')) {
             BdQuotesLayoutExtensions::remove();
-            // Only after the restore has actually run, so a failure above
-            // leaves the stash intact for a manual re-run.
-            BdQuotesLayoutExtensions::clearStash();
         }
     } else {
         $GLOBALS['log']->error("BenchDogs-Ext: {$bdQuotesHelper} missing; Quotes record view not cleaned up");
@@ -96,7 +91,7 @@ try {
     $GLOBALS['log']->error('BenchDogs-Ext: Quotes layout cleanup failed: ' . $e->getMessage());
 }
 
-// 2. Accounts record view: our button and the two REQ-19 fields.
+// 2. Accounts record view: the two REQ-19 fields.
 try {
     $bdAccountsHelper = 'custom/modules/Accounts/BdAccountsLayoutExtensions.php';
     if (file_exists($bdAccountsHelper)) {

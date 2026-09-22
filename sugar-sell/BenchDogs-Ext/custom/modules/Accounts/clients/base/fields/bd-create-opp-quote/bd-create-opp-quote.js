@@ -1,10 +1,10 @@
 /**
  * RETIRED — this controller is intentionally empty.
  *
- * The button it backed is no longer placed on any layout by this package:
- * BdQuotesLayoutExtensions sets $wanted = [] and lists every one of this
- * package's own buttons in $unwanted, so none is injected and any left in a
- * previously-deployed viewdef is stripped on install.
+ * The button it backed is not placed on any layout by this package, and since
+ * 0.9.42-rc64 the package carries no record-view button logic at all
+ * (G276 / 🔒 1503 + 🔒 1504): nothing in it adds, removes, reorders or stashes
+ * a button, on any module. Core owns every record-view button.
  *
  * Core owns the capability:
  *   bd-create-opp-quote  -> ERP-Epicor's erp_create_opp_quote_button, whose
