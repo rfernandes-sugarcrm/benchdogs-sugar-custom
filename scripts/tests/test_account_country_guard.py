@@ -9,6 +9,8 @@ copy live on a hosted tenant (§CW / G37).
 """
 
 from pathlib import Path
+
+import shared_sugar
 import re
 import subprocess
 import unittest
@@ -19,26 +21,6 @@ PKG = ROOT / "sugar-sell/BenchDogs-Ext"
 GUARD = PKG / "custom/modules/Accounts/BdAccountCountryGuard.php"
 HOOK = PKG / "custom/Extension/modules/Accounts/Ext/LogicHooks/bd_account_country_guard.php"
 LANG = PKG / "custom/Extension/application/Ext/Language/_override_en_us.bd_country_lookup.php"
-
-def _erp_core_guard():
-    """ERP-Core's billing-country guard in the sibling checkout, or None.
-
-    A worktree does not sit beside the sibling, so resolve through git's common
-    dir as well as ROOT.parent."""
-    candidates = [ROOT.parent]
-    try:
-        common = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--git-common-dir"],
-                                capture_output=True, text=True, check=True).stdout.strip()
-        candidates.append((ROOT / common).resolve().parent.parent)
-    except (OSError, subprocess.CalledProcessError):
-        pass
-    rel = "erp-integration-sugar/sugar-sell/ERP-Core/src/custom/modules/Accounts/ErpAccountCountryGuard.php"
-    for base in candidates:
-        for cand in (base / rel, *(base / "erp-integration-sugar").glob("sugar-sell/**/ErpAccountCountryGuard.php")):
-            if cand.is_file():
-                return cand
-    return None
-
 
 class AccountCountryGuardPackagingTest(unittest.TestCase):
     def test_the_hook_is_RETIRED_and_registers_nothing(self):
@@ -68,9 +50,7 @@ class AccountCountryGuardPackagingTest(unittest.TestCase):
         with no hook entry is never required. The stub that matters is the hook
         registration, asserted above, and it keeps shipping."""
         self.assertFalse(GUARD.exists(), f"{GUARD.name} is back; ERP-Core owns the billing-country guard")
-        core = _erp_core_guard()
-        if core is None:
-            self.skipTest("erp-integration-sugar checkout not present beside this repo")
+        core = shared_sugar.resolve("ErpAccountCountryGuard.php")
         self.assertIn("class ErpAccountCountryGuard", core.read_text(encoding="utf-8", errors="replace"),
                       "core's guard is gone too - then nothing checks the billing country")
 

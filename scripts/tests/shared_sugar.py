@@ -65,6 +65,17 @@ SOURCES = {
     # CI, and only in CI.
     "QuotePrimaryQuoteSoleEnforcer.php":
         "sugar-sell/ERP-Core/src/custom/modules/Quotes/QuotePrimaryQuoteSoleEnforcer.php",
+    # Pinned 0.9.42-rc65 so the CORE-side controls run in CI rather than
+    # skipping: core's billing-country guard (this package ships none),
+    # ERP-Epicor's createOppQuote (G243's control - the seller's button must
+    # still create its Opportunity) and the label that collides with the
+    # retired Bench button (G15's root cause).
+    "ErpAccountCountryGuard.php":
+        "sugar-sell/ERP-Core/src/custom/modules/Accounts/ErpAccountCountryGuard.php",
+    "AccountsErpActionsApi.php":
+        "sugar-sell/ERP-Epicor/src/custom/clients/base/api/AccountsErpActionsApi.php",
+    "en_us.erp_create_opp_quote.php":
+        "sugar-sell/ERP-Epicor/src/custom/Extension/modules/Accounts/Ext/Language/en_us.erp_create_opp_quote.php",
     "BaseErpLayout.php":
         "sugar-sell/ERP-Core/scripts/BaseErpLayout.php",
     "QuotesLayout.php":

@@ -43,6 +43,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import shared_sugar
+
 ROOT = Path(__file__).resolve().parents[2]
 PKG = ROOT / "sugar-sell/BenchDogs-Ext"
 LAYOUT = PKG / "custom/modules/Accounts/BdAccountsLayoutExtensions.php"
@@ -55,23 +57,10 @@ _EPICOR_REL = (
 )
 
 
-def _find_epicor_labels():
-    """Walk up looking for the sibling checkout.
-
-    A git worktree sits at <repo>/.worktrees/<name>, so a fixed ``ROOT.parent``
-    resolves correctly from a normal clone and NOT from a worktree - the case
-    this test was first written in, where it silently skipped.
-    """
-    here = ROOT
-    for _ in range(4):
-        cand = here.parent / _EPICOR_REL
-        if cand.exists():
-            return cand
-        here = here.parent
-    return ROOT.parent / _EPICOR_REL
-
-
-EPICOR_LABELS = _find_epicor_labels()
+#: ERP-Epicor's label file, from the pin under fixtures/shared-sugar, so this
+#: runs in CI instead of skipping. The old walk-up finder could not see the
+#: sibling from a git worktree either.
+EPICOR_LABELS = shared_sugar.resolve("en_us.erp_create_opp_quote.php")
 
 BD_BUTTON = "bd_create_opp_quote_button"
 ERP_BUTTON = "erp_create_opp_quote_button"
@@ -199,8 +188,6 @@ class CreateOppQuoteButtonRetiredStatic(unittest.TestCase):
         bd = BD_LABELS.read_text(encoding="utf-8")
         self.assertNotIn("LBL_BD_CREATE_OPP_QUOTE_BUTTON'] =", bd,
                          "the Bench button label is back; core's button owns this action")
-        if not EPICOR_LABELS.exists():
-            self.skipTest("erp-integration-sugar checkout not present beside this repo")
         erp = EPICOR_LABELS.read_text(encoding="utf-8")
         self.assertRegex(erp, r"\$mod_strings\['LBL_ERP_CREATE_OPP_QUOTE_BUTTON'\]\s*=\s*'[^']+'",
                          "core no longer labels its own Create Opportunity & Quote button")

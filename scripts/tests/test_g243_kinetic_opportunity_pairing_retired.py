@@ -79,6 +79,8 @@ import unittest
 import zipfile
 from pathlib import Path
 
+import shared_sugar
+
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = ROOT / "sugar-sell/BenchDogs-Ext"
 
@@ -143,15 +145,12 @@ def _candidate_roots():
         here = here.parent
 
 
-def _find_epicor_actions() -> Path:
-    for base in _candidate_roots():
-        cand = base / _EPICOR_REL
-        if cand.exists():
-            return cand
-    return ROOT.parent / _EPICOR_REL
-
-
-EPICOR_ACTIONS = _find_epicor_actions()
+#: ERP-Epicor's own action API - the CONTROL: the seller's "Create Opportunity
+#: & Quote" button must still create AND save its Opportunity, or this fix has
+#: broken the thing it was protecting. Read from the pin under
+#: fixtures/shared-sugar so it runs in CI too (the sibling repo is private);
+#: test_shared_fixture_drift.py fails the moment the pin and core diverge.
+EPICOR_ACTIONS = shared_sugar.resolve("AccountsErpActionsApi.php")
 
 
 def _strip_php_comments(path: Path) -> str:
@@ -462,8 +461,6 @@ class NoOtherCreatorAndTheButtonSurvives(unittest.TestCase):
         """🛑 THE CONTROL. A fix that disabled the button's creation too has
         FAILED. The button is ERP-Epicor's - Bench's duplicate was retired by
         🔒 1044 / G15 - so this reads the sibling checkout."""
-        if not EPICOR_ACTIONS.exists():  # pragma: no cover - environment dependent
-            raise unittest.SkipTest(f"sibling checkout not present: {EPICOR_ACTIONS}")
         code = _strip_php_comments(EPICOR_ACTIONS)
         self.assertIn(
             "BeanFactory::newBean('Opportunities')", code,

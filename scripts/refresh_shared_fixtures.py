@@ -56,6 +56,12 @@ PINNED = {
         "ErpQuoteLineRollup.php",
     "QuotePrimaryQuoteSoleEnforcer.php":
         "sugar-sell/ERP-Core/src/custom/modules/Quotes/QuotePrimaryQuoteSoleEnforcer.php",
+    "ErpAccountCountryGuard.php":
+        "sugar-sell/ERP-Core/src/custom/modules/Accounts/ErpAccountCountryGuard.php",
+    "AccountsErpActionsApi.php":
+        "sugar-sell/ERP-Epicor/src/custom/clients/base/api/AccountsErpActionsApi.php",
+    "en_us.erp_create_opp_quote.php":
+        "sugar-sell/ERP-Epicor/src/custom/Extension/modules/Accounts/Ext/Language/en_us.erp_create_opp_quote.php",
     "BaseErpLayout.php":
         "sugar-sell/ERP-Core/scripts/BaseErpLayout.php",
     "QuotesLayout.php":
