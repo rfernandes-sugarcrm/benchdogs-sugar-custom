@@ -19,7 +19,16 @@ and the package ships no module of its own.
 > * the overwrite stubs that retire this package's own previously installed
 >   fields, hooks and labels — a hosted tenant never loses a file a later build
 >   simply omits, so an emptied file IS the retirement (§CW / G37);
-> * one-shot tenant-data writes a tenant may not have taken yet.
+> * the deployed-METADATA retirements, which are the same duty in the other
+>   medium: `BdQuotesLayoutExtensions::write()` no longer appends the Bench Dogs
+>   quote panel, it SPLICES IT OUT (rc55/rc57), and
+>   `BdOpportunitiesLayoutExtensions` removes 🔒 1044's retired marker. Each is a
+>   one-shot that keeps shipping until it has run everywhere, and each becomes
+>   removable on the same evidence rc66 used for `BdAutoSelectedReport`: an
+>   install log showing it found nothing left to remove;
+> * one-shot tenant-data writes a tenant may not have taken yet —
+>   `erp_integration.partial_order_sales_stage`, which Partial Fulfillment needs
+>   and which does not arrive with a package.
 >
 > rc66 removed the quoted-line grid column ordering, the retired saved-report
 > remover, the `Prototype Closed → Prototype Ordered` stage migration and the
