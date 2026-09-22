@@ -58,7 +58,14 @@ $manifest = array(
         ),
         array(
             'id_name' => 'sugarai_erp_epicor_partialfulfillment',
-            'version' => '1.0.13',
+            // 1.0.40 is the floor because rc65 STOPPED shipping the stage
+            // vocabulary: PF now owns sales_stage_dom['Prototype Ordered'] and
+            // ['Partial Production Ordered'], their 80/90 probabilities, their
+            // two styles (G278 / 🔒 1506) and quote_stage_dom['Partially
+            // Fulfilled'], which it has always owned. Installing this package
+            // over an older PF would leave Bench Opportunities and quotes
+            // holding stage values no dropdown serves.
+            'version' => '1.0.40',
         ),
     ),
 );

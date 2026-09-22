@@ -1,9 +1,15 @@
-"""REQ-15 option (c): Sugar refuses an Account billing country no Epicor country matches."""
+"""REQ-15 option (c) is CORE's now: ERP-Core's ErpAccountCountryGuard refuses an
+Account billing country no Epicor country matches.
 
-import json
+This package registers no guard (the hook fragment is an emptied stub) and, from
+0.9.42-rc65, ships no guard class either (G280 / 🔒 1507). What is left to pin is
+the PACKAGING: every path this package ever installed must keep shipping an empty
+stub, because dropping a custom/Extension file from the build leaves the installed
+copy live on a hosted tenant (§CW / G37).
+"""
+
 from pathlib import Path
 import re
-import shutil
 import subprocess
 import unittest
 
@@ -14,93 +20,24 @@ GUARD = PKG / "custom/modules/Accounts/BdAccountCountryGuard.php"
 HOOK = PKG / "custom/Extension/modules/Accounts/Ext/LogicHooks/bd_account_country_guard.php"
 LANG = PKG / "custom/Extension/application/Ext/Language/_override_en_us.bd_country_lookup.php"
 
-HARNESS = r'''
-#[AllowDynamicProperties]
-class SugarBean { public $fetched_row = []; }
-class SugarApiExceptionInvalidParameter extends Exception {}
-class TestLog {
-    public $lines = [];
-    public function warning($m) { $this->lines[] = ['warning', $m]; }
-    public function error($m) { $this->lines[] = ['error', $m]; }
-}
-$GLOBALS['log'] = new TestLog();
-require $argv[1];
-class TestGuard extends BdAccountCountryGuard {
-    public static $rows = [];
-    protected static function acceptedSpellings(): array { return self::spellingsFrom(self::$rows); }
-}
-class BrokenGuard extends BdAccountCountryGuard {
-    protected static function acceptedSpellings(): array { throw new RuntimeException('db down'); }
-}
-function attempt($guard, $platform, $new, $old) {
-    if ($platform === null) { unset($_SESSION['platform']); } else { $_SESSION['platform'] = $platform; }
-    $bean = new SugarBean();
-    $bean->billing_address_country = $new;
-    $bean->fetched_row = $old === null ? [] : ['billing_address_country' => $old];
-    $GLOBALS['log']->lines = [];
-    try {
-        $guard->refuseUnknownCountry($bean, 'before_save', []);
-        return ['refused' => null, 'log' => $GLOBALS['log']->lines];
-    } catch (SugarApiExceptionInvalidParameter $e) {
-        return ['refused' => $e->getMessage(), 'log' => $GLOBALS['log']->lines];
-    }
-}
-TestGuard::$rows = [
-    ['name' => 'USA', 'description' => 'USA|US|UNITED STATES|UNITED STATES OF AMERICA|AMERICA'],
-    ['name' => 'France', 'description' => 'FRANCE|FR'],
-];
-$g = new TestGuard();
-$out = [
-    'unknown' => attempt($g, 'base', 'Atlantis', 'USA'),
-    'alias' => attempt($g, 'base', 'United States', ''),
-    'punctuated' => attempt($g, 'mobile', 'u.s.a.', null),
-    'iso' => attempt($g, 'base', 'fr', 'USA'),
-    'unchanged_unknown' => attempt($g, 'base', 'Atlantis', 'atlantis'),
-    'cleared' => attempt($g, 'base', '', 'USA'),
-    'connector' => attempt($g, 'sugarai_erp_connector', 'Atlantis', 'USA'),
-    'no_platform_unknown' => attempt($g, null, 'Narnia', ''),
-    'broken_loader' => attempt(new BrokenGuard(), 'base', 'Atlantis', 'USA'),
-    'normalize' => [BdAccountCountryGuard::normalize('U.S.A. '), BdAccountCountryGuard::normalize("united \t  states")],
-];
-TestGuard::$rows = [];
-$out['empty_list'] = attempt($g, 'base', 'Atlantis', 'USA');
-echo json_encode($out);
-'''
+def _erp_core_guard():
+    """ERP-Core's billing-country guard in the sibling checkout, or None.
 
-
-@unittest.skipUnless(shutil.which("php"), "requires the PHP build-test image")
-class AccountCountryGuardTest(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        result = subprocess.run(
-            ["php", "-r", HARNESS, str(GUARD)], capture_output=True, text=True, check=False,
-        )
-        assert result.returncode == 0, result.stderr + result.stdout
-        cls.out = json.loads(result.stdout)
-
-    def test_an_unknown_changed_country_is_refused_with_the_known_list(self):
-        refused = self.out["unknown"]["refused"]
-        self.assertIn("Atlantis", refused)
-        self.assertIn("France, USA", refused)
-        self.assertIsNotNone(self.out["no_platform_unknown"]["refused"])
-
-    def test_every_published_spelling_is_accepted(self):
-        for case in ("alias", "punctuated", "iso"):
-            self.assertIsNone(self.out[case]["refused"], case)
-
-    def test_never_blocks_unchanged_cleared_or_connector_saves(self):
-        for case in ("unchanged_unknown", "cleared", "connector"):
-            self.assertIsNone(self.out[case]["refused"], case)
-
-    def test_fails_open_and_logs_when_the_list_is_empty_or_unreadable(self):
-        self.assertIsNone(self.out["empty_list"]["refused"])
-        self.assertEqual(self.out["empty_list"]["log"][0][0], "warning")
-        self.assertIsNone(self.out["broken_loader"]["refused"])
-        self.assertEqual(self.out["broken_loader"]["log"][0][0], "error")
-
-    def test_normalize_matches_the_extension_normalizer(self):
-        # connector_ext_benchdogs.reference._norm_country: 'U.S.A. ' -> 'USA'.
-        self.assertEqual(self.out["normalize"], ["USA", "UNITED STATES"])
+    A worktree does not sit beside the sibling, so resolve through git's common
+    dir as well as ROOT.parent."""
+    candidates = [ROOT.parent]
+    try:
+        common = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--git-common-dir"],
+                                capture_output=True, text=True, check=True).stdout.strip()
+        candidates.append((ROOT / common).resolve().parent.parent)
+    except (OSError, subprocess.CalledProcessError):
+        pass
+    rel = "erp-integration-sugar/sugar-sell/ERP-Core/src/custom/modules/Accounts/ErpAccountCountryGuard.php"
+    for base in candidates:
+        for cand in (base / rel, *(base / "erp-integration-sugar").glob("sugar-sell/**/ErpAccountCountryGuard.php")):
+            if cand.is_file():
+                return cand
+    return None
 
 
 class AccountCountryGuardPackagingTest(unittest.TestCase):
@@ -123,10 +60,19 @@ class AccountCountryGuardPackagingTest(unittest.TestCase):
         self.assertNotIn("$hook_array", hook, "this package must register no hook")
         self.assertNotRegex(hook, r"\bclass\s+\w+")
 
-    def test_hook_body_has_a_throwable_guard_and_refuses_with_the_passthrough_exception(self):
-        guard = GUARD.read_text()
-        self.assertIn("catch (\\Throwable $e)", guard)
-        self.assertIn("throw new SugarApiExceptionInvalidParameter($refusal)", guard)
+    def test_the_guard_class_no_longer_ships_and_core_owns_the_check(self):
+        """0.9.42-rc65, G280 / 🔒 1507. The class had no registration left - the
+        hook stub above registers nothing - so it was 900 lines of unreachable
+        Bench copy of a check ERP-Core performs (ErpAccountCountryGuard). It is
+        DELETED rather than emptied because nothing can load it: a class file
+        with no hook entry is never required. The stub that matters is the hook
+        registration, asserted above, and it keeps shipping."""
+        self.assertFalse(GUARD.exists(), f"{GUARD.name} is back; ERP-Core owns the billing-country guard")
+        core = _erp_core_guard()
+        if core is None:
+            self.skipTest("erp-integration-sugar checkout not present beside this repo")
+        self.assertIn("class ErpAccountCountryGuard", core.read_text(encoding="utf-8", errors="replace"),
+                      "core's guard is gone too - then nothing checks the billing country")
 
     def test_the_type_label_is_RETIRED_and_declares_nothing(self):
         """INVERTED 2026-09-20 (G50), not deleted.

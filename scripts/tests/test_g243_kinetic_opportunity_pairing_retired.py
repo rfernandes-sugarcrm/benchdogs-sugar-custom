@@ -444,9 +444,13 @@ class NoOtherCreatorAndTheButtonSurvives(unittest.TestCase):
             code = re.sub(
                 r"->from\(\s*BeanFactory::newBean\(\s*['\"]Opportunities['\"]\s*\)",
                 "->from(<query seed>", code)
-            if "'Opportunities'" in code or '"Opportunities"' in code:
-                if "newBean" in code or "getBean" in code:
-                    offenders.append(rel)
+            # PRECISE, because the loose form ("names Opportunities anywhere AND
+            # calls newBean anywhere") flagged post_install.php the moment it
+            # gained an unrelated BeanFactory::newBean('Administration') for the
+            # rc65 stage config, while its only 'Opportunities' is a
+            # RepairAndClear module list. What matters is a bean of THAT module.
+            if re.search(r"(newBean|getBean|retrieveBean)\(\s*['\"]Opportunities['\"]", code):
+                offenders.append(rel)
         self.assertEqual(
             [], sorted(offenders),
             "these shipped files reach the Opportunities bean layer: "

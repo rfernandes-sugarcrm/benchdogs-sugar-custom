@@ -173,6 +173,10 @@ try {
 
 // 4. Dashboard tiles: NOTHING TO DO, and deliberately no call here.
 //
+// 0.9.42-rc65 deleted BdDemoDashboards.php and the install-side call with it
+// (G280 / 🔒 1507), so there is no longer even a class to ask. What an earlier
+// install baked into a tenant's dashboards stays; see below.
+//
 // Until the quote mirror was retired (decisions 901/903/904/905) this step ran
 // BdDemoDashboards::uninstall() to strip the tiles that listed a module the
 // uninstall was about to delete. This package now deletes no module of its
@@ -185,194 +189,26 @@ try {
 // modules. This package can no longer remove them; they have to be deleted
 // from the dashboard by hand.
 
-// 5. Stage dropdown keys: REMOVE what post_install.php installed, unless a
-// record still holds one.
+// 5. Stage dropdown keys: NOT OURS TO REMOVE ANY MORE, and that is the fix.
 //
-// 🛑 G234. Until rc60 this file left the keys behind on purpose, and the note
-// at the bottom said why: records on this instance hold those values, and a key
-// pulled out from under a record renders as a raw string with no label. That is
-// sound on a demo instance that USES the stages. It is wrong everywhere else,
-// and on 2026-09-22 it left stock (ossugarcube2) still serving "Prototype
-// Ordered" and "Partial Production Ordered" after a clean 16/16 uninstall with
-// `error: ""` and a QRR offering 0 SQL changes - on a tenant where ZERO
-// opportunities held either stage. Stock is this campaign's negative control
-// for stage vocabulary, so every row graded "stock does not have this stage"
-// was invalidated by keys this package could not take back.
+// G234 built this step for a real defect: post_install had appended the stage
+// vocabulary through ModuleInstaller::install_languages() under id_name
+// 'zz_bd_stage_doms', neither uninstall route could reach that file, and a
+// clean 16/16 uninstall left stock serving "Prototype Ordered" and "Partial
+// Production Ordered" on a tenant where ZERO opportunities held either.
 //
-// AND IT COULD NOT HAVE TAKEN THEM BACK ANYWAY - the second layer, and the one
-// that makes a conditional rewrite of the first layer insufficient on its own.
-// post_install.php installs the template through a hand-built ModuleInstaller
-// whose id_name is 'zz_bd_stage_doms'.
+// 🔒 1506 removed the CAUSE instead of teaching this file to clean up after it:
+// Partial Fulfillment now owns both sales stages (and has always owned
+// quote_stage_dom's 'Partially Fulfilled'), 0.9.42-rc65 declares none of them,
+// and post_install.php deletes the accumulated zz_bd_stage_doms fragment once,
+// on install, through uninstall_languages(). Removing the KEYS here would now
+// delete ANOTHER package's vocabulary from under records that hold it - the
+// same damage G234 existed to prevent, pointed the other way. The owner's
+// instruction is explicit: a Bench Dogs uninstall must stop removing them.
 //
-// ⚠️ THE zz_ PREFIX BUYS NOTHING ON MERGE ORDER, whatever it looks like. Sugar
-// merges application language extensions `_override` LAST, then by the mtime
-// recorded in custom/Extension/application/Ext/Language/orderMapping.php, then
-// stably - and that recorded mtime is refreshed only when a file's md5 changes
-// (ModuleInstaller.php:2417-2463 and include/utils.php:6648, identical in
-// 25.2.0 and 26.1.0). A FILENAME PLAYS NO PART. What actually keeps Bench's
-// keys alive after an ERP-Epicor replace install is that install_languages()
-// APPENDS to this file on every Bench install, so its md5 moves, so its
-// recorded mtime is refreshed and it merges last. That is why the mitigation
-// for G220 is "install Bench Dogs LAST" and why a content-identical rc60 could
-// not have moved it. The id just has to stay ours and stay stable.
-//
-// ModuleInstaller::install_languages() writes
-//
-//     custom/Extension/application/Ext/Language/en_us.zz_bd_stage_doms.php
-//
-// (Sugar 26.1.0 ModuleInstaller.php:1219 builds the directory, :1227 builds the
-// filename as "<language>.<id_name>.php"). Sugar's uninstall cannot reach that
-// file by either route it owns:
-//
-//   * uninstall_copy() (:521) walks installdefs['copy'] and nothing else. None
-//     of this package's 54 copy entries names zz_bd_stage_doms - the copy entry
-//     that looks like it does, en_us.bd_stage_doms.php, is a DIFFERENT file.
-//   * uninstall_languages() (:1243) is gated on isset($this->installdefs
-//     ['language']), and this manifest has no 'language' key at all - its
-//     installdefs are id, beans, copy, post_execute, pre_uninstall,
-//     post_uninstall. It returns having done nothing. Even if the key existed,
-//     it deletes "<language>.<MANIFEST id_name>.php", never our zz_ file.
-//
-// So the file post_install writes is unreachable by the uninstaller by
-// construction, and only this script can remove it. Checked against the shipped
-// rc60 zip and the 26.1.0 source; not inferred.
-//
-// DECLARING installdefs['language'] IN THE MANIFEST IS NOT THE FIX - and not
-// for the ordering reason, which does not exist (see above). It is not the fix
-// because Sugar's uninstall_languages() is UNCONDITIONAL: it would delete the
-// keys on every uninstall, including the Bench instance whose opportunities
-// hold them, which is precisely the case rc60 was protecting and the half of
-// this gap that is a policy question rather than a mechanism. A removal that
-// has to consult the data has to be ours.
-//
-// THE REMOVAL IS THE EXACT MIRROR OF THE INSTALL: same hand-built installer,
-// same id_name, same one-entry installdefs - uninstall_languages() where
-// post_install calls install_languages(). That keeps this package on the
-// scanner-safe route BaseErpDropdown documents - a method call on Sugar's own
-// trusted installer class, never a filesystem function written in package code,
-// which ModuleScanner denylists for uploaded packages.
-//
-// THE GUARD IS THE OLD REASONING MADE CONDITIONAL INSTEAD OF UNIVERSAL. Records
-// are counted before anything is removed, with team security OFF - an uninstall
-// has to see every record, not the ones the admin's teams happen to read - and
-// one holder keeps the keys and says so at fatal. Bench, whose opportunities do
-// hold these stages, behaves exactly as it does today. Stock, which holds none,
-// comes back clean.
-//
-// 'Partially Fulfilled' IS NOT OURS TO BLOCK ON WHILE PF IS INSTALLED. Partial
-// Fulfillment 1.0.36 ships that key in its own right as
-// _override_en_us.partial_fulfillment_quote_stage.php, declared in ITS
-// installdefs['copy'] - a file this package neither writes nor removes, and an
-// _override_ fragment merges last. With that file present the key survives our
-// removal and quotes holding it keep their label, so blocking on them would let
-// one PF quote pin Bench's sales stages on the instance forever. With it absent
-// nothing else ships the key, so those quotes are counted like the
-// opportunities. The presence of the file is the test, not the presence of the
-// package row, because an uninstall can run in either order.
-//
-// FAIL CLOSED: any throw leaves every key in place, which is rc60's behaviour.
-try {
-    $bdStageTpl = 'custom/dropdowntemplates/bd_stage_doms.append.php';
-    $bdPfOverride = 'custom/Extension/application/Ext/Language/'
-        . '_override_en_us.partial_fulfillment_quote_stage.php';
-    $bdHeld = array();
+// Nothing replaces this step. Uninstalling this package leaves PF's stages,
+// their probabilities and their styles exactly where they are.
 
-    $bdOppQuery = new SugarQuery();
-    $bdOppQuery->select(array('id'));
-    $bdOppQuery->from(BeanFactory::newBean('Opportunities'), array('team_security' => false));
-    $bdOppQuery->where()->in('sales_stage', array('Prototype Ordered', 'Partial Production Ordered'));
-    $bdOppQuery->limit(1);
-    if ($bdOppQuery->execute()) {
-        $bdHeld[] = 'Opportunities.sales_stage';
-    }
-
-    if (!file_exists($bdPfOverride)) {
-        $bdQuoteQuery = new SugarQuery();
-        $bdQuoteQuery->select(array('id'));
-        $bdQuoteQuery->from(BeanFactory::newBean('Quotes'), array('team_security' => false));
-        $bdQuoteQuery->where()->in('quote_stage', array('Partially Fulfilled'));
-        $bdQuoteQuery->limit(1);
-        if ($bdQuoteQuery->execute()) {
-            $bdHeld[] = 'Quotes.quote_stage';
-        }
-    }
-
-    if (!empty($bdHeld)) {
-        $GLOBALS['log']->fatal(
-            'BenchDogs-Ext: stage dropdown keys KEPT - records still hold them ('
-            . implode(', ', $bdHeld)
-            . '); restage those records, then remove the keys in Admin > Dropdown Editor'
-        );
-    } elseif (!file_exists($bdStageTpl)) {
-        $GLOBALS['log']->fatal(
-            'BenchDogs-Ext: stage dom template missing, stage dropdown keys left behind'
-        );
-    } else {
-        require_once 'ModuleInstall/ModuleInstaller.php';
-        $bdMi = new ModuleInstaller();
-        $bdMi->silent = true;
-        $bdMi->id_name = 'zz_bd_stage_doms';
-        $bdMi->base_dir = getcwd();
-        $bdMi->installdefs = array(
-            'language' => array(
-                array(
-                    'from' => $bdStageTpl,
-                    'to_module' => 'application',
-                    'language' => 'en_us',
-                ),
-            ),
-        );
-        $bdMi->uninstall_languages();
-
-        // uninstall_languages() rebuilds only the language it was handed
-        // (en_us). The install compiles and refreshes this instance's default
-        // and current languages as well, so the removal has to match: on a
-        // tenant whose default_language is de_DE, rebuilding only en_us leaves
-        // the compiled de_DE list still serving the keys we just deleted.
-        $bdLanguages = array('en_us' => 'en_us');
-        foreach (array(
-            $GLOBALS['sugar_config']['default_language'] ?? 'en_us',
-            $GLOBALS['current_language'] ?? 'en_us',
-        ) as $bdLanguage) {
-            if (is_string($bdLanguage) && trim($bdLanguage) !== '') {
-                $bdLanguages[trim($bdLanguage)] = trim($bdLanguage);
-            }
-        }
-        $bdMi->rebuild_languages($bdLanguages);
-        MetaDataManager::refreshLanguagesCache(array_values($bdLanguages));
-        $GLOBALS['log']->fatal(
-            'BenchDogs-Ext: stage dropdown keys removed - no record held them'
-        );
-
-        // Verify against the UNCACHED lists, the way post_install.php verifies
-        // the install. Two separate verdicts, because they fail differently and
-        // an operator needs to know which: ours still being served means the
-        // removal did not take; PF's key going missing means we removed a key
-        // that was never ours - the control this fix must not break.
-        foreach ($bdLanguages as $bdLanguage) {
-            $bdDoms = return_app_list_strings_language($bdLanguage, false);
-            if (isset($bdDoms['sales_stage_dom']['Prototype Ordered'])
-                || isset($bdDoms['sales_stage_dom']['Partial Production Ordered'])
-                || isset($bdDoms['sales_probability_dom']['Prototype Ordered'])
-                || isset($bdDoms['sales_probability_dom']['Partial Production Ordered'])) {
-                $GLOBALS['log']->fatal('BenchDogs-Ext: stage dropdown key removal verification failed');
-                break;
-            }
-            if (file_exists($bdPfOverride)
-                && !isset($bdDoms['quote_stage_dom']['Partially Fulfilled'])) {
-                $GLOBALS['log']->fatal('BenchDogs-Ext: stage dropdown key removal took Partial Fulfillment quote stage');
-                break;
-            }
-        }
-    }
-} catch (Throwable $e) {
-    $GLOBALS['log']->fatal(
-        'BenchDogs-Ext: stage dropdown keys KEPT - removal failed: ' . $e->getMessage()
-    );
-}
-
-// WHAT THIS DELIBERATELY DOES NOT DO
-//
 // The *_cstm columns behind the bd_* fields are left in the database. Removing
 // a vardef does not drop its column, and dropping them here would make the
 // uninstall destructive in a way `remove_tables => prompt` never asked about:
@@ -380,11 +216,7 @@ try {
 // way back. With the vardefs gone Sugar neither reads nor displays them, so
 // they cost nothing but disk.
 //
-// The stage dropdown keys are no longer left alone unconditionally - see step 5
-// above, which removes them when nothing holds them and keeps them (loudly)
-// when something does. The old blanket "leave them" was two errors in one: it
-// read a demo instance's record population as a universal fact, and it
-// described as a decision something the package could not have done anyway.
-// What step 5 still does NOT do is edit records to free a key: an uninstall
-// that restaged an opportunity to make its own cleanup possible would be
-// destructive in a way `remove_tables => prompt` never asked about.
+// The stage dropdown keys are left alone because they are not this package's
+// any more (step 5). No uninstall of Bench Dogs edits a record to free a key
+// either: restaging an opportunity to make a package's own cleanup possible
+// would be destructive in a way `remove_tables => prompt` never asked about.

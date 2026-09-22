@@ -133,9 +133,14 @@ class BenchKeepsNoCopyOfTheErpLineNumber(unittest.TestCase):
         # classifying off a partial read. Both halves are pinned so that the
         # retirement above cannot quietly become "reads nothing".
         policy = _code_without_comments(POLICY)
-        self.assertIn("$product->erp_ordered", policy)
-        self.assertIn("BeanFactory::retrieveBean(", policy)
-        self.assertIn("No committed Quote line is visible", policy)
+        # 0.9.42-rc65 (G280 / 🔒 1507): the provider is a stub that returns null
+        # and Partial Fulfillment decides the stage from tenant config, so there
+        # is no erp_ordered read left here to pin. What must stay true is that
+        # this package reads the ORDERED FLAG NOWHERE ELSE either - if a reader
+        # comes back, it belongs in core.
+        self.assertNotIn("$product->erp_ordered", policy)
+        self.assertIn("return null", policy)
+        self.assertNotIn("BeanFactory::", policy, "the retired provider is reading beans again")
         self.assertNotIn(RETIRED_FIELD, policy)
 
     def test_the_grid_injects_exactly_the_core_column(self):

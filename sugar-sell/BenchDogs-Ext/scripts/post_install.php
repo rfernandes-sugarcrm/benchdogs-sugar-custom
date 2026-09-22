@@ -86,6 +86,39 @@
 // once per install request.
 $GLOBALS['log']->fatal('BenchDogs-Ext: post_install running - writing deployed metadata');
 
+// 🛑 FIRST, BECAUSE IT IS THE HALF THAT CANNOT BE REDONE LATER (G280 / 🔒 1507).
+//
+// rc65 retired this package's Opportunity release-stage PROVIDER: the shipped
+// custom/modules/Quotes/ErpQuoteHooks/OpportunityReleaseStagePolicy.php now
+// returns null, which hands the decision to Partial Fulfillment's generic path.
+// That path reads a TENANT CONFIG key, and a config row is data - it does not
+// arrive with the package. If the provider is neutered and this key is not
+// written, the Opportunity stage silently stops being written at all, so this
+// block runs BEFORE any layout work and has its own guard.
+//
+// Written only when absent: a tenant (or an admin) that already chose a stage
+// keeps it. The probability is deliberately NOT written - PF derives it from
+// sales_probability_dom, where G278 / 🔒 1506 ships 90 for this key.
+try {
+    $bdAdmin = BeanFactory::newBean('Administration');
+    $bdErpConfig = $bdAdmin->getConfigForModule('erp_integration');
+    $bdCurrentStage = is_array($bdErpConfig)
+        ? trim((string) ($bdErpConfig['partial_order_sales_stage'] ?? ''))
+        : '';
+    if ($bdCurrentStage === '') {
+        $bdAdmin->saveSetting('erp_integration', 'partial_order_sales_stage', 'Partial Production Ordered');
+        $GLOBALS['log']->fatal(
+            'BenchDogs-Ext: erp_integration.partial_order_sales_stage set to Partial Production Ordered'
+        );
+    } else {
+        $GLOBALS['log']->fatal(
+            'BenchDogs-Ext: erp_integration.partial_order_sales_stage already set, left as is'
+        );
+    }
+} catch (Throwable $e) {
+    $GLOBALS['log']->fatal('BenchDogs-Ext: partial order stage config failed: ' . $e->getMessage());
+}
+
 $bdLayoutHelper = 'custom/modules/Quotes/BdQuotesLayoutExtensions.php';
 try {
     if (file_exists($bdLayoutHelper)) {
@@ -222,62 +255,72 @@ try {
     $GLOBALS['log']->fatal('BenchDogs-Ext: review report removal failed: ' . $e->getMessage());
 }
 
-// Stage dropdown keys (quote_stage_dom 'Partially Fulfilled',
-// sales_stage_dom 'Prototype Ordered'/'Partial Production Ordered') via
-// ModuleInstaller::install_languages() - the scanner-safe route
-// ERP-Core's BaseErpDropdown documents. Append-only, idempotent.
-try {
-    $bdTpl = 'custom/dropdowntemplates/bd_stage_doms.append.php';
-    if (file_exists($bdTpl)) {
-        require_once 'ModuleInstall/ModuleInstaller.php';
-        $bdMi = new ModuleInstaller();
-        $bdMi->silent = true;
-        $bdMi->id_name = 'zz_bd_stage_doms';
-        $bdMi->base_dir = getcwd();
-        $bdMi->installdefs = array(
-            'language' => array(
-                array(
-                    'from' => $bdTpl,
-                    'to_module' => 'application',
-                    'language' => 'en_us',
-                ),
-            ),
-        );
-        $bdMi->install_languages();
-    } else {
-        $GLOBALS['log']->fatal('BenchDogs-Ext: stage dom template missing, skipping dropdown install');
-    }
-} catch (Throwable $e) {
-    $GLOBALS['log']->fatal('BenchDogs-Ext: stage dropdowns failed: ' . $e->getMessage());
-}
-
-// Pin the Accounts focus drawer and the Home dashboard. Loaded via
-// __DIR__ rather than a fixed custom/include/bd_scripts/ path: at
-// this point in the install, the separate copy installdef entries
-// (which land the permanent copy there for later manual re-runs)
-// are not guaranteed to have run yet, but addTree('scripts') always
-// extracts this file into the same temp directory as post_install.php
-// itself, so __DIR__ is the one location guaranteed present already.
+// 🛑 THE STAGE VOCABULARY IS CORE'S NOW — AND THIS TAKES BENCH'S COPY BACK.
+// G278 / 🔒 1506 ("this hsoudl happen in the core") + G280 / 🔒 1507.
 //
-// GUARD THE CLASS, NOT THE PATH. This file reaches for __DIR__ and
-// pre_uninstall.php falls back to custom/include/bd_scripts/, so
-// BdDemoDashboards.php is reachable at two paths on an installed
-// instance. require_once dedupes by RESOLVED PATH, not by class name,
-// and an uninstall_before_upgrade run executes pre_uninstall.php and
-// this file in ONE request - so both copies would load and PHP would
-// fatal with "Cannot redeclare class BdDemoDashboards", killing the
-// install outright. The sibling repository lost a demo instance to
-// exactly this defect on 2026-09-11; scripts/mlp_lint.py MLP001 exists
-// because of it, and flagged this line.
+// Partial Fulfillment 1.0.40 ships sales_stage_dom['Prototype Ordered'] and
+// ['Partial Production Ordered'] byte-exact, their 80/90 probabilities, their
+// two Sidecar styles, and has always shipped quote_stage_dom['Partially
+// Fulfilled']. It declares them in _override_ fragments, which Sugar merges
+// LAST whatever the mtimes say, so they cannot be wiped by a whole-array
+// replace (that is G220/G273's whole problem, solved at the source). The
+// manifest now requires that version.
+//
+// So this package stops declaring any of it - and "stops declaring" is not
+// enough on a hosted tenant. Until rc64 post_install APPENDED the template to
+// custom/Extension/application/Ext/Language/en_us.zz_bd_stage_doms.php through
+// ModuleInstaller::install_languages(), which CONCATENATES rather than
+// overwrites (26.1.0 ModuleInstaller.php:1227-1235). That accumulated file is
+// still on every Bench Dogs tenant, carrying every key every past version ever
+// appended - including decision 314's retired '...Closed' pair (G268).
+//
+// uninstall_languages() is the exact mirror of the install and the one removal
+// available to a package: it deletes en_us.<id_name>.php and rebuilds the
+// language cache (:1243-1265). unlink() is denied to package code by the cloud
+// scanner, so nothing else could take this file back. Same installer class,
+// same id_name, same template path as the install used.
+//
+// Idempotent: on a tenant that never had the file, sugar_is_file() is false and
+// the call only rebuilds. rc64's tenants run this once and are done.
 try {
-    if (!class_exists('BdDemoDashboards', false)) {
-        require_once __DIR__ . '/BdDemoDashboards.php';
-    }
-    (new BdDemoDashboards())->install();
+    require_once 'ModuleInstall/ModuleInstaller.php';
+    $bdMi = new ModuleInstaller();
+    $bdMi->silent = true;
+    $bdMi->id_name = 'zz_bd_stage_doms';
+    $bdMi->base_dir = getcwd();
+    $bdMi->installdefs = array(
+        'language' => array(
+            array(
+                'from' => 'custom/dropdowntemplates/bd_stage_doms.append.php',
+                'to_module' => 'application',
+                'language' => 'en_us',
+            ),
+        ),
+    );
+    $bdMi->uninstall_languages();
+    $GLOBALS['log']->fatal(
+        'BenchDogs-Ext: removed the zz_bd_stage_doms language fragment; the sales '
+        . 'and quote stages are Partial Fulfillment\'s'
+    );
 } catch (Throwable $e) {
-    $GLOBALS['log']->fatal('BenchDogs-Ext: demo dashboards failed: ' . $e->getMessage());
+    $GLOBALS['log']->fatal('BenchDogs-Ext: stage fragment removal failed: ' . $e->getMessage());
 }
 
+// 🛑 THE BAKED DEMO DASHBOARDS ARE GONE (G280 / 🔒 1507).
+//
+// This block composed two dashboards - the Accounts focus drawer and the Home
+// dashboard - out of OTHER packages' dashlets (ERP-Core's account-card and
+// erp-account-snapshot, the BAQ dashlet, Account Hierarchy's saah-*, sales-i's
+// recommendations-dashlet and gai-dashlet) plus one Bench-authored stock
+// `dashablelist` tile, "ERP Quote Pipeline". The owner: *"Donthave any logic on
+// bench that is not on core"* - a demo layout made of other packages' tiles is
+// exactly that, and scripts/BdDemoDashboards.php (705 lines) went with the
+// call. If the pipeline tile is wanted, it belongs in core's ErpDemoDashboards.
+//
+// A tenant that already has the dashboards keeps them: they are rows in the
+// dashboards table, written once per install, and nothing here rewrites them
+// any more. The copy of the class under custom/include/bd_scripts/ that earlier
+// installs left behind is unreachable - nothing requires it.
 
 try {
     SugarAutoLoader::load('modules/Administration/QuickRepairAndRebuild.php');
@@ -313,18 +356,16 @@ try {
     $GLOBALS['log']->fatal('BenchDogs-Ext: relationship rebuild failed: ' . $e->getMessage());
 }
 
-// A copied language fragment is not yet a usable stage domain. The
-// admin repair route explicitly compiles application languages and
-// refreshes their metadata; fresh installs and upgrades need that
-// same lifecycle before they can report this capability as ready.
-// Run after the other extension rebuilds, and verify uncached lists.
+// The language cache still has to be rebuilt, because this install EMPTIED two
+// fragments it used to declare stages in (en_us.bd_stage_doms.php and the
+// DropdownsStyle file) and deleted a third above. Until the application
+// languages are recompiled the tenant keeps serving what those files said.
 //
-// This block used to rethrow a RuntimeException on a failed verification. It
-// must not: see "NOTHING IN THIS FILE MAY THROW PAST ITS OWN CATCH" above. The
-// verification is kept, and its verdict is logged at fatal under a fixed
-// message that leaks no exception detail, so an operator can still tell a
-// half-compiled language set from a good one without the package deleting
-// itself to say so.
+// The verification that follows is a READ, logged and never thrown: it says
+// whether core is serving the two stages after this install. It is not this
+// package's contract any more - Partial Fulfillment owns the keys - but a
+// Bench Opportunity stores those strings, so an operator needs one line in the
+// log that says whether they are still there.
 try {
     require_once 'ModuleInstall/ModuleInstaller.php';
     $bdLanguages = array('en_us' => 'en_us');
@@ -342,27 +383,20 @@ try {
     MetaDataManager::refreshLanguagesCache(array_values($bdLanguages));
     foreach ($bdLanguages as $bdLanguage) {
         $bdDoms = return_app_list_strings_language($bdLanguage, false);
-        if (!isset($bdDoms['quote_stage_dom']['Partially Fulfilled'])
-            || !isset($bdDoms['sales_stage_dom']['Prototype Ordered'])
-            || !isset($bdDoms['sales_stage_dom']['Partial Production Ordered'])
-            || (string) ($bdDoms['sales_probability_dom']['Prototype Ordered'] ?? '') !== '80'
-            || (string) ($bdDoms['sales_probability_dom']['Partial Production Ordered'] ?? '') !== '90') {
-            $GLOBALS['log']->fatal('BenchDogs-Ext: required stage language verification failed');
-            break;
-        }
-        // G268: decision 314's retired names must be GONE, not merely
-        // outnumbered. The template's tail unset()s them; a hit here means a
-        // fragment merging after en_us.zz_bd_stage_doms.php still declares one.
+        $bdServed = isset($bdDoms['sales_stage_dom']['Prototype Ordered'])
+            && isset($bdDoms['sales_stage_dom']['Partial Production Ordered']);
+        $GLOBALS['log']->fatal(
+            'BenchDogs-Ext: release stages served by core after this install: '
+            . ($bdServed ? 'yes' : 'NO - install Partial Fulfillment >= 1.0.40')
+        );
         if (isset($bdDoms['sales_stage_dom']['Prototype Closed'])
-            || isset($bdDoms['sales_stage_dom']['Partial Production Closed'])
-            || isset($bdDoms['sales_probability_dom']['Prototype Closed'])
-            || isset($bdDoms['sales_probability_dom']['Partial Production Closed'])) {
+            || isset($bdDoms['sales_stage_dom']['Partial Production Closed'])) {
             $GLOBALS['log']->fatal('BenchDogs-Ext: retired stage names still served');
-            break;
         }
+        break;
     }
 } catch (Throwable $e) {
-    $GLOBALS['log']->fatal('BenchDogs-Ext: required stage language verification failed');
+    $GLOBALS['log']->fatal('BenchDogs-Ext: language rebuild failed: ' . $e->getMessage());
 }
 
 // DECISION 314 - stage rename data migration. The two release stages were

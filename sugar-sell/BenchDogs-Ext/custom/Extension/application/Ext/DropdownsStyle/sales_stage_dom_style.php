@@ -1,55 +1,18 @@
 <?php
 
 /**
- * Native Sidecar presentation for the two Bench release milestones.
+ * EMPTIED IN 0.9.42-rc65 — G278 / 🔒 1506 + G280 / 🔒 1507.
  *
- * Opportunities renders sales_stage with Sugar's enum-cascade field. When
- * sales_stage_dom_style has applyFormatting enabled, a domain key without a
- * matching style renders as an empty detail value even though the model and
- * sales_stage_dom label are correct. Keep these entries append-only: the
- * shared ERP package and the tenant own every other stage style.
+ * This file styled the two Bench release milestones in sales_stage_dom_style.
+ * The stages themselves moved to Partial Fulfillment, and PF ships the two
+ * styles with them (partial_fulfillment_sales_stage_style.php, each entry
+ * guarded on the key so a tenant's own styling is never overwritten). A style
+ * is not decoration here: with applyFormatting enabled, a domain key with no
+ * style renders BLANK on the record — the L-0004 defect. So the styles had to
+ * travel with the keys, and they did.
  *
- * Prototype Ordered remains an open-pipeline milestone, so it reuses Sugar's
- * native Proposal yellow. Partial Production Ordered uses Sugar's native
- * successful-milestone green. Both use the stock check-circle icon rather
- * than introducing a second visual vocabulary.
+ * EMPTIED, NOT DROPPED: Sugar loads this by path from every tenant that ever
+ * installed it, and Module Loader deletes nothing (§CW / G37). Keeping a Bench
+ * style for a core-owned key would also be exactly the duplication the owner
+ * ruled out — *"Donthave any logic on bench that is not on core"*.
  */
-if (!array_key_exists(
-    'Prototype Ordered',
-    $app_dropdowns_style['sales_stage_dom_style'] ?? array()
-)) {
-    $app_dropdowns_style['sales_stage_dom_style']['Prototype Ordered'] = array(
-        'backgroundColor' => '#FEF08A',
-        'text' => array(
-            'isBold' => true,
-            'isItalic' => false,
-            'isUnderline' => false,
-            'isLineThrough' => false,
-            'color' => '#854D0E',
-        ),
-        'icon' => array(
-            'class' => 'check-circle',
-            'color' => '#854D0E',
-        ),
-    );
-}
-
-if (!array_key_exists(
-    'Partial Production Ordered',
-    $app_dropdowns_style['sales_stage_dom_style'] ?? array()
-)) {
-    $app_dropdowns_style['sales_stage_dom_style']['Partial Production Ordered'] = array(
-        'backgroundColor' => '#A7F3D0',
-        'text' => array(
-            'isBold' => true,
-            'isItalic' => false,
-            'isUnderline' => false,
-            'isLineThrough' => false,
-            'color' => '#065F46',
-        ),
-        'icon' => array(
-            'class' => 'check-circle',
-            'color' => '#065F46',
-        ),
-    );
-}

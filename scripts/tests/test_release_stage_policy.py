@@ -1,176 +1,127 @@
-"""Bench release-stage policy: identity-safe classification, no writes.
+#!/usr/bin/env python3
+"""The Bench release-stage provider is RETIRED, in the one shape that works.
 
-THE POLICY NOW READS NATIVE QUOTE LINES, AND HAS ONE OUTCOME. It used to walk the
-`bd01_*` quote mirror to build a `line_num => 'prototype'|'production'` lookup and
-could answer either `Prototype Ordered` (80) or `Partial Production Ordered` (90).
-Decision 901/903 retired the mirror; the policy's own header records that the
-lookup was ALREADY dead - the mirror's `prototype` boolean lost its writer at D16,
-so every ordered line had been reading as production since then.
+🛑 WHAT CHANGED (0.9.42-rc65, G280 / 🔒 1507, on top of G278 / 🔒 1506). This
+package used to answer the Opportunity release stage itself: count the Quote's
+ordered lines, return `['sales_stage' => 'Partial Production Ordered',
+'probability' => 90]`. Partial Fulfillment does the same thing generically, from
+tenant config, so Bench stops deciding — *"Donthave any logic on bench that is
+not on core"*.
 
-So `Prototype Ordered` is not a branch the code can reach any more, and the two
-tests that asserted it (`test_prototype_only_release`,
-`test_preloaded_erp_graph_cannot_hide_line_identity_or_prototype_role`) were
-deleted rather than repointed. Restoring that milestone needs a real writer on the
-native line, which is a decision about `custom/`, not a test that can be made to
-pass here.
+🚩 AND "STOPS DECIDING" IS NOT "STOPS SHIPPING", which is the whole reason this
+file still exists. Read out of PF's source rather than assumed
+(`ERP-Epicor-PartialFulfillment/custom/modules/Quotes/ErpOpportunityValuation.php`):
 
-What remains is what the shipped `resolve()` actually decides:
+*   `:288` finds the provider by a HARDCODED PATH with `file_exists()`. Module
+    Loader never deletes a file a later build stops shipping (§CW / G37) and
+    `unlink()` is denied to package code (MLP002), so DELETING the file would
+    leave the old provider running on every tenant that has it, still
+    outranking the config.
+*   `:297-301` — if the file exists but does NOT define
+    `ErpOpportunityReleaseStagePolicy`, PF returns `policy_provider_invalid` and
+    PRESERVES the stage, never reading the config. So an EMPTY stub is worse
+    than doing nothing: the stage would silently stop being written.
+*   `:312` + `:319` — a provider that exists and returns `null` is
+    `policy_provider_null`, which falls through to
+    `erp_integration.partial_order_sales_stage`. That is the only shape that
+    hands the decision over, and it is what this package now ships.
 
-  * any committed (`erp_ordered`) native line stages the Opportunity at
-    `Partial Production Ordered` / 90;
-  * nothing committed REFUSES rather than guessing a stage;
-  * every line is re-read with `use_cache => false`, because Order Selected Lines
-    loads `products` before it stamps the selected Product and a Link2 snapshot
-    once showed `erp_ordered=false` after the order had actually succeeded;
-  * the policy never writes - it classifies.
+So the cases below EXECUTE the shipped file: define the class, call `resolve()`,
+and assert it answers null while writing nothing. The config half is asserted in
+test_post_install_stage_languages.py.
+
+MUTATION-VERIFIED: empty the file -> defines_the_class fails; make resolve()
+return an array -> answers_null fails; delete the file -> still_ships fails.
 """
 
-from pathlib import Path
+from __future__ import annotations
+
 import json
+import os
 import shutil
 import subprocess
 import unittest
-import zipfile
-
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-PROVIDER = (
-    ROOT / "sugar-sell/BenchDogs-Ext/custom/modules/Quotes/ErpQuoteHooks"
-    / "OpportunityReleaseStagePolicy.php"
-)
+PKG = Path(os.environ.get("BD_PKG", ROOT / "sugar-sell/BenchDogs-Ext"))
+POLICY = PKG / "custom/modules/Quotes/ErpQuoteHooks/OpportunityReleaseStagePolicy.php"
 
-ORDERED = {"sales_stage": "Partial Production Ordered", "probability": 90}
-
-FIXTURE = r'''
-#[AllowDynamicProperties]
+#: PF loads the provider exactly like this: require the path, check the class,
+#: call resolve($quote). The stub must survive being handed a real-ish bean.
+HARNESS = r"""
 class SugarBean {
-    public $saves = 0;
-    public function load_relationship($name) { return isset($this->$name); }
-    public function save() { $this->saves++; }
+    public $id = 'quote-1';
+    public $products = null;
+    public $saved = 0;
+    public function save($check = true) { $this->saved++; }
+    public function load_relationship($name) { $GLOBALS['touched'][] = 'load_relationship'; return true; }
 }
 class BeanFactory {
-    public static $beans = [];
-    public static $retrievals = [];
-    public static function retrieveBean($module, $id, $options = []) {
-        self::$retrievals[] = [$module, $id, $options];
-        return self::$beans[$id] ?? null;
-    }
+    public static function retrieveBean($module, $id, $params = []) { $GLOBALS['touched'][] = 'retrieveBean'; return null; }
+    public static function newBean($module) { $GLOBALS['touched'][] = 'newBean'; return new SugarBean(); }
 }
-class TestLink {
-    public function __construct(public $beans = []) {
-        foreach ($beans as $bean) {
-            if (!empty($bean->id)) { BeanFactory::$beans[$bean->id] = $bean; }
-        }
-    }
-    public function getBeans() { return $this->beans; }
-    public function get() {
-        return array_values(array_map(function ($bean) { return $bean->id; }, $this->beans));
-    }
+class TestLog { public function __call($m, $a) { $GLOBALS['logged'][] = $m; } }
+$GLOBALS['log'] = new TestLog();
+$GLOBALS['touched'] = [];
+$GLOBALS['logged'] = [];
+
+require getenv('BD_POLICY');
+$defined = class_exists('ErpOpportunityReleaseStagePolicy', false);
+$answer = 'not-called';
+$threw = null;
+if ($defined) {
+    $quote = new SugarBean();
+    try { $answer = (new ErpOpportunityReleaseStagePolicy())->resolve($quote); }
+    catch (Throwable $e) { $threw = get_class($e) . ': ' . $e->getMessage(); }
+    $saved = $quote->saved;
+} else {
+    $saved = 0;
 }
-require '__PROVIDER__';
-$make = function ($id, $ordered = false, $deleted = false) {
-    $row = new SugarBean();
-    $row->id = $id;
-    $row->erp_ordered = $ordered;
-    $row->deleted = $deleted;
-    return $row;
-};
-$quote = new SugarBean();
-$quote->id = 'owned-quote';
-'''.replace("__PROVIDER__", PROVIDER.as_posix())
-
-
-@unittest.skipUnless(shutil.which("php"), "requires PHP 8.2 build-test image")
-class ReleaseStagePolicyTest(unittest.TestCase):
-    def execute(self, scenario):
-        result = subprocess.run(
-            ["php", "-r", FIXTURE + scenario + r'''
-try { $decision = (new ErpOpportunityReleaseStagePolicy())->resolve($quote); }
-catch (UnexpectedValueException $e) { $error = $e->getMessage(); }
-echo json_encode(['decision' => $decision ?? null, 'error' => $error ?? null,
-    'quote_saves' => $quote->saves, 'retrievals' => BeanFactory::$retrievals]);
-'''], cwd=ROOT, capture_output=True, text=True,
-        )
-        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
-        self.assertEqual(result.stderr, "")
-        return json.loads(result.stdout)
-
-    def test_a_committed_line_stages_the_opportunity_and_writes_nothing(self):
-        observed = self.execute(
-            "$quote->products = new TestLink([$make('qli-production', true)]);"
-        )
-        self.assertEqual(observed["decision"], ORDERED, observed)
-        self.assertEqual(observed["retrievals"], [
-            ["Products", "qli-production", {"use_cache": False}],
-        ])
-        self.assertEqual(observed["quote_saves"], 0)
-
-    def test_one_committed_line_among_uncommitted_ones_is_enough(self):
-        observed = self.execute(r'''
-$quote->products = new TestLink([
-    $make('qli-a', false), $make('qli-b', true), $make('qli-c', false)
+echo json_encode([
+    'defined' => $defined,
+    'answer' => $answer,
+    'threw' => $threw,
+    'saved' => $saved,
+    'touched' => $GLOBALS['touched'],
 ]);
-''')
-        self.assertEqual(observed["decision"], ORDERED, observed)
+"""
 
-    def test_no_visible_release_refuses_and_logs_upstream(self):
-        observed = self.execute(
-            "$quote->products = new TestLink([$make('qli-production', false)]);"
-        )
-        self.assertIsNone(observed["decision"])
-        self.assertIn("No committed Quote line", observed["error"])
 
-    def test_a_deleted_line_is_not_a_committed_release(self):
-        observed = self.execute(
-            "$quote->products = new TestLink([$make('qli-gone', true, true)]);"
-        )
-        self.assertIsNone(observed["decision"])
-        self.assertIn("No committed Quote line", observed["error"])
+@unittest.skipUnless(shutil.which("php"), "requires php")
+class RetiredProviderContract(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        out = subprocess.run(["php", "-r", HARNESS], capture_output=True, text=True,
+                             env={**os.environ, "BD_POLICY": str(POLICY)})
+        if "{" not in out.stdout:
+            raise AssertionError(f"harness failed: {out.stdout[-400:]} {out.stderr[-400:]}")
+        cls.observed = json.loads(out.stdout[out.stdout.index("{"):])
 
-    def test_preloaded_relationship_snapshot_cannot_hide_committed_release(self):
-        """The stale Link2 bean says uncommitted; the committed row says ordered.
-        Reading through BeanFactory with `use_cache => false` is what makes the
-        second one win."""
-        observed = self.execute(r'''
-$stale = $make('qli-production', false);
-$quote->products = new TestLink([$stale]);
-$fresh = clone $stale;
-$fresh->erp_ordered = true;
-BeanFactory::$beans[$fresh->id] = $fresh;
-''')
-        self.assertEqual(observed["decision"], ORDERED, observed)
-        self.assertEqual(observed["retrievals"], [
-            ["Products", "qli-production", {"use_cache": False}],
-        ])
+    def test_the_file_still_ships(self):
+        """Deleting it is a no-op on any tenant that has it: PF finds the
+        provider by path, and Module Loader deletes nothing."""
+        self.assertTrue(POLICY.is_file(),
+                        "the provider path stopped shipping; the OLD provider then keeps running")
 
-    def test_unreadable_lines_refuse_rather_than_classify_on_a_partial_read(self):
-        scenarios = {
-            # The relationship will not load at all.
-            "no products link": "",
-            # A line identity that resolves to no row: a partial read, not an
-            # empty release.
-            "unresolvable line": r'''
-$quote->products = new TestLink([$make('qli-present', true)]);
-unset(BeanFactory::$beans['qli-present']);
-''',
-        }
-        for name, scenario in scenarios.items():
-            with self.subTest(scenario=name):
-                observed = self.execute(scenario)
-                self.assertTrue(observed["error"], observed)
-                self.assertIsNone(observed["decision"])
-                self.assertEqual(observed["quote_saves"], 0)
+    def test_it_still_defines_the_class_pf_looks_for(self):
+        """An empty stub would be `policy_provider_invalid` — PF would preserve
+        the stage and never read the config, i.e. the stage stops being written
+        at all. This is the case that catches that mistake."""
+        self.assertTrue(self.observed["defined"],
+                        "the stub no longer defines ErpOpportunityReleaseStagePolicy")
 
-    def test_built_package_contains_policy_and_partial_dependency(self):
-        package = ROOT / "sugar-sell/BenchDogs-Ext"
-        version = (package / "version").read_text().strip()
-        archive = package / "releases" / f"sugarai_benchdogs_ext-{version}.zip"
-        with zipfile.ZipFile(archive) as zipped:
-            path = "custom/modules/Quotes/ErpQuoteHooks/OpportunityReleaseStagePolicy.php"
-            self.assertEqual(zipped.read(path), (package / path).read_bytes())
-            manifest = zipped.read("manifest.php").decode()
-            self.assertIn("sugarai_erp_epicor_partialfulfillment", manifest)
-            self.assertRegex(manifest, r"'version'\s*=>\s*'1\.0\.13'")
+    def test_resolve_answers_null_and_writes_nothing(self):
+        self.assertIsNone(self.observed["threw"], f"resolve() threw: {self.observed['threw']}")
+        self.assertIsNone(self.observed["answer"], "the provider is deciding a stage again")
+        self.assertEqual(self.observed["saved"], 0)
+
+    def test_it_reads_no_lines_at_all(self):
+        """The old provider loaded the products link and re-read every line with
+        use_cache=false. A retired provider must not keep doing the work whose
+        answer it throws away."""
+        self.assertEqual(self.observed["touched"], [],
+                         f"the stub still touches the bean layer: {self.observed['touched']}")
 
 
 if __name__ == "__main__":

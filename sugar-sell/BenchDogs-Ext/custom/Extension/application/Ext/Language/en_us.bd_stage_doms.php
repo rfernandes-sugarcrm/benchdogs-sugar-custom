@@ -1,17 +1,23 @@
 <?php
-// Bench Dogs stage vocabulary (REQ-1/REQ-2/REQ-22).
-//
-// Application-level language extension - the SAME mechanism this package's
-// module-scoped labels already deploy through (verified live), chosen after
-// the post_install ModuleInstaller::install_languages() route silently
-// failed to land these keys on SugarCloud. Rebuild merges this file into
-// the cached app strings; no installer-context API calls involved.
-//
-// 'Partially Fulfilled': a subset win keeps the quote OPEN - deliberately
-// not 'Closed Accepted', so the remaining ladder lines stay live.
-$app_list_strings['quote_stage_dom']['Partially Fulfilled'] = 'Partially Fulfilled';
-// REQ-22: the opportunity stays open and its stage says which slice closed.
-$app_list_strings['sales_stage_dom']['Prototype Ordered'] = 'Prototype Ordered';
-$app_list_strings['sales_stage_dom']['Partial Production Ordered'] = 'Partial Production Ordered';
-$app_list_strings['sales_probability_dom']['Prototype Ordered'] = 80;
-$app_list_strings['sales_probability_dom']['Partial Production Ordered'] = 90;
+
+/**
+ * EMPTIED IN 0.9.42-rc65 — G278 / 🔒 1506 + G280 / 🔒 1507.
+ *
+ * This file declared the Bench stage vocabulary: quote_stage_dom
+ * 'Partially Fulfilled', sales_stage_dom 'Prototype Ordered' and
+ * 'Partial Production Ordered', and their 80/90 probabilities. Every one of
+ * them is now shipped by Partial Fulfillment (>= 1.0.40, the manifest floor),
+ * in _override_ fragments that Sugar merges LAST — which is a better place for
+ * them than this file ever was: a non-override fragment can be, and repeatedly
+ * was, wiped by ERP-Core's whole-array sales_stage_dom replace (G220/G273).
+ *
+ * Owner, on where the keys belong: *"this hsoudl happen in the core"*.
+ *
+ * EMPTIED, NOT DROPPED. Sugar loads this by PATH from every tenant that ever
+ * installed a build carrying it, and Module Loader deletes nothing (§CW / G37).
+ * Leaving it out of the build would leave the old declarations live and a
+ * second package declaring the same keys. Shipping the path empty is the
+ * retirement. The accumulated en_us.zz_bd_stage_doms.php that post_install used
+ * to append to is removed by post_install itself, through
+ * ModuleInstaller::uninstall_languages().
+ */
