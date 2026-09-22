@@ -66,6 +66,8 @@ function return_app_list_strings_language($language, $useCache = true) {
     if ($GLOBALS['scenario'] === 'missing_probability') unset($doms['sales_probability_dom']['Partial Production Ordered']);
     if ($GLOBALS['scenario'] === 'missing_prototype_probability') unset($doms['sales_probability_dom']['Prototype Ordered']);
     if ($GLOBALS['scenario'] === 'wrong_probability') $doms['sales_probability_dom']['Prototype Ordered'] = 5;
+    if ($GLOBALS['scenario'] === 'retired_served') $doms['sales_stage_dom']['Prototype Closed'] = 'Prototype Closed';
+    if ($GLOBALS['scenario'] === 'retired_probability') $doms['sales_probability_dom']['Partial Production Closed'] = 90;
     if ($GLOBALS['scenario'] === 'missing_current_language' && $language === 'fr_FR') return [];
     return $doms;
 }
@@ -151,6 +153,21 @@ class PostInstallStageLanguagesTest(unittest.TestCase):
                 self.assertIn("BenchDogs-Ext: required stage language verification failed",
                               observed["errors"])
                 self.assertIn("BenchDogs-Ext: post_install finished", observed["errors"])
+
+    def test_a_retired_stage_name_still_served_is_reported_without_failing_the_install(self):
+        # G268: decision 314's '...Closed' names must be gone, not outnumbered.
+        # The template's tail unset()s them; a fragment merging later that
+        # still declares one is logged under a fixed message, never thrown.
+        for scenario in ("retired_served", "retired_probability"):
+            with self.subTest(scenario=scenario):
+                observed = self.execute(scenario)
+                self.assertIsNone(observed["failure"])
+                self.assertIn("BenchDogs-Ext: retired stage names still served", observed["errors"])
+                self.assertNotIn("BenchDogs-Ext: required stage language verification failed",
+                                 observed["errors"])
+                self.assertIn("BenchDogs-Ext: post_install finished", observed["errors"])
+        clean = self.execute()
+        self.assertNotIn("BenchDogs-Ext: retired stage names still served", clean["errors"])
 
     def test_rebuild_or_refresh_exception_is_neutral_and_does_not_fail_the_install(self):
         for scenario in ("rebuild_exception", "refresh_exception"):

@@ -355,6 +355,16 @@ try {
             $GLOBALS['log']->fatal('BenchDogs-Ext: required stage language verification failed');
             break;
         }
+        // G268: decision 314's retired names must be GONE, not merely
+        // outnumbered. The template's tail unset()s them; a hit here means a
+        // fragment merging after en_us.zz_bd_stage_doms.php still declares one.
+        if (isset($bdDoms['sales_stage_dom']['Prototype Closed'])
+            || isset($bdDoms['sales_stage_dom']['Partial Production Closed'])
+            || isset($bdDoms['sales_probability_dom']['Prototype Closed'])
+            || isset($bdDoms['sales_probability_dom']['Partial Production Closed'])) {
+            $GLOBALS['log']->fatal('BenchDogs-Ext: retired stage names still served');
+            break;
+        }
     }
 } catch (Throwable $e) {
     $GLOBALS['log']->fatal('BenchDogs-Ext: required stage language verification failed');
