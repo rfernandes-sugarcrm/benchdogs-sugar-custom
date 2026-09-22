@@ -152,12 +152,21 @@ jobs:
       # seven scenarios stop being evidence while the check stays green. That
       # is not hypothetical - it is exactly what this PR nearly shipped.
       #
-      # 3 is the number under CI conditions, and each one is named:
+      # 2 is the number under CI conditions as of 0.9.42-rc65, and each one is
+      # named:
       #   test_shared_fixture_drift  - by construction; it compares the pinned
       #     copies against the real erp-integration-sugar files and can only
       #     run where that checkout exists.
-      #   test_create_opp_quote_button_retired:197 } still want the sibling
-      #   test_mlp_lint:683 (ERP-Epicor)            } tree; not yet pinned.
+      #   test_mlp_lint:683 - wants a whole ERP-Epicor PACKAGE directory, not a
+      #     file, so the pinning mechanism does not reach it.
+      #
+      # rc65 pinned the rest rather than skipping them: core's billing-country
+      # guard, ERP-Epicor's createOppQuote (G243's control), the label that
+      # collides with the retired Bench button (G15's root cause) and core's
+      # button add-if-absent with the Quotes layout that drives it (G276). Those
+      # four used to skip HERE, which is exactly where a control about core
+      # matters most. The ceiling stays at 3 so one more may appear before it
+      # has to be argued for.
       #
       # Everything else that used to need that private repo now runs here
       # against fixtures/shared-sugar/ - see scripts/refresh_shared_fixtures.py.
