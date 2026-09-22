@@ -1,3 +1,185 @@
+# 0.9.42-rc66 — G280 / 🔒 1508: only the customer-category code is left
+
+Owner, 2026-09-22 ~17:5xZ, verbatim: *"from all the non vustomer category code we
+should not ahve other stuff there..."*. Five items were named. **Four are
+removed here. The fifth is REFUSED, with the evidence, below.**
+
+**Install order is unchanged and still matters: ERP-Epicor → Partial Fulfillment
+≥ 1.0.40 → Bench Dogs LAST.**
+
+🛑 **AND ONE NEW ORDERING RULE: INSTALL rc65 BEFORE rc66.** Module Loader never
+deletes a file a later build stops shipping (§CW / G37) and `unlink()` is denied
+to package code (MLP002), so a build can only retire a file by SHIPPING OVER IT.
+rc65 is the build that overwrote `OpportunityReleaseStagePolicy.php` with a
+provider returning `null`. A tenant that jumps rc64-or-earlier → rc66 never
+takes that overwrite and **keeps the OLD deciding provider on disk for good** —
+it would go on stamping `Partial Production Ordered` from Bench code, including
+on a FINAL release. Tenant 1 took rc65 at **17:17:35Z**, so this is a rule for
+any other instance, not a problem here. Stock tenants carry no Bench Dogs by
+design (`RELEASE-CONTROL.md:757`).
+
+| Item | Why it may go | Evidence it is safe |
+|---|---|---|
+| `BdQliColumnsLayout` + `BdQliColumnTemplate` | the grid is core's | **the ordering step was already dead on the tenant** — see below |
+| `BdAutoSelectedReport` | a one-shot removal that has run | rc65's install log: it deleted nothing, because there was nothing left |
+| the `Prototype Closed → Prototype Ordered` migration | a one-shot that has drained | rc65's install log: **`applied to 0 row(s)`**, both renames |
+| `OpportunityReleaseStagePolicy.php` (rc65's null stub) | PF decides it | PF's own resolver, run both ways, reaches the SAME decision |
+| `OpportunityContribution.php` | — | 🛑 **NOT REMOVED — [[G282]] is open. See "What rc66 refused".** |
+
+### 1. The quoted-line grid — the ordering had already stopped working
+
+rc65's own install on Bench logged, at 17:16:59Z:
+
+```
+BenchDogs-Ext: QLI columns failed: Call to private method
+               BaseErpLayout::loadView() from scope BdQliColumnsLayout
+```
+
+`loadView()` is `private` (ERP-Core `BaseErpLayout.php:1778`), so
+`applyColumnOrder()` could not run on that tenant and could not run on a fresh
+one either. **The grid a seller sees is therefore unchanged by this deletion**:
+whatever is already deployed, plus core's own appends. Two further effects, both
+stated rather than assumed:
+
+* **`erp_quote_line_num` stays in the deployed `product_bundle_items` allowlist**
+  on tenants that have it. It is CORE's field and **no viewdef in this package,
+  ERP-Core, ERP-Epicor or Partial Fulfillment draws it**, so nothing rendered it
+  and nothing loses it. The `uninstall()` that used to take it back out goes
+  with the class — this package should not be editing a core field's fetch list
+  on the way out either.
+* **The `bd_to_order` / `bd_ordered` legacy column sweep goes.** It wrote to
+  DEPLOYED METADATA, which persists, and it has run on every install since
+  0.9.21 — through rc65 on the only instance carrying this package. Spent where
+  it was armed; never armed anywhere else.
+
+**No SHIPPED viewdef is touched.** Decision 803 moved the authored column list
+to a path Sugar does not read as a viewdef, precisely so this package could
+never overwrite another package's columns again — so the add-if-absent upgrade
+trap does not apply to any of this, and no tenant needs an uninstall/reinstall
+to pick rc66 up.
+
+⚠️ **`bd-tools/repair-ui` had a BARE `require_once` on the deleted class** (no
+`file_exists`), inside a try/catch that could never have caught it: a missing
+`require` is a compile error. Left alone, rc66 would have turned that admin route
+into a fatal on any tenant without the file. The step is removed.
+
+### 2. `BdAutoSelectedReport` — a removal that has already run
+
+The class did not build decision 72's review report any more; since G116 it only
+took it back off the instance, on install and on uninstall. Deleting a REMOVAL
+needs proof it is spent, and the proof is the tenant's own
+`package_install.log` for the rc65 install (PID 2069085, the window that carries
+post_install's `running` 17:16:59 and `finished` 17:17:35): it contains
+**neither** `removed retired saved report "..."` **nor** `missing, retired review
+report left behind`, while every other `BenchDogs-Ext:` line of that install is
+present. So `remove()` executed and found no row — and `SugarQuery` excludes
+soft-deleted rows, so a row it once deleted can never be re-found.
+
+The guard that mattered to a seller is KEPT and WIDENED:
+`test_governing_marker.py` now fails if **any** file in the package builds a
+saved report again.
+
+### 3. The stage-rename migration — drained
+
+`UPDATE opportunities SET sales_stage …` for the two decision-314 renames. The
+same install log, 17:17:35Z:
+
+```
+BenchDogs-Ext: stage migration Prototype Closed -> Prototype Ordered applied to 0 row(s)
+BenchDogs-Ext: stage migration Partial Production Closed -> Partial Production Ordered applied to 0 row(s)
+```
+
+Zero on both, and nothing writes the old literals any more: rc65 took the retired
+pair out of the served vocabulary ([[G268]]), and the only writer left is PF,
+from the config key `post_install` sets — which holds the NEW literal.
+
+### 4. The release-stage provider stub — PF reaches the same decision
+
+`scripts/tests/test_release_stage_absent_equals_null.py` RUNS Partial
+Fulfillment's own `ErpOpportunityValuation::releaseStageDecision()` over one
+quote, three ways, rather than asserting the file is gone:
+
+| provider at PF's hardcoded path | PF's lookup status | decision for a partial release |
+|---|---|---|
+| rc65's null stub | `policy_provider_null` | `Partial Production Ordered` / 90 |
+| **nothing** | `policy_provider_absent` | `Partial Production Ordered` / 90 |
+| a provider that decides (the mutation) | — | `Prototype Ordered` / 80 — **visibly different** |
+
+The third row is in the suite, not in a comment: without it, rows 1 and 2 being
+equal could just as well mean the probe never reached PF at all.
+
+🛑 **What must stay unreachable:** a file that EXISTS at that path and does not
+define the class. PF then returns `policy_provider_invalid`, PRESERVES the stage
+and never reads the config — the Opportunity stage would silently stop being
+written. Absent is fine; present-and-empty is not.
+`test_release_stage_policy.py` is inverted to guard exactly that shape.
+
+`scripts/post_install.php` still writes
+`erp_integration.partial_order_sales_stage` when absent, and **must** — a config
+row is tenant data and does not arrive with a package. The FINAL-release delta
+rc65 recorded (PF's generic path fires only while lines remain open) is
+unchanged by rc66.
+
+### What rc66 REFUSED to remove, and why
+
+**`custom/modules/Quotes/ErpQuoteHooks/OpportunityContribution.php` STAYS.**
+🔒 1507's own wording makes the removal conditional — *"deleted if core's default
+produces the same number, otherwise moved to core first"* — and **it does not**.
+Partial Fulfillment ships a class of the SAME NAME at the SAME INSTALLED PATH,
+and the two compute different figures:
+
+| case | Bench's class | PF's class |
+|---|---|---|
+| quote with ERP-stated charges | `$quote->total` (Sugar's native tax + shipping) | `rollup.ordered + rollup.open + ERP-stated charges` |
+| every ERP line still an unselected ladder rung | **throws** → ERP-Core PRESERVES the Opportunity's existing amount | returns `null` → ERP-Core writes `$quote->total`, which is **0.00 by construction** |
+
+The second row is the live one: quote 1049 has four `alternative` lines and an
+admin-set amount of 23.00. Under PF's copy that 23.00 is overwritten with 0.00 —
+the fabricated zero 🔒 362 forbids. **Which of the two implementations survives
+is [[G282]], which is OPEN** (derived with `validation/tools/check_gap_ledger.py`)
+**and scheduled in Wave 5 by 🔒 1509.** Deleting Bench's copy decides G282 by
+default, in favour of the number the owner has not chosen.
+
+A second reason, independent of the first: because both packages ship the same
+path and Bench installs LAST, dropping the file from rc66 **would not retire it
+on Bench anyway** — Bench's copy stays on disk until PF is next installed, at
+which point the number changes silently. The fix site is Partial Fulfillment,
+which is not this lane's to edit.
+
+`OpportunityContribution.php` is also the one file here that may **never** become
+an empty stub: ERP-Core's `QuoteOpportunityAmount::contribution()` guards with
+`file_exists` and then calls `new ErpQuoteOpportunityContribution()`
+unconditionally, so an empty file at that path is a fatal, not a fallback.
+
+### Leftovers on disk, stated rather than hidden
+
+rc65's copies of all four deleted files remain on tenant 1 after rc66 and are
+**inert**: nothing `require`s them any more, and none sits at an
+Extension-framework path Sugar loads by convention. Same reading rc65 applied to
+`BdDemoDashboards`.
+
+### Tests
+
+* NEW `test_release_stage_absent_equals_null.py` — 6 cases, runs PF's real
+  resolver three ways (above).
+* INVERTED `test_release_stage_policy.py` — the provider must NOT ship, and no
+  file in the package may define the class. Mutation-checked: an empty `<?php`
+  at the path turns it red.
+* INVERTED `test_line_num_owner.py` — both readers of core's
+  `erp_quote_line_num` are gone, and no code in the package may name it again
+  (comments excluded, so a retirement note can still say what it retired).
+* WIDENED `test_governing_marker.py` — no file may build a saved report; the
+  spent remover must not ship or be called.
+* REPLACED in `test_g280_package_cleanup.py` — rc65's "the legacy sweep still
+  names its columns" becomes "the grid logic that backed this stub is gone".
+* DELETED with its subject: `test_qli_column_merge.py`.
+
+Suite: **209 passed / 1 skipped**; sibling-free (what CI runs) **208 passed /
+2 skipped**, 210 collected against the workflow's floor of 160 and skip ceiling
+of 3 — unchanged from rc65, so no CI floor was moved to accommodate this.
+
+---
+
 # 0.9.42-rc65 — G280 / 🔒 1507: the package stops shipping what core owns
 
 **Install order is unchanged and still matters: ERP-Epicor → Partial Fulfillment
