@@ -15,9 +15,11 @@ tested against the actual shipped scripts at the bottom.
 
 from __future__ import annotations
 
+import shutil
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -669,6 +671,54 @@ class TestRuleMetadata(unittest.TestCase):
 
     def test_explain_rejects_an_unknown_rule(self) -> None:
         self.assertEqual(mlp_lint.main(["--explain", "MLP999"]), 2)
+
+
+class TestMd5FileIsNeverShipped(unittest.TestCase):
+    """MLP014, which this repository once had backwards.
+
+    The rule used to report the ABSENCE of files.md5 as something worth fixing.
+    Acting on that added one to all thirteen archives upstream and made every
+    one of them unloadable: ModuleScanner checks each shipped file's extension
+    against an allow-list, `md5` is not on it, and SugarCloud refuses the
+    package with "File Issues / files.md5 / Invalid file extension".
+
+    So the assertion is pinned in both directions. A zip carrying the file must
+    be a blocker, and a zip without it must be silent. If anyone ever flips this
+    back, this test is what stops it reaching a customer.
+    """
+
+    def _zip(self, names: dict[str, str]) -> Path:
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        path = Path(tmp) / "pkg-1.0.0.zip"
+        with zipfile.ZipFile(path, "w") as zf:
+            for name, body in names.items():
+                zf.writestr(name, body)
+        return path
+
+    MANIFEST = (
+        "<?php\n$manifest = array('key' => 'p', 'version' => '1.0.0',\n"
+        "  'type' => 'module', 'acceptable_sugar_versions' => array('26.*'));\n"
+        "$installdefs = array('id' => 'p');\n"
+    )
+
+    def test_a_shipped_md5_file_is_a_blocker(self) -> None:
+        path = self._zip({
+            "manifest.php": self.MANIFEST,
+            "files.md5": "<?php\n$md5_string = array();\n",
+        })
+        _pkg, findings = mlp_lint.lint_zip(path)
+        blockers = [f for f in findings if f.rule == "MLP014"]
+        self.assertEqual(len(blockers), 1, "shipping files.md5 must be reported")
+        self.assertEqual(blockers[0].severity, mlp_lint.BLOCKER)
+
+    def test_a_package_without_one_is_silent(self) -> None:
+        path = self._zip({"manifest.php": self.MANIFEST})
+        _pkg, findings = mlp_lint.lint_zip(path)
+        self.assertEqual(
+            [f for f in findings if f.rule == "MLP014"], [],
+            "the absence of files.md5 is correct and must not be reported",
+        )
 
 
 class TestShippedPackagesStayClean(unittest.TestCase):

@@ -322,12 +322,20 @@ Set it true, or leave it out and take the default, which is true.""",
 )
 
 rule(
-    "MLP014", ADVISORY,
-    "Built package has no files.md5 at its root",
-    "Mango audit finding 04",
-    """ModuleScanner's HealthCheck pass wants files.md5 at the package root and
-reports its absence even on otherwise-clean code. Expected on a hand-built
-fixture, worth knowing about on something headed for a customer.""",
+    "MLP014", BLOCKER,
+    "Built package ships a files.md5, which SugarCloud refuses to install",
+    "ossugarcube2, 2026-09-11",
+    """ModuleScanner validates every shipped file's extension against an
+allow-list, and `md5` is not on it. A package containing files.md5 is rejected
+at install with "File Issues / files.md5 / Invalid file extension" and cannot
+be installed on SugarCloud at all.
+
+This rule used to say the opposite: that the HealthCheck pass wants files.md5
+and its absence was worth reporting. Acting on that advice added one to all
+thirteen archives upstream and made every one of them unloadable, which is how
+the truth was found. files.md5 belongs to Sugar's own upgrade and patch
+packages, not to module packages, and nothing in this repository should ever
+produce one.""",
 )
 
 
@@ -1219,12 +1227,13 @@ def lint_zip(path: Path) -> tuple[Package, list[Finding]]:
             zf.extractall(dest)
         pkg = load_package(dest, path.name)
         findings = lint_package(pkg)
-        if not any(n.strip("/").lower() == "files.md5" for n in names):
+        if any(n.strip("/").lower().endswith(".md5") for n in names):
             findings.append(Finding(
-                "MLP014", ADVISORY, path.name, 0,
-                "no files.md5 at the package root, which ModuleScanner's "
-                "HealthCheck pass reports even on clean code",
-                "Export through the real package builder before sign-off",
+                "MLP014", BLOCKER, path.name, 0,
+                "ships a .md5 file, an extension ModuleScanner does not allow; "
+                "SugarCloud rejects the package with \"Invalid file extension\"",
+                "Remove it from the archive. files.md5 belongs to Sugar's own "
+                "upgrade packages, never to a module package",
             ))
         findings.sort(key=lambda f: (SEVERITY_ORDER[f.severity], f.path, f.line))
         return pkg, findings
@@ -1347,7 +1356,7 @@ def main(argv: list[str]) -> int:
     # Every zip already built under the named areas. This is what CI audits
     # after its build step: the rules that read a manifest (a duplicated
     # install destination, a beans entry naming a module nobody shipped, a
-    # missing files.md5) can only be evaluated against the generated one, and
+    # shipped files.md5) can only be evaluated against the generated one, and
     # reading pack.php instead is guesswork.
     zips = list(args.zip)
     for area in args.zips_from:
