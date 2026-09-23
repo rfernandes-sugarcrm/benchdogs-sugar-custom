@@ -36,8 +36,8 @@ ONE DECLARED LOCAL DELTA
 ------------------------
 `test_mlp_lint.py`'s real-scanner agreement test floors the number of PHP
 files it checked at 100, which is erp-integration-sugar's size, not this
-repository's (61 at rc67, every one of which the real ModuleScanner and MLP002
-agree on). Vendored unchanged, that test is red on any machine with a SugarEnt
+repository's (61 at rc67, 18 since rc69's G280 cut, every one of which the
+real ModuleScanner and MLP002 agree on). Vendored unchanged, that test is red on any machine with a SugarEnt
 tree. The one-line replacement is recorded in the pin; the integrity check
 reverses it before hashing, so the vendored file is still proven to be the
 upstream file plus exactly that line and nothing else.
@@ -83,12 +83,13 @@ DELTAS = {
         "reason": (
             "test_mlp002_agrees_with_the_scanner_on_every_php_file_here floors "
             "the files it checked at erp-integration-sugar's size (100). This "
-            "repository has 61 PHP files at rc67, BenchDogs-Ext alone 51, so the "
-            "floor is 40: still proves the oracle walked the real tree."
+            "repository had 61 PHP files at rc67 (floor 40); G280 / decision 1567 "
+            "cut BenchDogs-Ext to 7 at rc69, leaving 18 in all, so the floor is "
+            "12: still proves the oracle walked the real tree."
         ),
         "upstream": "        self.assertGreater(checked, 100)\n",
         "local": (
-            "        self.assertGreater(checked, 40)  "
+            "        self.assertGreater(checked, 12)  "
             "# Bench Dogs delta, declared in scripts/mlp_lint.PINNED.json\n"
         ),
     },

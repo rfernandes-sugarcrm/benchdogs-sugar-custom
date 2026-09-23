@@ -56,7 +56,16 @@ both rather than reading them:
     creates and saves its Opportunity, and that it never routed through this
     hook.
 
-MUTATION-VERIFIED (each applied, suite re-run, listed failure observed):
+🔁 RE-POINTED 0.9.42-rc69 (G280 / 🔒 1567, 🔒 1521). Both files did their job:
+every QA tenant took a build carrying them, and then the one-off
+ONEOFF-RetireBdResidue DELETED the registration and BLANKED the tombstone on all
+three (et 2026-09-22 22:22Z; stock and Ophir 2026-09-23 00:58Z; failed 0). So
+rc69 ships neither, and the suite now asserts the retirement the one-off
+performs - not in the source, not in the built zip, still on its worklist, in
+the right order (registration before class) - plus that NOTHING this package
+ships registers a hook or reaches the Opportunities bean layer at all.
+
+MUTATION-VERIFIED at rc60-rc68 (each applied, suite re-run, failure observed):
   restore either ``$hook_array[...][] = array(2, ... 'pairOnSave')``
                                               -> registers_nothing fails
   make ``pair()`` create + save an Opportunity -> creates_no_opportunity fails
@@ -79,6 +88,8 @@ import unittest
 import zipfile
 from pathlib import Path
 
+from bd_retirement import assert_retired_by_oneoff, oneoff_worklist
+
 import shared_sugar
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -97,10 +108,10 @@ MUST_OVERWRITE = (
     "custom/modules/Quotes/BdKineticOpportunityHook.php",
 )
 
-#: The ONE shipped file in this package that may create an Opportunity: the
-#: account-level action, which runs under a caller's ACL check and is not the
-#: sync. Bench's own button is retired (🔒 1044 / G15) but the endpoint remains.
-ALLOWED_CREATOR = "custom/clients/base/api/BdBenchDogsActionsApi.php"
+#: No shipped file may create an Opportunity any more. Until rc68 the one
+#: exemption was BdBenchDogsActionsApi.php (the retired account action's
+#: endpoint); rc69 ships that path EMPTY, so the exemption is gone too.
+ONEOFF_LIB = ROOT / "sugar-sell/ONEOFF-RetireBdResidue"
 
 #: ERP-Epicor lives in a sibling checkout; the control is only assertable when
 #: it is present, so that case skips rather than fails when it is not.
@@ -197,163 +208,69 @@ echo json_encode(array('total' => $total, 'events' => $events));
 class TheRegistrationRegistersNothing(unittest.TestCase):
     """The first half of the retirement, EXECUTED."""
 
-    def test_registers_nothing(self):
+    def test_no_shipped_fragment_registers_a_hook(self):
+        """Every Extension fragment this package ships, INCLUDED into a harness
+        that pre-seeds $hook_array - not grepped, because retirement prose names
+        pairOnSave and after_save for the reader. Stronger than the rc60 case,
+        which executed only bd_kinetic_opportunity.php: a re-registration under
+        any other filename is caught too."""
+        fragments = sorted(PACKAGE.glob("custom/Extension/**/*.php"))
+        self.assertTrue(fragments, "no Extension fragment found - PACKAGE points at nothing")
         with tempfile.NamedTemporaryFile("w", suffix=".php", delete=False) as fh:
-            fh.write("<?php\n" + _REGISTRATION_HARNESS)
+            fh.write("<?php\n$dictionary = array(); $mod_strings = array();\n"
+                     + _REGISTRATION_HARNESS.replace("require $argv[1];",
+                                                     "foreach (array_slice($argv, 1) as $f) { require $f; }"))
             harness = fh.name
-        done = subprocess.run(
-            [_php(), harness, str(REGISTRATION)],
-            capture_output=True, text=True, check=False,
-        )
-        self.assertEqual(
-            0, done.returncode,
-            "the registration file does not even parse: " + (done.stderr or "")[:600],
-        )
-        start = done.stdout.find("{")
-        self.assertGreaterEqual(start, 0, f"harness produced no JSON: {done.stdout[:300]!r}")
-        result = json.loads(done.stdout[start:])
+        done = subprocess.run([_php(), harness] + [str(f) for f in fragments],
+                              capture_output=True, text=True, check=False)
+        self.assertEqual(0, done.returncode, (done.stderr or "")[:600])
+        result = json.loads(done.stdout[done.stdout.find("{"):])
         self.assertEqual(
             0, result["total"],
-            "bd_kinetic_opportunity.php registers "
-            f"{result['total']} logic hook(s) on {result['events']}. 🔒 1499: the sync "
-            "must NEVER create an Opportunity. Registering pairOnSave or "
-            "pairOnAccountLink again re-arms G243 on every tenant.",
-        )
+            f"this package registers {result['total']} logic hook(s) on {result['events']}. "
+            "🔒 1499: the sync must NEVER create an Opportunity.")
 
-    def test_the_file_is_still_shipped_at_rc39s_own_path(self):
-        """An ABSENT file retires nothing: rc39's copy simply survives.
-
-        This is the assertion that stops the fix being "cleaned up" into a
-        deletion, which is exactly how the writer outlived the package that
-        shipped it in the first place.
-        """
-        self.assertTrue(
-            REGISTRATION.is_file(),
-            "the empty registration is gone. Deleting it does NOT remove rc39's "
-            "copy from a tenant - ONLY OVERWRITING RETIRES (rc24).",
-        )
+    def test_rc39s_registration_is_retired_off_the_tenant(self):
+        """An ABSENT file retires nothing: rc39's copy simply survives - which
+        is exactly how the writer outlived the package that shipped it. Through
+        rc68 an empty file OVERWROTE it; from rc69 the one-off DELETES it."""
+        rel = str(REGISTRATION.relative_to(PACKAGE))
+        assert_retired_by_oneoff(self, rel, "rc39's pairOnSave / pairOnAccountLink registration")
+        self.assertEqual(oneoff_worklist()[rel], "deleted")
 
 
 # ── 2. The class creates nothing ────────────────────────────────────────────
 
-_CLASS_HARNESS = r"""
-class SugarBean {
-    public $id = '';
-    public $module_dir = '';
-    public $saved = 0;
-    public function save($check_notify = false) { $this->saved++; return $this->id; }
-    public function load_relationship($name) { return false; }
-}
-
-class _Opportunity extends SugarBean { public $module_dir = 'Opportunities'; }
-
-class BeanFactory {
-    public static $created = array();
-    public static $retrieved = array();
-    public static function newBean($module) {
-        self::$created[] = $module;
-        return new _Opportunity();
-    }
-    public static function getBean($module, $id = null) {
-        self::$retrieved[] = $module;
-        return new _Opportunity();
-    }
-    public static function retrieveBean($module, $id = null, $params = array()) {
-        self::$retrieved[] = $module;
-        return new _Opportunity();
-    }
-}
-
-class _Log { public function __call($m, $a) {} }
-$GLOBALS['log'] = new _Log();
-
-require $argv[1];
-
-$quote = new SugarBean();
-$quote->id = 'quote-318';
-$quote->module_dir = 'Quotes';
-$quote->erp_sync_key = 'EPIC06__1270';
-
-$hook = new BdKineticOpportunityHook();
-$errors = array();
-
-// The two rc39 entry points, called with rc39's own signatures, plus the
-// public API the mirror's call site used to delegate to.
-try { $hook->pairOnSave($quote, 'after_save', array()); }
-catch (Throwable $e) { $errors[] = 'pairOnSave: ' . $e->getMessage(); }
-
-try { $hook->pairOnAccountLink($quote, 'after_relationship_add',
-    array('link' => 'billing_accounts', 'related_id' => 'acct-1')); }
-catch (Throwable $e) { $errors[] = 'pairOnAccountLink: ' . $e->getMessage(); }
-
-$paired = null;
-try { $paired = $hook->pair($quote, new SugarBean()); }
-catch (Throwable $e) { $errors[] = 'pair: ' . $e->getMessage(); }
-
-echo json_encode(array(
-    'created'   => BeanFactory::$created,
-    'retrieved' => BeanFactory::$retrieved,
-    'saved'     => $quote->saved,
-    'paired'    => $paired,
-    'errors'    => $errors,
-));
-"""
 
 
 class TheClassCreatesNoOpportunity(unittest.TestCase):
-    """The second half, EXECUTED - and this is the one that measures the rule.
+    """The second half. Through rc68 the tombstone class was CALLED here against
+    a BeanFactory that counted bean creation. From rc69 the tenant's copy is
+    BLANKED by the one-off with lib/emptied.php, so what has to hold is that the
+    blank body defines nothing at all - and that the registration goes first, so
+    no compiled hook entry is left pointing at a class that is no longer there
+    (LogicHook::loadHookClass() fails soft on that anyway, 26.1.0
+    include/utils/LogicHook.php:203-222, but that is a log line per save)."""
 
-    🚩 The stub ``BeanFactory`` counts bean creation, so a re-implementation that
-    builds the Opportunity through ``getBean``/``retrieveBean`` instead of
-    ``newBean`` is caught too. Only "no bean of any kind, from any door" passes.
-    """
+    def test_the_tombstone_is_retired_off_the_tenant(self):
+        rel = str(TOMBSTONE.relative_to(PACKAGE))
+        assert_retired_by_oneoff(self, rel, "BdKineticOpportunityHook")
+        self.assertEqual(oneoff_worklist()[rel], "blanked")
 
-    @classmethod
-    def setUpClass(cls):
-        with tempfile.NamedTemporaryFile("w", suffix=".php", delete=False) as fh:
-            fh.write("<?php\n" + _CLASS_HARNESS)
-            harness = fh.name
+    def test_the_blank_body_defines_nothing(self):
+        emptied = ONEOFF_LIB / "lib/emptied.php"
         done = subprocess.run(
-            [_php(), harness, str(TOMBSTONE)],
-            capture_output=True, text=True, check=False,
-        )
-        if done.returncode != 0:
-            raise AssertionError(
-                "the tombstone does not run: " + (done.stderr or done.stdout or "")[:800]
-            )
-        start = done.stdout.find("{")
-        if start < 0:
-            raise AssertionError(f"harness produced no JSON: {done.stdout[:400]!r}")
-        cls.result = json.loads(done.stdout[start:])
+            [_php(), "-r", "$c = get_declared_classes(); $f = get_defined_functions()['user'];"
+             " require $argv[1]; echo json_encode(['classes' => array_values(array_diff("
+             "get_declared_classes(), $c)), 'functions' => array_values(array_diff("
+             "get_defined_functions()['user'], $f))]);", str(emptied)],
+            capture_output=True, text=True, check=True)
+        self.assertEqual(json.loads(done.stdout), {"classes": [], "functions": []})
 
-    def test_the_entry_points_do_not_raise(self):
-        """A tenant still carrying rc39's compiled registration calls straight
-        into this class on every quote save. Throwing there would turn a silent
-        forecast defect into a broken save - a worse outcome than the bug."""
-        self.assertEqual([], self.result["errors"])
-
-    def test_creates_no_opportunity(self):
-        self.assertEqual(
-            [], self.result["created"],
-            "BdKineticOpportunityHook created " + str(self.result["created"])
-            + ". 🔒 1499: the sync must never create an Opportunity.",
-        )
-        self.assertEqual(
-            [], self.result["retrieved"],
-            "BdKineticOpportunityHook loaded " + str(self.result["retrieved"])
-            + " - the tombstone must not reach the bean layer at all.",
-        )
-
-    def test_writes_nothing_to_the_quote_either(self):
-        """🔒 1473 is 'quote only', not 'quote plus a stamp'. The retired writer
-        deliberately wrote no flag of its own; the tombstone writes nothing at
-        all, so it cannot be the thing that moves erp_is_primary_quote."""
-        self.assertEqual(0, self.result["saved"])
-
-    def test_pair_reports_that_it_paired_nothing(self):
-        """``pair()`` returned true when it had created and linked one. False is
-        the honest answer now, and the mirror's old call site read it."""
-        self.assertIs(False, self.result["paired"])
+    def test_the_registration_is_removed_before_the_class_is_blanked(self):
+        source = (ONEOFF_LIB / "scripts/post_execute.php").read_text(encoding="utf-8")
+        self.assertLess(source.index("$bdInstaller->uninstallExt('bd_residue', $bdSubdir);"),
+                        source.index("$bdInstaller->copy_path($bdEmptySource, $bdOrphan);"))
 
 
 # ── 3. Both files actually ship ─────────────────────────────────────────────
@@ -405,19 +322,14 @@ class TheRetirementShipsAndOverwrites(unittest.TestCase):
             for entry in json.loads(done.stdout)["installdefs"].get("copy", [])
         }
 
-    def test_ships_and_overwrites(self):
+    def test_neither_path_ships_any_more(self):
+        """Turned around at rc69: a copy entry for either path would put a body
+        back over the one-off's removal on every install, and hand Module
+        Loader a backup to restore on uninstall."""
         for target in MUST_OVERWRITE:
             with self.subTest(target=target):
-                self.assertIn(
-                    target, self.names,
-                    f"{target} is not in the built package, so rc39's copy of it "
-                    "survives on every tenant that has one.",
-                )
-                self.assertIn(
-                    target, self.copies,
-                    f"{target} ships in the zip but has no installdefs['copy'] "
-                    "entry, so ModuleInstaller never writes it over rc39's.",
-                )
+                self.assertNotIn(target, self.names)
+                self.assertNotIn(target, self.copies)
 
 
 # ── 4. Nothing else in the package creates one, and the control still does ──
@@ -431,8 +343,6 @@ class NoOtherCreatorAndTheButtonSurvives(unittest.TestCase):
             if "releases" in path.parts:
                 continue
             rel = path.relative_to(PACKAGE).as_posix()
-            if rel == ALLOWED_CREATOR:
-                continue
             code = _strip_php_comments(path)
             # A bean handed straight to SugarQuery::from() is a QUERY SEED: it is
             # never saved, so it cannot create anything. G234's pre_uninstall
@@ -453,8 +363,8 @@ class NoOtherCreatorAndTheButtonSurvives(unittest.TestCase):
         self.assertEqual(
             [], sorted(offenders),
             "these shipped files reach the Opportunities bean layer: "
-            f"{sorted(offenders)}. Only {ALLOWED_CREATOR} may, and only because "
-            "it is an ACL-checked account action, not the sync (🔒 1499).",
+            f"{sorted(offenders)}. None may (🔒 1499; since rc69 not even the "
+            "retired account action, whose api file ships empty).",
         )
 
     def test_the_sellers_button_still_creates_its_opportunity(self):

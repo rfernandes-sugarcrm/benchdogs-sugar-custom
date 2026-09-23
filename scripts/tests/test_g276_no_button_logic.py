@@ -33,8 +33,10 @@ WHAT THIS SUITE PINS.
     place. Red on rc61: Submit Order is gone again. Needs the sibling
     erp-integration-sugar checkout; skipped without it, and case 1 carries the
     red/green on its own.
-3.  CONTROL: Bench Dogs' other layout work still runs - the retired Bench Dogs
-    panel is still removed and the REQ-19 customer group fields still placed.
+3.  CONTROL: Bench Dogs' other layout work still runs - the REQ-19 customer
+    group fields are still placed. (Through rc68 the retired Bench Dogs panel
+    was also removed here; from rc69 that removal is the one-off's K-2, spent
+    on every QA tenant, and the install does not touch the Quotes view at all.)
 4.  No shipped PHP or JS reads or writes a record-view ``buttons`` array, calls
     a button writer, or touches the stash (comments stripped), and neither
     layout class still has a button method.
@@ -241,10 +243,17 @@ class BenchDogsInstallLeavesButtonsAlone(unittest.TestCase):
         touched = [s for s in self.full["settings"] if s[0] == "benchdogs"]
         self.assertEqual(touched, [], "the install still reads or writes the decision-91 stash")
 
-    def test_control_the_retired_panel_is_still_removed(self):
+    def test_the_install_no_longer_touches_the_quotes_view(self):
+        """rc69 (G280 / 🔒 1567): the Bench Dogs panel removal moved to the
+        one-off's K-2, which ran on every QA tenant, so the install writes
+        nothing to Quotes - not even a removal. The panel given here is left
+        exactly as it came; its route off a tenant is the one-off."""
+        self.assertNotIn("Quotes", self.full["saves"])
         panels = [p["name"] for p in self.full["defs"]["Quotes"]["panels"]]
-        self.assertNotIn("LBL_RECORDVIEW_PANEL_BENCHDOGS", panels)
-        self.assertEqual(panels, ["panel_header", "panel_body"])
+        self.assertEqual(panels, [p["name"] for p in QUOTES_PANELS])
+        oneoff = (ROOT / "sugar-sell/ONEOFF-RetireBdResidue/scripts/post_execute.php").read_text()
+        self.assertIn("BdQuotesLayoutExtensions::write();", oneoff,
+                      "nothing removes the retired Bench Dogs panel any more")
 
     def test_control_the_customer_group_fields_are_still_placed(self):
         body = [p for p in self.full["defs"]["Accounts"]["panels"] if p["name"] == "panel_body"][0]
@@ -290,29 +299,22 @@ class NoButtonLogicShipped(unittest.TestCase):
                 offenders.append(f"{path.relative_to(PKG)}: {m.group(0)}")
         self.assertEqual(offenders, [], "record-view button logic is still shipped")
 
-    @unittest.skipUnless(shutil.which("php"), "requires php")
-    def test_the_button_label_files_declare_nothing(self):
+    def test_the_button_label_files_are_retired_off_the_tenant(self):
         """A label with no action behind it keeps a retired button reading as
-        supported in Studio, the report builder and column pickers - the rule
-        this package states in en_us.bd_erp_fields.php. EXECUTED, not grepped:
-        the files are included with $mod_strings pre-seeded, and must add
-        nothing. They still SHIP, because a file a previous install copied is
-        not removed by leaving it out of a later build."""
+        supported in Studio, the report builder and column pickers. Through
+        rc68 both files shipped EMPTY so they overwrote the tenant's copy; from
+        rc69 the one-off deletes them (bd_retirement)."""
+        from bd_retirement import assert_retired_by_oneoff
         for rel in ("custom/Extension/modules/Quotes/Ext/Language/en_us.bd_action_buttons.php",
                     "custom/Extension/modules/Accounts/Ext/Language/en_us.bd_action_buttons.php"):
             with self.subTest(file=rel):
-                path = PKG / rel
-                self.assertTrue(path.is_file(), f"{rel} must keep shipping to overwrite the tenant's copy")
-                code = ("$mod_strings = ['LBL_SEED' => 'seed'];"
-                        f"include {json.dumps(str(path))};"
-                        "echo json_encode($mod_strings);")
-                out = subprocess.run(["php", "-r", code], capture_output=True, text=True, check=True)
-                self.assertEqual(json.loads(out.stdout), {"LBL_SEED": "seed"},
-                                 f"{rel} still declares labels for retired buttons")
+                assert_retired_by_oneoff(self, rel, "labels for retired buttons")
 
     def test_neither_layout_class_has_a_button_method(self):
-        for rel in ("custom/modules/Quotes/BdQuotesLayoutExtensions.php",
-                    "custom/modules/Accounts/BdAccountsLayoutExtensions.php"):
+        # The Quotes class no longer ships at all (rc69); the one-off carries
+        # its own copy for K-2. The Accounts class is the one left to check.
+        self.assertFalse((PKG / "custom/modules/Quotes/BdQuotesLayoutExtensions.php").exists())
+        for rel in ("custom/modules/Accounts/BdAccountsLayoutExtensions.php",):
             code = self._code(PKG / rel)
             for method in ("writeButtons", "nextSurvivor", "stashRemoved", "stashedButtons", "clearStash"):
                 self.assertNotRegex(code, rf"function\s+{method}\b", f"{rel} still defines {method}()")

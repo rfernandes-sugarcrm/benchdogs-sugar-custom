@@ -1,46 +1,43 @@
 #!/usr/bin/env python3
-"""The install hands the stage vocabulary to core, and takes Bench's copy back.
+"""The install hands the stage vocabulary to core - and, since rc69, all of it.
 
 0.9.42-rc65, G278 / 🔒 1506 + G280 / 🔒 1507. Owner: *"this hsoudl happen in the
-core"*, *"Donthave any logic on bench that is not on core"*.
+core"*, *"Donthave any logic on bench that is not on core"*. 0.9.42-rc69,
+G280 / 🔒 1567: *"Benchdog MLP shoudl be mininal with mininal foot print of
+overide"*.
 
-WHAT THE INSTALL MUST DO NOW, and each is executed below against the REAL
-scripts/post_install.php (top-level code, `require`d exactly as
+WHAT THE INSTALL DOES NOW - LESS, and each "no longer" is executed below against
+the REAL scripts/post_execute.php (top-level code, `require`d exactly as
 ModuleInstaller::post_execute() does):
 
-1.  WRITE THE CONFIG FIRST. The release-stage provider this package shipped is
-    now a stub that returns null, so Partial Fulfillment decides the stage from
-    `erp_integration.partial_order_sales_stage`. That key is TENANT DATA - it
-    does not arrive with the package - so if the provider is neutered and the
-    key is never written, the Opportunity stage silently stops being written at
-    all. It runs before any layout work, in its own try/catch, and it does NOT
-    overwrite a value someone already chose.
+1.  NO CONFIG WRITE. rc65-rc68 wrote `erp_integration.partial_order_sales_stage`
+    = 'Partial Production Ordered' when absent, because it was TENANT DATA with
+    no other writer and Partial Fulfillment read it. PF >= 1.0.43 carries that
+    exact value as a READER-side default (ErpOpportunityValuation::
+    DEFAULT_PARTIAL_STAGE, G305 / 🔒 1519), so a tenant without the row already
+    behaves as if it had been written; one with the row keeps it. The manifest's
+    PF floor is 1.0.43 for exactly this. And the install does not even READ core's
+    erp_integration category any more.
 
-2.  DELETE THE ACCUMULATED FRAGMENT, ONCE. Until rc64 post_install APPENDED the
-    stage template to custom/Extension/application/Ext/Language/
-    en_us.zz_bd_stage_doms.php through `install_languages()`, which
-    CONCATENATES rather than overwrites (SugarEnt 26.1.0
-    ModuleInstall/ModuleInstaller.php:1227-1235). Every past version's keys are
-    still in that file on every Bench Dogs tenant - including decision 314's
-    retired '...Closed' pair (G268). `uninstall_languages()` is the exact
-    mirror of that install and the only removal a package is allowed
-    (`unlink()` is denied by the cloud scanner), so the install calls it with
-    the same installer class, the same id_name and the same template path.
+2.  NO FRAGMENT REMOVAL. Deleting the accumulated
+    en_us.zz_bd_stage_doms.php through `uninstall_languages()` was a one-shot;
+    it moved to the one-off ONEOFF-RetireBdResidue (K-5), which ran on every QA
+    tenant.
 
 3.  NEVER INSTALL A LANGUAGE FRAGMENT AGAIN. `install_languages()` must not be
-    called at all: PF owns the keys, and a second declaration is exactly the
-    duplication the ruling removes.
+    called at all: PF owns the keys.
 
-4.  REBUILD THE LANGUAGES. This install EMPTIES fragments it used to declare
-    stages and styles in; until the application strings are recompiled, the
-    tenant keeps serving what those files said.
+4.  NO LANGUAGE REBUILD AND NO READ OF PF'S VOCABULARY. The rebuild existed to
+    recompile the EMPTIED stage fragments, and rc69 ships none;
+    ModuleInstaller::install() already rebuilds the languages before
+    post_execute. The "release stages served by core" read reported on another
+    package's vocabulary.
 
 MUTATION-VERIFIED (each applied, suite re-run, listed failure observed):
-  drop the config block            -> writes_the_partial_stage_config fails
-  overwrite an existing config     -> respects_an_existing_choice fails
-  drop the uninstall_languages call-> removes_the_accumulated_fragment fails
-  call install_languages again     -> declares_no_language_fragment fails
-  wrap the body in a function      -> body_is_top_level_code fails
+  restore the config block          -> writes_no_partial_stage_config fails
+  restore the uninstall_languages call -> no_longer_removes_the_fragment_itself fails
+  call install_languages again      -> declares_no_language_fragment fails
+  wrap the body in a function       -> body_is_top_level_code fails
 """
 
 from __future__ import annotations
@@ -147,7 +144,6 @@ class PostInstallStageLanguagesTest(unittest.TestCase):
             target = Path(tmp)
             for relative in (
                 "scripts/post_execute.php",
-                "custom/Extension/application/Ext/Language/en_us.bd_stage_doms.php",
             ):
                 path = target / relative
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -159,55 +155,41 @@ class PostInstallStageLanguagesTest(unittest.TestCase):
                                     capture_output=True, check=True)
             return json.loads(result.stdout)
 
-    # ---- 1. the config, which is the half that cannot be redone later --------
+    # ---- 1. no config: PF >= 1.0.43 answers on the read side -----------------
 
-    def test_writes_the_partial_stage_config(self):
+    def test_writes_no_partial_stage_config(self):
         observed = self.execute()
         self.assertIsNone(observed["failure"])
-        self.assertIn(["write_config", "erp_integration", "partial_order_sales_stage",
-                       "Partial Production Ordered"], observed["events"])
-        self.assertEqual(observed["settings"]["erp_integration"]["partial_order_sales_stage"],
-                         "Partial Production Ordered")
+        writes = [e for e in observed["events"]
+                  if isinstance(e, list) and e[0] == "write_config" and e[1] == "erp_integration"]
+        self.assertEqual(writes, [], "the install writes core's erp_integration config again")
+        # PHP encodes an empty array as [] - either empty shape is "untouched".
+        self.assertFalse(observed["settings"]["erp_integration"])
+
+    def test_reads_no_erp_integration_config_either(self):
+        reads = [e for e in self.execute()["events"]
+                 if isinstance(e, list) and e[0] == "read_config"]
+        self.assertEqual(reads, [])
 
     def test_respects_an_existing_choice(self):
-        """A config row is tenant data. An admin (or a later decision) that set
-        another stage keeps it; this package does not re-decide on every
-        install.
-
-        🛑 NARROWED IN 0.9.42-rc67, AND THE NARROWING IS THE POINT. This used to
-        assert NO config write at all. G294's step report now writes exactly one
-        more row - benchdogs_ext.install_report, on every install, pass or fail -
-        so a blanket "no writes" assertion would fail for a reason that has
-        nothing to do with what this test is about. It is scoped to the stage
-        key instead of deleted or relaxed to a substring: an overwrite of
-        partial_order_sales_stage still fails it, which is the defect it exists
-        for. Any OTHER unexpected category/key would slip past this, which is
-        why test_post_install_step_report.py asserts the report row's category,
-        key and contents explicitly rather than leaving it uncovered here."""
+        """A config row is tenant data. A tenant (Bench) that already holds a
+        value - written by rc65-rc68 - keeps it: nothing here deletes or
+        rewrites it."""
         observed = self.execute("config_present")
-        writes = [e for e in observed["events"]
-                  if isinstance(e, list) and e[0] == "write_config"
-                  and e[2] == "partial_order_sales_stage"]
-        self.assertEqual(writes, [], "the install overwrote a stage someone already chose")
         self.assertEqual(observed["settings"]["erp_integration"]["partial_order_sales_stage"],
                          "Someone Elses Stage")
 
-    def test_the_config_is_written_before_any_other_step(self):
-        """If a later block throws, the key must already be there - otherwise the
-        provider is neutered and nothing writes the stage."""
-        observed = self.execute()
-        names = [e[0] if isinstance(e, list) else e for e in observed["events"]]
-        self.assertLess(names.index("write_config"), names.index("uninstall_languages"))
+    # ---- 2/3. no fragment removal, and no new declaration -------------------
 
-    # ---- 2/3. the fragment removal, and no new declaration ------------------
-
-    def test_removes_the_accumulated_fragment(self):
+    def test_no_longer_removes_the_fragment_itself(self):
+        """Spent: the one-off's K-5 makes the same call, with the same id_name,
+        and ran on every QA tenant."""
         observed = self.execute()
         calls = [e for e in observed["events"]
                  if isinstance(e, list) and e[0] == "uninstall_languages"]
-        self.assertEqual(len(calls), 1, "the accumulated zz fragment is not removed exactly once")
-        self.assertEqual(calls[0][1], "zz_bd_stage_doms",
-                         "a different id_name removes a different file, i.e. nothing")
+        self.assertEqual(calls, [])
+        oneoff = (ROOT / "sugar-sell/ONEOFF-RetireBdResidue/scripts/post_execute.php").read_text()
+        self.assertIn("'zz_bd_stage_doms'", oneoff)
 
     def test_declares_no_language_fragment(self):
         observed = self.execute()
@@ -215,24 +197,20 @@ class PostInstallStageLanguagesTest(unittest.TestCase):
                     if isinstance(e, list) and e[0] == "install_languages"]
         self.assertEqual(installs, [], "this package is declaring stage keys again; PF owns them")
 
-    # ---- 4. the rebuild, and the read it logs -------------------------------
+    # ---- 4. the one rebuild left, and no read of another package ------------
 
-    def test_rebuilds_and_refreshes_the_languages(self):
+    def test_rebuilds_accounts_and_nothing_else(self):
         observed = self.execute()
         names = [e[0] if isinstance(e, list) else e for e in observed["events"]]
-        self.assertIn("rebuild_languages", names)
-        self.assertIn("refresh_languages", names)
-        self.assertLess(names.index("uninstall_languages"), names.index("refresh_languages"))
+        self.assertIn("rebuild_extensions", names)
+        for gone in ("rebuild_languages", "refresh_languages", "rebuild_tabledictionary"):
+            self.assertNotIn(gone, names, f"post_install still does {gone}")
 
-    def test_reports_whether_core_serves_the_stages(self):
-        served = self.execute()
-        self.assertIn("BenchDogs-Ext: release stages served by core after this install: yes",
-                      served["errors"])
-        missing = self.execute("stages_missing")
-        self.assertIn(
-            "BenchDogs-Ext: release stages served by core after this install: "
-            "NO - install Partial Fulfillment >= 1.0.40", missing["errors"])
-        self.assertIsNone(missing["failure"], "a missing core stage must never fail the install")
+    def test_does_not_read_another_packages_vocabulary(self):
+        observed = self.execute("stages_missing")
+        self.assertNotIn("verify", [e[0] for e in observed["events"] if isinstance(e, list)])
+        self.assertFalse([e for e in observed["errors"] if "release stages served" in e])
+        self.assertIsNone(observed["failure"])
 
     # ---- the structural properties the rc26 defect taught -------------------
 
@@ -273,18 +251,16 @@ class PostInstallStageLanguagesTest(unittest.TestCase):
 
 
 class OpportunitiesOnlyRepairContractTest(unittest.TestCase):
-    def test_manual_repair_endpoint_does_not_repair_revenue_line_items(self):
+    """rc65-rc68 pinned what the admin repair route did NOT do. rc69 (G280 /
+    🔒 1567) retires the route: the api file ships empty."""
+
+    def test_the_repair_endpoint_is_gone(self):
         endpoint = PACKAGE / "custom/clients/base/api/BdBenchDogsActionsApi.php"
         source = endpoint.read_text()
-        repair_body = source.split("public function repairUi", 1)[1]
-        self.assertNotRegex(repair_body, r"['\"]RevenueLineItems['\"]")
-
-    def test_the_repair_endpoint_installs_no_stage_vocabulary(self):
-        endpoint = PACKAGE / "custom/clients/base/api/BdBenchDogsActionsApi.php"
-        body = endpoint.read_text().split("public function repairUi", 1)[1]
-        code = "\n".join(line.split("//")[0] for line in body.splitlines())
-        self.assertNotIn("install_languages", code,
-                         "the admin repair route is re-declaring stage keys core owns")
+        self.assertNotIn("function repairUi", source)
+        code = re.sub(r"/\*.*?\*/", "", source, flags=re.S)
+        for gone in ("RevenueLineItems", "install_languages", "registerApiRest"):
+            self.assertNotIn(gone, code)
 
 
 if __name__ == "__main__":

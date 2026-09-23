@@ -81,16 +81,16 @@ class RetiredProviderDoesNotShip(unittest.TestCase):
         ]
         self.assertEqual(offenders, [], f"this package defines {CLASS_NAME} again: {offenders}")
 
-    def test_the_hooks_directory_still_carries_its_other_file(self):
-        """ANTI-VACUITY. The two cases above would also pass if the whole
-        `ErpQuoteHooks/` tree had been deleted by accident, or if `PKG` pointed
-        at nothing. `OpportunityContribution.php` is still shipped — DELIBERATELY,
-        see [[G282]]: Partial Fulfillment's copy of that same path computes a
-        DIFFERENT number, so it was not removed with the rest of rc66. If this
-        case ever fails, read G282 before 'fixing' it."""
-        contribution = PKG / "custom/modules/Quotes/ErpQuoteHooks/OpportunityContribution.php"
-        self.assertTrue(contribution.is_file(),
-                        "the ErpQuoteHooks tree is gone entirely — the cases above prove nothing")
+    def test_the_anti_vacuity_control_is_the_package_itself(self):
+        """ANTI-VACUITY, RE-POINTED 0.9.42-rc69. The two cases above would also
+        pass if PKG pointed at nothing. Until rc68 the control was the sibling
+        `ErpQuoteHooks/OpportunityContribution.php`; rc69 stops shipping that too
+        (G280 / 🔒 1567 - Partial Fulfillment >= 1.0.41 ships the same path with
+        the G282 preserve gate), so the whole `ErpQuoteHooks/` tree is gone and
+        the control is that PKG really is the Bench Dogs package."""
+        self.assertFalse((PKG / "custom/modules/Quotes/ErpQuoteHooks").exists())
+        self.assertTrue((PKG / "pack.php").is_file(), "PKG is not the package - the cases above prove nothing")
+        self.assertIn("sugarai_benchdogs_ext", (PKG / "pack.php").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

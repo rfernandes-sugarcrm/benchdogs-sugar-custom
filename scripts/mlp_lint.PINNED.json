@@ -26,9 +26,9 @@
       "git_blob": "c1151204a04eb4fd7e00298132a7f9f82d2c5009",
       "bytes": 59950,
       "local_delta": {
-        "reason": "test_mlp002_agrees_with_the_scanner_on_every_php_file_here floors the files it checked at erp-integration-sugar's size (100). This repository has 61 PHP files at rc67, BenchDogs-Ext alone 51, so the floor is 40: still proves the oracle walked the real tree.",
+        "reason": "test_mlp002_agrees_with_the_scanner_on_every_php_file_here floors the files it checked at erp-integration-sugar's size (100). This repository had 61 PHP files at rc67 (floor 40); G280 / decision 1567 cut BenchDogs-Ext to 7 at rc69, leaving 18 in all, so the floor is 12: still proves the oracle walked the real tree.",
         "upstream": "        self.assertGreater(checked, 100)\n",
-        "local": "        self.assertGreater(checked, 40)  # Bench Dogs delta, declared in scripts/mlp_lint.PINNED.json\n"
+        "local": "        self.assertGreater(checked, 12)  # Bench Dogs delta, declared in scripts/mlp_lint.PINNED.json\n"
       }
     },
     "scripts/tests/mutate_mlp_lint.py": {

@@ -30,16 +30,12 @@
 // Proof of life - see the matching note in pre_uninstall.php.
 $GLOBALS['log']->fatal('BenchDogs-Ext: post_uninstall running - rebuilding caches');
 
-// The stock modules this package extended with fields, hooks or layouts. That
-// is now the whole list: since the bd01 quote mirror was retired the package
-// installs no module of its own, so there is no bean of ours left for the
-// uninstaller to drop and nothing else to repair.
+// The stock modules this package extends. Since 0.9.42-rc69 (G280 / 🔒 1567)
+// that is Accounts alone - two vardefs, two labels and one record-view
+// placement - and the package installs no module of its own, so there is no
+// bean of ours for the uninstaller to drop and nothing else to repair.
 $bdModules = array(
-    'Quotes',
-    'Products',
     'Accounts',
-    'Opportunities',
-    'Contacts',
 );
 
 try {
@@ -53,32 +49,15 @@ try {
     $GLOBALS['log']->error('BenchDogs-Ext: post-uninstall repair failed: ' . $e->getMessage());
 }
 
-// The relationship cache and the compiled TableDictionary are not module-scoped,
-// so rebuildExtensions() above does not cover them - the same gap
-// post_install.php documents on the way in. The quotes_erp_orders cardinality
-// override ships in a TableDictionary extension file that has just been
-// deleted, and the cached definition outlives the file unless it is rebuilt
-// here.
-try {
-    require_once 'ModuleInstall/ModuleInstaller.php';
-    $bdInstaller = new ModuleInstaller();
-    $bdInstaller->silent = true;
-    $bdInstaller->rebuild_tabledictionary();
-    if (class_exists('SugarRelationshipFactory')) {
-        SugarRelationshipFactory::deleteCache();
-        SugarRelationshipFactory::rebuildCache();
-    }
-    VardefManager::clearVardef('Quotes', 'Quote');
-    VardefManager::clearVardef('ERP_Orders', 'ERP_Order');
-} catch (Throwable $e) {
-    $GLOBALS['log']->error('BenchDogs-Ext: post-uninstall relationship rebuild failed: ' . $e->getMessage());
-}
+// No TableDictionary or relationship rebuild any more (0.9.42-rc69). It existed
+// for the quotes_erp_orders cardinality override, whose file this package
+// stopped shipping long ago; this package declares no relationship at all.
 
-// Last, so it refreshes what the two rebuilds above have settled on rather than
-// what was there when this script started. A full refreshCache() rather than
-// refreshModulesCache($bdModules), because the module LIST itself has changed -
-// three modules have gone - and a per-module refresh only rewrites entries for
-// the modules it is handed.
+// Last, so it refreshes what the rebuild above has settled on rather than what
+// was there when this script started. A full refreshCache() rather than
+// refreshModulesCache($bdModules): earlier builds of this package extended
+// Quotes, Products, Opportunities and Contacts too, and a per-module refresh
+// only rewrites entries for the modules it is handed.
 try {
     MetaDataManager::refreshCache();
 } catch (Throwable $e) {

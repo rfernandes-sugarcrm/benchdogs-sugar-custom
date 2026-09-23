@@ -58,6 +58,16 @@ shipping the six paths as stubs that declare nothing — the mechanism
 ``Contacts/Ext/Vardefs/bd_contact_sync_fields.php`` already used and proved
 live, where all three fields it retired read absent on the tenant.
 
+🔁 AND WHY IT WAS RE-POINTED AT rc69 (G280 / 🔒 1567, 🔒 1521). The six stubs
+did their job: every QA tenant has taken a build that overwrote them, and the
+one-off ONEOFF-RetireBdResidue - which DELETES each path through platform code
+(ModuleInstaller::uninstallExt(), from post_execute, no copy list) - ran on all
+three. So the package stops shipping them, and "retired" is asserted as the
+three halves in bd_retirement.assert_retired_by_oneoff: not in the source, not
+in the built zip, and still on the one-off's worklist. A test that checked only
+"absent" would pass on exactly rc24's defect; the worklist half is what stops
+that.
+
 A filename ban would forbid exactly the mechanism that delivers the fix. So
 the ban is now on **DECLARATIONS, not names**, and emptiness is asserted
 **positively and behaviourally**: each stub is executed the way Sugar's
@@ -88,6 +98,8 @@ import tempfile
 import unittest
 import zipfile
 
+from bd_retirement import assert_retired_by_oneoff, oneoff_worklist
+
 
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = ROOT / "sugar-sell/BenchDogs-Ext"
@@ -97,8 +109,8 @@ PROBE = Path(__file__).resolve().parent / "bench_shipped_stub_probe.php"
 CORE_ORDER_MODULES = ("ERP_OrderLines", "ERP_Orders")
 
 #: The six fragments decision 59 retired, each mapped to the probe mode that
-#: proves it inert. These paths MUST be shipped — as stubs — because only an
-#: overwrite removes them from an installed tenant.
+#: proved it inert while it shipped as a stub (through rc68). From rc69 they are
+#: not shipped at all; the one-off deletes them from the tenant.
 RETIRED_STUBS = {
     "custom/Extension/modules/ERP_OrderLines/Ext/Vardefs/"
     "bd_shipped_value.php": "vardefs",
@@ -150,48 +162,28 @@ def _source_php():
 
 class BenchShippedIsAQuantityNotMoneyTest(unittest.TestCase):
 
-    # ------------------------------------------------- the stubs must EXIST
+    # ------------------------------------------ the retirement must HAPPEN
 
-    def test_the_six_retired_fragments_are_shipped_as_stubs(self):
-        """The inversion. Absence would be a NON-delivery.
+    def test_the_six_retired_fragments_are_retired_off_the_tenant(self):
+        """Absence alone would be a NON-delivery - rc24's defect.
 
-        Deleting these files leaves them on every installed tenant, where
-        Quick Repair recompiles the field straight back. Shipping them as
-        stubs is what actually retires them.
+        Deleting these files from the build leaves them on every installed
+        tenant, where Quick Repair recompiles the field straight back. Through
+        rc68 shipping them as stubs is what retired them; from rc69 the one-off
+        deletes them, so its worklist must still carry every one.
         """
         for rel in sorted(RETIRED_STUBS):
             with self.subTest(path=rel):
-                self.assertTrue(
-                    (PACKAGE / rel).is_file(),
-                    f"{rel} must be SHIPPED as an empty stub, not deleted — "
-                    "only overwriting a copied Extension file removes it "
-                    "from an installed tenant.",
-                )
+                assert_retired_by_oneoff(self, rel, "bd_shipped_value money on an order")
 
-    def test_each_retired_stub_contributes_nothing_when_executed(self):
-        """POSITIVE emptiness, asserted behaviourally rather than by name.
-
-        Each stub is executed as Sugar's Extension compile would execute it,
-        with ``$dictionary`` / ``$viewdefs`` / ``$mod_strings`` seeded. It
-        passes only if it contributed ZERO entries.
-        """
-        for rel, mode in sorted(RETIRED_STUBS.items()):
-            result = _probe(mode, PACKAGE / rel)
-            with self.subTest(path=rel, mode=mode):
-                self.assertEqual(
-                    0, result["count"],
-                    f"{rel} must declare nothing; it contributed {result}",
-                )
-
-    def test_each_retired_stub_contains_no_executable_code_at_all(self):
-        """Stricter than "declares no field": declares NOTHING.
-
-        A stub that ran any code could acquire a side effect later without
-        tripping the per-mode probes.
-        """
+    def test_the_one_off_deletes_the_fragments_rather_than_blanking_them(self):
+        """An Extension fragment is compiled by path, so the route off the
+        tenant is DELETION through uninstallExt(); blanking is the one-off's
+        route for class files, not for fragments."""
+        worklist = oneoff_worklist()
         for rel in sorted(RETIRED_STUBS):
             with self.subTest(path=rel):
-                self.assertEqual("", _code(PACKAGE / rel).replace("<?php", "").strip())
+                self.assertEqual(worklist.get(rel), "deleted")
 
     #: A real declaration of each shape, written here rather than recovered from
     #: a historical archive. Each one is what the corresponding stub looked like
@@ -298,26 +290,24 @@ foreach ($viewdefs['ERP_OrderLines']['base']['view']['record']['panels'] as $i =
                 with self.subTest(path=path.relative_to(PACKAGE), token=token):
                     self.assertNotIn(token, source)
 
-    def test_this_package_ships_only_inert_stubs_for_cores_order_modules(self):
+    def test_this_package_ships_nothing_for_cores_order_modules(self):
         """Decision 59: one shipped surface, owned by core.
 
-        The package may ship, for these two modules, EXACTLY the six retired
-        stubs and nothing else. Anything new is a deliberate act that has to
-        change this test and explain itself.
+        Through rc68 the package shipped, for these two modules, EXACTLY the six
+        retired stubs. From rc69 it ships nothing for them at all. Anything new
+        is a deliberate act that has to change this test and explain itself.
         """
         for module in CORE_ORDER_MODULES:
-            # ``**/*`` and not ``*``: the fragments live several directories
-            # down, so a single-level glob matches only the ``Ext`` DIRECTORY,
-            # which ``is_file()`` rejects — and the assertion would pass
-            # vacuously. Measured: it did, before this was fixed.
+            # ``**/*`` and not ``*``: the fragments would live several
+            # directories down, so a single-level glob matches only the ``Ext``
+            # DIRECTORY, which ``is_file()`` rejects. Measured: it once did.
             found = sorted(
                 str(p.relative_to(PACKAGE))
                 for p in PACKAGE.rglob(f"Extension/modules/{module}/**/*")
                 if p.is_file()
             )
-            expected = sorted(r for r in RETIRED_STUBS if f"modules/{module}/" in r)
             with self.subTest(module=module):
-                self.assertEqual(expected, found)
+                self.assertEqual([], found)
 
     def test_no_order_module_fragment_defaults_a_field_to_zero(self):
         """A vardef default manufactures data before the connector speaks.
@@ -347,22 +337,14 @@ foreach ($viewdefs['ERP_OrderLines']['base']['view']['record']['panels'] as $i =
         version = (PACKAGE / "version").read_text().strip()
         return PACKAGE / "releases" / f"sugarai_benchdogs_ext-{version}.zip"
 
-    def test_built_archive_ships_the_six_stubs_byte_identical_to_source(self):
-        """The zip is where a half-removal survives.
-
-        A stub emptied in source but stale inside the archive would ship the
-        field anyway — the exact half-removal this test exists to catch, now
-        in the opposite direction.
-        """
+    def test_built_archive_ships_none_of_the_six(self):
+        """The zip is where a half-removal survives: a path gone from source but
+        still inside a stale archive would ship the old body anyway."""
         with zipfile.ZipFile(self._archive()) as archive:
             names = set(archive.namelist())
-            for rel in sorted(RETIRED_STUBS):
-                with self.subTest(path=rel):
-                    self.assertIn(rel, names)
-                    self.assertEqual(
-                        (PACKAGE / rel).read_bytes(), archive.read(rel),
-                        f"{rel} in the zip differs from source",
-                    )
+        for rel in sorted(RETIRED_STUBS):
+            with self.subTest(path=rel):
+                self.assertNotIn(rel, names)
 
     def test_built_archive_declares_no_bench_shipped_field_or_label(self):
         """Every PHP file in the zip, comment-stripped, across all modules.
@@ -397,26 +379,18 @@ foreach ($viewdefs['ERP_OrderLines']['base']['view']['record']['panels'] as $i =
                     with self.subTest(name=name, token=token):
                         self.assertNotIn(token, code)
 
-    def test_manifest_carries_a_copy_entry_for_every_stub(self):
-        """THE MECHANISM. Without the copy entry nothing is overwritten.
-
-        This is the assertion that would have caught rc24. A stub that is not
-        in the manifest's ``copy`` array is never written to the tenant, so
-        the ORIGINAL file stays on disk and Quick Repair recompiles the field
-        straight back — the package installs clean and changes nothing.
-        """
+    def test_manifest_carries_no_copy_entry_for_them(self):
+        """THE MECHANISM, turned around at rc69. Through rc68 a stub that was
+        not in the manifest's ``copy`` array was never written to the tenant,
+        so the ORIGINAL stayed on disk - rc24's defect. From rc69 the one-off
+        removes the path, and a copy entry here would put a body BACK after it
+        ran (and give Module Loader a backup to restore on uninstall)."""
         with zipfile.ZipFile(self._archive()) as archive:
             manifest = archive.read("manifest.php").decode("utf-8")
         for rel in sorted(RETIRED_STUBS):
             with self.subTest(path=rel):
-                # assertTrue, not assertIn: assertIn dumps the entire manifest
-                # (~30 KB) into the failure report and buries the message.
-                self.assertTrue(
-                    f"'to' => '{rel}'" in manifest,
-                    f"{rel} has no manifest copy entry: it would never "
-                    "overwrite the installed original, so the field would "
-                    "survive exactly as it did under rc24.",
-                )
+                self.assertFalse(f"'to' => '{rel}'" in manifest,
+                                 f"{rel} is copied again, over the one-off's removal")
 
 
 if __name__ == "__main__":

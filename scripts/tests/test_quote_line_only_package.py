@@ -110,17 +110,18 @@ class QuoteLineOnlyPackageTest(unittest.TestCase):
         with zipfile.ZipFile(candidate) as new:
             names = set(new.namelist())
             self.assertTrue(retired.isdisjoint(names), retired & names)
-            # 🛑 AND THE ONE THAT MUST BE PRESENT. bd_deliverable_key's vardef is
-            # retired by SHIPPING ITS PATH EMPTY, not by absence: the paths above
-            # belong to a module this package no longer creates, while this one is
-            # a fragment Sugar loads by path from every tenant that ever had it.
-            self.assertIn(RETIREMENT_STUB, names,
-                          "the bd_deliverable_key retirement stub stopped shipping")
-            self.assertIn(
-                "custom/Extension/application/Ext/DropdownsStyle/"
-                "sales_stage_dom_style.php",
-                names,
-            )
+            # 🛑 bd_deliverable_key's vardef was retired by SHIPPING ITS PATH
+            # EMPTY through rc68, not by absence: it is a fragment Sugar loads by
+            # path from every tenant that ever had it. From rc69 (G280 / 🔒 1567,
+            # 🔒 1521) the one-off deletes that path, so the package stops
+            # shipping it - and the one-off must still name it, or a tenant that
+            # has it keeps it.
+            self.assertNotIn(RETIREMENT_STUB, names)
+        from bd_retirement import assert_retired_by_oneoff
+        assert_retired_by_oneoff(self, RETIREMENT_STUB, "RevenueLineItem.bd_deliverable_key")
+        assert_retired_by_oneoff(
+            self, "custom/Extension/application/Ext/DropdownsStyle/sales_stage_dom_style.php",
+            "the Bench stage styles")
 
 
 if __name__ == "__main__":

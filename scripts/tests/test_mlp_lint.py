@@ -1343,7 +1343,7 @@ class TestAgainstTheRealScanner(unittest.TestCase):
                 ours = _linter_keys(f.read_text(encoding="utf-8", errors="replace"))
                 theirs = _oracle_keys(want.get(rel, []))
                 self.assertEqual(ours, theirs, f"{area}/{rel}: linter vs real scanner")
-        self.assertGreater(checked, 40)  # Bench Dogs delta, declared in scripts/mlp_lint.PINNED.json
+        self.assertGreater(checked, 12)  # Bench Dogs delta, declared in scripts/mlp_lint.PINNED.json
 
     def test_the_transcription_matches_the_source(self) -> None:
         sys.path.insert(0, str(HERE.parent))

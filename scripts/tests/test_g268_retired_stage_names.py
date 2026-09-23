@@ -25,6 +25,13 @@ fragment once, through `uninstall_languages()` — the exact mirror of the insta
 that created it, and the only removal a package is allowed (`unlink()` is denied
 by the cloud scanner). The retired pair goes with the file that carried it.
 
+🔁 rc69 (G280 / 🔒 1567, 🔒 1521): that one-shot deletion MOVED to the one-off
+ONEOFF-RetireBdResidue (its K-5, the same uninstall_languages() call with the
+same id_name and template path), which ran on every QA tenant; and the emptied
+en_us.bd_stage_doms.php stopped shipping (the one-off deletes that path too).
+The model below therefore serves Bench's fragment as the EMPTY body every tenant
+carried through rc68 - equivalent, for the merge, to the file being gone.
+
 The cases below EXECUTE Sugar's own merge: the fragments are concatenated with a
 verbatim copy of `getExtensionFileContents()` (drift-checked against the source
 tree when it is present) and included with the accumulated `$app_list_strings`
@@ -259,8 +266,9 @@ class RetiredStageNames(unittest.TestCase):
                                  f"{name} drifted from Partial Fulfillment; re-pin it")
 
     def fragments(self):
-        frags = {"bd_stage_doms": (PKG / "custom/Extension/application/Ext/Language"
-                                   "/en_us.bd_stage_doms.php").read_text(),
+        # rc65-rc68 shipped this fragment EMPTY; rc69 ships nothing and the
+        # one-off deletes it. Both contribute nothing to the merge.
+        frags = {"bd_stage_doms": "<?php\n",
                  "erp_replace": ERP_LEGACY}
         if self.pf:
             frags["_override_en_us.partial_fulfillment_sales_stage"] = self.pf
@@ -304,12 +312,14 @@ class RetiredStageNames(unittest.TestCase):
         doms pre-seeded, and none of them may add or change a key."""
         seed = {"sales_stage_dom": {"SEED": "SEED"}, "sales_probability_dom": {"SEED": 1},
                 "quote_stage_dom": {"SEED": "SEED"}}
-        fragments = sorted(
-            list(PKG.glob("custom/Extension/application/Ext/Language/*.php"))
-            + list(PKG.glob("custom/Extension/application/Ext/DropdownsStyle/*.php")))
-        self.assertTrue(fragments, "no application fragments found — wrong package root?")
+        # EVERY shipped Extension fragment, not only application/: since rc69
+        # there is no application fragment left at all, and a stage key could
+        # as easily come back from a module-level language file.
+        fragments = sorted(PKG.glob("custom/Extension/**/*.php"))
+        self.assertTrue(fragments, "no Extension fragments found — wrong package root?")
         files = "[" + ", ".join(json.dumps(str(f)) for f in fragments) + "]"
         probe = (
+            "$dictionary = []; $mod_strings = [];"
             "$app_list_strings = ['sales_stage_dom' => ['SEED' => 'SEED'],"
             " 'sales_probability_dom' => ['SEED' => 1],"
             " 'quote_stage_dom' => ['SEED' => 'SEED']];"
@@ -323,16 +333,22 @@ class RetiredStageNames(unittest.TestCase):
         self.assertEqual(observed["style"], {"sales_stage_dom_style": {"SEED": 1}},
                          "a shipped fragment still declares a stage style")
 
-    def test_the_removal_is_wired_into_the_install(self):
-        """The behaviour above only happens if post_install actually calls it.
-        The call itself is asserted in test_post_install_stage_languages.py; this
-        pins the id_name, because a different one deletes a different file."""
-        post = (PKG / "scripts/post_execute.php").read_text()
-        code = re.sub(r"/\*.*?\*/", "", post, flags=re.S)
+    def test_the_removal_is_wired_into_the_one_off(self):
+        """The behaviour above only happens if something actually calls it.
+        Through rc68 that was this package's post_install; from rc69 it is the
+        one-off's K-5, which ran on every QA tenant. Pins the id_name and the
+        template path, because a different one deletes a different file - and
+        that post_install no longer does it (or, worse, INSTALLS languages)."""
+        oneoff = (ROOT / "sugar-sell/ONEOFF-RetireBdResidue/scripts/post_execute.php").read_text()
+        code = re.sub(r"/\*.*?\*/", "", oneoff, flags=re.S)
         code = re.sub(r"(^|\s)//[^\n]*", r"\1", code)
-        self.assertIn("uninstall_languages", code)
+        self.assertIn("->uninstall_languages()", code)
         self.assertIn("'zz_bd_stage_doms'", code)
-        self.assertNotIn("install_languages()", code.replace("uninstall_languages()", ""))
+        self.assertIn("'custom/dropdowntemplates/bd_stage_doms.append.php'", code)
+        post = (PKG / "scripts/post_execute.php").read_text()
+        post = re.sub(r"/\*.*?\*/", "", post, flags=re.S)
+        post = re.sub(r"(^|\s)//[^\n]*", r"\1", post)
+        self.assertNotIn("install_languages", post)
 
     @unittest.skipUnless((SUGAR_261 / "ModuleInstall/ModuleInstaller.php").is_file(),
                          "SugarEnt 26.1.0 source tree not present")
