@@ -117,7 +117,7 @@ $installdefs = array(
     'post_execute' => array('<basepath>/scripts/post_execute.php'),
     // The uninstall counterpart to post_execute, in two halves because the two
     // jobs need opposite conditions. pre_uninstall undoes the DEPLOYED METADATA
-    // post_install.php wrote - record-view panels, buttons, the fields the
+    // post_execute.php wrote - record-view panels, buttons, the fields the
     // uninstaller cannot see because they live in a file this package does not
     // ship - and needs the helper classes under custom/ still on disk.
     // post_uninstall rebuilds the caches and has to run after those same files

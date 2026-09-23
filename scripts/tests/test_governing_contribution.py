@@ -77,6 +77,7 @@ import subprocess
 import unittest
 import zipfile
 
+import shared_sugar
 from test_headline_valuation_owner import FIXTURE, REPO, WORKSPACE
 
 
@@ -379,15 +380,23 @@ class ThePinsAreTheRealBodies(unittest.TestCase):
         """Staleness is loud where the history is reachable (every local run);
         in CI (one commit, no sibling) this passes and the hash above is what
         holds the pin still."""
-        repos = {"benchdogs-sugar-custom": REPO_ROOT, "erp-integration-sugar": WORKSPACE / "erp-integration-sugar"}
+        # shared_sugar.SIBLING, not WORKSPACE / name: WORKSPACE is ROOT.parent,
+        # which from a git worktree is not where the sibling checkout lives, and
+        # this case would then `continue` silently on every local run.
+        repos = {"benchdogs-sugar-custom": REPO_ROOT, "erp-integration-sugar": shared_sugar.SIBLING}
+        compared = 0
         for name, meta in PROVENANCE["files"].items():
             repo = repos[meta["repository"]]
             shown = subprocess.run(["git", "-C", str(repo), "show", f"{meta['commit']}:{meta['source']}"],
                                    capture_output=True)
             if shown.returncode != 0:
                 continue
+            compared += 1
             with self.subTest(file=name):
                 self.assertEqual(shown.stdout, (FIX / name).read_bytes(), f"{name} drifted from its commit")
+        if shared_sugar.SIBLING.is_dir():
+            # Where the sibling exists the PF pin MUST have been compared.
+            self.assertGreaterEqual(compared, 1, "no pin was compared although the sibling is present")
 
 
 class TheBuiltPackageNoLongerShipsIt(unittest.TestCase):
