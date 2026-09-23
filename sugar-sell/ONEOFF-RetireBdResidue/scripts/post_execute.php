@@ -67,8 +67,12 @@
  *   3. The deployed-METADATA retirements run (K-2, K-3, K-5) - the only three
  *      items no installdef can reach, because they live in rows this package
  *      does not ship.
- *   4. Orphaned Bench Dogs class files are BLANKED (not deleted: a single file
- *      under a shared module directory has no platform deletion primitive).
+ *   4. Orphaned Bench Dogs class files are BLANKED (not deleted: blanking is
+ *      the one single-file primitive that is safe for a class another file
+ *      might still require).
+ *   4b. (1.0.2) Bench Dogs' orphaned ORDER ADAPTER is DELETED once its planner
+ *      is blank or absent - step 4 blanks that planner, and a blank planner
+ *      makes the adapter refuse every Submit Order. See that step.
  *   5. The paths it deliberately did NOT touch are reported by name.
  *
  * HOW AN OPERATOR READS THE RESULT, WITHOUT A SHELL AND WITHOUT sugarcrm.log.
@@ -103,6 +107,15 @@
 if (!class_exists('ModuleInstaller', false)) {
     require_once 'ModuleInstall/ModuleInstaller.php';
 }
+
+// THE VERSION THAT IS ACTUALLY RUNNING, read from the manifest rather than typed.
+// ModuleInstaller::post_execute() (26.1.0 :426-440) runs extract($data) over
+// readManifest() before require_once'ing this file, so $manifest is in scope -
+// the same read BenchDogs-Ext's own post_execute makes. Through 1.0.1 the header
+// and the fatal() summary said "1.0.0" whatever was installed, so the log could
+// not identify the zip. 'unknown' means the manifest was not in scope, i.e. this
+// file was run by something other than the installer.
+$bdOneoffVersion = isset($manifest['version']) ? (string) $manifest['version'] : 'unknown';
 
 $bdRemoved = array();
 $bdAlreadyGone = array();
@@ -542,21 +555,26 @@ try {
  *    package leaves the blanked files blank. Uninstalling BENCHDOGS-EXT does not:
  *    its own -restore directory holds the bodies, so re-run this one-off after.
  *
- * 🛑 FOUR FILES ARE NOT IN THIS LIST AND MUST NEVER BE:
- *   custom/modules/Accounts/BdAccountsLayoutExtensions.php   - places the two
- *       customer-group fields; that is the code 🔒 1508 / 🔒 1514 KEEP.
- *   custom/modules/Quotes/BdQuotesLayoutExtensions.php       - K-2's own class.
- *   custom/modules/Opportunities/BdOpportunitiesLayoutExtensions.php - K-3's.
- *   custom/clients/base/api/BdBenchDogsActionsApi.php        - D-2, the
- *       bd-tools/repair-ui route the owner answered to KEEP.
+ * 🛑 NOTHING BenchDogs-Ext 0.9.42-rc69 SHIPS IS IN THIS LIST, AND NEVER MAY BE.
+ *   rc69 (G280 / 🔒 1567, minimal footprint) installs exactly four files; its
+ *   three lifecycle scripts run from its own unpacked package and never land
+ *   under custom/. The four are named in $bdNotOurs below as "KEPT BY rc69",
+ *   and scripts/tests/test_oneoff_retire_bd_residue.py fails if that set and
+ *   rc69's copy list ever differ, or if any worklist here names one of them.
+ *   custom/modules/Quotes/BdQuotesLayoutExtensions.php and
+ *   custom/modules/Opportunities/BdOpportunitiesLayoutExtensions.php are not
+ *   in this list either: rc69 no longer ships them and nothing it ships calls
+ *   them, but an rc68-or-earlier Bench Dogs uninstall still requires them.
  *
  * 🛑 AND custom/modules/Quotes/ErpQuoteHooks/** IS NOT IN THIS LIST EITHER.
  *   OpportunityContribution.php is shipped by Partial Fulfillment 1.0.41 at the
  *   SAME path. Blanking it would put an empty stub at a provider path, which
  *   🔒 1508 and G280 both forbid, and deleting it drops ERP-Core to
- *   (float) $quote->total - the fabricated zero 🔒 1511 forbids. The other four
- *   are ERP-Core CONTRACT paths whose fallback behaviour belongs to whoever owns
- *   ERP-Core, not to a cleanup package. All five are reported, untouched.
+ *   (float) $quote->total - the fabricated zero 🔒 1511 forbids. Blanking ANY
+ *   file at a hook path is wrong for the same reason: the hook still finds the
+ *   file, the class is gone, and the hook fails closed. ResolveOrderableLines.php
+ *   is the one of the five that has to go, and it is DELETED by the next step,
+ *   not blanked. The other three are reported, untouched.
  */
 $bdOrphanClasses = array(
     'custom/dropdowntemplates/bd_stage_doms.append.php',
@@ -627,32 +645,150 @@ if (!file_exists($bdEmptySource)) {
 }
 
 /**
+ * 4b. THE ORPHANED ORDER ADAPTER - NEW IN 1.0.2, AND IT UNDOES A REGRESSION
+ *     1.0.0 / 1.0.1 CAUSED.
+ *
+ *     custom/modules/Quotes/ErpQuoteHooks/ResolveOrderableLines.php
+ *
+ * MEASURED ON OPHIR (quote 368, 2026-09-23 02:55Z and 02:57Z): Submit Order
+ * refused BEFORE reaching Epicor - "The Bench Dogs order planner is not
+ * installed, so this quote cannot be adjudicated and nothing was sent."
+ * create_order returned status=error, created=false.
+ *
+ * WHY. BenchDogs-Ext 0.9.42-rc37..rc40 shipped a PAIR: the planner
+ * custom/modules/Quotes/BdSubmitOrderPlan.php, and this adapter, which is the one
+ * file ERP-Epicor's ErpQuoteHooks::fireResolveOrderableLines() looks for. Later
+ * builds stopped shipping both, so a tenant that ever took rc37-rc40 keeps both.
+ * Step 4 BLANKS the planner (it is in $bdOrphanClasses). 1.0.0 / 1.0.1 then left
+ * the adapter alone as "an ERP-Core contract path" - but the FILE there is Bench
+ * Dogs', and with its planner blank it REFUSES by design: its loadPlanner() finds
+ * no class and it answers that refusal rather than "no objection". So the cleanup
+ * turned an inert orphan into a refusal on every Submit Order.
+ *
+ * WHAT ERP-EPICOR DOES WITH NO ADAPTER, read from its source rather than assumed
+ * (erp-integration-sugar bc5b176, sugar-sell/ERP-Epicor/src):
+ *   custom/modules/Quotes/ErpQuoteHooks.php:139-144 - no file: the candidates
+ *       come back UNCHANGED, status 'hook_absent'. Not an error path.
+ *   custom/clients/base/api/QuotesErpActionsApi.php:1767-1782 - candidates
+ *       unchanged means the whole-quote route, the one every tenant without Bench
+ *       Dogs already takes; :5474-5477 - that order lane drops the quantity-break
+ *       rungs the customer did not choose (G200) on its own.
+ * A BLANKED adapter would NOT do: file_exists() is still true, the require'd file
+ * declares no class, `new ErpQuoteResolveOrderableLinesHook()` throws, and
+ * ErpQuoteHooks.php:147-164 refuses with "Line selection could not be resolved".
+ * So this one file is DELETED, not blanked.
+ *
+ * HOW, WITHOUT unlink(). ModuleInstaller::copy_path() in uninstall mode (26.1.0
+ * :1424-1462) hands copy_recursive_with_backup() (:2656-2690) a source; when that
+ * source is neither a file nor a directory it unlinks the destination
+ * (:2680-2684). That is the exact route uninstall_copy() (:521-547) uses to delete
+ * a file a package installed when there is no backup of it - platform code, so
+ * the deny-list does not apply. The source is a path under this unpacked package
+ * that the package never ships, and it is checked ABSENT first: if it existed,
+ * copy_path would copy it over the adapter instead of deleting it.
+ *
+ * ONLY BENCH DOGS' OWN ADAPTER, AND ONLY WHEN ITS PLANNER CANNOT ANSWER.
+ *   - The body must be the one Bench Dogs shipped. md5 f6c3d474... is the only
+ *     body in BenchDogs-Ext's git history (17a87c0, blob 2963abf0) and the one in
+ *     every rc37-rc40 zip found on the build machine. Another package may ship
+ *     its own adapter at this contract path; that file is not this package's to
+ *     delete. A different body is LEFT and reported under SKIPPED, because Submit
+ *     Order may still be refusing and an operator has to see why.
+ *   - The planner must be absent, or blank (byte-identical to lib/emptied.php).
+ *     If step 4 could not blank it, the pair still works and is left alone.
+ * It runs AFTER step 4, so a first run on an untouched tenant blanks the planner
+ * and retires its adapter in the same pass. Idempotent: a second run finds no
+ * adapter and says so.
+ */
+$bdAdapter = 'custom/modules/Quotes/ErpQuoteHooks/ResolveOrderableLines.php';
+$bdPlanner = 'custom/modules/Quotes/BdSubmitOrderPlan.php';
+$bdAdapterBenchMd5 = array(
+    // BenchDogs-Ext 0.9.42-rc37..rc40 (17a87c0, blob 2963abf0908d95a99c69a3b6abf5c0151d7b53a6)
+    'f6c3d4747ccbf822e0c6ba27b6360656',
+);
+$bdNoBackup = $bdPackageDir . '/no-backup/' . $bdAdapter;
+$bdAdapterLeft = array();
+
+if (!file_exists($bdAdapter)) {
+    $bdAlreadyGone[] = $bdAdapter . ' (the Bench Dogs order adapter)';
+} else {
+    $bdAdapterMd5 = md5_file($bdAdapter);
+    $bdPlannerCannotAnswer = !file_exists($bdPlanner)
+        || (isset($bdEmptyHash) && $bdEmptyHash !== false && md5_file($bdPlanner) === $bdEmptyHash);
+    if (!in_array($bdAdapterMd5, $bdAdapterBenchMd5, true)) {
+        $bdSkipped[] = $bdAdapter . ' - LEFT: its body (md5 ' . $bdAdapterMd5 . ') is not the adapter'
+            . ' Bench Dogs shipped, so it is not this package\'s to delete.'
+            . ($bdPlannerCannotAnswer
+                ? ' The Bench Dogs planner is absent or blank; if Submit Order refuses with'
+                    . ' "order planner is not installed", this file is the cause.'
+                : '');
+    } elseif (!$bdPlannerCannotAnswer) {
+        $bdAdapterLeft[] = $bdAdapter . ' - LEFT: Bench Dogs\' adapter, but its planner ' . $bdPlanner
+            . ' still has a body, so the pair still answers. Step 4 should have blanked it; see FAILED.';
+    } elseif (file_exists($bdNoBackup)) {
+        $bdSkipped[] = $bdAdapter . ' - NOT DELETED: the no-backup source ' . $bdNoBackup
+            . ' exists, and copy_path would copy it over the adapter instead of deleting it.';
+    } else {
+        try {
+            $bdInstaller->copy_path($bdNoBackup, $bdAdapter, $bdNoBackup, true);
+            if (file_exists($bdAdapter)) {
+                $bdFailed[] = $bdAdapter . ' (still present after copy_path)';
+            } else {
+                $bdRemoved[] = $bdAdapter . ' (Bench Dogs\' order adapter, deleted: its planner is '
+                    . (file_exists($bdPlanner) ? 'blank' : 'absent') . ', so it refused every Submit Order)';
+            }
+        } catch (Throwable $e) {
+            $bdFailed[] = $bdAdapter . ' (' . $e->getMessage() . ')';
+        }
+    }
+}
+
+/**
  * WHAT THIS PACKAGE DELIBERATELY DID NOT TOUCH.
  *
  * Reported by name on every run, present or not, because "I left it alone" is a
  * finding an operator has to be able to read as easily as "I removed it". Each
  * of these is a path BenchDogs-Ext installed that this package is not entitled to
- * remove, with the owner it belongs to.
+ * remove, with the reason.
+ *
+ * "KEPT BY rc69" IS EXACTLY WHAT BenchDogs-Ext 0.9.42-rc69 INSTALLS (G280 /
+ * 🔒 1567): four files, its whole copy list. Its three lifecycle scripts run from
+ * its own unpacked package and never land under custom/, so there is nothing on
+ * the tenant to leave alone for them. scripts/tests/test_oneoff_retire_bd_residue.py
+ * holds these four equal to rc69's KEPT list and checks no worklist names one.
  */
 $bdNotOurs = array(
+    'custom/Extension/modules/Accounts/Ext/Vardefs/bd_customer_group.php'
+        . ' - KEPT BY rc69: the customer category (🔒 1508 / 🔒 1514 / 🔒 1567).',
+    'custom/Extension/modules/Accounts/Ext/Language/en_us.bd_customer_group.php'
+        . ' - KEPT BY rc69: their two labels.',
+    'custom/modules/Accounts/BdAccountsLayoutExtensions.php'
+        . ' - KEPT BY rc69: places the two kept fields on the Accounts record view.',
+    'custom/clients/base/api/BdBenchDogsActionsApi.php'
+        . ' - KEPT BY rc69, which ships it EMPTY (🔒 1573): that empty body is what takes the'
+        . ' bd-tools/repair-ui route off the tenant.',
+    'custom/modules/Quotes/BdQuotesLayoutExtensions.php'
+        . ' - not shipped since rc69 and inert: nothing rc69 ships calls it, and K-2 above ran this'
+        . ' package\'s own lib/ copy. Left because an rc68-or-earlier Bench Dogs uninstall requires it.',
+    'custom/modules/Opportunities/BdOpportunitiesLayoutExtensions.php'
+        . ' - the same, for K-3.',
     'custom/modules/Quotes/ErpQuoteHooks/OpportunityContribution.php'
         . ' - ALSO SHIPPED BY Partial Fulfillment 1.0.41 at the same path. Retired only by'
         . ' the PF-reinstall sequence, never by an empty stub (G280 / 🔒 1508 / 🔒 1511).',
-    'custom/modules/Quotes/ErpQuoteHooks/OpportunityLineRollupPolicy.php - ERP-Core contract path.',
-    'custom/modules/Quotes/ErpQuoteHooks/OpportunityReleaseStagePolicy.php - ERP-Core contract path.',
-    'custom/modules/Quotes/ErpQuoteHooks/OrderSelectedLinesPolicy.php - ERP-Core contract path.',
-    'custom/modules/Quotes/ErpQuoteHooks/ResolveOrderableLines.php - ERP-Core contract path.',
+    'custom/modules/Quotes/ErpQuoteHooks/OpportunityLineRollupPolicy.php'
+        . ' - hook path; Partial Fulfillment no longer consults it (🔒 1468).',
+    'custom/modules/Quotes/ErpQuoteHooks/OpportunityReleaseStagePolicy.php'
+        . ' - hook path; reads no class this package blanks.',
+    'custom/modules/Quotes/ErpQuoteHooks/OrderSelectedLinesPolicy.php'
+        . ' - hook path; with the selector blank it answers "no objection", so it cannot block an order.',
     'custom/modules/ProductBundles/clients/base/views/quote-data-group-list/quote-data-group-list.js'
         . ' - ERP-Core ships this exact path. Removing it takes out the core quote grid.',
     'custom/modules/Products/clients/base/views/quote-data-group-list/quote-data-group-list.php'
         . ' - the Products grid viewdef ERP-Core also manages.',
-    'custom/Extension/modules/Accounts/Ext/Vardefs/bd_customer_group.php - KEPT (🔒 1508 / 🔒 1514).',
-    'custom/Extension/modules/Accounts/Ext/Language/en_us.bd_customer_group.php - KEPT (🔒 1508 / 🔒 1514).',
-    'custom/modules/Accounts/BdAccountsLayoutExtensions.php - KEPT, places the two kept fields.',
-    'custom/modules/Quotes/BdQuotesLayoutExtensions.php - KEPT, K-2 still needs it on the tenant.',
-    'custom/modules/Opportunities/BdOpportunitiesLayoutExtensions.php - KEPT, K-3 still needs it.',
-    'custom/clients/base/api/BdBenchDogsActionsApi.php - KEPT, D-2 bd-tools/repair-ui (owner answer).',
 );
+foreach ($bdAdapterLeft as $bdItem) {
+    $bdNotOurs[] = $bdItem;
+}
 
 /**
  * THE REPORT.
@@ -685,7 +821,7 @@ $bdNotOurs = array(
 // variable, and ModuleScanner rejects the whole upload over one occurrence.
 
 echo '==================================================================' . "\n";
-echo 'ONEOFF-RetireBdResidue 1.0.0 - Bench Dogs retirement sweep' . "\n";
+echo 'ONEOFF-RetireBdResidue ' . $bdOneoffVersion . ' - Bench Dogs retirement sweep' . "\n";
 echo '==================================================================' . "\n";
 
 if ($bdRemoved) {
@@ -736,8 +872,9 @@ echo '==================================================================' . "\n"
 // fatal() so the summary survives any log-level configuration, and so a reviewer
 // reading package_install.log months later sees the counts without the detail.
 $GLOBALS['log']->fatal(sprintf(
-    'ONEOFF-RetireBdResidue 1.0.0: removed %d, already gone %d, skipped %d, failed %d, '
+    'ONEOFF-RetireBdResidue %s: removed %d, already gone %d, skipped %d, failed %d, '
         . 'left alone on purpose %d. %s REMOVED: %s. SKIPPED: %s. FAILED: %s.',
+    $bdOneoffVersion,
     count($bdRemoved),
     count($bdAlreadyGone),
     count($bdSkipped),

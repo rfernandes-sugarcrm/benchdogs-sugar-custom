@@ -128,6 +128,13 @@ function rmdir_recursive($path)
     return $status;
 }
 
+// include/utils/sugar_file_utils.php:262 (simplified: the directory already
+// exists here, so only the touch() half is reproduced)
+function sugar_touch($filename, $time = null, $atime = null)
+{
+    return $time === null ? touch($filename) : touch($filename, $time, $atime ?? $time);
+}
+
 if (!defined('DISABLED_PATH')) {
     define('DISABLED_PATH', 'Disabled');
 }
@@ -242,7 +249,77 @@ class ModuleInstaller
             if (!copy_recursive($from, $to)) {
                 throw new ModuleInstallerException('Failed to copy ' . $from . ' ' . $to);
             }
+        } elseif (!$this->copy_recursive_with_backup($from, $to, $backup_path, $uninstall)) {
+            // :1457-1459. Missing from this harness through 1.0.1, because nothing
+            // called copy_path with a backup path. 1.0.2's adapter step does.
+            throw new ModuleInstallerException('Failed to copy ' . $from . ' ' . $to);
         }
+    }
+
+    // :2653-2713, VERBATIM. 1.0.2 deletes the orphaned order adapter through the
+    // `elseif (!is_dir($source))` + $uninstall branch: a source that does not
+    // exist unlinks the destination. That is the branch under test, so it is
+    // Sugar's code here, not a paraphrase of it.
+    public function copy_recursive_with_backup($source, $dest, $backup_path, $uninstall = false)
+    {
+        if (is_file($source)) {
+            if ($uninstall) {
+                $GLOBALS['log']->debug('Restoring ... ' . $source . ' to ' . $dest);
+                if (copy($source, $dest)) {
+                    if (is_writable($dest)) {
+                        sugar_touch($dest, filemtime($source));
+                    }
+                    return (unlink($source));
+                } else {
+                    $GLOBALS['log']->debug("Can't restore file: " . $source);
+                    return true;
+                }
+            } else {
+                if (file_exists($dest)) {
+                    $rest = clean_path($backup_path . "/$dest");
+                    if (!is_dir(dirname($rest))) {
+                        mkdir_recursive(dirname($rest), true);
+                    }
+
+                    $GLOBALS['log']->debug('Backup ... ' . $dest . ' to ' . $rest);
+                    if (copy($dest, $rest)) {
+                        if (is_writable($rest)) {
+                            sugar_touch($rest, filemtime($dest));
+                        }
+                    } else {
+                        $GLOBALS['log']->debug("Can't backup file: " . $dest);
+                    }
+                }
+                return (copy($source, $dest));
+            }
+        } elseif (!is_dir($source)) {
+            if ($uninstall) {
+                if (is_file($dest)) {
+                    return (unlink($dest));
+                } else {
+                    //don't do anything we already cleaned up the files using uninstall_new_files
+                    return true;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if (!is_dir($dest) && !$uninstall) {
+            sugar_mkdir($dest);
+        }
+
+        $status = true;
+
+        $d = dir($source);
+        while ($f = $d->read()) {
+            if ($f == '.' || $f == '..') {
+                continue;
+            }
+            $status &= $this->copy_recursive_with_backup("$source/$f", "$dest/$f", $backup_path, $uninstall);
+        }
+        $d->close();
+        return ($status);
     }
 
     // K-5 is stubbed: uninstall_languages() deletes the fragment and rebuilds the
@@ -348,6 +425,15 @@ $oppsViewdef = $tenant . '/custom/modules/Opportunities/clients/base/views/recor
 @mkdir(dirname($oppsViewdef), 0775, true);
 file_put_contents($oppsViewdef, "<?php\n\$viewdefs['Opportunities']['base']['view']['record'] = ['panels' => [['fields' => ['bd_governing_origin']]]];\n");
 
+// 1.0.2: the ORDER ADAPTER gets the body Bench Dogs really shipped (rc37-rc40,
+// blob 2963abf0), because the package deletes only that body. The census gives
+// every path a generic "pre-cleanup body", which the package would rightly
+// refuse to treat as Bench Dogs' adapter.
+$adapterRel = 'custom/modules/Quotes/ErpQuoteHooks/ResolveOrderableLines.php';
+$plannerRel = 'custom/modules/Quotes/BdSubmitOrderPlan.php';
+$adapterFixture = $pkgDir . '/tests/fixtures/ResolveOrderableLines.bench-rc37.php.txt';
+copy($adapterFixture, $tenant . '/' . $adapterRel);
+
 $before = count($paths) + 1;
 
 // ---------------------------------------------------------------------------
@@ -357,6 +443,10 @@ $before = count($paths) + 1;
 function runOnce(string $tenant, string $pkgDir): array
 {
     $GLOBALS['log'] = new HarnessLog();
+    // ModuleInstaller::post_execute() (26.1.0 :426-440) runs extract($data) over
+    // readManifest() before the require, so $manifest is in scope. This is the
+    // version file pack.php writes into that manifest.
+    $manifest = ['version' => trim((string) file_get_contents($pkgDir . '/version'))];
     $cwd = getcwd();
     chdir($tenant);
     ob_start();
@@ -414,7 +504,6 @@ foreach ([
     'custom/modules/Quotes/ErpQuoteHooks/OpportunityLineRollupPolicy.php',
     'custom/modules/Quotes/ErpQuoteHooks/OpportunityReleaseStagePolicy.php',
     'custom/modules/Quotes/ErpQuoteHooks/OrderSelectedLinesPolicy.php',
-    'custom/modules/Quotes/ErpQuoteHooks/ResolveOrderableLines.php',
     'custom/modules/ProductBundles/clients/base/views/quote-data-group-list/quote-data-group-list.js',
     'custom/modules/Products/clients/base/views/quote-data-group-list/quote-data-group-list.php',
 ] as $keep) {
@@ -453,11 +542,10 @@ $expectedLeftovers = [
     'custom/modules/Quotes/ErpQuoteHooks/OpportunityLineRollupPolicy.php',
     'custom/modules/Quotes/ErpQuoteHooks/OpportunityReleaseStagePolicy.php',
     'custom/modules/Quotes/ErpQuoteHooks/OrderSelectedLinesPolicy.php',
-    'custom/modules/Quotes/ErpQuoteHooks/ResolveOrderableLines.php',
 ];
 sort($expectedLeftovers);
 check(
-    'exactly the 13 intended survivors are left with their original body',
+    'exactly the 12 intended survivors are left with their original body',
     $leftovers === $expectedLeftovers,
     "got " . count($leftovers) . ": " . implode(', ', array_diff($leftovers, $expectedLeftovers))
         . ' / missing: ' . implode(', ', array_diff($expectedLeftovers, $leftovers))
@@ -484,6 +572,87 @@ check('K-2 write() ran exactly once per run', BdQuotesLayoutExtensions::$calls =
 check('K-3 remove() ran exactly once per run', BdOpportunitiesLayoutExtensions::$calls === 2, (string) BdOpportunitiesLayoutExtensions::$calls);
 check('a fatal() summary was written on both runs', count($fatal1) >= 1 && count($fatal2) >= 1);
 check('run 2 fatal says spent', strpos(implode(' ', $fatal2), 'NOTHING LEFT TO REMOVE') !== false);
+
+// --- 1.0.2: the version in the log is the manifest's, not a typed "1.0.0" ----
+$version = trim((string) file_get_contents($pkgDir . '/version'));
+check(
+    'the Display Log header names the manifest version (' . $version . ')',
+    strpos($out1, 'ONEOFF-RetireBdResidue ' . $version . ' - Bench Dogs retirement sweep') !== false
+);
+check(
+    'the fatal() summary names the manifest version (' . $version . ')',
+    strpos(implode(' ', $fatal1), 'ONEOFF-RetireBdResidue ' . $version . ':') !== false
+);
+
+// --- 1.0.2: the orphaned order adapter (Ophir, quote 368, 2026-09-23) --------
+check('the full sweep DELETED the Bench Dogs order adapter', !file_exists($tenant . '/' . $adapterRel));
+check('run 1 reported the adapter under REMOVED',
+    strpos($out1, $adapterRel . " (Bench Dogs' order adapter, deleted") !== false);
+check('run 2 reported the adapter as already gone',
+    strpos($out2, '. ' . $adapterRel . ' (the Bench Dogs order adapter)') !== false);
+
+// Three more tenants, each holding only the pair. runAdapterScenario() builds
+// one, runs the package once and returns what is left.
+function runAdapterScenario(string $name, string $pkgDir, string $adapterBody, ?string $plannerBody): array
+{
+    $root = sys_get_temp_dir() . '/bd-residue-adapter-' . $name . '-' . getmypid();
+    if (is_dir($root)) {
+        rmdir_recursive($root);
+    }
+    @mkdir($root . '/custom/modules/Quotes/ErpQuoteHooks', 0775, true);
+    file_put_contents($root . '/custom/modules/Quotes/ErpQuoteHooks/ResolveOrderableLines.php', $adapterBody);
+    if ($plannerBody !== null) {
+        file_put_contents($root . '/custom/modules/Quotes/BdSubmitOrderPlan.php', $plannerBody);
+    }
+    [$out, $fatals] = runOnce($root, $pkgDir);
+    return [
+        'adapter' => file_exists($root . '/custom/modules/Quotes/ErpQuoteHooks/ResolveOrderableLines.php'),
+        'planner_blank' => file_exists($root . '/custom/modules/Quotes/BdSubmitOrderPlan.php')
+            && md5_file($root . '/custom/modules/Quotes/BdSubmitOrderPlan.php') === md5_file($pkgDir . '/lib/emptied.php'),
+        'out' => $out,
+        'root' => $root,
+    ];
+}
+
+$benchAdapter = (string) file_get_contents($adapterFixture);
+$blankPlanner = (string) file_get_contents($pkgDir . '/lib/emptied.php');
+
+// THE OPHIR STATE: 1.0.1 already blanked the planner; the adapter is still there.
+// 1.0.1's logic leaves the adapter and Submit Order refuses. This is the case
+// that must go red on 1.0.1's post_execute.php.
+$ophir = runAdapterScenario('ophir', $pkgDir, $benchAdapter, $blankPlanner);
+check('Ophir state (adapter + planner ALREADY blank): the adapter is DELETED', !$ophir['adapter'], $ophir['root']);
+check('Ophir state: the planner stays blank', $ophir['planner_blank']);
+check('Ophir state: reported under REMOVED, nothing FAILED or SKIPPED',
+    strpos($ophir['out'], "Bench Dogs' order adapter, deleted: its planner is blank") !== false
+        && strpos($ophir['out'], 'FAILED (') === false && strpos($ophir['out'], 'SKIPPED (') === false);
+
+// Planner never there at all: the adapter refuses just the same, so it goes.
+$absent = runAdapterScenario('absent', $pkgDir, $benchAdapter, null);
+check('adapter + NO planner: the adapter is DELETED', !$absent['adapter']);
+
+// CONTROL: the planner could NOT be blanked, so the pair still answers and the
+// adapter must stay. Blanking is made to fail the one way that fails for root too
+// (CI runs as root, where a read-only file does not stop a copy): the planner path
+// is a DIRECTORY, so step 4's copy_path() throws and step 4 reports FAILED.
+$intactRoot = sys_get_temp_dir() . '/bd-residue-adapter-intact-' . getmypid();
+if (is_dir($intactRoot)) {
+    rmdir_recursive($intactRoot);
+}
+@mkdir($intactRoot . '/custom/modules/Quotes/ErpQuoteHooks', 0775, true);
+@mkdir($intactRoot . '/custom/modules/Quotes/BdSubmitOrderPlan.php', 0775, true);
+file_put_contents($intactRoot . '/custom/modules/Quotes/BdSubmitOrderPlan.php/body', 'x');
+copy($adapterFixture, $intactRoot . '/' . $adapterRel);
+[$intactOut] = @runOnce($intactRoot, $pkgDir);
+check('CONTROL: planner NOT blank (step 4 failed): the adapter is LEFT', file_exists($intactRoot . '/' . $adapterRel));
+check('CONTROL: and it is named under NOT TOUCHED as a pair that still answers',
+    strpos($intactOut, "its planner custom/modules/Quotes/BdSubmitOrderPlan.php still has a body") !== false);
+
+// CONTROL: an adapter body Bench Dogs never shipped is somebody else's - LEFT, loudly.
+$foreign = runAdapterScenario('foreign', $pkgDir, "<?php\nclass ErpQuoteResolveOrderableLinesHook {}\n", $blankPlanner);
+check('CONTROL: a foreign adapter body is LEFT in place', $foreign['adapter']);
+check('CONTROL: and it is reported under SKIPPED, naming its md5',
+    strpos($foreign['out'], 'SKIPPED (') !== false && strpos($foreign['out'], 'is not the adapter Bench Dogs shipped') !== false);
 
 echo "\nTenant tree left at: {$tenant}\n";
 echo $fail === 0 ? "ALL CHECKS PASSED\n" : "{$fail} CHECK(S) FAILED\n";

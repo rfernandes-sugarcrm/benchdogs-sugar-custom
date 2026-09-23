@@ -1,0 +1,106 @@
+<?php
+
+// phpcs:disable PSR1.Classes.ClassDeclaration.MissingNamespace
+
+/**
+ * THE ADAPTER THAT MAKES `BdSubmitOrderPlan` REACHABLE. Nothing else.
+ *
+ * `BdSubmitOrderPlan` has shipped in this package since rc33 and has been
+ * INERT the whole time, by its own admission: *"Nothing in this package calls
+ * plan(): the caller is core's `Submit to Order`, which belongs to another
+ * lane."* ERP-Epicor `1.1.24-rc26` opened that lane -
+ * `ErpQuoteHooks::fireResolveOrderableLines()` - and the union cut
+ * `1.1.24-rc29` is the first ERP-Epicor label that carries it together with
+ * the per-line `fireLineOrderRefusal()` seam this directory's sibling needs.
+ * This file is the six lines that connect the two.
+ *
+ * ⛔ WITHOUT IT THE NARROWING IS INERT AND A BENCH LADDER SENDS EVERY RUNG -
+ *    the shape that booked a $37,250 quote as a $47,950 order on Epicor 9209.
+ *    The failure is SILENT: core's hook finds no file, returns the candidates
+ *    unchanged, and the press succeeds.
+ *
+ * ================= WHY CORE CANNOT SHIP THIS FILE ITSELF =================
+ *
+ * It names `BdSubmitOrderPlan`, a class that exists only in this optional,
+ * single-customer package. Naming it from the shared layer is exactly what
+ * `ErpQuoteHooks` exists to avoid (gate G2, decision 102): the shared package
+ * would carry a Bench Dogs symbol and a Bench Dogs rule would reach every
+ * tenant. So the seam is core's and the adapter is the customer's, which is
+ * the same division `ErpOpportunityLineRollupPolicy` already lives under.
+ *
+ * ========================= IT IS A PASS-THROUGH =========================
+ *
+ * Core's own contract asks for exactly that. `fireResolveOrderableLines()`
+ * accepts TWO refusal spellings deliberately, and says why:
+ *
+ *     "Accepting it means the adapter such a package ships at this hook point
+ *      is a PASS-THROUGH rather than a translation layer - and a translation
+ *      layer between two refusal vocabularies is precisely where a refusal
+ *      quietly becomes an empty list and an empty list quietly becomes
+ *      'order everything'."
+ *
+ * `plan()` already answers in the second spelling
+ * (`['line_ids' => [...], 'refusal' => ?string, 'error' => ?string]`), so this
+ * file translates nothing, decides nothing, and authors no seller-facing words
+ * except the one refusal below, which describes a BROKEN INSTALL and not a
+ * business rule.
+ *
+ * 🚩 IT DELIBERATELY DOES NOT FILTER `$candidateLineIds`. Core intersects
+ * `plan()`'s answer with its own candidate list and treats any id it did not
+ * offer as a CONTRACT VIOLATION, which it turns into a refusal. Pre-filtering
+ * here would convert that loud refusal into a silent narrowing - re-creating
+ * the BD-05 duplicate-order class the intersection exists to catch. The
+ * candidates are accepted, unread, on purpose.
+ *
+ * Same scanner-safe shape as the sibling providers in this directory: one
+ * fixed literal path, one fixed class, one method, `file_exists()` before the
+ * `require_once` (a `require_once` of a missing file is a compile fatal, not a
+ * `\Throwable`, so core's catch would not see it), no glob, no dynamic
+ * dispatch.
+ */
+class ErpQuoteResolveOrderableLinesHook
+{
+    /** The provider this adapter exists to reach. Fixed path, fixed class. */
+    private const PLAN_FILE = 'custom/modules/Quotes/BdSubmitOrderPlan.php';
+
+    /**
+     * @param SugarBean $quote
+     * @param string[] $candidateLineIds Live, not-yet-ordered line ids. Read by
+     *                                   CORE, not by this adapter - see above.
+     * @return array{line_ids: string[], refusal: ?string, error: ?string}
+     */
+    public function run($quote, array $candidateLineIds): array
+    {
+        // Same discipline as BdSubmitOrderPlan::loadSelector() and
+        // ErpOrderSelectedLinesPolicy::loadSelector(): a half-installed
+        // instance must not read as "no objection". Here that means REFUSING
+        // rather than returning the candidates - returning them is what core
+        // does when this file is absent, and a file that IS present but cannot
+        // reach its planner has not said the lines are fine, it has said
+        // nothing. Ordering the lot on the strength of that is the guess
+        // decision 29 forbids, against irreversible ERP orders.
+        if (!$this->loadPlanner()) {
+            return array(
+                'line_ids' => array(),
+                'refusal' => 'The Bench Dogs order planner is not installed, so this quote cannot be '
+                    . 'adjudicated and nothing was sent. Reinstall Bench Dogs Extensions, then try again.',
+                'error' => 'Bench Dogs order planner is not installed',
+            );
+        }
+
+        return (new BdSubmitOrderPlan())->plan($quote);
+    }
+
+    private function loadPlanner(): bool
+    {
+        if (class_exists('BdSubmitOrderPlan', false)) {
+            return true;
+        }
+        if (!file_exists(self::PLAN_FILE)) {
+            return false;
+        }
+        require_once self::PLAN_FILE;
+
+        return class_exists('BdSubmitOrderPlan', false);
+    }
+}
