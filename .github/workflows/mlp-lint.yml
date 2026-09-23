@@ -16,6 +16,17 @@ name: MLP pre-flight
 # the same instances, and a gate that lives in somebody else's repository does
 # not run on this one's pull requests.
 #
+# 🛑 G318: CARRIED, NOT COPIED. Through rc67 the carried linter was a hand-synced
+# copy that had fallen to 17 of upstream's 19 rules, so this gate went green
+# without MLP018 or MLP019 ever running - and MLP019 is the rule whose
+# violation makes SugarCloud refuse a package mid-install. Both repositories
+# are private and in different GitHub accounts, so CI cannot fetch upstream's
+# file; instead it is VENDORED byte for byte and pinned by sha256 to one
+# upstream commit (scripts/mlp_lint.PINNED.json). The first step below proves
+# every vendored file is that commit's file before anything trusts it, and
+# floors the rule set at MLP001-MLP019. Never edit the linter here: change it
+# upstream and run `python3 scripts/refresh_mlp_lint.py`.
+#
 # This package was clean on the day the rules arrived - 0 blocker, 0 required,
 # 0 advisory - after two MLP001 blockers it found were fixed. So there is
 # deliberately no mlp_lint_baseline.json here. The upstream repository needs
@@ -47,6 +58,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # G318. The linter below is upstream's, byte for byte, at the commit
+      # scripts/mlp_lint.PINNED.json names, and has all 19 rules. A hand edit,
+      # a partial sync or a stale copy fails HERE, before the audit can pass
+      # on the strength of a linter that no longer checks what it claims to.
+      - name: The linter is upstream's, unedited
+        run: |
+          python3 scripts/tests/test_mlp_lint_pin.py -v
+          python3 scripts/mlp_lint.py --explain MLP019
 
       # The linter's own tests. A linter nobody trusts gets disabled, and the
       # way it loses trust is a false positive, so every rule is tested on a
@@ -152,21 +172,33 @@ jobs:
       # seven scenarios stop being evidence while the check stays green. That
       # is not hypothetical - it is exactly what this PR nearly shipped.
       #
-      # 2 is the number under CI conditions as of 0.9.42-rc65, and each one is
-      # named:
-      #   test_shared_fixture_drift  - by construction; it compares the pinned
-      #     copies against the real erp-integration-sugar files and can only
-      #     run where that checkout exists.
-      #   test_mlp_lint:683 - wants a whole ERP-Epicor PACKAGE directory, not a
-      #     file, so the pinning mechanism does not reach it.
+      # 7 is the number under CI conditions as of G318 (0.9.42-rc67), up from
+      # 2 at rc65, and each one is named:
+      #   test_shared_fixture_drift (1) - by construction; it compares the
+      #     pinned copies against the real erp-integration-sugar files and can
+      #     only run where that checkout exists.
+      #   test_mlp_lint_pin PinnedLinterDriftTest (1) - the same, for the
+      #     vendored linter: pin versus upstream's branch head. Its twin,
+      #     PinnedLinterIntegrityTest, runs here and gates the `rules` job.
+      #   test_mlp_lint TestShippedPackagesStayClean (1) - wants a whole
+      #     ERP-Epicor PACKAGE directory, which this repository never has.
+      #   test_mlp_lint TestAgainstTheRealScanner (4) - run Sugar's own
+      #     ModuleScanner, so need a SugarEnt tree CI does not have. Upstream
+      #     skips them in its CI for the same reason. Where a tree exists they
+      #     run over every PHP file here: at rc67 MLP002 and the real scanner
+      #     agreed on all 61.
+      # Five are new with G318: the four TestAgainstTheRealScanner tests,
+      # which arrived with upstream's re-vendored suite (105 tests where the
+      # stale copy had 61) and are pinned byte for byte, so cannot be edited
+      # into running here; and PinnedLinterDriftTest, which is G318's own.
       #
       # rc65 pinned the rest rather than skipping them: core's billing-country
       # guard, ERP-Epicor's createOppQuote (G243's control), the label that
       # collides with the retired Bench button (G15's root cause) and core's
       # button add-if-absent with the Quotes layout that drives it (G276). Those
       # four used to skip HERE, which is exactly where a control about core
-      # matters most. The ceiling stays at 3 so one more may appear before it
-      # has to be argued for.
+      # matters most. The ceiling is 8, one above the named 7, so one more may
+      # appear before it has to be argued for - the same slack rc65 kept.
       #
       # Everything else that used to need that private repo now runs here
       # against fixtures/shared-sugar/ - see scripts/refresh_shared_fixtures.py.
@@ -176,8 +208,8 @@ jobs:
           SKIPPED=$(python3 -m pytest scripts/tests -q --color=no 2>/dev/null \
             | tail -1 | grep -oE '[0-9]+ skipped' | grep -oE '^[0-9]+' || echo 0)
           echo "skipped: $SKIPPED"
-          if [ "${SKIPPED:-0}" -gt 3 ]; then
-            echo "::error::$SKIPPED tests skipped; ceiling is 3. A test that is"
+          if [ "${SKIPPED:-0}" -gt 8 ]; then
+            echo "::error::$SKIPPED tests skipped; ceiling is 8. A test that is"
             echo "::error::collected and then skipped is documentation, not a guard."
             exit 1
           fi

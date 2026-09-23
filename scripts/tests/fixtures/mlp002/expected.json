@@ -1,0 +1,227 @@
+{
+ "generated_by": "scripts/tests/scanner_oracle.php against SugarEnt-Full-26.1.0 (ModuleScanner.php sha1 88c9183b2d0a1f97fe547ab2ed31191755aaa352)",
+ "issues": {
+  "braced_namespaces.php": [
+   [
+    12,
+    "Code attempted to call denylisted function \"curl_init\" on line 12"
+   ],
+   [
+    16,
+    "Code attempted to call denylisted function \"stream_is_local\" on line 16"
+   ],
+   [
+    21,
+    "Code attempted to call denylisted function \"socket_create\" on line 21"
+   ],
+   [
+    22,
+    "Code attempted to execute command via shell on line 22"
+   ],
+   [
+    23,
+    "Code attempted to call denylisted static method \"SugarAutoLoader::put\" on line 23"
+   ],
+   [
+    24,
+    "Code attempted to call denylisted static method \"SugarAutoLoader::unlink\" on line 24"
+   ],
+   [
+    26,
+    "Code attempted to call denylisted static method \"setLevel\" on line 26"
+   ],
+   [
+    26,
+    "Code attempted to use dynamically-named class on line 26"
+   ],
+   [
+    27,
+    "Code attempted to call denylisted method \"setLevel\" on line 27"
+   ],
+   [
+    29,
+    "Code attempted to call denylisted function \"stream_get_meta_data\" on line 29"
+   ],
+   [
+    31,
+    "Code attempted to extend denylisted class \"Smarty\" on line 31"
+   ],
+   [
+    32,
+    "Code attempted to call denylisted function \"stream_select\" on line 32"
+   ],
+   [
+    33,
+    "Code attempted to call denylisted function \"curl_multi_init\" on line 33"
+   ],
+   [
+    34,
+    "Code attempted to call denylisted function \"socket_bind\" on line 34"
+   ],
+   [
+    35,
+    "Code attempted to call denylisted function \"stream_socket_client\" on line 35"
+   ],
+   [
+    36,
+    "Code attempted to call denylisted function \"stream_set_timeout\" on line 36"
+   ],
+   [
+    37,
+    "Code attempted to call denylisted function \"array_map\" on line 37"
+   ],
+   [
+    41,
+    "Code attempted to instantiate denylisted class \"ZipArchive\" on line 41"
+   ],
+   [
+    42,
+    "Code attempted to instantiate denylisted class \"Reflectionclass\" on line 42"
+   ],
+   [
+    43,
+    "Code attempted to extend denylisted class \"SplFileObject\" on line 43"
+   ],
+   [
+    45,
+    "Code attempted to call denylisted static method \"SugarMin::minify\" on line 45"
+   ],
+   [
+    46,
+    "Code attempted to instantiate denylisted class \"Symfony\\Component\\Filesystem\\Filesystem\" on line 46"
+   ],
+   [
+    50,
+    "Code attempted to call denylisted function \"stream_copy_to_stream\" on line 50"
+   ],
+   [
+    53,
+    "Code attempted to call denylisted function \"curl_init\" on line 53"
+   ]
+  ],
+  "g222_refused_shape.php": [
+   [
+    13,
+    "Code attempted to call denylisted function \"stream_resolve_include_path\" on line 13"
+   ]
+  ],
+  "halt_compiler.php": [
+   [
+    8,
+    "Code attempted to halt compiler on line 8"
+   ]
+  ],
+  "namespaced.php": [
+   [
+    17,
+    "Code attempted to call denylisted function \"stream_resolve_include_path\" on line 17"
+   ],
+   [
+    18,
+    "Code attempted to call denylisted function \"stream_context_create\" on line 18"
+   ],
+   [
+    19,
+    "Code attempted to call denylisted function \"STREAM_resolve_include_path\" on line 19"
+   ],
+   [
+    26,
+    "Code attempted to call denylisted function \"stream_resolve_include_path\" on line 26"
+   ],
+   [
+    28,
+    "Code attempted dynamically-named function call on line 28"
+   ],
+   [
+    28,
+    "Code attempted to call denylisted function \"stream_get_contents\" on line 28"
+   ],
+   [
+    31,
+    "Code attempted to call denylisted function \"curl_init\" on line 31"
+   ],
+   [
+    32,
+    "Code attempted to call denylisted function \"curl_init\" on line 32"
+   ],
+   [
+    34,
+    "Code attempted to call denylisted function \"socket_create\" on line 34"
+   ],
+   [
+    35,
+    "Code attempted to call denylisted function \"stream_is_local\" on line 35"
+   ],
+   [
+    37,
+    "Code attempted to call denylisted function \"unlink\" on line 37"
+   ],
+   [
+    38,
+    "Code attempted to instantiate denylisted class \"ZipArchive\" on line 38"
+   ],
+   [
+    40,
+    "Code attempted to call denylisted method \"unserialize\" on line 40"
+   ],
+   [
+    41,
+    "Code attempted to call denylisted static method \"SugarAutoLoader::put\" on line 41"
+   ],
+   [
+    43,
+    "Code attempted to call denylisted method \"setLevel\" on line 43"
+   ],
+   [
+    44,
+    "Code attempted to extend denylisted class \"Smarty\" on line 44"
+   ],
+   [
+    45,
+    "Code attempted to call denylisted function \"get\" on line 45"
+   ],
+   [
+    47,
+    "Code attempted to use eval() on line 47"
+   ],
+   [
+    48,
+    "Code attempted to execute command via shell on line 48"
+   ],
+   [
+    49,
+    "Code attempted to include non .php file on line 49"
+   ],
+   [
+    50,
+    "Code attempted to instantiate denylisted class \"Sugar_Smarty\" on line 50"
+   ]
+  ],
+  "tags_and_strings.php": [
+   [
+    7,
+    "Code attempted to execute command via shell on line 7"
+   ],
+   [
+    9,
+    "Code attempted to call denylisted function \"curl_init\" on line 9"
+   ],
+   [
+    10,
+    "Code attempted to call denylisted function \"curl_exec\" on line 10"
+   ],
+   [
+    11,
+    "Code attempted to call denylisted function \"socket_read\" on line 11"
+   ],
+   [
+    14,
+    "Code attempted to call denylisted function \"stream_get_line\" on line 14"
+   ],
+   [
+    17,
+    "Code attempted to call denylisted function \"stream_bucket_new\" on line 17"
+   ]
+  ]
+ }
+}
