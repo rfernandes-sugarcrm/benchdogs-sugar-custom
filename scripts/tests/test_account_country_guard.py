@@ -1,16 +1,21 @@
 """REQ-15 option (c) is CORE's now: ERP-Core's ErpAccountCountryGuard refuses an
 Account billing country no Epicor country matches.
 
-This package registers no guard (the hook fragment is an emptied stub) and, from
-0.9.42-rc65, ships no guard class either (G280 / 🔒 1507). What is left to pin is
-the PACKAGING: every path this package ever installed must keep shipping an empty
-stub, because dropping a custom/Extension file from the build leaves the installed
-copy live on a hosted tenant (§CW / G37).
+This package registers no guard and, from 0.9.42-rc65, ships no guard class
+either (G280 / 🔒 1507). What is left to pin is the RETIREMENT: every path this
+package ever installed the guard or its label at must be off the tenant.
+
+Until rc68 that meant "keep shipping an empty stub", because dropping a
+custom/Extension file from the build leaves the installed copy live on a hosted
+tenant (§CW / G37). From rc69 (G280 / 🔒 1567, 🔒 1521) the stubs are gone from
+the package and the one-off ONEOFF-RetireBdResidue deletes those paths instead;
+see bd_retirement.assert_retired_by_oneoff for the three halves checked.
 """
 
 from pathlib import Path
 
 import shared_sugar
+from bd_retirement import assert_retired_by_oneoff, oneoff_worklist
 import re
 import subprocess
 import unittest
@@ -24,23 +29,16 @@ LANG = PKG / "custom/Extension/application/Ext/Language/_override_en_us.bd_count
 
 class AccountCountryGuardPackagingTest(unittest.TestCase):
     def test_the_hook_is_RETIRED_and_registers_nothing(self):
-        """INVERTED 2026-09-19, not deleted.
+        """INVERTED 2026-09-19; re-pointed at the one-off 0.9.42-rc69.
 
         This used to assert the hook registered BdAccountCountryGuard. ERP-Core
-        owns the billing-country guard now and its hook is registered and live
-        (ErpAccountCountryGuard, 21 refs). Two guards on one field can disagree
-        and the seller sees whichever ran last, so this package registers none.
-
-        The assertion is INVERTED rather than removed because the file must keep
-        SHIPPING as an emptied stub: §CW / G37 — on Sugar Cloud, dropping a
-        custom/Extension file from the build leaves the installed copy in place
-        and the package inert. Deleting this test would stop noticing if the
-        stub itself were dropped.
+        owns the billing-country guard (ErpAccountCountryGuard), and two guards
+        on one field can disagree with the seller seeing whichever ran last, so
+        this package registers none. Through rc68 that was an emptied stub the
+        package kept shipping; from rc69 the one-off deletes the path.
         """
-        hook = re.sub(r"/\*.*?\*/", "", HOOK.read_text(), flags=re.S)
-        self.assertTrue(HOOK.exists(), "the stub must still ship, or the tenant keeps the old hook")
-        self.assertNotIn("$hook_array", hook, "this package must register no hook")
-        self.assertNotRegex(hook, r"\bclass\s+\w+")
+        assert_retired_by_oneoff(self, str(HOOK.relative_to(PKG)),
+                                 "the tenant would keep the old guard registration")
 
     def test_the_guard_class_no_longer_ships_and_core_owns_the_check(self):
         """0.9.42-rc65, G280 / 🔒 1507. The class had no registration left - the
@@ -55,55 +53,39 @@ class AccountCountryGuardPackagingTest(unittest.TestCase):
                       "core's guard is gone too - then nothing checks the billing country")
 
     def test_the_type_label_is_RETIRED_and_declares_nothing(self):
-        """INVERTED 2026-09-20 (G50), not deleted.
+        """INVERTED 2026-09-20 (G50); re-pointed at the one-off 0.9.42-rc69.
 
         This used to assert the fragment shipped
-        `$app_list_strings['erp_lookup_type_list']['bd_country']`. Nothing in
-        this package reads those rows any more — the hook above registers no
-        guard, and ERP-Core owns the billing-country check — so the label was
-        the last thing making a retired lookup type look supported in the
-        ERP_LookupValues list view, its filters and the report field chooser.
+        `$app_list_strings['erp_lookup_type_list']['bd_country']`. Nothing reads
+        those rows any more, so the label was the last thing making a retired
+        lookup type look supported in the ERP_LookupValues list view, its
+        filters and the report field chooser.
 
-        The assertion is INVERTED rather than removed for the same reason as
-        the hook's: the file must keep SHIPPING as an emptied stub (§CW / G37),
-        and deleting this test would stop anyone noticing if the stub were
-        dropped from the build — which leaves the label live on every tenant
-        that has it.
-
-        🚩 THIS PIN WAS THE BLOCKER. G50 was filed as "the code is gone, soft
-        delete the 12 stale bd_country rows". The code was not gone: this
-        fragment still shipped the label and this test still pinned it, so the
-        rows could not be retired first without the next install republishing
-        the name over them.
+        🚩 THIS PIN WAS ONCE THE BLOCKER. G50 was filed as "the code is gone".
+        It was not: the fragment still shipped the label and this test pinned
+        it. The retirement is what has to be asserted, not the absence of a
+        string in a file that may not exist.
         """
-        lang = re.sub(r"/\*.*?\*/", "", LANG.read_text(), flags=re.S)
-        lang = re.sub(r"(?m)^\s*//.*$", "", lang)
-        self.assertTrue(LANG.exists(), "the stub must still ship, or the tenant keeps the label")
-        self.assertNotIn("$app_list_strings", lang, "this package must publish no lookup type label")
-        self.assertEqual(lang.replace("<?php", "").strip(), "")
+        assert_retired_by_oneoff(self, str(LANG.relative_to(PKG)),
+                                 "the tenant would keep 'Country (Bench Dogs)'")
 
-    def test_the_stub_keeps_the_exact_path_the_label_was_installed_at(self):
-        # Overwriting is the ONLY thing that retires an installed
-        # custom/Extension file, and a file only overwrites the copy at its own
-        # path - so the name cannot drift, retired or not.
-        #
-        # The prefix also carried the original fix (rc23): Sugar 26.1 sorts
-        # language fragments by is_override, then by an order-map mtime
-        # refreshed only when a file's md5 changes, and ERP-Epicor's
-        # accumulated whole-array erp_lookup_type_list kept wiping this key
-        # until `_override*` put it last. `en_us` in the name is what joins
-        # that merge at all.
-        self.assertTrue(LANG.name.startswith("_override_"), LANG.name)
-        self.assertIn("en_us", LANG.name)
+    def test_the_retirement_names_the_exact_path_the_label_was_installed_at(self):
+        # A removal only reaches the copy at its own path - so the name cannot
+        # drift, retired or not. The prefix carried the original fix (rc23):
+        # Sugar 26.1 sorts language fragments by is_override, then by an
+        # order-map mtime refreshed only when a file's md5 changes, and
+        # ERP-Epicor's accumulated whole-array erp_lookup_type_list kept wiping
+        # this key until `_override*` put it last.
         self.assertEqual(LANG.name, "_override_en_us.bd_country_lookup.php")
+        self.assertIn(str(LANG.relative_to(PKG)), oneoff_worklist())
 
     def test_no_fragment_anywhere_republishes_the_bd_country_label(self):
-        offenders = sorted(p.name for p in LANG.parent.glob("*.php")
+        offenders = sorted(str(p.relative_to(PKG)) for p in PKG.rglob("*.php")
                            if "bd_country" in re.sub(r"/\*.*?\*/", "", p.read_text(), flags=re.S))
         self.assertEqual(offenders, [], "the bd_country label is retired")
 
 
-    def test_every_path_the_label_was_ever_installed_at_ships_an_empty_stub(self):
+    def test_every_path_the_label_was_ever_installed_at_is_retired(self):
         """G50, 2026-09-21. Retiring the CURRENT path was not enough.
 
         Up to rc22 the label lived at en_us.bd_country_lookup.php; rc23 renamed
@@ -112,15 +94,12 @@ class AccountCountryGuardPackagingTest(unittest.TestCase):
         and once ERP-Core stopped assigning the whole list it published
         'Country (Bench Dogs)' again. Bench showed it live under rc58.
 
-        Both paths must keep shipping, empty. Dropping either from the build
-        hands the tenant's installed copy back.
+        BOTH paths must be off the tenant - from rc69, by the one-off.
         """
         for name in ("en_us.bd_country_lookup.php", "_override_en_us.bd_country_lookup.php"):
-            path = LANG.parent / name
-            self.assertTrue(path.exists(), f"{name} must ship as a stub, or the tenant keeps its copy")
-            body = re.sub(r"/\*.*?\*/", "", path.read_text(), flags=re.S)
-            body = re.sub(r"(?m)^\s*//.*$", "", body)
-            self.assertEqual(body.replace("<?php", "").strip(), "", f"{name} must define nothing")
+            with self.subTest(name=name):
+                assert_retired_by_oneoff(self, f"custom/Extension/application/Ext/Language/{name}",
+                                         "the tenant keeps its copy of the label")
 
 
 if __name__ == "__main__":

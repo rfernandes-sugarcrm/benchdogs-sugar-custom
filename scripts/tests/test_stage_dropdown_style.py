@@ -7,11 +7,13 @@ the label are correct. So the styles had to travel with the keys, and PF ships
 both (G278 / 🔒 1506, partial_fulfillment_sales_stage_style.php, each entry
 guarded on the key so a tenant's own styling is never overwritten).
 
-This package therefore ships the path EMPTY (0.9.42-rc65, G280 / 🔒 1507).
-Emptied, not dropped: Sugar loads this fragment by path from every tenant that
-ever installed one carrying it, and Module Loader deletes nothing (§CW / G37) -
-leaving it out of the build would leave the old styles live and two packages
-styling one key.
+This package shipped the path EMPTY from 0.9.42-rc65 (G280 / 🔒 1507), because
+Sugar loads this fragment by path from every tenant that ever installed one
+carrying it and Module Loader deletes nothing (§CW / G37) - merely leaving it out
+of the build would have left the old styles live and two packages styling one
+key. From rc69 (G280 / 🔒 1567, 🔒 1521) the one-off ONEOFF-RetireBdResidue
+DELETES the path on the tenant, so the package stops shipping it; the cases
+below assert both halves of that.
 """
 
 import json
@@ -19,7 +21,6 @@ from pathlib import Path
 import shutil
 import subprocess
 import unittest
-import zipfile
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -32,38 +33,38 @@ STYLE = (
 
 @unittest.skipUnless(shutil.which("php"), "requires PHP 8.2 build-test image")
 class StageDropdownStyleRetiredTest(unittest.TestCase):
-    def test_the_fragment_ships_and_styles_nothing(self):
-        """EXECUTED with a seeded style array: including the file twice (an
-        upgrade re-merge) must leave the tenant's styles exactly as they were."""
-        fixture = rf'''<?php
+    def test_no_shipped_file_styles_a_stage_key(self):
+        """EXECUTED with a seeded style array: including every PHP file this
+        package ships must leave the tenant's styles exactly as they were -
+        which also covers a style that moves to a new path."""
+        shipped = [p for top in ("custom", "scripts")
+                   for p in sorted((PACKAGE / top).rglob("*.php"))
+                   if "Extension" in p.parts]
+        self.assertTrue(shipped, "no Extension fragment found - PACKAGE points at nothing")
+        requires = "".join(f"require {json.dumps(str(p))};\n" for p in shipped)
+        fixture = f"""<?php
+$dictionary = []; $mod_strings = [];
 $app_dropdowns_style = [
     'sales_stage_dom_style' => [
         'Customer Stage' => ['backgroundColor' => '#123456'],
         'applyFormatting' => true,
     ],
 ];
-require {json.dumps(str(STYLE))};
-require {json.dumps(str(STYLE))};
+{requires}
 echo json_encode($app_dropdowns_style['sales_stage_dom_style']);
-'''
-        self.assertTrue(STYLE.is_file(), "the style fragment must keep shipping, emptied")
+"""
         result = subprocess.run(["php"], input=fixture, text=True, capture_output=True, check=True)
         styles = json.loads(result.stdout)
         self.assertEqual(styles, {"Customer Stage": {"backgroundColor": "#123456"},
                                   "applyFormatting": True},
                          "this package is styling stage keys again; PF owns them")
 
-    def test_the_built_package_still_carries_the_path(self):
-        version = (PACKAGE / "version").read_text().strip()
-        archive = PACKAGE / "releases" / f"sugarai_benchdogs_ext-{version}.zip"
-        with zipfile.ZipFile(archive) as zf:
-            member = "custom/Extension/application/Ext/DropdownsStyle/sales_stage_dom_style.php"
-            self.assertIn(member, zf.namelist(),
-                          "dropping the path leaves the old Bench styles live on every tenant")
-            body = zf.read(member).decode("utf-8")
-            for key in ("Prototype Ordered", "Partial Production Ordered", "backgroundColor"):
-                self.assertNotIn(key, body.split("*/", 1)[-1],
-                                 "the shipped fragment still declares a style")
+    def test_the_style_fragment_is_retired_off_the_tenant(self):
+        """Not shipped, not in the built zip, and still on the one-off's
+        worklist - dropping the path alone would leave the old Bench styles live
+        on every tenant that has it."""
+        from bd_retirement import assert_retired_by_oneoff
+        assert_retired_by_oneoff(self, str(STYLE.relative_to(PACKAGE)), "the old Bench stage styles")
 
     def test_core_ships_the_styles_now(self):
         """The control: if PF stopped shipping them, the two stages would render

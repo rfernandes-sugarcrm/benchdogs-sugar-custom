@@ -182,12 +182,17 @@ class CreateOppQuoteButtonRetiredStatic(unittest.TestCase):
         DIFFERENT names and the SAME label, so a name-keyed dedupe guard could
         not see it. rc64 empties this package's label file (G276 / 🔒 1504): with
         no Bench button and no Bench button logic, a Bench label could only make
-        a retired action read as supported. Core keeps its own label, so the
-        action the seller actually presses is still named.
+        a retired action read as supported. From rc69 (G280 / 🔒 1567) the file
+        no longer ships at all and the one-off deletes the tenant's copy. Core
+        keeps its own label, so the action the seller actually presses is still
+        named.
         """
-        bd = BD_LABELS.read_text(encoding="utf-8")
-        self.assertNotIn("LBL_BD_CREATE_OPP_QUOTE_BUTTON'] =", bd,
-                         "the Bench button label is back; core's button owns this action")
+        from bd_retirement import assert_retired_by_oneoff
+        assert_retired_by_oneoff(self, str(BD_LABELS.relative_to(PKG)),
+                                 "the Bench button label; core's button owns this action")
+        for php in PKG.rglob("*.php"):
+            self.assertNotIn("LBL_BD_CREATE_OPP_QUOTE_BUTTON'] =", php.read_text(encoding="utf-8"),
+                             f"{php.name} labels the retired Bench button again")
         erp = EPICOR_LABELS.read_text(encoding="utf-8")
         self.assertRegex(erp, r"\$mod_strings\['LBL_ERP_CREATE_OPP_QUOTE_BUTTON'\]\s*=\s*'[^']+'",
                          "core no longer labels its own Create Opportunity & Quote button")

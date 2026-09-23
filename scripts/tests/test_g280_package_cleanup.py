@@ -19,6 +19,15 @@ Module Loader COPIES a package's files and never deletes the previous version's
 
 Each case below says which of the two it is asserting.
 
+🔁 0.9.42-rc69 (G280 / 🔒 1567, 🔒 1521) MOVED THE FIRST HALF. The emptied
+stubs have done their job - every QA tenant took a build that overwrote them -
+and the one-off ONEOFF-RetireBdResidue now DELETES those paths on the tenant
+(it ran on all three), so the package stops shipping them. What stays true is
+the lesson: a dropped path retires nothing by itself, so each former stub is
+asserted as retired OFF THE TENANT (bd_retirement.assert_retired_by_oneoff),
+never merely "absent". The one path the one-off does not cover and the platform
+loads by path is the REST api file - see NoRouteIsRegistered.
+
 MUTATION-VERIFIED (each applied, suite re-run, listed failure observed):
   restore any deleted class file        -> the matching "no longer ships" case fails
   put a label back in a stub            -> the matching "declares nothing" case fails
@@ -40,6 +49,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from bd_retirement import assert_retired_by_oneoff, oneoff_worklist
+
 ROOT = Path(__file__).resolve().parents[2]
 PKG = Path(os.environ.get("BD_PKG", ROOT / "sugar-sell/BenchDogs-Ext"))
 
@@ -55,7 +66,8 @@ DELETED_CLASSES = {
         "the baked demo dashboards were composed from other packages' dashlets",
 }
 
-#: Paths the platform loads BY PATH. They must SHIP and declare NOTHING.
+#: Paths the platform loads BY PATH. Through rc68 they SHIPPED and declared
+#: NOTHING; from rc69 they do not ship and the one-off deletes them.
 EMPTY_STUBS = {
     "custom/Extension/modules/Products/Ext/Language/en_us.bd_line_order.php":
         "LBL_BD_TO_ORDER / LBL_BD_ORDERED over stubbed vardefs whose columns the "
@@ -75,16 +87,6 @@ EMPTY_STUBS = {
         "two labels for the retired Bench Create Opportunity & Quote button (rc64)",
 }
 
-DECLARE_PROBE = (
-    "$mod_strings = ['SEED' => 1]; $app_list_strings = ['SEED' => 1];"
-    "$dictionary = ['SEED' => 1]; $hook_array = ['SEED' => 1]; $viewdefs = ['SEED' => 1];"
-    "$layout_defs = ['SEED' => 1]; $searchdefs = ['SEED' => 1]; $dashletData = ['SEED' => 1];"
-    "include {path};"
-    "echo json_encode(['mod' => $mod_strings, 'app' => $app_list_strings,"
-    " 'dict' => $dictionary, 'hooks' => $hook_array, 'view' => $viewdefs,"
-    " 'layout' => $layout_defs, 'search' => $searchdefs, 'dashlet' => $dashletData]);"
-)
-SEEDED = {"SEED": 1}
 
 
 class DeletedBecauseNothingCanLoadThem(unittest.TestCase):
@@ -108,30 +110,22 @@ class DeletedBecauseNothingCanLoadThem(unittest.TestCase):
         self.assertEqual(offenders, [], "a deleted class is still named in shipped code")
 
 
-@unittest.skipUnless(shutil.which("php"), "requires php")
-class EmptiedBecauseThePlatformLoadsThemByPath(unittest.TestCase):
-    def test_every_stub_ships(self):
+class RetiredOffTheTenantBecauseThePlatformLoadsThemByPath(unittest.TestCase):
+    def test_every_former_stub_is_retired_off_the_tenant(self):
         """The half that actually retires anything. A dropped file leaves the
-        tenant's copy in place and the retirement never happens."""
+        tenant's copy in place and the retirement never happens - so each path
+        must still be on the one-off's worklist."""
         for rel, why in EMPTY_STUBS.items():
             with self.subTest(file=rel):
-                self.assertTrue((PKG / rel).is_file(),
-                                f"{rel} must keep shipping to overwrite the tenant's copy — {why}")
+                assert_retired_by_oneoff(self, rel, why)
 
-    def test_every_stub_declares_nothing(self):
-        """EXECUTED, not grepped: each file is included with every def array
-        pre-seeded, and must leave all of them untouched."""
+    def test_the_one_off_deletes_each_one_rather_than_blanking_it(self):
+        """A fragment is compiled by path: the only complete removal is the
+        file going, which is uninstallExt()'s route, not a blank body."""
+        worklist = oneoff_worklist()
         for rel in EMPTY_STUBS:
-            path = PKG / rel
-            if not path.is_file():
-                continue  # reported by test_every_stub_ships
             with self.subTest(file=rel):
-                out = subprocess.run(
-                    ["php", "-r", DECLARE_PROBE.replace("{path}", json.dumps(str(path)))],
-                    capture_output=True, text=True, check=True)
-                observed = json.loads(out.stdout)
-                for key, value in observed.items():
-                    self.assertEqual(value, SEEDED, f"{rel} still declares {key}")
+                self.assertEqual(worklist.get(rel), "deleted")
 
     def test_control_the_grid_logic_that_backed_this_stub_is_gone(self):
         """🛑 REPLACES rc65's "the legacy column sweep still names its columns".
@@ -165,26 +159,25 @@ class EmptiedBecauseThePlatformLoadsThemByPath(unittest.TestCase):
 
 
 @unittest.skipUnless(shutil.which("php"), "requires php")
-class OnlyTheAdminRepairRouteIsRegistered(unittest.TestCase):
-    """EXECUTED, not grepped: the real file is loaded behind its real ERP-Epicor
-    guard and registerApiRest() is CALLED, so what is asserted is the route
-    table Sugar would build — not the presence of a string."""
+class NoRouteIsRegistered(unittest.TestCase):
+    """EXECUTED, not grepped: the real file is loaded with ERP-Epicor's parent
+    API file present - the one condition under which rc68 DID define the class -
+    and what is asserted is the route table Sugar would build.
 
-    #: Runs with `php -r`, so no opening tag. The class refuses to define itself
-    #: unless ERP-Epicor's parent API file is on disk (uninstalling ERP-Epicor
-    #: must not take down every REST endpoint), so the probe writes exactly that
-    #: file with a do-nothing parent.
+    rc65 unregistered the two seller routes and kept `bd-tools/repair-ui`. rc69
+    (G280 / 🔒 1567) retires that too: it re-ran K-2 and K-3, both spent on
+    every QA tenant, and the customer-group placement post_install already
+    does on every install. Under 🔒 1520 removal is the default."""
+
+    #: Runs with `php -r`, so no opening tag.
     ROUTES_PROBE = r"""
 namespace Sugarcrm\Sugarcrm\Util\Files { class FileLoader { public static function validateFilePath($p) { return $p; } } }
 namespace {
     @mkdir('custom/clients/base/api', 0777, true);
     file_put_contents('custom/clients/base/api/BaseErpActionsApi.php', '<?php class BaseErpActionsApi {}');
     require getenv('BD_API_FILE');
-    if (!class_exists('BdBenchDogsActionsApi')) { echo json_encode(['error' => 'class not defined']); exit; }
-    $routes = (new BdBenchDogsActionsApi())->registerApiRest();
-    $paths = [];
-    foreach ($routes as $key => $route) { $paths[$key] = implode('/', $route['path']) . ' -> ' . $route['method']; }
-    echo json_encode(['routes' => $paths, 'methods' => get_class_methods('BdBenchDogsActionsApi')]);
+    if (!class_exists('BdBenchDogsActionsApi')) { echo json_encode(['routes' => [], 'defined' => false]); exit; }
+    echo json_encode(['routes' => (new BdBenchDogsActionsApi())->registerApiRest(), 'defined' => true]);
 }
 """
 
@@ -202,26 +195,21 @@ namespace {
     def test_the_two_duplicate_routes_are_unregistered(self):
         """Core owns both: ERP-Epicor's AccountsErpActionsApi::createOppQuote is
         the superset (🔒 1044 / G15) and 'Send to Estimation' is ERP-Core's
-        (🔒 531). Neither Bench route had a caller left — the three controllers
-        that POSTed to them are empty stubs and no viewdef names their types."""
-        registered = " ".join(self.observed.get("routes", {}).values())
+        (🔒 531)."""
+        registered = json.dumps(self.observed["routes"])
         self.assertNotIn("bd-create-opp-quote", registered)
         self.assertNotIn("bd-send-to-estimating", registered)
 
-    def test_the_admin_repair_route_survives(self):
-        self.assertEqual(list(self.observed.get("routes", {})), ["bdRepairUi"])
-        self.assertIn("bd-tools/repair-ui -> repairUi", list(self.observed["routes"].values()))
-
-    def test_the_handlers_and_their_helper_are_gone(self):
-        methods = {m.lower() for m in self.observed.get("methods", [])}
-        for gone in ("createoppquote", "sendtoestimating", "estimatingstagefailure"):
-            self.assertNotIn(gone, methods, f"{gone}() still exists on the class")
-        self.assertIn("repairui", methods)
+    def test_no_route_is_registered_at_all(self):
+        self.assertFalse(self.observed["defined"], "the api file defines BdBenchDogsActionsApi again")
+        self.assertEqual(self.observed["routes"], [])
 
     def test_the_file_still_ships(self):
-        """Dropping it would leave all three routes registered on every tenant
-        that already has it — overwriting the file is what unregisters them."""
+        """Dropping it would leave rc68's body - and bd-tools/repair-ui - on
+        every tenant that already has it: the one-off does not cover this path,
+        so overwriting it with an empty body is what unregisters the route."""
         self.assertTrue((PKG / "custom/clients/base/api/BdBenchDogsActionsApi.php").is_file())
+        self.assertNotIn("custom/clients/base/api/BdBenchDogsActionsApi.php", oneoff_worklist())
 
     def test_the_client_halves_are_gone(self):
         for rel in ("custom/modules/Quotes/clients/base/fields/bd-best-pricing",

@@ -19,13 +19,25 @@ and measured on the tenant (ophirsx177, 2026-09-19) those two are the only bd_*
 fields Sugar still serves for Products, while Opportunities - whose twin 🔒 1044
 did empty correctly - serves none.
 
-These tests pin the correction. Each one FAILS on the old behaviour, where the
-files are absent: that is the point of them.
+These tests pinned the correction: each one FAILED on the old behaviour, where
+the files were absent.
+
+🔁 RE-POINTED 0.9.42-rc69 (G280 / 🔒 1567, 🔒 1521). The lesson above still
+stands - DROPPING a path retires nothing - but the thing that removes the path
+from the tenant is no longer an empty stub this package keeps shipping. It is
+the one-off ONEOFF-RetireBdResidue, which deletes each path through
+ModuleInstaller::uninstallExt() and ran on every QA tenant. So each "must ship"
+below became "retired off the tenant": not in the package, not in the built zip,
+and still on the one-off's worklist (bd_retirement.assert_retired_by_oneoff). A
+case that only checked "not shipped" would pass on exactly the defect this file
+was written about.
 """
 
 import re
 import unittest
 from pathlib import Path
+
+from bd_retirement import assert_retired_by_oneoff
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -76,25 +88,16 @@ def strip_comments(source: str) -> str:
 
 
 class ProductsVardefOrphansTest(unittest.TestCase):
-    def test_the_stub_files_are_shipped(self):
-        """FAILS ON THE OLD BEHAVIOUR: before this change neither file existed.
+    def test_the_stub_paths_are_retired_off_the_tenant(self):
+        """FAILED ON THE ORIGINAL DEFECT, where the files were simply dropped.
 
-        Absence is not neutral here. The installer can only overwrite a path it
-        actually ships, so a missing stub means the tenant keeps its copy."""
-        for filename in sorted(ORPHANS):
-            with self.subTest(filename):
-                self.assertTrue(
-                    (VARDEFS / filename).exists(),
-                    f"{filename} must ship - it is what overwrites the stale declaration",
-                )
-
-    def test_each_stub_declares_nothing(self):
+        Absence is not neutral here: a path nobody removes stays on the tenant.
+        Through rc68 the package shipped these paths EMPTY; from rc69 the
+        one-off deletes them, and must still name them."""
         for filename, field in sorted(ORPHANS.items()):
             with self.subTest(filename):
-                source = (VARDEFS / filename).read_text(encoding="utf-8")
-                self.assertIn("RETIRED", source.upper())
-                self.assertIn(field, source, "the stub must say what it retired")
-                self.assertNotIn("$dictionary", strip_comments(source), filename)
+                assert_retired_by_oneoff(self, str((VARDEFS / filename).relative_to(PACKAGE)),
+                                         f"the stale Product.{field} declaration")
 
     def test_the_declaration_does_not_reappear_anywhere_in_the_package(self):
         """🛑 DO NOT RE-ADD. Catches a re-declaration under any filename - the
@@ -119,12 +122,9 @@ class ProductsVardefOrphansTest(unittest.TestCase):
 
     def test_the_opportunities_twin_is_still_retired(self):
         """The half that DID land, pinned so a later cleanup cannot undo it."""
-        twin = (
-            PACKAGE / "custom" / "Extension" / "modules" / "Opportunities"
-            / "Ext" / "Vardefs" / "bd_governing_origin.php"
-        )
-        self.assertTrue(twin.exists(), "the Opportunities stub must keep shipping")
-        self.assertNotIn("$dictionary", strip_comments(twin.read_text(encoding="utf-8")))
+        assert_retired_by_oneoff(
+            self, "custom/Extension/modules/Opportunities/Ext/Vardefs/bd_governing_origin.php",
+            "Opportunity.bd_governing_origin")
 
 
 class QuotesVardefOrphansTest(unittest.TestCase):
@@ -132,15 +132,11 @@ class QuotesVardefOrphansTest(unittest.TestCase):
 
     FAILS ON THE OLD BEHAVIOUR: before this change none of these files shipped."""
 
-    def test_every_quote_stub_ships_and_declares_nothing(self):
+    def test_every_quote_stub_is_retired_off_the_tenant(self):
         for filename, field in sorted(QUOTE_ORPHANS.items()):
             with self.subTest(filename):
-                path = QUOTE_VARDEFS / filename
-                self.assertTrue(path.exists(), f"{filename} must ship - it is the overwrite")
-                source = path.read_text(encoding="utf-8")
-                self.assertIn("RETIRED", source.upper())
-                self.assertIn(field, source, "the stub must say what it retired")
-                self.assertNotIn("$dictionary", strip_comments(source), filename)
+                assert_retired_by_oneoff(self, str((QUOTE_VARDEFS / filename).relative_to(PACKAGE)),
+                                         f"the stale Quote.{field} declaration")
 
     def test_the_retired_quote_fields_are_declared_nowhere(self):
         pattern = re.compile(
@@ -155,49 +151,30 @@ class QuotesVardefOrphansTest(unittest.TestCase):
 
 
 class LiveKpiFieldsMustKeepShippingTest(unittest.TestCase):
-    """The half of G38 that is NOT a retirement, and the reason the whole set
-    could not be stubbed in one batch.
+    """The half of G38 that was NOT a retirement at first - and then was.
 
-    `bd_quoted` / `bd_date_quoted` are written on every quote sync by
-    connector_ext_benchdogs/transformers/quotes.py. The package stopped
-    declaring them at rc43 while the connector kept writing them, so a FRESH
-    tenant would take those writes against fields that do not exist. Bench only
-    kept working because it still holds the rc41 copy of the file.
-
-    FAILS ON THE OLD BEHAVIOUR: before this change the file did not ship."""
+    `bd_quoted` / `bd_date_quoted` were written on every quote sync by the Bench
+    connector, so the vardef had to keep shipping. Then OWNER RULING (2026-09-19):
+    *"make sure you retire this bd_quoted / bd_date_quoted"*, after PR #8 reduced
+    the Bench connector to exactly TWO written fields. The file shipped EMPTY
+    through rc68; from rc69 the one-off deletes it."""
 
     VARDEF = QUOTE_VARDEFS / "bd_erp_kpi_inputs.php"
 
-    def test_the_kpi_vardef_ships(self):
-        self.assertTrue(self.VARDEF.exists(), "the connector writes these fields every sync")
+    def test_the_kpi_vardef_is_retired_off_the_tenant(self):
+        assert_retired_by_oneoff(self, str(self.VARDEF.relative_to(PACKAGE)),
+                                 "bd_quoted / bd_date_quoted / bd_erp_stage_code")
 
-    def test_it_declares_NOTHING_now(self):
-        """INVERTED 2026-09-19, not deleted.
-
-        OWNER RULING: *"make sure you retire this bd_quoted / bd_date_quoted"*,
-        taken with the finding recorded beside it — NO CORE TWIN EXISTS — and
-        the sequencing the owner set: the connector stops writing them FIRST,
-        then the package retires them.
-
-        THE PREMISE THAT MADE THEM "RESTORED" IS NOW FALSE. This file used to
-        say *"the connector writes these on every quote sync"*. PR #8 reduced
-        the Bench connector to exactly TWO written fields, verified on the
-        server — so nothing writes them, and a field with no writer renders
-        "not answered yet" and "never measured" identically. That is the same
-        defect class as bd_shipped_value (decision 59) and bd_priced_at.
-
-        Kept as an assertion rather than dropped so the stub itself cannot be
-        deleted unnoticed: §CW / G37, only overwriting the file retires it.
-        """
-        code = strip_comments(self.VARDEF.read_text(encoding="utf-8"))
-        declared = set(re.findall(r"""\[['"]fields['"]\]\[['"](bd_\w+)['"]\]""", code))
-        self.assertEqual(declared, set(), f"expected no declarations, got {sorted(declared)}")
-
-    def test_it_does_not_resurrect_the_retired_stage_code(self):
-        """🔒 1045 retired bd_erp_stage_code; it shared this file with the two live
-        fields, so restoring the file must not bring it back."""
-        code = strip_comments(self.VARDEF.read_text(encoding="utf-8"))
-        self.assertNotIn("bd_erp_stage_code", code)
+    def test_nothing_in_the_package_declares_them_now(self):
+        """Neither they nor 🔒 1045's bd_erp_stage_code may come back under any
+        filename."""
+        pattern = re.compile(r"""\[['"]fields['"]\]\[['"](bd_quoted|bd_date_quoted|bd_erp_stage_code)['"]\]""")
+        offenders = []
+        for php in PACKAGE.rglob("*.php"):
+            hit = pattern.search(strip_comments(php.read_text(encoding="utf-8", errors="replace")))
+            if hit:
+                offenders.append(f"{php.relative_to(PACKAGE)} declares {hit.group(1)}")
+        self.assertEqual(offenders, [], "; ".join(offenders))
 
     def test_bd_quoted_is_not_resurrected_as_a_bool(self):
         """INVERTED 2026-09-19 — the reason it mattered is why it is kept.
@@ -207,14 +184,11 @@ class LiveKpiFieldsMustKeepShippingTest(unittest.TestCase):
         bool is forced required, defaulted to 0 by MySQL, reported not-nullable
         and flattened by fixUpFormatting — FOUR ways for "the source did not
         answer" to become "the source said no". It was a varchar for exactly
-        that reason.
-
-        So this now asserts absence, and carries the warning forward for
-        whoever brings it back.
+        that reason. Carried forward for whoever brings it back.
         """
-        code = strip_comments(self.VARDEF.read_text(encoding="utf-8"))
-        self.assertNotIn("['bd_quoted']", code, "bd_quoted is retired")
-        self.assertNotIn("'type' => 'bool'", code)
+        for php in PACKAGE.rglob("*.php"):
+            code = strip_comments(php.read_text(encoding="utf-8", errors="replace"))
+            self.assertNotIn("['bd_quoted']", code, f"{php.name}: bd_quoted is retired")
 
 
 if __name__ == "__main__":

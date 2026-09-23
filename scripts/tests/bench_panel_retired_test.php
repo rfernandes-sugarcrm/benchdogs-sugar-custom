@@ -23,6 +23,13 @@
  * is written by ZERO python files anywhere. Adding the missing label would
  * only have made a dead field look supported in Studio and the report builder.
  *
+ * 🔁 0.9.42-rc69 (G280 / 🔒 1567, 🔒 1521): the removal is SPENT in the shipped
+ * package. The one-off ONEOFF-RetireBdResidue carries a verbatim copy of this
+ * class (its K-2) and ran it on every QA tenant, so BenchDogs-Ext no longer
+ * ships the class or calls it. This suite now runs the ONE-OFF'S copy - the
+ * only implementation that still reaches a tenant - and asserts the package
+ * ships none of it.
+ *
  * 🚩 THIS TEST RUNS write(). It does not scan it. The defect that produced
  * this whole change was a handler bound to the wrong EVENT, invisible to
  * every source scan in its package, so a scan is no longer accepted here as
@@ -76,13 +83,17 @@ namespace {
     file_put_contents($tmp . '/include/TemplateHandler/TemplateHandler.php', "<?php\n");
     set_include_path($tmp . PATH_SEPARATOR . get_include_path());
 
-    require __DIR__ . '/../../sugar-sell/BenchDogs-Ext/custom/modules/Quotes/BdQuotesLayoutExtensions.php';
+    $oneoffLib = __DIR__ . '/../../sugar-sell/ONEOFF-RetireBdResidue/lib/BdQuotesLayoutExtensions.php';
+    require $oneoffLib;
 
     $checks = [];
     $check = function (string $name, $expected, $actual) use (&$checks) {
         $ok = $expected === $actual;
         $checks[] = [$name, $ok, $expected, $actual];
     };
+
+    $check('the shipped package carries no copy of the remover any more (rc69)', false,
+        is_file(__DIR__ . '/../../sugar-sell/BenchDogs-Ext/custom/modules/Quotes/BdQuotesLayoutExtensions.php'));
 
     $panelName = 'LBL_RECORDVIEW_PANEL_BENCHDOGS';
     $otherPanel = ['name' => 'LBL_RECORDVIEW_PANEL_ERP', 'fields' => [['name' => 'erp_sync_key']]];
@@ -140,7 +151,7 @@ namespace {
     // 5. 🚩 The dead helpers went out WITH the panel. Members that can never
     //    run read as live machinery; this package has already paid three
     //    install cycles for code that looked active and was not.
-    $src = file_get_contents(__DIR__ . '/../../sugar-sell/BenchDogs-Ext/custom/modules/Quotes/BdQuotesLayoutExtensions.php');
+    $src = file_get_contents($oneoffLib);
     $check('benchDogsPanel() is gone', false, str_contains($src, 'function benchDogsPanel'));
     $check('dropRetiredPanelFields() is gone', false, str_contains($src, 'function dropRetiredPanelFields'));
 
@@ -175,21 +186,26 @@ namespace {
         str_contains($apiCode, 'bd-send-to-estimating'));
     $check('and so is the duplicate opportunity-quote route', false,
         str_contains($apiCode, 'bd-create-opp-quote'));
-    $check('while the admin repair route survives', true,
+    // 0.9.42-rc69 (G280 / 🔒 1567): the admin repair route went too - it re-ran
+    // K-2/K-3, both spent. The file ships EMPTY, so no route survives at all.
+    $check('and so does the admin repair route (rc69)', false,
         str_contains($apiCode, "'bd-tools', 'repair-ui'"));
+    $check('the api file declares no class at all (rc69)', false,
+        str_contains($apiCode, 'class '));
     foreach (['bd_erp_stage', 'bd_erp_total', 'bd_reason_code'] as $f) {
         $check("the {$f} vardef is GONE", false,
             is_file($root . 'custom/Extension/modules/Quotes/Ext/Vardefs/' . $f . '.php'));
     }
-    // 🛑 INVERTED IN rc65. This used to assert the FILE was gone, which retires
-    // nothing: dropping a custom/Extension file from the build leaves the copy a
-    // previous install made live on the tenant (§CW / G37). The path must SHIP,
-    // declaring nothing - that is the only thing that takes the vocabulary away.
+    // 🛑 INVERTED IN rc65, AND AGAIN IN rc69. rc65 made the path SHIP, empty,
+    // because dropping a custom/Extension file from the build leaves the copy a
+    // previous install made live on the tenant (§CW / G37). rc69 stops shipping
+    // it because the one-off DELETES that path on the tenant - so what must hold
+    // is that the one-off still names it.
     $stageList = $root . 'custom/Extension/application/Ext/Language/en_us.bd_erp_stage_list.php';
-    $check('the bd_erp_stage_list path still ships (as a stub)', true, is_file($stageList));
-    $check('and the stub declares no vocabulary', false,
-        str_contains(preg_replace(['~/\*.*?\*/~s', '~//[^\n]*~'], '', file_get_contents($stageList)),
-                     'bd_erp_stage_list'));
+    $check('the bd_erp_stage_list path no longer ships (rc69)', false, is_file($stageList));
+    $check('and the one-off still deletes it on the tenant', true,
+        str_contains(file_get_contents(__DIR__ . '/../../sugar-sell/ONEOFF-RetireBdResidue/scripts/post_execute.php'),
+                     "array('to_module' => 'application', 'name' => 'en_us.bd_erp_stage_list')"));
 
     // 7. 🚩 AND THE DUPLICATE NOTIFICATION HOOK WENT WITH THE FIELD IT WATCHED.
     //

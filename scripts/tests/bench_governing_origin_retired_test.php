@@ -10,7 +10,7 @@
  * THE CASE THAT REGRESSED. 🔒 1044 retired `bd_governing_origin` on
  * Opportunities: the vardef and the en_us label were both overwritten with
  * stubs that declare NOTHING. What it did not touch was
- * scripts/post_install.php, which went on calling
+ * scripts/post_execute.php, which went on calling
  * BdOpportunitiesLayoutExtensions::writeGoverningOriginField() on EVERY
  * install — appending the field with label `LBL_BD_GOVERNING_ORIGIN`. On a
  * live tenant that is a row whose header is the raw LBL_ key and whose value
@@ -22,6 +22,13 @@
  * is "AFTER A RE-INSTALL, is the field on the view". A tenant that installed
  * rc26..rc56 already has it, and deployed metadata is covered by no
  * installdef: only something that RUNS can take it back off.
+ *
+ * 🔁 0.9.42-rc69 (G280 / 🔒 1567, 🔒 1521): the removal is SPENT in the shipped
+ * package. The one-off ONEOFF-RetireBdResidue carries a verbatim copy of this
+ * class (its K-3), ran it on every QA tenant, and deletes both 🔒 1044 stubs.
+ * So BenchDogs-Ext no longer ships the class, calls it, or ships the stubs. This
+ * suite now runs the ONE-OFF'S copy - the only implementation that still
+ * reaches a tenant - and asserts the package carries none of it.
  *
  * 🚩 THIS TEST RUNS remove(). It does not scan it. The defect that produced
  * the Quotes half of this change was a handler bound to the wrong EVENT,
@@ -84,7 +91,9 @@ namespace {
     set_include_path($tmp . PATH_SEPARATOR . get_include_path());
 
     $root = __DIR__ . '/../../sugar-sell/BenchDogs-Ext/';
-    require $root . 'custom/modules/Opportunities/BdOpportunitiesLayoutExtensions.php';
+    $oneoff = __DIR__ . '/../../sugar-sell/ONEOFF-RetireBdResidue/';
+    $oneoffLib = $oneoff . 'lib/BdOpportunitiesLayoutExtensions.php';
+    require $oneoffLib;
 
     $checks = [];
     $check = function (string $name, $expected, $actual) use (&$checks) {
@@ -108,8 +117,8 @@ namespace {
         return $names;
     };
 
-    // What post_install.php calls. Named once, so this file cannot drift from
-    // the installer by testing a method the installer does not run.
+    // What the one-off's post_execute calls (K-3). Named once, so this file
+    // cannot drift from it by testing a method nothing runs.
     $install = function (): void {
         \BdOpportunitiesLayoutExtensions::remove();
     };
@@ -170,40 +179,41 @@ namespace {
     // 6. 🚩 THE WRITER WENT WITH THE PLACEMENT. A member that can never run
     //    reads as live machinery, and this package has already paid three
     //    install cycles for code that looked active and was not.
-    $src = file_get_contents($root . 'custom/modules/Opportunities/BdOpportunitiesLayoutExtensions.php');
+    $src = file_get_contents($oneoffLib);
     $check('writeGoverningOriginField() is gone', false,
         str_contains($src, 'function writeGoverningOriginField'));
     $check('and so is the panel-picking helper it used', false,
         str_contains($src, 'function indexOf'));
 
-    // 7. 🛑 AND THE INSTALLER CALLS THE REMOVAL, NOT THE WRITER. Comments are
-    //    stripped first: post_install.php NAMES the retired writer in the note
-    //    explaining why it no longer calls it, and a blunt substring match
-    //    would read that explanation as the defect it documents.
-    $post = file_get_contents($root . 'scripts/post_execute.php');
-    $postCode = preg_replace(['~/\*.*?\*/~s', '~//[^\n]*~'], '', $post);
-    $check('post_execute.php no longer calls the writer', false,
+    // 7. 🛑 THE SHIPPED PACKAGE NEITHER WRITES NOR REMOVES IT ANY MORE (rc69),
+    //    and the one-off is what calls the removal. Comments are stripped
+    //    first: post_execute.php NAMES what it no longer does, and a blunt
+    //    substring match would read that explanation as the defect.
+    $strip = fn(string $f) => preg_replace(['~/\*.*?\*/~s', '~//[^\n]*~'], '', file_get_contents($f));
+    $postCode = $strip($root . 'scripts/post_execute.php');
+    $check('post_execute.php does not call the writer', false,
         str_contains($postCode, 'writeGoverningOriginField'));
-    $check('post_execute.php calls the removal instead', true,
-        str_contains($postCode, 'BdOpportunitiesLayoutExtensions::remove()'));
+    $check('post_execute.php no longer carries the spent removal either', false,
+        str_contains($postCode, 'BdOpportunitiesLayoutExtensions'));
+    $check('the one-off calls the removal', true,
+        str_contains($strip($oneoff . 'scripts/post_execute.php'), 'BdOpportunitiesLayoutExtensions::remove();'));
+    $check('and the package ships no copy of the class', false,
+        is_file($root . 'custom/modules/Opportunities/BdOpportunitiesLayoutExtensions.php'));
 
-    // 8. 🔒 1044's two stubs MUST KEEP SHIPPING and MUST KEEP DECLARING
-    //    NOTHING. They are half of what made this a raw LBL_ on screen, and
-    //    §CW / G37 says only overwriting a copied custom/Extension file
-    //    retires it — deleting either would put the field back on every
-    //    tenant that has it.
-    $ext = $root . 'custom/Extension/modules/Opportunities/Ext/';
+    // 8. 🔒 1044's two stubs. Through rc68 they SHIPPED, declaring nothing,
+    //    because only overwriting a copied custom/Extension file retired it
+    //    (§CW / G37). From rc69 the one-off DELETES both paths on the tenant,
+    //    so they no longer ship - and the one-off must still name both.
+    $oneoffSrc = file_get_contents($oneoff . 'scripts/post_execute.php');
     foreach ([
-        'the vardef stub' => $ext . 'Vardefs/bd_governing_origin.php',
-        'the label stub' => $ext . 'Language/en_us.bd_governing_origin.php',
-    ] as $what => $path) {
-        $check("{$what} still ships", true, is_file($path));
-        $body = trim(preg_replace(
-            ['~/\*.*?\*/~s', '~//[^\n]*~', '~<\?php~'],
-            '',
-            is_file($path) ? file_get_contents($path) : 'MISSING'
-        ));
-        $check("{$what} declares nothing", '', $body);
+        'the vardef stub' => ['Vardefs/bd_governing_origin.php',
+            "array('to_module' => 'Opportunities', 'name' => 'bd_governing_origin')"],
+        'the label stub' => ['Language/en_us.bd_governing_origin.php',
+            "array('to_module' => 'Opportunities', 'name' => 'en_us.bd_governing_origin')"],
+    ] as $what => [$rel, $entry]) {
+        $check("{$what} no longer ships", false,
+            is_file($root . 'custom/Extension/modules/Opportunities/Ext/' . $rel));
+        $check("{$what} is on the one-off's worklist", true, str_contains($oneoffSrc, $entry));
     }
 
     $failed = 0;

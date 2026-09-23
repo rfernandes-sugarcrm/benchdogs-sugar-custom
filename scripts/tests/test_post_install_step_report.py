@@ -3,7 +3,7 @@
 
 G294, 0.9.42-rc67.
 
-THE DEFECT. Through rc65 every block in scripts/post_install.php caught its own
+THE DEFECT. Through rc65 every block in scripts/post_execute.php caught its own
 Throwable and wrote one ->fatal() line, with no aggregation, no marker and no
 channel to `installation-status`. `BenchDogs-Ext: QLI columns failed: Call to
 private method BaseErpLayout::loadView() from scope BdQliColumnsLayout` was in
@@ -30,15 +30,21 @@ runs on stubs:
      on Throwable. If any of those is a belief rather than a fact, that class
      goes red rather than this file quietly encoding it.
   2. The primary fault injection is not a synthetic exception. Scenario
-     `quotes_layout_private` declares the helper's method `private` and lets
+     `accounts_layout_private` declares the helper's method `private` and lets
      PHP raise its own `Error: Call to private method ...` - the exact shape
      that actually happened on Bench - so the test exercises the real failure
      mode rather than one chosen to be convenient.
 
-MUTATION-VERIFIED (each applied to scripts/post_install.php, suite re-run,
+🔁 0.9.42-rc69 (G280 / 🔒 1567): post_install is down to TWO steps - the
+customer-group placement and the Accounts rebuild - so the fault injection moved
+from the retired Quotes helper to the Accounts one, the only helper left. The
+report's shape, its three channels and every guard are unchanged; only the step
+under test and STEP_COUNT moved.
+
+MUTATION-VERIFIED (each applied to scripts/post_execute.php, suite re-run,
 listed failure observed - see the lane report for the recorded output):
-  delete the `$bdStepReport[...] = 'FAILED: ...'` line from the Quotes catch
-      -> test_a_thrown_step_is_named_in_every_channel fails (report says 8/8)
+  delete the `$bdStepReport[...] = 'FAILED: ...'` line from the Accounts catch
+      -> test_a_thrown_step_is_named_in_every_channel fails (report says 2/2)
       -> test_every_step_catch_records_an_outcome fails (structural count)
   delete the whole CHANNEL 2 config-row block
       -> test_a_clean_install_produces_a_clean_report fails
@@ -54,7 +60,7 @@ listed failure observed - see the lane report for the recorded output):
          false at global scope without raising, so `instanceof` is what
          actually protects the path and isset() is belt-and-braces. Do not
          read the structural test as proof that isset() is load-bearing.
-  make the Quotes catch rethrow instead of recording
+  make the Accounts catch rethrow instead of recording
       -> test_the_body_still_cannot_throw fails
 """
 
@@ -182,62 +188,57 @@ echo json_encode(['failure' => $failure, 'events' => $events, 'errors' => $error
                   'settings' => $GLOBALS['settings']]);
 '''
 
-# The three helper classes post_install.php reaches for. Each scenario may
-# replace one of them; absent means the file is not written at all.
+# The one helper class post_execute.php reaches for (rc69). A scenario may
+# replace it; absent means the file is not written at all.
+ACCOUNTS_HELPER = "custom/modules/Accounts/BdAccountsLayoutExtensions.php"
 HELPERS = {
-    "custom/modules/Quotes/BdQuotesLayoutExtensions.php":
-        "<?php class BdQuotesLayoutExtensions { public static function write($r = false) {} }",
-    "custom/modules/Accounts/BdAccountsLayoutExtensions.php":
+    ACCOUNTS_HELPER:
         "<?php class BdAccountsLayoutExtensions { public static function writeCustomerGroupField() {} }",
-    "custom/modules/Opportunities/BdOpportunitiesLayoutExtensions.php":
-        "<?php class BdOpportunitiesLayoutExtensions { public static function remove() {} }",
 }
 
-QUOTES_HELPER = "custom/modules/Quotes/BdQuotesLayoutExtensions.php"
-
 # 🚩 NOT a synthetic exception. `private` makes PHP itself raise
-# "Error: Call to private method BdQuotesLayoutExtensions::write() from global
-# scope" - the same shape as rc65's real
+# "Error: Call to private method BdAccountsLayoutExtensions::writeCustomerGroupField()
+# from global scope" - the same shape as rc65's real
 # "Call to private method BaseErpLayout::loadView() from scope BdQliColumnsLayout".
 HELPER_OVERRIDES = {
-    "quotes_layout_private":
-        "<?php class BdQuotesLayoutExtensions { private static function write($r = false) {} }",
-    "quotes_layout_throws":
-        "<?php class BdQuotesLayoutExtensions { public static function write($r = false) {"
+    "accounts_layout_private":
+        "<?php class BdAccountsLayoutExtensions { private static function writeCustomerGroupField() {} }",
+    "accounts_layout_throws":
+        "<?php class BdAccountsLayoutExtensions { public static function writeCustomerGroupField() {"
         " throw new RuntimeException('DeployedMetaDataImplementation refused'); } }",
-    "quotes_layout_not_loaded":
+    "accounts_layout_not_loaded":
         "<?php // a file that ships but declares nothing, the class_exists off switch",
     # Top level AND a failing step. Without the failure the channel-3 block is
     # never entered at all, so a scenario that only drops $this proves nothing
     # about the guard - which is exactly what the first draft of this suite did.
     "no_object_scope_private":
-        "<?php class BdQuotesLayoutExtensions { private static function write($r = false) {} }",
+        "<?php class BdAccountsLayoutExtensions { private static function writeCustomerGroupField() {} }",
 }
-HELPER_ABSENT = {"quotes_layout_missing"}
+HELPER_ABSENT = {"accounts_layout_missing"}
 
-STEP_COUNT = 8
+STEP_COUNT = 2
+STEP = "accounts_customer_group_field"
 
 
 @unittest.skipUnless(shutil.which("php"), "requires a PHP CLI")
 class StepReportTest(unittest.TestCase):
-    """Runs the REAL scripts/post_install.php the way post_execute() runs it."""
+    """Runs the REAL scripts/post_execute.php the way post_execute() runs it."""
 
     def execute(self, scenario="clean"):
         with tempfile.TemporaryDirectory(prefix="bench-step-report-") as tmp:
             target = Path(tmp)
             for relative in (
                 "scripts/post_execute.php",
-                "custom/Extension/application/Ext/Language/en_us.bd_stage_doms.php",
             ):
                 path = target / relative
                 path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(PACKAGE / relative, path)
             for relative, body in HELPERS.items():
-                if relative == QUOTES_HELPER and scenario in HELPER_ABSENT:
+                if relative == ACCOUNTS_HELPER and scenario in HELPER_ABSENT:
                     continue
                 path = target / relative
                 path.parent.mkdir(parents=True, exist_ok=True)
-                if relative == QUOTES_HELPER and scenario in HELPER_OVERRIDES:
+                if relative == ACCOUNTS_HELPER and scenario in HELPER_OVERRIDES:
                     path.write_text(HELPER_OVERRIDES[scenario])
                 else:
                     path.write_text(body)
@@ -302,25 +303,25 @@ class StepReportTest(unittest.TestCase):
 
     def test_a_thrown_step_is_named_in_every_channel(self):
         """The rc65 shape, reproduced: PHP's own 'Call to private method'."""
-        observed = self.execute("quotes_layout_private")
+        observed = self.execute("accounts_layout_private")
         self.assertIsNone(observed["failure"],
                           "a failing step must not escape post_install")
 
         summary = self.summary_line(observed)
         self.assertIn(f"{STEP_COUNT - 1}/{STEP_COUNT} applied", summary)
         self.assertIn("NOT APPLIED", summary)
-        self.assertIn("quotes_layout_extensions", summary)
+        self.assertIn(STEP, summary)
         self.assertIn("Call to private method", summary)
 
         row = self.report_row(observed)
         self.assertEqual(row["applied"], STEP_COUNT - 1)
-        self.assertTrue(row["steps"]["quotes_layout_extensions"].startswith("FAILED: Error:"),
-                        row["steps"]["quotes_layout_extensions"])
-        self.assertIn("Call to private method", row["steps"]["quotes_layout_extensions"])
+        self.assertTrue(row["steps"][STEP].startswith("FAILED: Error:"),
+                        row["steps"][STEP])
+        self.assertIn("Call to private method", row["steps"][STEP])
 
         status = self.installation_error(observed)
         self.assertIsNotNone(status, "installation-status still reads clean over a failed step")
-        self.assertIn("quotes_layout_extensions", status)
+        self.assertIn(STEP, status)
         self.assertIn("IS INSTALLED", status,
                       "the operator must not read this as 'uninstall me'")
 
@@ -328,30 +329,30 @@ class StepReportTest(unittest.TestCase):
         # wholesale abort. Same control the gap names.
         self.assertEqual(
             [name for name, outcome in row["steps"].items() if outcome != "ok"],
-            ["quotes_layout_extensions"])
+            [STEP])
 
     def test_an_ordinary_exception_is_reported_the_same_way(self):
-        row = self.report_row(self.execute("quotes_layout_throws"))
-        self.assertEqual(row["steps"]["quotes_layout_extensions"],
+        row = self.report_row(self.execute("accounts_layout_throws"))
+        self.assertEqual(row["steps"][STEP],
                          "FAILED: RuntimeException: DeployedMetaDataImplementation refused")
 
     def test_a_helper_that_never_landed_is_reported(self):
         """install_copy runs before post_execute, so a missing helper means the
         package's own file did not arrive - the step never ran at all. Until
         rc66 that logged one line and counted as success."""
-        observed = self.execute("quotes_layout_missing")
+        observed = self.execute("accounts_layout_missing")
         row = self.report_row(observed)
-        self.assertEqual(row["steps"]["quotes_layout_extensions"],
-                         "MISSING: " + QUOTES_HELPER)
-        self.assertIn("quotes_layout_extensions", self.installation_error(observed))
+        self.assertEqual(row["steps"][STEP],
+                         "MISSING: " + ACCOUNTS_HELPER)
+        self.assertIn(STEP, self.installation_error(observed))
 
     def test_a_class_that_does_not_define_itself_is_reported(self):
         """The class_exists-without-require off switch, pointed the other way:
         the file ships and loads, the class is still undefined, the guard has no
         else and the step silently does not happen."""
-        row = self.report_row(self.execute("quotes_layout_not_loaded"))
-        self.assertEqual(row["steps"]["quotes_layout_extensions"],
-                         "NOT-LOADED: class BdQuotesLayoutExtensions")
+        row = self.report_row(self.execute("accounts_layout_not_loaded"))
+        self.assertEqual(row["steps"][STEP],
+                         "NOT-LOADED: class BdAccountsLayoutExtensions")
 
     # -- the reporter itself must not be able to kill an install -----------
 
@@ -389,7 +390,7 @@ class StepReportTest(unittest.TestCase):
 
         row = self.report_row(observed)
         self.assertIsNotNone(row, "the durable channel must still work with no $this")
-        self.assertIn("Call to private method", row["steps"]["quotes_layout_extensions"])
+        self.assertIn("Call to private method", row["steps"][STEP])
         self.assertIn("NOT APPLIED", self.summary_line(observed))
 
         self.assertIsNone(self.installation_error(observed))
@@ -404,8 +405,8 @@ class StepReportTest(unittest.TestCase):
     def test_the_per_step_lines_are_still_there(self):
         """The aggregated line is added to the per-step ones, not instead of
         them: the verbatim message is what identifies a novel failure."""
-        observed = self.execute("quotes_layout_throws")
-        self.assertIn("BenchDogs-Ext: layout extensions failed: "
+        observed = self.execute("accounts_layout_throws")
+        self.assertIn("BenchDogs-Ext: Accounts customer group field failed: "
                       "DeployedMetaDataImplementation refused", observed["errors"])
 
 
@@ -416,14 +417,14 @@ class StepReportStructureTest(unittest.TestCase):
         return POST_INSTALL.read_text()
 
     def step_region(self):
-        """Everything above the report block: the eight steps."""
+        """Everything above the report block: the steps."""
         source = self.source()
         marker = "THE STEP REPORT"
         self.assertIn(marker, source, "the report block is gone")
         return source.split(marker, 1)[0]
 
     def test_every_step_catch_records_an_outcome(self):
-        """The defect was eight catches that only logged. Counting them against
+        """The defect was eight catches that only logged (two are left at rc69). Counting them against
         the recorded outcomes is what notices a NEW step added with a catch and
         no report entry - which is how this would come back."""
         region = self.step_region()

@@ -67,7 +67,8 @@ sha256 to one upstream commit in `mlp_lint.PINNED.json`:
 
 Never edit a vendored file here. Fix it upstream and re-vendor. There is one
 declared local delta: `test_mlp_lint.py`'s real-scanner test floors its file
-count at 40 instead of upstream's 100, because this repository has 61 PHP files.
+count at 12 instead of upstream's 100, because this repository has 18 PHP files
+since rc69 cut BenchDogs-Ext to 7 (G280; it was 40 of 61 through rc68).
 The delta is recorded in the pin, and the check reverses it before hashing.
 
 ## Why there is no baseline file

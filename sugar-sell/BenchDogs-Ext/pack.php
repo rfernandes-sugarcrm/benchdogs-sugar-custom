@@ -3,16 +3,28 @@
 /**
  * BenchDogs-Ext Package Builder
  *
- * Extension-only package: the bd_* fields on Quotes, Accounts, Opportunities,
- * Products and Contacts, the ERP_Orders / ERP_OrderLines record surfaces, the
- * Bench Dogs admin repair route, and the Accounts customer-group deploy script.
- * Modeled on CORE-ShippingAddresses/pack.php.
+ * Extension-only package, and since 0.9.42-rc69 a MINIMAL one (G280 / 🔒 1567:
+ * *"Benchdog MLP shoudl be mininal with mininal foot print of overide"*, *"just
+ * if we have to"*). It ships exactly:
  *
- * 0.9.42-rc66 (G280 / 🔒 1508, *"from all the non vustomer category code we
- * should not ahve other stuff there"*): the quoted-line grid classes, the
- * retired-report remover, the stage-rename migration and the release-stage
- * provider stub are all gone. What is left is the two customer-group fields and
- * the files the platform gives no other way to retire.
+ *   custom/Extension/modules/Accounts/Ext/Vardefs/bd_customer_group.php
+ *   custom/Extension/modules/Accounts/Ext/Language/en_us.bd_customer_group.php
+ *       Bench's customer category (REQ-19): Epicor Customer.GroupCode and
+ *       CustGrup.GroupDesc. Core has no equivalent, and the Bench connector's
+ *       erp_customers step cannot deliver them without the vardef.
+ *   custom/modules/Accounts/BdAccountsLayoutExtensions.php
+ *       places those two fields on the deployed Accounts record view (append
+ *       only) and takes them off again on uninstall.
+ *   custom/clients/base/api/BdBenchDogsActionsApi.php
+ *       EMPTY, and the one retirement stub left: it unregisters rc68's
+ *       bd-tools/repair-ui route on upgraded tenants (see the file).
+ *   scripts/post_execute.php, bd_pre_uninstall.php, post_uninstall.php
+ *       the lifecycle of the above.
+ *
+ * Everything else earlier builds shipped is gone. Retiring it from a tenant
+ * that already has it is the job of the disposable one-off
+ * sugar-sell/ONEOFF-RetireBdResidue (🔒 1521), not of this package;
+ * scripts/tests/test_g280_minimal_footprint.py pins this list.
  *
  * It ships NO modules of its own. Decisions 901/903/904/905 retired the bd01
  * quote-mirror modules, which is why there are no `beans`, `relationships`,
@@ -22,7 +34,7 @@
 
 $packageID      = 'sugarai_benchdogs_ext';
 $packageLabel   = 'SugarAI: Bench Dogs Extensions';
-$description    = 'Bench Dogs extensions for Sugar Sell: the two customer-group fields on Accounts and their record-view placement, the Opportunity contribution contract resolved from the native Sugar quote lines, the admin UI-repair route, and the overwrite stubs that retire this package\'s previously installed fields, hooks and labels.';
+$description    = 'Bench Dogs extensions for Sugar Sell: the two customer-group fields on Accounts (Epicor customer group code and name) and their record-view placement. Nothing else.';
 $supportedVersionRegex = '(26|25|14)\\..*$';
 $acceptableSugarFlavors = array('ENT', 'ULT', 'PRO');
 
@@ -54,23 +66,32 @@ $manifest = array(
     'remove_tables'             => 'prompt',
     'acceptable_sugar_versions' => array('regex_matches' => array($supportedVersionRegex)),
     'acceptable_sugar_flavors'  => $acceptableSugarFlavors,
-    // The governing provider implements a neutral contract introduced by
-    // shared ERP-Epicor. Refuse unsafe install order before copying any file.
+    // Refuse unsafe install order before copying any file.
     'dependencies'              => array(
         array(
+            // The customer-group placement appends to the Accounts record view
+            // that ERP-Epicor's AccountsLayout owns in replace mode, so
+            // ERP-Epicor installs first.
             'id_name' => 'sugarai_erp_epicor',
             'version' => '1.1.24-rc9',
         ),
         array(
             'id_name' => 'sugarai_erp_epicor_partialfulfillment',
-            // 1.0.40 is the floor because rc65 STOPPED shipping the stage
-            // vocabulary: PF now owns sales_stage_dom['Prototype Ordered'] and
-            // ['Partial Production Ordered'], their 80/90 probabilities, their
-            // two styles (G278 / 🔒 1506) and quote_stage_dom['Partially
-            // Fulfilled'], which it has always owned. Installing this package
-            // over an older PF would leave Bench Opportunities and quotes
-            // holding stage values no dropdown serves.
-            'version' => '1.0.40',
+            // 1.0.43 is the floor because this package STOPPED doing three
+            // things PF now does, and PF must be new enough to do all three:
+            //  - >= 1.0.40 owns the stage vocabulary (G278 / 🔒 1506):
+            //    sales_stage_dom['Prototype Ordered'] / ['Partial Production
+            //    Ordered'], their 80/90 probabilities and styles, and
+            //    quote_stage_dom['Partially Fulfilled'];
+            //  - >= 1.0.41 ships OpportunityContribution.php WITH the
+            //    all-alternative preserve gate (G282 / 🔒 1511, ddf2796). rc69
+            //    no longer ships that path, so PF's body is the only one;
+            //  - >= 1.0.43 defaults erp_integration.partial_order_sales_stage
+            //    to 'Partial Production Ordered' on the READ side (G305 /
+            //    🔒 1519, 356af62), which is what post_execute.php used to write.
+            // Under this floor, Module Loader refuses with ERR_UW_NO_DEPENDENCY
+            // (UpgradeHistory.php:440, greaterThanOrEqualTo) - fail closed.
+            'version' => '1.0.43',
         ),
     ),
 );
@@ -96,7 +117,7 @@ $installdefs = array(
     'post_execute' => array('<basepath>/scripts/post_execute.php'),
     // The uninstall counterpart to post_execute, in two halves because the two
     // jobs need opposite conditions. pre_uninstall undoes the DEPLOYED METADATA
-    // post_install.php wrote - record-view panels, buttons, the fields the
+    // post_execute.php wrote - record-view panels, buttons, the fields the
     // uninstaller cannot see because they live in a file this package does not
     // ship - and needs the helper classes under custom/ still on disk.
     // post_uninstall rebuilds the caches and has to run after those same files
@@ -108,9 +129,9 @@ $installdefs = array(
     'post_uninstall' => array('<basepath>/scripts/post_uninstall.php'),
 );
 
-// Add custom/ files (Extension seams: the bd_* fields + dropdowns, the hook
-// registrations and their classes, the REST action class, the Opportunity
-// contribution contract class, and the layout script classes). There is no modules/ tree to add: the package ships no module.
+// Add custom/ files: the two customer-group Extension files, their placement
+// class and the empty REST stub. There is no modules/ tree to add: the package
+// ships no module.
 $customReal = realpath('custom');
 if ($customReal) {
     $it = new RecursiveIteratorIterator(

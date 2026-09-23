@@ -302,16 +302,24 @@ class BuiltManifestDeregistersTheMirror(unittest.TestCase):
 class LiveGoverningSurfacesSurvive(unittest.TestCase):
     """Gate G2 / G5 and the three tenants already running these fields."""
 
-    def test_shared_flag_and_bench_marker_are_still_declared(self):
-        declared = set()
+    def test_the_governing_surfaces_are_not_this_packages_any_more(self):
+        """RE-POINTED 0.9.42-rc69 (G280 / 🔒 1567). This used to assert the
+        shipped tree still MENTIONED `erp_governing` and `bd_governing_origin`,
+        which by rc68 it did only in retirement notes and emptied stubs.
+
+        `erp_governing` is Partial Fulfillment's field (decision 87(b) layer 2)
+        and this package must not declare it. `bd_governing_origin` was retired
+        by 🔒 1044; its two stubs no longer ship, and the one-off removes both
+        paths from any tenant that still has them."""
         for path in _shipped_php_files():
-            source = path.read_text(encoding="utf-8")
-            if LIVE_SHARED_FLAG in source:
-                declared.add(LIVE_SHARED_FLAG)
-            if LIVE_BENCH_MARKER in source:
-                declared.add(LIVE_BENCH_MARKER)
-        self.assertIn(LIVE_SHARED_FLAG, declared)
-        self.assertIn(LIVE_BENCH_MARKER, declared)
+            code = _strip_php_comments(path.read_text(encoding="utf-8"))
+            with self.subTest(file=str(path.relative_to(PACKAGE))):
+                self.assertNotIn(LIVE_SHARED_FLAG, code, "Bench declares PF's governing flag")
+                self.assertNotIn(LIVE_BENCH_MARKER, code, "the retired marker is back")
+        from bd_retirement import assert_retired_by_oneoff
+        for rel in ("custom/Extension/modules/Opportunities/Ext/Vardefs/bd_governing_origin.php",
+                    "custom/Extension/modules/Opportunities/Ext/Language/en_us.bd_governing_origin.php"):
+            assert_retired_by_oneoff(self, rel, "the retired governing marker")
 
     def test_the_retired_header_label_is_not_resurrected(self):
         """Decision 29 / gate G5.  `erp_governing_line` is RETIRED.  Note it is

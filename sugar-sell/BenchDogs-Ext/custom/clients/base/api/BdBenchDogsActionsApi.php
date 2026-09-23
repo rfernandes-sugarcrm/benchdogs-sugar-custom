@@ -1,189 +1,32 @@
 <?php
 
-// phpcs:disable PSR1.Classes.ClassDeclaration.MissingNamespace
-
 /**
- * ONE admin route, and nothing a seller can reach.
+ * RETIRED (G280 / 🔒 1567, 0.9.42-rc69). This file intentionally declares no class
+ * and registers no route.
  *
- *   POST bd-tools/repair-ui   Admin-only. Re-runs this package's own deployed
- *     metadata steps with nothing swallowed - the retired Bench Dogs panel
- *     removal, the quoted-line-items column order, the REQ-19 customer group
- *     fields - and reports each step verbatim, because post_install logs to
- *     sugarcrm.log and SugarCloud keeps that out of reach.
+ * It carried BdBenchDogsActionsApi and, last, one admin route -
+ * `POST bd-tools/repair-ui` - that re-ran this package's own deployed-metadata
+ * steps: the Bench Dogs Quotes panel removal (K-2), the retired Opportunity
+ * marker removal (K-3) and the customer-group placement. K-2 and K-3 are SPENT:
+ * the one-off "Retire Bench Dogs Residue" ran on every QA tenant (et 1.0.0
+ * 2026-09-22 22:22Z, stock and Ophir 1.0.1 2026-09-23 00:58Z, G234 CLOSED) and
+ * nothing re-adds either. post_install already places the customer-group fields
+ * on every install. So the route had no job left, and 🔒 1520 makes removal the
+ * default for anything that is not customer-category code.
  *
- * 🛑 WHAT USED TO BE HERE, AND WHY IT IS NOT (0.9.42-rc65, G280 / 🔒 1507).
- * Two seller-facing routes shipped here until rc64 and both duplicated core:
- * `bd-create-opp-quote` (ERP-Epicor's AccountsErpActionsApi::createOppQuote is
- * the superset - ETO placeholder part, Advanced Quote typing - 🔒 1044 / G15)
- * and `bd-send-to-estimating` (ERP-Core's 'Send to Estimation', 🔒 531). A third,
- * `bd-order-winning-line`, was documented here for three releases and never
- * registered at all. Ordering selected lines is
- * ERP-Epicor-PartialFulfillment's.
+ * WHY THE PATH STILL SHIPS, EMPTY. ServiceDictionary::buildAllDictionaries()
+ * require_once's every custom/clients/*\/api/*.php on a REST rebuild and
+ * registers the class named after the file when it exists
+ * (SugarEnt 26.1.0 include/api/ServiceDictionary.php:115-131). Module Loader
+ * never deletes a file a later build stops shipping, so DROPPING this path would
+ * leave rc68's body - and the live route - on every upgraded tenant. Shipping it
+ * empty is what unregisters the route there: the file loads, defines nothing,
+ * and the dictionary builder moves on ("Either the class doesn't exist ... we
+ * move on"). Keeping rc68's BODY instead is not an option either: repairUi()
+ * require_once's BdQuotesLayoutExtensions.php with no file_exists guard, and
+ * this build no longer ships that class, so on a fresh tenant the route would
+ * be a compile fatal that no catch can see.
  *
- * Extends ERP-Epicor's BaseErpActionsApi for the orchestrator plumbing - a hard
- * dependency, exactly as the product's own QuotesErpActionsApi requires it.
- * Note the consequence: this file defines its class only when ERP-Epicor is
- * installed, so the repair route disappears with ERP-Epicor rather than with
- * this package.
+ * DROPPABLE in the build after every tenant carrying Bench Dogs has taken this
+ * one: from then on the file on disk is this empty body, whatever later builds do.
  */
-
-// This class extends ERP-Epicor's BaseErpActionsApi, so it cannot be defined
-// at all unless that package is still installed - a require_once on a
-// missing file is a fatal compile error, not a \Throwable, so the
-// file_exists guard has to come first (same convention as
-// ERP-Epicor-PartialFulfillment's PartialFulfillmentQuotesApi.php).
-// ServiceDictionary::buildAllDictionaries() require_once's every file under
-// custom/clients/*/api/*.php on EVERY REST call before it ever checks
-// class_exists() - so without this guard, uninstalling ERP-Epicor takes down
-// the entire REST API (every endpoint, not just this one), which is exactly
-// what happened live on benchdogs-dev when Epicor Integration was
-// uninstalled before Bench Dogs Extensions.
-$parentApiFile = 'custom/clients/base/api/BaseErpActionsApi.php';
-if (file_exists($parentApiFile)) {
-    require_once \Sugarcrm\Sugarcrm\Util\Files\FileLoader::validateFilePath($parentApiFile);
-
-    class BdBenchDogsActionsApi extends BaseErpActionsApi
-    {
-    /**
-     * 🛑 0.9.42-rc65, G280 / 🔒 1507 — TWO ROUTES ARE GONE FROM THIS CLASS, and
-     * with them the last Bench implementation of something core already does:
-     *
-     *   POST Accounts/:record/bd-create-opp-quote  (createOppQuote)
-     *   POST Quotes/:record/bd-send-to-estimating  (sendToEstimating,
-     *        ESTIMATING_STAGE and estimatingStageFailure())
-     *
-     * Core owns both: ERP-Epicor's AccountsErpActionsApi::createOppQuote is the
-     * SUPERSET (it carries the ETO placeholder part and types the quote for
-     * Advanced Quote, 🔒 1044 / G15), and 'Send to Estimation' is ERP-Core's
-     * (🔒 531). Neither Bench route had a caller left: the three field
-     * controllers that used to POST to them are empty ({}) stubs, no viewdef
-     * names their field types, and a full sweep of the connector, core,
-     * features, platform and sugar repos found no live caller - only prose.
-     *
-     * The FILE still ships, and must: dropping it would leave all three routes
-     * registered on every tenant that already has it (§CW / G37 - Module Loader
-     * copies and never deletes). Overwriting the file with this version is what
-     * unregisters them. bd-tools/repair-ui stays: it is an admin repair for this
-     * package's own deployed metadata, and rc64 already took the button steps
-     * out of it.
-     */
-
-        public function registerApiRest()
-        {
-            return array(
-                'bdRepairUi' => array(
-                    'reqType' => 'POST',
-                    'path' => array('bd-tools', 'repair-ui'),
-                    'pathVars' => array('', ''),
-                    'method' => 'repairUi',
-                    'shortHelp' => 'Admin-only: re-runs the Bench Dogs UI deploy steps (buttons, stage dropdowns) and reports each step verbatim.',
-                    'exceptions' => array(
-                        'SugarApiExceptionNotAuthorized',
-                    ),
-                ),
-            );
-        }
-
-        /**
-         * Re-runs the post_install UI deploy steps with NOTHING swallowed: every
-         * step's exception text comes back in the response. post_install logs
-         * failures to sugarcrm.log, which SugarCloud keeps out of reach - this
-         * route exists because the layout/dropdown steps failed there silently.
-         * Admin-only; every mutation is the same idempotent core-class call the
-         * installer makes.
-         */
-        public function repairUi(ServiceBase $api, array $args)
-        {
-            global $current_user;
-            if (empty($current_user) || !$current_user->isAdmin()) {
-                throw new SugarApiExceptionNotAuthorized('Admins only');
-            }
-
-            $steps = array();
-
-            try {
-                $helper = 'custom/modules/Quotes/BdQuotesLayoutExtensions.php';
-                require_once $helper;
-                // The Bench Dogs ERP panel too (append-only: restored when a
-                // later ERP-Epicor layout pass dropped it, never rewritten when
-                // it is there) - an install whose post_execute did not run, or a
-                // core upgrade in between, leaves the record view without it.
-                BdQuotesLayoutExtensions::write(false);
-                // 🛑 G276 / 🔒 1504: no button step. writeButtons() (Quotes and
-                // Accounts) was removed with every other piece of record-view
-                // button logic in this package; core owns every button.
-                //
-                // 🛑 AND NO QUOTED-LINE-GRID STEP (0.9.42-rc66, G280 / 🔒 1508).
-                // This called `(new BdQliColumnsLayout())->install()` behind a
-                // BARE require_once - no file_exists - so leaving it here while
-                // the class stops shipping would turn this whole admin route
-                // into a FATAL on any tenant that never had the file: a missing
-                // require is a compile error, which the catch below cannot see.
-                // The grid is core's now; there is no Bench step left to repair.
-                $steps['quotes_layout'] = 'ok';
-            } catch (Throwable $e) {
-                $steps['quotes_layout'] = get_class($e) . ': ' . $e->getMessage();
-            }
-
-            try {
-                $helper = 'custom/modules/Accounts/BdAccountsLayoutExtensions.php';
-                require_once $helper;
-                BdAccountsLayoutExtensions::writeCustomerGroupField();
-                $steps['accounts_group_field'] = 'ok';
-            } catch (Throwable $e) {
-                $steps['accounts_group_field'] = get_class($e) . ': ' . $e->getMessage();
-            }
-
-            try {
-                // 🛑 NO STAGE-DROPDOWN STEP ANY MORE (rc65, G278 / 🔒 1506).
-                // This route used to re-run install_languages() over
-                // custom/dropdowntemplates/bd_stage_doms.append.php. Partial
-                // Fulfillment owns sales_stage_dom's two release stages, their
-                // probabilities and styles, and quote_stage_dom's 'Partially
-                // Fulfilled'; this package declares none of them and ships no
-                // template. The language rebuild stays, because this package
-                // still ships EMPTIED language fragments whose retirement only
-                // takes effect once the application strings are recompiled.
-                require_once 'ModuleInstall/ModuleInstaller.php';
-                $mi2 = new ModuleInstaller();
-                $mi2->silent = true;
-                $mi2->rebuild_languages(array('en_us' => 'en_us'));
-                $steps['rebuild_languages'] = 'ok';
-            } catch (Throwable $e) {
-                $steps['rebuild_languages'] = get_class($e) . ': ' . $e->getMessage();
-            }
-
-            try {
-                SugarAutoLoader::load('modules/Administration/QuickRepairAndRebuild.php');
-                // Bench Dogs is an Opportunities-only deployment. Repair the
-                // Quote/Opportunity surfaces it owns without compiling a
-                // disabled sales model.
-                $modules = array('Quotes', 'Opportunities', 'Accounts');
-                $rac = new RepairAndClear();
-                $rac->show_output = false;
-                $rac->module_list = $modules;
-                $rac->clearVardefs();
-                $rac->rebuildExtensions($modules);
-                MetaDataManager::refreshModulesCache($modules);
-                if (method_exists('MetaDataManager', 'refreshLanguagesCache')) {
-                    MetaDataManager::refreshLanguagesCache(array('en_us'));
-                }
-                $steps['repair_rebuild'] = 'ok';
-            } catch (Throwable $e) {
-                $steps['repair_rebuild'] = get_class($e) . ': ' . $e->getMessage();
-            }
-
-            // Live read straight from the rebuilt app strings. These keys are
-            // Partial Fulfillment's now, so this reports on ANOTHER package -
-            // deliberately: a Bench Opportunity stores those strings, and an
-            // admin running this repair is usually asking exactly this question.
-            // It asserts nothing and changes nothing.
-            $doms = return_app_list_strings_language('en_us');
-            $steps['core_quote_stage_dom'] = isset($doms['quote_stage_dom']['Partially Fulfilled']) ? 'present' : 'MISSING';
-            $steps['core_sales_stage_dom'] = (isset($doms['sales_stage_dom']['Prototype Ordered'])
-                && isset($doms['sales_stage_dom']['Partial Production Ordered'])) ? 'present' : 'MISSING';
-
-            return array('status' => 'success', 'steps' => $steps);
-        }
-    }
-}
