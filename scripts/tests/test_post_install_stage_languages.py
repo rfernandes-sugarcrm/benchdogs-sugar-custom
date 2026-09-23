@@ -116,7 +116,7 @@ function return_app_list_strings_language($language, $useCache = true) {
 }
 $failure = null;
 try {
-    require 'scripts/post_install.php';
+    require 'scripts/post_execute.php';
 } catch (Throwable $e) { $failure = $e->getMessage(); }
 echo json_encode(['failure' => $failure, 'events' => $events, 'errors' => $errors,
                   'settings' => $GLOBALS['settings']]);
@@ -146,7 +146,7 @@ class PostInstallStageLanguagesTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="bench-stage-installer-") as tmp:
             target = Path(tmp)
             for relative in (
-                "scripts/post_install.php",
+                "scripts/post_execute.php",
                 "custom/Extension/application/Ext/Language/en_us.bd_stage_doms.php",
             ):
                 path = target / relative
@@ -172,10 +172,22 @@ class PostInstallStageLanguagesTest(unittest.TestCase):
     def test_respects_an_existing_choice(self):
         """A config row is tenant data. An admin (or a later decision) that set
         another stage keeps it; this package does not re-decide on every
-        install."""
+        install.
+
+        🛑 NARROWED IN 0.9.42-rc67, AND THE NARROWING IS THE POINT. This used to
+        assert NO config write at all. G294's step report now writes exactly one
+        more row - benchdogs_ext.install_report, on every install, pass or fail -
+        so a blanket "no writes" assertion would fail for a reason that has
+        nothing to do with what this test is about. It is scoped to the stage
+        key instead of deleted or relaxed to a substring: an overwrite of
+        partial_order_sales_stage still fails it, which is the defect it exists
+        for. Any OTHER unexpected category/key would slip past this, which is
+        why test_post_install_step_report.py asserts the report row's category,
+        key and contents explicitly rather than leaving it uncovered here."""
         observed = self.execute("config_present")
         writes = [e for e in observed["events"]
-                  if isinstance(e, list) and e[0] == "write_config"]
+                  if isinstance(e, list) and e[0] == "write_config"
+                  and e[2] == "partial_order_sales_stage"]
         self.assertEqual(writes, [], "the install overwrote a stage someone already chose")
         self.assertEqual(observed["settings"]["erp_integration"]["partial_order_sales_stage"],
                          "Someone Elses Stage")
@@ -228,7 +240,7 @@ class PostInstallStageLanguagesTest(unittest.TestCase):
         # Comments stripped: this file DOCUMENTS the rc25 defect ("the whole body
         # sat inside function post_execute() and nothing ever called it"), and a
         # blunt substring match reads that explanation as the defect itself.
-        raw = (PACKAGE / "scripts/post_install.php").read_text()
+        raw = (PACKAGE / "scripts/post_execute.php").read_text()
         source = re.sub(r"/\*.*?\*/", "", raw, flags=re.S)
         source = re.sub(r"(^|\s)//[^\n]*", r"\1", source)
         self.assertNotIn("function post_execute", source,
@@ -238,7 +250,9 @@ class PostInstallStageLanguagesTest(unittest.TestCase):
 
     def test_proof_of_life_is_logged_at_fatal(self):
         observed = self.execute()
-        self.assertIn("BenchDogs-Ext: post_install running - writing deployed metadata",
+        # G295: the running line names the version it is installing; a bare
+        # top-level require has no $manifest, so here it reads "(unknown)".
+        self.assertIn("BenchDogs-Ext: post_install running (unknown) - writing deployed metadata",
                       observed["errors"])
         self.assertIn("BenchDogs-Ext: post_install finished", observed["errors"])
 
@@ -248,9 +262,9 @@ class PostInstallStageLanguagesTest(unittest.TestCase):
     def test_built_package_contains_the_same_installer(self):
         version = (PACKAGE / "version").read_text().strip()
         with zipfile.ZipFile(PACKAGE / "releases" / f"sugarai_benchdogs_ext-{version}.zip") as archive:
-            path = "scripts/post_install.php"
+            path = "scripts/post_execute.php"
             self.assertEqual(archive.read(path), (PACKAGE / path).read_bytes())
-            self.assertIn("<basepath>/scripts/post_install.php", archive.read("manifest.php").decode())
+            self.assertIn("<basepath>/scripts/post_execute.php", archive.read("manifest.php").decode())
 
     def test_the_stage_template_no_longer_ships(self):
         """The template was install_languages()' input. Nothing installs it now,

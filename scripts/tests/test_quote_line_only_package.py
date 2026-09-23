@@ -79,7 +79,7 @@ class QuoteLineOnlyPackageTest(unittest.TestCase):
             manifest = archive.read("manifest.php").decode("utf-8")
         self.assertRegex(manifest, r"'is_uninstallable'\s*=>\s*true")
         self.assertRegex(manifest, r"'remove_tables'\s*=>\s*'prompt'")
-        self.assertIn("<basepath>/scripts/pre_uninstall.php", manifest)
+        self.assertIn("<basepath>/scripts/bd_pre_uninstall.php", manifest)
         self.assertIn("<basepath>/scripts/post_uninstall.php", manifest)
 
     def test_clean_install_boundary_removes_paths_an_in_place_upgrade_would_leave(self):

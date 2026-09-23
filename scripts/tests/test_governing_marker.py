@@ -50,8 +50,8 @@ ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = ROOT / "sugar-sell" / "BenchDogs-Ext"
 REPORT = PACKAGE / "custom" / "modules" / "Opportunities" / "BdAutoSelectedReport.php"
 LAYOUT = PACKAGE / "custom" / "modules" / "Opportunities" / "BdOpportunitiesLayoutExtensions.php"
-POST_INSTALL = PACKAGE / "scripts" / "post_install.php"
-PRE_UNINSTALL = PACKAGE / "scripts" / "pre_uninstall.php"
+POST_INSTALL = PACKAGE / "scripts" / "post_execute.php"
+PRE_UNINSTALL = PACKAGE / "scripts" / "bd_pre_uninstall.php"
 
 FIELD = "bd_governing_origin"
 

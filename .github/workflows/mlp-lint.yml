@@ -16,6 +16,17 @@ name: MLP pre-flight
 # the same instances, and a gate that lives in somebody else's repository does
 # not run on this one's pull requests.
 #
+# 🛑 G318: CARRIED, NOT COPIED. Through rc67 the carried linter was a hand-synced
+# copy that had fallen to 17 of upstream's 19 rules, so this gate went green
+# without MLP018 or MLP019 ever running - and MLP019 is the rule whose
+# violation makes SugarCloud refuse a package mid-install. Both repositories
+# are private and in different GitHub accounts, so CI cannot fetch upstream's
+# file; instead it is VENDORED byte for byte and pinned by sha256 to one
+# upstream commit (scripts/mlp_lint.PINNED.json). The first step below proves
+# every vendored file is that commit's file before anything trusts it, and
+# floors the rule set at MLP001-MLP019. Never edit the linter here: change it
+# upstream and run `python3 scripts/refresh_mlp_lint.py`.
+#
 # This package was clean on the day the rules arrived - 0 blocker, 0 required,
 # 0 advisory - after two MLP001 blockers it found were fixed. So there is
 # deliberately no mlp_lint_baseline.json here. The upstream repository needs
@@ -47,6 +58,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # G318. The linter below is upstream's, byte for byte, at the commit
+      # scripts/mlp_lint.PINNED.json names, and has all 19 rules. A hand edit,
+      # a partial sync or a stale copy fails HERE, before the audit can pass
+      # on the strength of a linter that no longer checks what it claims to.
+      - name: The linter is upstream's, unedited
+        run: |
+          python3 scripts/tests/test_mlp_lint_pin.py -v
+          python3 scripts/mlp_lint.py --explain MLP019
 
       # The linter's own tests. A linter nobody trusts gets disabled, and the
       # way it loses trust is a false positive, so every rule is tested on a
@@ -130,8 +150,13 @@ jobs:
       # job time, and a version pinned by the base image rather than by
       # whatever PyPI serves that morning. The suite imports nothing outside
       # the standard library, so pytest is only the RUNNER here.
+      #
+      # `-m "not sugarent_tree"`: the tests that read SugarCRM's own source
+      # are NOT COLLECTED here (why, and which, at the skip ceiling below).
+      # `-rs` names every skip that remains, so a new one shows up by name in
+      # this log instead of as one more `s` in a row of dots.
       - name: The whole test suite
-        run: python3 -m pytest scripts/tests -q
+        run: python3 -m pytest scripts/tests -q -rs -m "not sugarent_tree"
 
       # A collected-count floor. Asserting the exit code alone cannot see a
       # runner that silently stops collecting - exactly how the 652-of-892 hole
@@ -152,33 +177,106 @@ jobs:
       # seven scenarios stop being evidence while the check stays green. That
       # is not hypothetical - it is exactly what this PR nearly shipped.
       #
-      # 2 is the number under CI conditions as of 0.9.42-rc65, and each one is
-      # named:
-      #   test_shared_fixture_drift  - by construction; it compares the pinned
-      #     copies against the real erp-integration-sugar files and can only
-      #     run where that checkout exists.
-      #   test_mlp_lint:683 - wants a whole ERP-Epicor PACKAGE directory, not a
-      #     file, so the pinning mechanism does not reach it.
+      # 🛑 MEASURED UNDER CI CONDITIONS, NOT ON A DEVELOPER'S MACHINE. The rc67
+      # version of this comment said 7 and CI ran 14 (run 35804953494): the 7
+      # it did not name read ~/Documents/Code/SugarEnt-Full-*, which existed
+      # where it was counted and does not exist here. To count what CI counts,
+      # run the suite with HOME pointed at an empty directory (and
+      # MLP_LINT_SUGAR_ROOT unset); at 0.9.42-rc68 that reproduces run
+      # 35804953494's progress line character for character.
+      #
+      # Of those 14, 7 are NOT COLLECTED here, and 2 more since rc69, so 9 in
+      # all. Each reads SugarCRM's own
+      # source (licensed under the Master Subscription Agreement, no public
+      # copy), so CI can never run them, and pinning excerpts would make them
+      # fixtures that test their own belief. They declare
+      # `requires_sugarent_tree = True`; scripts/tests/conftest.py turns that
+      # into the `sugarent_tree` marker; the two pytest runs here pass
+      # `-m "not sugarent_tree"`; and the step after this one fails if the set
+      # left out is not exactly these 9:
+      #   test_post_install_step_report SugarPlatformContractTest (6) - G294's
+      #     platform facts (setInstallationError is public, post_execute
+      #     require_once's inside its method, a throw force-uninstalls, the log
+      #     is package_install.log, Diagnostic carries all three channels,
+      #     config.value is text), read from SugarEnt-Full 25.2.0 and 26.1.0.
+      #     They have NEVER run in CI; they run where a tree exists.
+      #   test_g294_single_pass PlatformReservedScriptContractTest (2) - rc69,
+      #     G294's second grade: PackageManager include()s the reserved
+      #     scripts/{pre,post}_{install,uninstall}.php paths as well as the
+      #     installdefs, which is why the lifecycle scripts moved off them.
+      #     The anchor for that suite's stub, read from the same two trees.
+      #   test_g268_retired_stage_names test_merge_function_matches_sugar (1) -
+      #     the transcribed getExtensionFileContents against 26.1.0's
+      #     ModuleInstaller. It already skipped at rc65, when this comment named
+      #     2 and CI counted 3, and was the one the rc65 slack absorbed.
+      #
+      # The other 7 are collected and skipped, and each one is named:
+      #   test_shared_fixture_drift (1) - by construction; it compares the
+      #     pinned copies against the real erp-integration-sugar files and can
+      #     only run where that checkout exists.
+      #   test_mlp_lint_pin PinnedLinterDriftTest (1) - the same, for the
+      #     vendored linter: pin versus upstream's branch head. Its twin,
+      #     PinnedLinterIntegrityTest, runs here and gates the `rules` job.
+      #   test_mlp_lint TestShippedPackagesStayClean (1) - wants a whole
+      #     ERP-Epicor PACKAGE directory, which this repository never has.
+      #   test_mlp_lint TestAgainstTheRealScanner (4) - run Sugar's own
+      #     ModuleScanner, so need a SugarEnt tree CI does not have. Upstream
+      #     skips them in its CI for the same reason. Where a tree exists they
+      #     run over every PHP file here: at rc67 MLP002 and the real scanner
+      #     agreed on all 61.
+      # Five are new with G318: the four TestAgainstTheRealScanner tests,
+      # which arrived with upstream's re-vendored suite (105 tests where the
+      # stale copy had 61) and are pinned byte for byte, so cannot be edited
+      # into running here, nor into declaring `requires_sugarent_tree`; and
+      # PinnedLinterDriftTest, which is G318's own.
       #
       # rc65 pinned the rest rather than skipping them: core's billing-country
       # guard, ERP-Epicor's createOppQuote (G243's control), the label that
       # collides with the retired Bench button (G15's root cause) and core's
       # button add-if-absent with the Quotes layout that drives it (G276). Those
       # four used to skip HERE, which is exactly where a control about core
-      # matters most. The ceiling stays at 3 so one more may appear before it
-      # has to be argued for.
+      # matters most. The ceiling is 8, one above the named 7, so one more may
+      # appear before it has to be argued for - the same slack rc65 kept.
       #
       # Everything else that used to need that private repo now runs here
       # against fixtures/shared-sugar/ - see scripts/refresh_shared_fixtures.py.
       # Raise this number only with a reason written beside it.
       - name: The suite did not go quiet
         run: |
-          SKIPPED=$(python3 -m pytest scripts/tests -q --color=no 2>/dev/null \
+          SKIPPED=$(python3 -m pytest scripts/tests -q --color=no -m "not sugarent_tree" 2>/dev/null \
             | tail -1 | grep -oE '[0-9]+ skipped' | grep -oE '^[0-9]+' || echo 0)
           echo "skipped: $SKIPPED"
-          if [ "${SKIPPED:-0}" -gt 3 ]; then
-            echo "::error::$SKIPPED tests skipped; ceiling is 3. A test that is"
+          if [ "${SKIPPED:-0}" -gt 8 ]; then
+            echo "::error::$SKIPPED tests skipped; ceiling is 8. A test that is"
             echo "::error::collected and then skipped is documentation, not a guard."
+            exit 1
+          fi
+
+      # The other half of the ceiling. `-m "not sugarent_tree"` is a way to
+      # make a test vanish from CI without it ever counting as a skip, so the
+      # set it removes is pinned BY NAME: marking one more test, unmarking one,
+      # or deleting conftest.py (which leaves the marker on nothing) all fail
+      # here. Change this list only with a reason written at the ceiling above.
+      - name: Only the named SugarEnt-tree tests are left out
+        run: |
+          python3 -m pytest scripts/tests --collect-only -q --color=no -m sugarent_tree 2>/dev/null \
+            | grep '::' | LC_ALL=C sort > /tmp/left-out.txt || true
+          LC_ALL=C sort > /tmp/named.txt <<'EOF'
+          scripts/tests/test_g268_retired_stage_names.py::RetiredStageNames::test_merge_function_matches_sugar
+          scripts/tests/test_post_install_step_report.py::SugarPlatformContractTest::test_an_uncaught_throw_really_does_force_uninstall
+          scripts/tests/test_post_install_step_report.py::SugarPlatformContractTest::test_module_loader_repoints_the_log_to_package_install
+          scripts/tests/test_post_install_step_report.py::SugarPlatformContractTest::test_post_execute_require_onces_inside_its_own_method_body
+          scripts/tests/test_post_install_step_report.py::SugarPlatformContractTest::test_set_installation_error_is_public_and_takes_a_string
+          scripts/tests/test_post_install_step_report.py::SugarPlatformContractTest::test_the_config_value_column_is_text_not_a_short_varchar
+          scripts/tests/test_post_install_step_report.py::SugarPlatformContractTest::test_the_diagnostic_tool_can_retrieve_all_three_channels
+          scripts/tests/test_g294_single_pass.py::PlatformReservedScriptContractTest::test_sugar_includes_the_reserved_paths_after_the_installer
+          scripts/tests/test_g294_single_pass.py::PlatformReservedScriptContractTest::test_the_installer_requires_the_installdef_inside_its_own_method
+          EOF
+          echo "left out of CI ($(wc -l < /tmp/left-out.txt)):"
+          cat /tmp/left-out.txt
+          if ! diff -u /tmp/named.txt /tmp/left-out.txt; then
+            echo "::error::the tests CI does not collect are not the 9 named in mlp-lint.yml."
+            echo "::error::A test left out of CI is not a guard; name it at the ceiling or run it."
             exit 1
           fi
 

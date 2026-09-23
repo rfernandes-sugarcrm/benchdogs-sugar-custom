@@ -113,7 +113,7 @@ behind and also tempts Bench code to duplicate shared currency semantics.
 Bench no longer supplies `ErpOpportunityReleaseStagePolicy` at all. rc65 reduced
 it to a provider returning `null`; rc66 stops shipping the file. Partial
 Fulfillment decides the stage generically from
-`erp_integration.partial_order_sales_stage`, which `scripts/post_install.php`
+`erp_integration.partial_order_sales_stage`, which `scripts/post_execute.php`
 writes when absent, at the probability PF's own `sales_probability_dom` gives.
 PF reaches the same decision whether the file is missing or present-and-null
 (`policy_provider_absent` and `policy_provider_null` share one branch) — proved
@@ -298,5 +298,7 @@ docker run --rm -v "$(pwd)":/work -w /work composer:2 php pack.php
 ```
 
 The installable zip lands in `releases/sugarai_benchdogs_ext-<version>.zip`.
-`scripts/post_install.php` runs a Quick Repair on the affected modules and
-writes the Quotes layout extensions.
+`scripts/post_execute.php` runs a Quick Repair on the affected modules and
+writes the Quotes layout extensions. It runs once per install, as the
+`post_execute` installdef; it is not named `scripts/post_install.php` because
+Sugar runs that reserved path a second time, outside the installer (G294).

@@ -233,7 +233,7 @@ namespace {
 
 class DemoDashboardsAreGone(unittest.TestCase):
     def test_post_install_neither_requires_nor_composes_them(self):
-        post = (PKG / "scripts/post_install.php").read_text(encoding="utf-8")
+        post = (PKG / "scripts/post_execute.php").read_text(encoding="utf-8")
         code = re.sub(r"/\*.*?\*/", "", post, flags=re.S)
         code = re.sub(r"(^|\s)(//|#)[^\n]*", r"\1", code)
         self.assertNotIn("BdDemoDashboards", code)

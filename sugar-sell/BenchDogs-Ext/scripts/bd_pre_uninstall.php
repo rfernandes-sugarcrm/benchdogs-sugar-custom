@@ -9,7 +9,7 @@
  * uninstall does a competent job of the parts it knows about: it deletes every
  * file listed in installdefs['copy'], drops the beans, removes the
  * relationships, and prompts about the module tables. What it knows nothing
- * about is DEPLOYED METADATA - the record-view definitions post_install.php
+ * about is DEPLOYED METADATA - the record-view definitions post_execute.php
  * writes through DeployedMetaDataImplementation. Those writes land in
  * custom/modules/<M>/clients/base/views/record/record.php, a file this package
  * does not ship and the uninstaller therefore never touches.
@@ -51,6 +51,30 @@
  * only one. An earlier draft of this file used a function and would have been a
  * coin flip.
  *
+ * WHY THIS FILE IS NOT NAMED pre_uninstall.php (0.9.42-rc69, G294 / G295)
+ *
+ * Through rc68 it was, and every uninstall ran it TWICE. scripts/
+ * pre_uninstall.php is a RESERVED path (PackageZipFile::PACKAGE_SCRIPT_LIST,
+ * SugarEnt 25.2.0 and 26.1.0): PackageManager::uninstallPackage() plain-
+ * `include`s it (runPackageScript()) BEFORE ModuleInstaller::uninstall() runs
+ * it again as the pre_uninstall installdef. Under this name the installdef is
+ * the only route, so it runs once per uninstall, inside the installer, with
+ * $manifest in scope. post_execute.php moved off scripts/post_install.php for
+ * the same reason.
+ *
+ * ONE PATH LOSES IT, deliberately: an EMERGENCY force-uninstall - the shutdown
+ * handler after an E_ERROR fatal mid-install - skips the installdef
+ * pre_uninstall task, and until rc68 still reached this file through the
+ * reserved-name include, which PackageManager::forceUninstall() does not gate on
+ * $emergency although its own docblock says "Do not call any package scripts".
+ * That route is gone with the name. The cost: after an install that died with
+ * a PHP fatal, the two customer-group fields post_execute.php may already have
+ * placed on the Accounts view stay there and must be taken off by hand. That is
+ * the only record-view placement an install makes, and the only thing this file
+ * undoes that an install could have added. Sugar
+ * itself says no package script should run on that path, and keeping a
+ * double-run on every normal uninstall to cover it is the wrong trade.
+ *
  * EVERY STEP IS INDEPENDENT
  *
  * Each block has its own try/catch and its own file_exists/class_exists guard.
@@ -65,13 +89,46 @@
 
 // Proof of life. Module Loader reporting a successful uninstall is not evidence
 // that this file ran - if the installdef key were wrong the uninstall would
-// complete looking perfectly clean while doing none of the cleanup. After an
-// uninstall, grep sugarcrm.log for this line: present means the cleanup ran,
-// absent means treat the wiring as broken and follow the manual runbook
+// complete looking perfectly clean while doing none of the cleanup.
+//
+// 🛑 GREP package_install.log, NOT sugarcrm.log (0.9.42-rc67, G295). The rc66
+// text here sent operators to sugarcrm.log and told them an absent line means
+// broken. On a hosted tenant that is the WRONG LOG and the instruction produces
+// a false failure: measured on Bench, sugarcrm.log's newest verdict (17:14:03)
+// PREDATED the 17:17:35 install, so obeying it reads a stale line and files a
+// healthy run as broken.
+//
+// Uninstall takes the same route as install. modules/Administration/
+// UpgradeWizard_commit.php:17 calls MlpLogger::replaceDefault() for EVERY mode,
+// Uninstall included, which repoints the default logger's file name to
+// `package_install` and forces its level to debug (modules/Administration/
+// MlpLogger.php:15-21, identical in SugarEnt 25.2.0 and 26.1.0). So this line
+// lands in package_install.log, in the same directory as sugarcrm.log
+// (DiagnosticRun.php:318). Retrieve it with Admin > Diagnostic Tool and ONLY
+// "Package Install Log File" ticked - untick everything the page pre-selects.
+//
+// Then attribute by PID, not by time: take the PID prefix off THIS line - it
+// names the version being removed, from rc69 on - and read only the lines
+// carrying it. Two runs minutes apart interleave, and reading by timestamp is
+// exactly what produced the trap above. Absent from package_install.log while
+// that run's other lines are present is the case that means treat the wiring as
+// broken - follow the manual runbook
 // (docs/runbooks/remove-benchdogs-sugar-package.md in the connector extension
 // repo). Logged at fatal so it survives whatever log level the instance is set
-// to; it is emitted exactly once in the life of an installation.
-$GLOBALS['log']->fatal('BenchDogs-Ext: pre_uninstall running - cleaning up deployed metadata');
+// to outside an uninstall window (inside one MlpLogger has already forced
+// debug, so the level argument is moot there). It is emitted once per uninstall
+// request (and once per non-emergency force-uninstall), because this file is no
+// longer at a path Sugar runs a second time - see "WHY THIS FILE IS NOT NAMED
+// pre_uninstall.php" above. Through rc68 it appeared twice per uninstall.
+//
+// 📌 The three steps below still only ->error() their failures, one line each,
+// with no aggregation - the same reporting shape G294 fixes on the install
+// side. It is not fixed here in this change: G294 is filed against
+// post_execute.php and widening the blast radius of an uninstall script was not
+// worth the risk in one pass. Flagged, not silently carried.
+// ModuleInstaller::pre_uninstall() has run extract($data) over the manifest.
+$bdVersion = isset($manifest['version']) ? (string) $manifest['version'] : 'unknown';
+$GLOBALS['log']->fatal('BenchDogs-Ext: pre_uninstall running (' . $bdVersion . ') - cleaning up deployed metadata');
 
 // 1. Quotes record view: drop our retired panel. Buttons are not touched
 // (G276 / 🔒 1504); see the note at the top of this file.
@@ -136,7 +193,7 @@ try {
 // already gone. rc65's install ran remove() and logged neither a deletion nor
 // a missing helper (tenant package_install.log, PID 2069085, 17:16:59-17:17:35),
 // so there was nothing to find - and SugarQuery cannot re-find a row it has
-// already soft-deleted. See post_install.php for the full reading.
+// already soft-deleted. See post_execute.php for the full reading.
 
 // 3. The quoted-line-items grid: NOTHING TO DO, and deliberately no call here.
 // BdQliColumnsLayout is deleted (0.9.42-rc66). Its uninstall() took CORE's
@@ -176,7 +233,7 @@ try {
 // 🔒 1506 removed the CAUSE instead of teaching this file to clean up after it:
 // Partial Fulfillment now owns both sales stages (and has always owned
 // quote_stage_dom's 'Partially Fulfilled'), 0.9.42-rc65 declares none of them,
-// and post_install.php deletes the accumulated zz_bd_stage_doms fragment once,
+// and post_execute.php deletes the accumulated zz_bd_stage_doms fragment once,
 // on install, through uninstall_languages(). Removing the KEYS here would now
 // delete ANOTHER package's vocabulary from under records that hold it - the
 // same damage G234 existed to prevent, pointed the other way. The owner's

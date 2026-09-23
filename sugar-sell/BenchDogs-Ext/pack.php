@@ -81,7 +81,19 @@ $installdefs = array(
     // of its own, so it creates no table and no module tab.
     'beans'        => array(),
     'copy'         => array(),
-    'post_execute' => array('<basepath>/scripts/post_install.php'),
+    // 🛑 NOT scripts/post_install.php, and pre_uninstall below is NOT
+    // scripts/pre_uninstall.php (0.9.42-rc69, G294/G295). Those two paths are
+    // RESERVED: PackageZipFile::PACKAGE_SCRIPT_LIST (SugarEnt 25.2.0 / 26.1.0)
+    // names scripts/{pre,post}_install.php and scripts/{pre,post}_uninstall.php,
+    // and PackageManager plain-`include`s whichever one ships - AFTER the
+    // installer has already require_once'd it as post_execute, and BEFORE the
+    // installer runs it as pre_uninstall. So a script at a reserved path that is
+    // ALSO an installdef runs twice. Measured on rc68 (Ophir, PID 2438880): the
+    // second post_install pass had no $manifest, logged "(unknown): 8/8" and
+    // overwrote the durable report. post_uninstall.php keeps its reserved name
+    // because PackageManager runs POST_UNINSTALL_FILE only for a `patch`
+    // package; this one is `module`. scripts/tests/test_g294_single_pass.py.
+    'post_execute' => array('<basepath>/scripts/post_execute.php'),
     // The uninstall counterpart to post_execute, in two halves because the two
     // jobs need opposite conditions. pre_uninstall undoes the DEPLOYED METADATA
     // post_install.php wrote - record-view panels, buttons, the fields the
@@ -92,7 +104,7 @@ $installdefs = array(
     //
     // Their absence is what broke the instance the last time this package was
     // removed. See the docblock at the top of each script.
-    'pre_uninstall'  => array('<basepath>/scripts/pre_uninstall.php'),
+    'pre_uninstall'  => array('<basepath>/scripts/bd_pre_uninstall.php'),
     'post_uninstall' => array('<basepath>/scripts/post_uninstall.php'),
 );
 
@@ -126,8 +138,8 @@ if ($customReal) {
 // pre_uninstall.php under custom/ would be deleted by the very uninstall it is
 // supposed to run during.
 $lifecycleScripts = array(
-    'post_install.php',
-    'pre_uninstall.php',
+    'post_execute.php',
+    'bd_pre_uninstall.php',
     'post_uninstall.php',
 );
 

@@ -15,7 +15,11 @@ tested against the actual shipped scripts at the bottom.
 
 from __future__ import annotations
 
+import json
+import re
+import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -44,8 +48,22 @@ class Fixture:
     def lint(self) -> list[mlp_lint.Finding]:
         return mlp_lint.lint_package(mlp_lint.load_package(self.root))
 
+    def lint_as_zip(self) -> list[mlp_lint.Finding]:
+        """Lint the same tree as if it had been unpacked from a built archive.
+
+        The distinction matters for any rule that asks whether a file EXISTS
+        rather than whether it is correct: from inside a zip the source tree is
+        not there to consult, so those rules have to sit out.
+        """
+        pkg = mlp_lint.load_package(self.root)
+        pkg.from_zip = True
+        return mlp_lint.lint_package(pkg)
+
     def rules(self) -> list[str]:
         return [f.rule for f in self.lint()]
+
+    def zip_rules(self) -> list[str]:
+        return [f.rule for f in self.lint_as_zip()]
 
     def close(self) -> None:
         self._tmp.cleanup()
@@ -105,6 +123,62 @@ class TestClassRedeclare(RuleTest):
             "    require_once('custom/include/scripts/ErpDashboardReconcile.php');\n}\n",
         )
         self.assertQuiet("MLP001")
+
+    def test_a_path_that_contains_the_word_include_is_not_an_include_site(self) -> None:
+        """The Partial Fulfillment 1.0.20/1.0.21 false positive.
+
+        An uninstall script must check a file exists before requiring it -- an
+        uninstall that fatals blocks removal of the package the admin is trying
+        to delete -- so it assigns the path to a variable first. That path
+        lives under custom/include/, this estate's standard destination for
+        packaged scripts. With a bare \b the rule matched the word `include`
+        inside the literal, called the tail of the string a second include
+        path, and reported a redeclare fatal for a class required exactly once.
+        """
+        self.fx.write("scripts/ErpDashboardReconcile.php", self.CLASS_FILE)
+        self.fx.write(
+            "scripts/post_execute.php",
+            "<?php\nrequire_once('custom/include/scripts/ErpDashboardReconcile.php');\n"
+            "(new ErpDashboardReconcile())->go();\n",
+        )
+        self.fx.write(
+            "scripts/pre_uninstall.php",
+            "<?php\n$target = 'custom/include/scripts/ErpDashboardReconcile.php';\n"
+            "if (!file_exists($target)) {\n    return;\n}\n"
+            "require_once($target);\n(new ErpDashboardReconcile())->uninstall();\n",
+        )
+        self.assertQuiet("MLP001")
+
+    def test_a_directory_named_require_is_not_an_include_site(self) -> None:
+        """Same defect, the other keyword. `require` is a plausible directory
+        name and the rule must not read one as a statement."""
+        self.fx.write("scripts/ErpDashboardReconcile.php", self.CLASS_FILE)
+        self.fx.write(
+            "scripts/post_execute.php",
+            "<?php\nrequire_once('custom/require/ErpDashboardReconcile.php');\n",
+        )
+        self.fx.write(
+            "scripts/pre_uninstall.php",
+            "<?php\n$target = 'custom/require/ErpDashboardReconcile.php';\n"
+            "require_once($target);\n",
+        )
+        self.assertQuiet("MLP001")
+
+    def test_a_genuine_second_path_under_custom_include_still_fires(self) -> None:
+        """The narrowing above must not cost the rule its actual job. This is
+        the ossugarcube2 defect with the installed copy under custom/include/,
+        i.e. the shape closest to the false positive that is still real: two
+        DIFFERENT files, both loaded in one request."""
+        self.fx.write("scripts/ErpDashboardReconcile.php", self.CLASS_FILE)
+        self.fx.write(
+            "scripts/pre_execute.php",
+            "<?php\nrequire_once __DIR__ . '/ErpDashboardReconcile.php';\n",
+        )
+        self.fx.write(
+            "scripts/post_execute.php",
+            "<?php\nrequire_once('custom/include/scripts/ErpDashboardReconcile.php');\n",
+        )
+        self.assertFires("MLP001")
 
     def test_single_path_is_fine(self) -> None:
         self.fx.write("scripts/ErpDashboardReconcile.php", self.CLASS_FILE)
@@ -191,6 +265,35 @@ class TestHookGuards(RuleTest):
             "        $bean->save();\n    }\n}\n",
         )
         self.assertFires("MLP004")
+
+    def test_an_UNREGISTERED_method_of_the_same_NAME_is_not_a_hook(self) -> None:
+        """G128 regression. The check used to do `wanted = {m for _, m in pairs}`
+        and match on the METHOD NAME alone, so any same-named method in any
+        class in the package was reported as an unguarded hook.
+
+        Live cost: absorbing the quantity-break ladder gave ERP-Epicor a hook
+        registered as `apply`, and the linter then raised two REQUIRED findings
+        against ERP-Core's PRIVATE ErpEstimatingStamps::apply and
+        ErpNativeShippingMirror::apply. Neither is registered -- the fragments
+        name stamp() and mirror(), and both of those already catch Throwable.
+        Two false REQUIRED findings, enough to block a merge.
+        """
+        self.fx.write("manifest.php", self.MANIFEST)
+        self.fx.write(
+            "custom/modules/Quotes/Cascade.php",
+            "<?php\nclass Cascade\n{\n    public function run($bean)\n    {\n"
+            "        try {\n            $bean->save();\n"
+            "        } catch (\\Throwable $e) {\n"
+            "            $GLOBALS['log']->error($e->getMessage());\n        }\n"
+            "    }\n}\n",
+        )
+        # Same method name, DIFFERENT class, never registered anywhere.
+        self.fx.write(
+            "custom/modules/Quotes/Bystander.php",
+            "<?php\nclass Bystander\n{\n    private function run($bean)\n    {\n"
+            "        $bean->touch();\n    }\n}\n",
+        )
+        self.assertQuiet("MLP004")
 
     def test_guarded_hook_is_fine(self) -> None:
         self.fx.write("manifest.php", self.MANIFEST)
@@ -374,6 +477,74 @@ class TestAdvisories(RuleTest):
         )
         self.fx.write("tests/RollupTest.php", "<?php\nclass RollupTest {}\n")
         self.assertQuiet("MLP010")
+
+    def test_cited_test_is_not_reported_missing_when_linting_a_zip(self) -> None:
+        # Tests are deliberately never shipped, so from inside an archive every
+        # cited test looks absent and this rule reports correct behaviour as a
+        # defect. It did exactly that to the Partial Fulfillment zip, which was
+        # flagged for citing ErpQuoteLineRollupTest.php while that test sat
+        # present and passing in the package's own tests/ directory. The source
+        # pass can see both halves; the zip pass cannot, so it must stay quiet.
+        self.fx.write(
+            "custom/modules/Quotes/Rollup.php",
+            "<?php\n/**\n * @see tests/ErpQuoteLineRollupTest.php\n */\nclass Rollup {}\n",
+        )
+        self.assertIn("MLP010", self.fx.rules(), "source pass should still fire")
+        self.assertNotIn("MLP010", self.fx.zip_rules(), "zip pass must stay quiet")
+
+    def test_short_comment_containing_braces_fires(self) -> None:
+        # The defect this rule was written for, reproduced exactly. A {{! }}
+        # comment explaining that other values are escaped mentions {{ }}, the
+        # parser closes the comment there, and ". }}" is drawn on the page.
+        self.fx.write(
+            "badge.hbs",
+            "{{! badgeStyle is unescaped on purpose. Every value below it\n"
+            "    uses escaped {{ }}. }}\n"
+            '<span style="{{{badgeStyle}}}">{{label}}</span>\n',
+        )
+        self.assertFires("MLP018")
+
+    def test_long_form_comment_containing_braces_also_fires(self) -> None:
+        # The first fix for this used the long form and shipped. The page then
+        # read ". --}}" instead of ". }}", which is the parser closing the long
+        # comment at the first }} inside it exactly as it does the short one.
+        # So the long form is not a remedy here and must not be treated as one.
+        self.fx.write(
+            "badge.hbs",
+            "{{!-- badgeStyle is unescaped on purpose. Every value below it\n"
+            "    uses escaped {{ }}.\n--}}\n"
+            '<span style="{{{badgeStyle}}}">{{label}}</span>\n',
+        )
+        self.assertFires("MLP018")
+
+    def test_a_comment_with_no_braces_is_fine(self) -> None:
+        self.fx.write(
+            "badge.hbs",
+            "{{! badgeStyle is unescaped on purpose. Every value below it is\n"
+            "    escaped normally. No braces in this comment, deliberately. }}\n"
+            '<span style="{{{badgeStyle}}}">{{label}}</span>\n',
+        )
+        self.assertQuiet("MLP018")
+
+    def test_plain_short_comment_is_fine(self) -> None:
+        # The short form is not wrong in itself, only when it carries braces.
+        self.fx.write(
+            "badge.hbs",
+            "{{! badgeStyle comes from a fixed palette, never from a record. }}\n"
+            '<span style="{{{badgeStyle}}}">{{label}}</span>\n',
+        )
+        self.assertQuiet("MLP018")
+
+    def test_the_remedy_for_mlp011_does_not_recreate_the_defect(self) -> None:
+        # MLP011's fix text is what produced six broken templates in this
+        # repository: it asked for a {{! ... }} comment, and a comment about
+        # escaping mentions braces. A remedy that recreates another rule's
+        # defect is worse than no remedy, so the wording is pinned.
+        self.fx.write("badge.hbs", '<span style="{{{style}}}"></span>\n')
+        remedies = [f.remedy for f in self.fx.lint() if f.rule == "MLP011"]
+        self.assertTrue(remedies, "MLP011 should have fired")
+        for remedy in remedies:
+            self.assertIn("{{!--", remedy)
 
     def test_triple_mustache_without_comment_fires(self) -> None:
         self.fx.write("badge.hbs", '<span style="{{{style}}}"></span>\n')
@@ -657,6 +828,79 @@ class TestUninstallProtocol(RuleTest):
         self.assertQuiet("MLP016")
 
 
+class TestMetadataParserUsage(RuleTest):
+    """MLP019 — the hosted Rector refusal that cost ERP-Epicor rc8 to rc11.2.
+
+    The fixtures are the exact shapes a SugarCloud tenant rejected with
+    `Class "AbstractMetaDataImplementation" not found`.
+    """
+
+    def test_class_exists_on_a_parser_class_fires(self) -> None:
+        # rc11's BaseErpLayout constructor, line 19 of the refused report.
+        self.fx.write(
+            "scripts/BaseErpLayout.php",
+            "<?php\nabstract class BaseErpLayout\n{\n"
+            "    public function __construct()\n    {\n"
+            "        if (!class_exists('DeployedMetaDataImplementation')) {\n"
+            "            throw new RuntimeException('unavailable');\n        }\n"
+            "    }\n}\n",
+        )
+        self.assertFires("MLP019")
+
+    def test_instantiating_a_parser_fires(self) -> None:
+        self.fx.write(
+            "scripts/Modules/AccountsLayout.php",
+            "<?php\n$deploy = new DeployedMetaDataImplementation(MB_RECORDVIEW, 'Accounts', 'base');\n",
+        )
+        self.assertFires("MLP019")
+
+    def test_literal_parser_include_fires(self) -> None:
+        # Bench Dogs' layout helpers, and rc8 to rc10's guarded includes.
+        self.fx.write(
+            "custom/modules/Quotes/BdQuotesLayoutExtensions.php",
+            "<?php\nrequire_once 'modules/ModuleBuilder/parsers/views/"
+            "AbstractMetaDataImplementation.php';\n",
+        )
+        self.assertFires("MLP019")
+
+    def test_subpanel_parser_fires(self) -> None:
+        self.fx.write(
+            "scripts/Modules/OpportunitiesLayout.php",
+            "<?php\n$deploy = new DeployedSidecarSubpanelImplementation('quotes', 'Opportunities', 'base');\n",
+        )
+        self.assertFires("MLP019")
+
+    def test_it_is_a_blocker(self) -> None:
+        self.fx.write("scripts/x.php", "<?php\nParserFactory::getParser('recordview', 'Accounts');\n")
+        found = [f for f in self.fx.lint() if f.rule == "MLP019"]
+        self.assertTrue(found)
+        self.assertEqual(found[0].severity, mlp_lint.BLOCKER)
+
+    def test_viewdef_manager_is_fine(self) -> None:
+        self.fx.write(
+            "scripts/BaseErpLayout.php",
+            "<?php\nuse Sugarcrm\\Sugarcrm\\MetaData\\ViewdefManager;\n"
+            "$defs = (new ViewdefManager())->loadViewdef('base', 'Accounts', 'record');\n",
+        )
+        self.assertQuiet("MLP019")
+
+    def test_a_comment_naming_the_class_is_fine(self) -> None:
+        self.fx.write(
+            "scripts/BaseErpLayout.php",
+            "<?php\n// Never use DeployedMetaDataImplementation here (MLP019).\n"
+            "/* ParserFactory is refused by hosted Rector. */\n$ok = true;\n",
+        )
+        self.assertQuiet("MLP019")
+
+    def test_ignore_comment_silences_it(self) -> None:
+        self.fx.write(
+            "scripts/x.php",
+            "<?php\n// mlp-lint: ignore MLP019\n"
+            "$deploy = new DeployedMetaDataImplementation(MB_RECORDVIEW, 'Accounts', 'base');\n",
+        )
+        self.assertQuiet("MLP019")
+
+
 class TestRuleMetadata(unittest.TestCase):
     def test_every_rule_has_an_origin_and_explanation(self) -> None:
         self.assertTrue(mlp_lint.RULES)
@@ -677,8 +921,8 @@ class TestMd5FileIsNeverShipped(unittest.TestCase):
     """MLP014, which this repository once had backwards.
 
     The rule used to report the ABSENCE of files.md5 as something worth fixing.
-    Acting on that added one to all thirteen archives upstream and made every
-    one of them unloadable: ModuleScanner checks each shipped file's extension
+    Acting on that added one to all thirteen archives here and made every one
+    of them unloadable: ModuleScanner checks each shipped file's extension
     against an allow-list, `md5` is not on it, and SugarCloud refuses the
     package with "File Issues / files.md5 / Invalid file extension".
 
@@ -719,6 +963,413 @@ class TestMd5FileIsNeverShipped(unittest.TestCase):
             [f for f in findings if f.rule == "MLP014"], [],
             "the absence of files.md5 is correct and must not be reported",
         )
+
+
+# ---------------------------------------------------------------------------
+# G222. The scanner's deny-lists, in --zip mode, matched the way it matches.
+#
+# ERP-Epicor 1.1.100 linted 0/0/0 and SugarCloud refused it for
+# stream_resolve_include_path, which is on ModuleScanner's
+# $unsafeHttpClientFunctions: a second list, merged into $blackList by
+# EnhancedModuleChecks, that this linter had never carried. Every verdict below
+# about what the scanner does and does not flag - comments, strings, methods,
+# namespaced names - was taken from the real scanner (scanner_oracle.php), not
+# assumed.
+# ---------------------------------------------------------------------------
+
+HERE = Path(__file__).resolve().parent
+MLP002_FIXTURES = HERE / "fixtures" / "mlp002"
+SCANNER_ORACLE = HERE / "scanner_oracle.php"
+
+
+def _sugar_roots() -> list:
+    """SugarEnt source trees available on this machine, for the live checks."""
+    env = os.environ.get("MLP_LINT_SUGAR_ROOT")
+    candidates = [Path(env)] if env else [
+        Path.home() / "Documents" / "Code" / "SugarEnt-Full-26.1.0",
+        Path.home() / "Documents" / "Code" / "SugarEnt-Full-25.2.0",
+    ]
+    return [c for c in candidates if (c / "ModuleInstall" / "ModuleScanner.php").is_file()]
+
+
+_ORACLE_KINDS = [
+    (re.compile(r'call denylisted function "([^"]+)"'), "function"),
+    (re.compile(r"use eval\(\)"), "eval"),
+    (re.compile(r'instantiate denylisted class "([^"]+)"'), "class_new"),
+    (re.compile(r'extend denylisted class "([^"]+)"'), "class_extends"),
+    (re.compile(r'call denylisted method "([^"]+)"'), "method"),
+    (re.compile(r'call denylisted static method "([^"]+)"'), "static"),
+    (re.compile(r"execute command via shell"), "shell_exec"),
+    (re.compile(r"halt compiler"), "halt_compiler"),
+]
+
+
+def _key(line: int, kind: str, name: str) -> tuple:
+    """One hit, reduced to what both the scanner and MLP002 can agree on."""
+    name = (name or "").lower().split("\\")[-1]
+    if kind == "unsafe_function":
+        kind = "function"
+    if kind == "static":
+        kind = "class_method" if "::" in name else "method"
+    if kind == "class_method":
+        name = name.split("::")[-1]
+    if kind in ("eval", "shell_exec", "halt_compiler"):
+        name = ""
+    return (line, kind, name)
+
+
+def _oracle_keys(issues) -> set:
+    """The deny-list issues among a scanner run's (line, message) pairs."""
+    out = set()
+    for line, msg in issues:
+        for rx, kind in _ORACLE_KINDS:
+            m = rx.search(msg)
+            if m:
+                out.add(_key(line, kind, m.group(1) if m.groups() else ""))
+                break
+    return out
+
+
+def _linter_keys(text: str) -> set:
+    return {_key(*hit) for hit in mlp_lint.scanner_denylist_hits(text)}
+
+
+class _ZipCase(unittest.TestCase):
+    """Builds a package zip and lints it the way `--zip` does."""
+
+    MANIFEST = (
+        "<?php\n$manifest = array('key' => 'p', 'version' => '1.0.0',\n"
+        "  'type' => 'module', 'acceptable_sugar_versions' => array('26.*'));\n"
+        "$installdefs = array('id' => 'p');\n"
+    )
+    PATH = "src/custom/clients/base/api/ProbeApi.php"
+
+    def make_zip(self, files: dict) -> Path:
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        path = Path(tmp) / "pkg-1.0.0.zip"
+        with zipfile.ZipFile(path, "w") as zf:
+            zf.writestr("manifest.php", self.MANIFEST)
+            for name, body in files.items():
+                zf.writestr(name, body)
+        return path
+
+    def zip_findings(self, php: str, rule: str = "MLP002") -> list:
+        _pkg, findings = mlp_lint.lint_zip(self.make_zip({self.PATH: php}))
+        return [f for f in findings if f.rule == rule]
+
+    def assertFiresAt(self, php: str, lines: list) -> None:
+        got = self.zip_findings(php)
+        self.assertEqual(
+            sorted(f.line for f in got), sorted(lines),
+            "MLP002 should fire on exactly these lines:\n" + php,
+        )
+        for f in got:
+            self.assertEqual(f.severity, mlp_lint.BLOCKER)
+            self.assertEqual(f.path, self.PATH)
+
+    def assertQuiet(self, php: str) -> None:
+        got = self.zip_findings(php)
+        self.assertEqual(
+            got, [], "the real scanner does not flag this, so MLP002 must not:\n" + php
+        )
+
+
+class TestUnsafeHttpClientFunctionsInAZip(_ZipCase):
+    """The G222 defect itself, in the mode that let it through."""
+
+    def test_the_shape_sugarcloud_refused_is_a_blocker(self) -> None:
+        php = (MLP002_FIXTURES / "g222_refused_shape.php").read_text(encoding="utf-8")
+        got = self.zip_findings(php)
+        self.assertEqual(len(got), 1, [f"{f.path}:{f.line} {f.message}" for f in got])
+        f = got[0]
+        self.assertEqual((f.path, f.line, f.severity), (self.PATH, 13, mlp_lint.BLOCKER))
+        self.assertIn("stream_resolve_include_path", f.message)
+        self.assertIn("$unsafeHttpClientFunctions", f.message)
+
+    def test_the_fixed_package_is_clean(self) -> None:
+        # What 373ef0f did: the fallback became a literal include.
+        php = (MLP002_FIXTURES / "g222_refused_shape.php").read_text(encoding="utf-8")
+        php = php.replace(
+            ": stream_resolve_include_path('custom/modules/Quotes/ErpQuoteCommentQueue.php');",
+            ": 'custom/modules/Quotes/ErpQuoteCommentQueue.php';",
+        )
+        _pkg, findings = mlp_lint.lint_zip(self.make_zip({self.PATH: php}))
+        self.assertEqual([f for f in findings if f.severity == mlp_lint.BLOCKER], [])
+
+    def test_the_cli_exits_nonzero_on_it(self) -> None:
+        php = "<?php\n$p = stream_resolve_include_path('x');\n"
+        self.assertEqual(mlp_lint.main(["--zip", str(self.make_zip({self.PATH: php}))]), 1)
+
+    def test_a_clean_zip_stays_clean(self) -> None:
+        php = "<?php\nclass ProbeApi\n{\n    public function go()\n    {\n        return 1;\n    }\n}\n"
+        _pkg, findings = mlp_lint.lint_zip(self.make_zip({self.PATH: php}))
+        self.assertEqual(findings, [])
+
+    def test_every_family_on_the_list_fires(self) -> None:
+        for fn in ("curl_init", "curl_exec", "socket_create", "fsockopen",
+                   "pfsockopen", "stream_context_create", "stream_socket_client",
+                   "stream_get_contents", "stream_resolve_include_path"):
+            with self.subTest(fn=fn):
+                self.assertFiresAt(f"<?php\n$x = {fn}($a);\n", [2])
+
+    # --- what the real scanner does NOT flag (verified with scanner_oracle.php)
+
+    def test_a_comment_naming_it_is_quiet(self) -> None:
+        self.assertQuiet(
+            "<?php\n// stream_resolve_include_path('x');\n# curl_init();\n"
+            "/* fsockopen('h', 80); */\n/**\n * socket_create(1, 2, 3)\n */\n$a = 1;\n"
+        )
+
+    def test_a_string_naming_it_is_quiet(self) -> None:
+        self.assertQuiet(
+            "<?php\n$a = 'stream_resolve_include_path(\"x\")';\n"
+            "$b = \"curl_exec($ch)\";\n"
+            "$c = <<<EOT\nstream_get_contents(\\$fp)\nEOT;\n"
+            "$d = <<<'EOT'\nfsockopen('h')\nEOT;\n"
+            "$e = function_exists('curl_init');\n"
+        )
+
+    def test_a_method_or_a_namespaced_function_of_that_name_is_quiet(self) -> None:
+        self.assertQuiet(
+            "<?php\nnamespace Acme;\n$a = $obj->stream_get_contents();\n"
+            "$b = Foo::curl_init();\n$c = Sub\\curl_init();\n$d = $o?->curl_init();\n"
+            "function socket_create() {}\n$e = new stream_filter();\n$f = CURL_INIT;\n"
+            # A qualified name whose FIRST segment is denied names a function
+            # in namespace `file`, not file(). Scanner: quiet on all three.
+            "$g = file\\helper();\n$h = \\get\\thing();\n$i = namespace\\curl_init();\n"
+        )
+
+    def test_an_attribute_named_like_one_is_quiet(self) -> None:
+        # `get` is on $blackList; an attribute's name is a class, not a call.
+        self.assertQuiet("<?php\n#[Get('/x'), Stream_is_local('y')]\nfunction f() {}\n")
+
+    # --- what the real scanner DOES flag that a per-line regex did not
+
+    def test_forms_the_scanner_catches(self) -> None:
+        cases = {
+            "fully qualified": ("<?php\n$a = \\curl_init();\n", [2]),
+            "upper case": ("<?php\n$a = CURL_INIT();\n", [2]),
+            "( on the next line": ("<?php\n$a = stream_resolve_include_path\n    ('x');\n", [2]),
+            "after a URL string": ("<?php\n$u = 'https://x'; $c = curl_init($u);\n", [2]),
+            "after a '/*' string": ("<?php\n$g = '/*.php';\n$s = socket_create(1, 2, 3);\n", [3]),
+            "after a '#' string": ("<?php\n$h = '#'; $c = curl_multi_init();\n", [2]),
+            "inside {$...}": ("<?php\n$s = \"x {$o->m(stream_is_local('y'))}\";\n", [2]),
+            "in a heredoc's {$...}": ("<?php\n$s = <<<EOT\n{$o->m(fsockopen('h'))}\nEOT;\n", [3]),
+            "first-class callable": ("<?php\n$f = stream_get_meta_data(...);\n", [2]),
+            "string as the callee": ("<?php\n$f = 'fsockopen'('h');\n", [2]),
+            "in an arrow fn": ("<?php\n$f = fn() => socket_close($s);\n", [2]),
+            "after ?> and <?=": ("<?php $a = 1; ?>\nfsockopen() is html\n<?= curl_init() ?>\n", [3]),
+            "imported with use function": ("<?php\nnamespace A;\nuse function curl_init;\ncurl_init();\n", [4]),
+        }
+        for label, (php, lines) in cases.items():
+            with self.subTest(label):
+                self.assertFiresAt(php, lines)
+
+    def test_a_use_function_alias_to_another_function_is_quiet(self) -> None:
+        self.assertQuiet(
+            "<?php\nnamespace A;\nuse function Other\\curl_init as myinit;\n"
+            "use function Other\\{fsockopen};\n$a = myinit();\n$b = fsockopen('h');\n"
+        )
+
+    def test_a_generated_file_is_not_exempt(self) -> None:
+        # The scanner skips nothing; a Studio header does not make a call safe.
+        self.assertFiresAt("<?php\n// created: 2026-09-21 10:00:00\n$a = curl_init();\n", [3])
+
+
+class TestScannerClassAndMethodDenylists(_ZipCase):
+    """$classBlackList, SecureSmarty's additions and $methodsBlackList."""
+
+    def test_denied_classes_and_methods_fire(self) -> None:
+        cases = {
+            "new \\ZipArchive": "<?php\nnamespace A;\n$z = new \\ZipArchive();\n",
+            "new ZipArchive, global": "<?php\n$z = new ZipArchive();\n",
+            "imported class": "<?php\nnamespace A;\nuse ZipArchive;\n$z = new ZipArchive();\n",
+            "extends Smarty (SecureSmarty)": "<?php\nclass V extends \\Smarty {}\n",
+            "new Sugar_Smarty": "<?php\n$s = new Sugar_Smarty();\n",
+            "namespaced Filesystem": "<?php\n$f = new \\Symfony\\Component\\Filesystem\\Filesystem();\n",
+            "->setLevel()": "<?php\n$log->setLevel('fatal');\n",
+            "->unserialize()": "<?php\n$x = $s->unserialize($v);\n",
+            "$cls::setLevel()": "<?php\n$cls::setLevel(1);\n",
+            "SugarAutoLoader::put": "<?php\n\\SugarAutoLoader::put('a', 'b');\n",
+            "SugarMin::minify": "<?php\nSugarMin::minify('x');\n",
+            "eval": "<?php\neval('1;');\n",
+            "backticks": "<?php\n$x = `ls`;\n",
+        }
+        for label, php in cases.items():
+            with self.subTest(label):
+                self.assertEqual(len(self.zip_findings(php)), 1, php)
+
+    def test_look_alikes_the_scanner_lets_through_stay_quiet(self) -> None:
+        cases = {
+            "unimported class in a namespace": "<?php\nnamespace A;\n$z = new ZipArchive();\n",
+            "interface extends": "<?php\ninterface I extends Reflector {}\n",
+            "nullsafe ->setLevel()": "<?php\n$log?->setLevel('fatal');\n",
+            "->put() on an object": "<?php\n$cache->put('a', 'b');\n",
+            "put() on another class": "<?php\nCache::put('a', 'b');\n",
+            "unserialize() as a function": "<?php\n$x = unserialize($v);\n",
+            "::class constant": "<?php\n$c = \\ZipArchive::class;\n",
+        }
+        for label, php in cases.items():
+            with self.subTest(label):
+                self.assertQuiet(php)
+
+
+class TestScannerListsArePinned(unittest.TestCase):
+    """Sentinels for CI, which has no Sugar tree to re-sync against."""
+
+    def test_the_second_list_is_carried_and_merged(self) -> None:
+        self.assertEqual(len(mlp_lint.SCANNER_UNSAFE_HTTP_CLIENT_FUNCTIONS), 100)
+        self.assertEqual(len(mlp_lint.SCANNER_BLACKLIST), 250)
+        self.assertEqual(
+            mlp_lint.DENIED_FUNCTIONS,
+            mlp_lint.SCANNER_BLACKLIST | mlp_lint.SCANNER_UNSAFE_HTTP_CLIENT_FUNCTIONS,
+        )
+        self.assertLessEqual(
+            {"stream_resolve_include_path", "curl_init", "curl_exec", "fsockopen",
+             "pfsockopen", "socket_create", "stream_context_create"},
+            mlp_lint.DENIED_FUNCTIONS,
+        )
+
+    def test_nothing_the_scanner_denies_is_called_advisory(self) -> None:
+        self.assertEqual(mlp_lint.DENIED_ADVISORY_ONLY & mlp_lint.DENIED_FUNCTIONS, set())
+        self.assertNotIn("curl_exec", mlp_lint.DENIED_ADVISORY_ONLY)
+
+    def test_class_and_method_lists(self) -> None:
+        self.assertEqual(len(mlp_lint.SCANNER_CLASS_BLACKLIST), 27)
+        self.assertEqual(
+            mlp_lint.SCANNER_SECURE_SMARTY_CLASSES, {"smarty", "sugar_smarty", "sugarpdfsmarty"}
+        )
+        self.assertEqual(
+            mlp_lint.SCANNER_METHOD_BLACKLIST, {"setlevel", "openuri", "unserialize", "extractto"}
+        )
+        self.assertEqual(set(mlp_lint.SCANNER_CLASS_METHOD_BLACKLIST), {"put", "unlink", "minify"})
+
+    def test_every_list_names_where_it_came_from(self) -> None:
+        for key in ("validExt", "classBlackList", "blackList", "unsafeHttpClientFunctions",
+                    "methodsBlackList", "enhancedModuleChecksMerge", "secureSmartyMerge"):
+            self.assertIn(key, mlp_lint.SCANNER_SOURCE)
+        self.assertEqual(mlp_lint.SCANNER_SOURCE["unsafeHttpClientFunctions"], (428, 532))
+        self.assertEqual(mlp_lint.SCANNER_SOURCE["enhancedModuleChecksMerge"], (610, 611))
+
+
+class TestFileNamesTheScannerRefuses(_ZipCase):
+    """MLP014 over $validExt, not just files.md5."""
+
+    def mlp014(self, files: dict) -> list:
+        _pkg, findings = mlp_lint.lint_zip(self.make_zip(files))
+        return [f.path for f in findings if f.rule == "MLP014"]
+
+    def test_an_extension_off_the_list_is_a_blocker(self) -> None:
+        for name in ("icons/erp.svg", "x/.DS_Store", "README", "a/.gitkeep", "app.js.map"):
+            with self.subTest(name=name):
+                self.assertEqual(self.mlp014({name: "x"}), [name])
+
+    def test_names_the_scanner_accepts_are_quiet(self) -> None:
+        self.assertEqual(
+            self.mlp014({"LICENSE": "x", "a/B.PHP": "<?php\n", "c.hbs": "", "d.json": "{}",
+                         "e.less": "", "f.png": ""}),
+            [],
+        )
+
+
+class TestFixturesMatchTheRealScannersVerdicts(unittest.TestCase):
+    """expected.json was produced by the REAL scanner. MLP002 must agree with it.
+
+    This is the half of the cross-check that runs in CI. The other half,
+    TestAgainstTheRealScanner, re-derives expected.json wherever a Sugar tree
+    exists, so the recording cannot quietly go stale.
+    """
+
+    def test_each_fixture(self) -> None:
+        expected = json.loads((MLP002_FIXTURES / "expected.json").read_text())["issues"]
+        self.assertGreaterEqual(len(expected), 5)
+        for name, issues in expected.items():
+            with self.subTest(fixture=name):
+                text = (MLP002_FIXTURES / name).read_text(encoding="utf-8")
+                self.assertEqual(_linter_keys(text), _oracle_keys(issues))
+
+    def test_the_fixtures_are_not_trivial(self) -> None:
+        # A fixture set the scanner finds nothing in proves nothing.
+        expected = json.loads((MLP002_FIXTURES / "expected.json").read_text())["issues"]
+        keys = set().union(*(_oracle_keys(v) for v in expected.values()))
+        kinds = {k[1] for k in keys}
+        self.assertGreaterEqual(len(keys), 40)
+        self.assertLessEqual(
+            {"function", "class_new", "class_extends", "method", "class_method",
+             "shell_exec", "halt_compiler", "eval"},
+            kinds,
+        )
+
+
+@unittest.skipUnless(_sugar_roots() and shutil.which("php"),
+                     "needs a SugarEnt source tree and php; set MLP_LINT_SUGAR_ROOT")
+class TestAgainstTheRealScanner(unittest.TestCase):
+    """Runs Sugar's own scanner. Skipped in CI, which has neither."""
+
+    def oracle(self, target: Path) -> list:
+        r = subprocess.run(
+            ["php", str(SCANNER_ORACLE), str(_sugar_roots()[0]), str(target.resolve())],
+            capture_output=True, text=True, check=True,
+        )
+        return [json.loads(line) for line in r.stdout.splitlines()]
+
+    def test_expected_json_is_what_the_scanner_says_today(self) -> None:
+        recorded = json.loads((MLP002_FIXTURES / "expected.json").read_text())["issues"]
+        fresh = {}
+        for f in sorted(MLP002_FIXTURES.glob("*.php")):
+            fresh[f.name] = sorted([d["line"], d["msg"]] for d in self.oracle(f))
+        self.assertEqual(
+            fresh, recorded,
+            "the scanner's verdicts on the fixtures changed; fresh expectations:\n"
+            + json.dumps(fresh, indent=1),
+        )
+
+    def test_mlp002_agrees_with_the_scanner_on_every_php_file_here(self) -> None:
+        repo = HERE.parent.parent
+        checked = 0
+        for area in ("sugar-sell", "sugar-predict", "sugar-market", "sugar-discover"):
+            base = repo / area
+            if not base.is_dir():
+                continue
+            want: dict = {}
+            for d in self.oracle(base):
+                want.setdefault(d["file"], []).append((d["line"], d["msg"]))
+            for f in sorted(base.rglob("*.php")):
+                if "node_modules" in f.parts:
+                    continue
+                rel = str(f.relative_to(base))
+                checked += 1
+                ours = _linter_keys(f.read_text(encoding="utf-8", errors="replace"))
+                theirs = _oracle_keys(want.get(rel, []))
+                self.assertEqual(ours, theirs, f"{area}/{rel}: linter vs real scanner")
+        self.assertGreater(checked, 40)  # Bench Dogs delta, declared in scripts/mlp_lint.PINNED.json
+
+    def test_the_transcription_matches_the_source(self) -> None:
+        sys.path.insert(0, str(HERE.parent))
+        import regen_denylist
+        for root in _sugar_roots():
+            with self.subTest(root=root.name):
+                self.assertEqual(regen_denylist.check(root), [])
+
+    def test_the_check_notices_drift(self) -> None:
+        sys.path.insert(0, str(HERE.parent))
+        import regen_denylist
+        real = _sugar_roots()[0] / "ModuleInstall" / "ModuleScanner.php"
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, True)
+        (tmp / "ModuleInstall").mkdir()
+        fake = tmp / "ModuleInstall" / "ModuleScanner.php"
+        text = real.read_text()
+        # A NEW name on the second list, line count unchanged.
+        fake.write_text(text.replace("        //sockets\n", "        'socket_brand_new',\n", 1))
+        problems = regen_denylist.check(tmp)
+        self.assertTrue(any("socket_brand_new" in p for p in problems), problems)
+        # A shifted array: the recorded line ranges must stop holding.
+        fake.write_text(text.replace("class ModuleScanner\n", "// moved\nclass ModuleScanner\n", 1))
+        problems = regen_denylist.check(tmp)
+        self.assertTrue(any("unsafeHttpClientFunctions" in p and "SCANNER_SOURCE" in p
+                            for p in problems), problems)
 
 
 class TestShippedPackagesStayClean(unittest.TestCase):

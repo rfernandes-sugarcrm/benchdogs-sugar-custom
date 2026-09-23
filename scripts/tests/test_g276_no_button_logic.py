@@ -75,7 +75,7 @@ CORE_BASE = shared_sugar.resolve("BaseErpLayout.php")
 CORE_QUOTES = shared_sugar.resolve("QuotesLayout.php")
 
 COPIED = [
-    "scripts/post_install.php",
+    "scripts/post_execute.php",
     "custom/modules/Quotes/BdQuotesLayoutExtensions.php",
     "custom/modules/Accounts/BdAccountsLayoutExtensions.php",
     "custom/modules/Opportunities/BdOpportunitiesLayoutExtensions.php",
@@ -170,7 +170,7 @@ namespace {
             };
             $probe->install();
         } else {
-            require 'scripts/post_install.php';
+            require 'scripts/post_execute.php';
         }
         $trace[] = [$step, array_column(ViewdefManager::$defs['Quotes']['buttons'] ?? [], 'name')];
     }

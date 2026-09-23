@@ -180,11 +180,11 @@ namespace {
     //    stripped first: post_install.php NAMES the retired writer in the note
     //    explaining why it no longer calls it, and a blunt substring match
     //    would read that explanation as the defect it documents.
-    $post = file_get_contents($root . 'scripts/post_install.php');
+    $post = file_get_contents($root . 'scripts/post_execute.php');
     $postCode = preg_replace(['~/\*.*?\*/~s', '~//[^\n]*~'], '', $post);
-    $check('post_install.php no longer calls the writer', false,
+    $check('post_execute.php no longer calls the writer', false,
         str_contains($postCode, 'writeGoverningOriginField'));
-    $check('post_install.php calls the removal instead', true,
+    $check('post_execute.php calls the removal instead', true,
         str_contains($postCode, 'BdOpportunitiesLayoutExtensions::remove()'));
 
     // 8. 🔒 1044's two stubs MUST KEEP SHIPPING and MUST KEEP DECLARING
