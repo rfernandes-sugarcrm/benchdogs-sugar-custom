@@ -487,6 +487,11 @@ class SugarPlatformContractTest(unittest.TestCase):
     of the real Sugar source rather than out of this suite's own stubs. A
     fixture cannot test the belief it encodes; this can."""
 
+    # Reads SugarCRM's own source, which CI can never have (no public copy), so
+    # CI does not collect this class rather than collecting and skipping it.
+    # See scripts/tests/conftest.py and the skip ceiling in mlp-lint.yml.
+    requires_sugarent_tree = True
+
     def trees(self):
         found = {v: p for v, p in SUGAR_TREES.items() if p.is_dir()}
         if not found:

@@ -347,6 +347,11 @@ class RetiredStageNames(unittest.TestCase):
         self.assertEqual(norm(ours.group(1)), norm(m.group(1)))
         self.assertIn("$contents = $this->getExtensionFileContents([$lang_file, $temp_lang_file]);", src)
 
+    # Reads SugarCRM's own ModuleInstaller.php, which CI can never have (no
+    # public copy), so CI does not collect this test rather than collecting and
+    # skipping it. See scripts/tests/conftest.py and the skip ceiling in mlp-lint.yml.
+    test_merge_function_matches_sugar.requires_sugarent_tree = True
+
 
 if __name__ == "__main__":
     unittest.main()
