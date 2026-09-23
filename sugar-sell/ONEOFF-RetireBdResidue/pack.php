@@ -73,9 +73,11 @@ $description    = 'One-off cleanup. Removes the files and deployed metadata that
     . 'accumulated zz_bd_stage_doms language fragment, the bench dogs panel on the '
     . 'deployed quotes record view, the retired value-source marker on the deployed '
     . 'opportunities record view, and 21 orphaned class files. Installs no file, creates '
-    . 'no table, drops no table and writes no record. It KEEPS the two customer-group '
-    . 'fields and their placement, the admin repair route, and every path another package '
-    . 'also ships - all of which it names in its own install log. Idempotent: run it '
+    . 'no table, drops no table and writes no record. Since 1.0.2 it also deletes the '
+    . 'orphaned bench dogs order adapter whose blanked planner made every submit order '
+    . 'refuse. It KEEPS the four files the current bench dogs package ships (the two '
+    . 'customer-group fields, their placement and the emptied repair-route file) and every '
+    . 'path another package also ships - all of which it names in its own install log. Idempotent: run it '
     . 'twice and the second run reports nothing left to remove. Uninstall it immediately '
     . 'afterwards; there is nothing to take back out.';
 $supportedVersionRegex = '(26|25|14)\\..*$';

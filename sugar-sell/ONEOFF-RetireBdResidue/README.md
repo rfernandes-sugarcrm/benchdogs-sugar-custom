@@ -1,4 +1,27 @@
-# ONEOFF-RetireBdResidue 1.0.0
+# ONEOFF-RetireBdResidue 1.0.2
+
+> **What changed in 1.0.2** (1.0.0 ran on et; 1.0.1 on stock and Ophir; both are spent)
+>
+> 1. **It deletes Bench Dogs' orphaned order adapter**
+>    `custom/modules/Quotes/ErpQuoteHooks/ResolveOrderableLines.php` once its planner
+>    `custom/modules/Quotes/BdSubmitOrderPlan.php` is blank or absent. 1.0.0/1.0.1 blanked the planner
+>    and kept the adapter, which then **refused every Submit Order** — measured on Ophir, quote 368,
+>    2026-09-23 02:55Z: *"The Bench Dogs order planner is not installed, so this quote cannot be
+>    adjudicated and nothing was sent."* With no adapter, ERP-Epicor's
+>    `ErpQuoteHooks::fireResolveOrderableLines()` returns the candidates unchanged (`hook_absent`,
+>    `ErpQuoteHooks.php:139-144` at erp-integration-sugar `bc5b176`) — the route every tenant without
+>    Bench Dogs already takes. Blanking would not do: the hook still finds the file and refuses
+>    (`:147-164`). It deletes **only** the body Bench Dogs shipped (md5 `f6c3d474…`, rc37–rc40) and
+>    leaves any other body, reported under SKIPPED. How it deletes without `unlink()`: §2.
+> 2. **"What it leaves alone" matches BenchDogs-Ext 0.9.42-rc69's kept set** — the four files rc69
+>    installs, marked `KEPT BY rc69`. The repair-route file is kept because rc69 ships it **empty**
+>    (🔒 1573); the old "owner answered keep" note is gone (no such ruling exists).
+>    `scripts/tests/test_oneoff_retire_bd_residue.py` holds that list equal to rc69's copy list.
+> 3. **The log names the version that ran**, read from the manifest. Through 1.0.1 the header and the
+>    `fatal()` summary said "1.0.0" whatever was installed.
+>
+> **Run it after rc69 on every tenant that has had Bench Dogs**, including any that took rc67/rc68
+> after an earlier run. Expect the adapter under REMOVED on Ophir (and on stock, if it is there).
 
 A **disposable** cleanup package. Install it, let it run, uninstall it.
 It is **not** part of the shipped Bench Dogs package and must never become part of it.
@@ -77,6 +100,13 @@ Plus, beyond the seven:
   retired `bd01_ERP_Quote*` module directories and five retired button-field directories
   (`bd-create-opp-quote`, `bd-best-pricing`, `bd-order-selected`, `bd-order-winning`,
   `bd-send-estimating`).
+* **1.0.2 — Bench Dogs' order adapter DELETED** (`custom/modules/Quotes/ErpQuoteHooks/ResolveOrderableLines.php`),
+  only for Bench Dogs' own body and only when its planner is blank or absent. The deletion is
+  `ModuleInstaller::copy_path($absent, $adapter, $absent, true)`: in uninstall mode
+  `copy_recursive_with_backup()` unlinks the destination when the source is neither a file nor a
+  directory (`:2680-2684`) — the same route `uninstall_copy()` (`:521-547`) takes to remove a file a
+  package installed with no backup. `$absent` is a path under this unpacked package that it never ships,
+  checked absent first (if it existed, `copy_path` would copy it over the adapter instead).
 * **21 orphaned class files blanked** with `lib/emptied.php` through
   `ModuleInstaller::copy_path()` (`:1424-1462`) with **no** backup path — so nothing is backed up and
   nothing can be restored. Blanked rather than deleted because there is **no platform primitive that
@@ -91,14 +121,15 @@ Plus, beyond the seven:
 
 | path | why |
 |---|---|
-| `custom/Extension/modules/Accounts/Ext/Vardefs/bd_customer_group.php` | the customer-category field 🔒 1508 / 🔒 1514 **keep** |
-| `custom/Extension/modules/Accounts/Ext/Language/en_us.bd_customer_group.php` | its label |
-| `custom/modules/Accounts/BdAccountsLayoutExtensions.php` | places those two fields |
-| `custom/modules/Quotes/BdQuotesLayoutExtensions.php` | K-2's class; the package still needs it on the tenant |
-| `custom/modules/Opportunities/BdOpportunitiesLayoutExtensions.php` | K-3's class |
-| `custom/clients/base/api/BdBenchDogsActionsApi.php` | D-2, `bd-tools/repair-ui` — owner answered **keep** |
+| `custom/Extension/modules/Accounts/Ext/Vardefs/bd_customer_group.php` | **KEPT BY rc69**: the customer-category field 🔒 1508 / 🔒 1514 / 🔒 1567 keep |
+| `custom/Extension/modules/Accounts/Ext/Language/en_us.bd_customer_group.php` | **KEPT BY rc69**: its label |
+| `custom/modules/Accounts/BdAccountsLayoutExtensions.php` | **KEPT BY rc69**: places those two fields |
+| `custom/clients/base/api/BdBenchDogsActionsApi.php` | **KEPT BY rc69**, which ships it **empty** (🔒 1573): the empty body is what unregisters `bd-tools/repair-ui` |
+| `custom/modules/Quotes/BdQuotesLayoutExtensions.php` | not shipped since rc69 and inert (K-2 runs this package's own `lib/` copy); left because an rc68-or-earlier Bench Dogs uninstall still requires it |
+| `custom/modules/Opportunities/BdOpportunitiesLayoutExtensions.php` | the same, for K-3 |
 | `custom/modules/Quotes/ErpQuoteHooks/OpportunityContribution.php` | **Partial Fulfillment 1.0.41 ships the same path.** Blanking puts an empty stub at a provider path (🔒 1508 / G280 forbid it); deleting drops ERP-Core to `(float) $quote->total`, the fabricated zero 🔒 1511 forbids. Retired only by the PF-reinstall sequence in the port review §4.1 |
-| `.../ErpQuoteHooks/OpportunityLineRollupPolicy.php`, `OpportunityReleaseStagePolicy.php`, `OrderSelectedLinesPolicy.php`, `ResolveOrderableLines.php` | ERP-Core **contract** paths. They are orphans on a tenant, but what core does when they vanish is an ERP-Core decision, not a cleanup package's |
+| `.../ErpQuoteHooks/OpportunityLineRollupPolicy.php`, `OpportunityReleaseStagePolicy.php`, `OrderSelectedLinesPolicy.php` | Bench Dogs' old adapters at hook paths, checked one by one in 1.0.2 and left because none can block anything: PF no longer consults the line-rollup policy (🔒 1468); the release-stage policy reads no class this package blanks; the order-selected policy answers "no objection" when its selector is blank. **Never blank a file at a hook path**: the hook still finds it and fails closed. |
+| `.../ErpQuoteHooks/ResolveOrderableLines.php` | **no longer here — 1.0.2 DELETES it** when it is Bench Dogs' body and its planner is blank or absent (see the top of this file) |
 | `custom/modules/ProductBundles/clients/base/views/quote-data-group-list/quote-data-group-list.js` | **ERP-Core ships this exact path** on the deployed tree. Removing it takes out the core quote grid on every tenant |
 | `custom/modules/Products/clients/base/views/quote-data-group-list/quote-data-group-list.php` | the Products grid viewdef ERP-Core also manages |
 
@@ -164,8 +195,9 @@ destinations above make it unnecessary rather than merely blocked.
 
 ```
 cd sugar-sell/ONEOFF-RetireBdResidue
-php pack.php                 # -> releases/oneoff_retire_bd_residue-1.0.0.zip
-php tests/harness.php        # 27 checks, run twice over one synthetic tenant
+php pack.php                 # -> releases/oneoff_retire_bd_residue-<version>.zip
+php tests/harness.php        # run twice over one synthetic tenant, plus four adapter tenants
+                             # (CI runs it: scripts/tests/test_oneoff_retire_bd_residue.py)
 ```
 
 **Expected build numbers, stated because an ERP-class build is different:**
