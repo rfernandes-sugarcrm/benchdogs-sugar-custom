@@ -71,7 +71,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = Path(os.environ.get("BD_PKG", ROOT / "sugar-sell/BenchDogs-Ext"))
-POST_INSTALL = PACKAGE / "scripts/post_install.php"
+POST_INSTALL = PACKAGE / "scripts/post_execute.php"
 
 SUGAR_TREES = {
     "25.2.0": Path.home() / "Documents/Code/SugarEnt-Full-25.2.0",
@@ -93,7 +93,7 @@ class ModuleInstaller {
         // extract($data) in the real method puts these in scope.
         $manifest = $GLOBALS['fake_manifest'];
         $installdefs = $GLOBALS['fake_installdefs'];
-        require_once 'scripts/post_install.php';
+        require_once 'scripts/post_execute.php';
     }
 
     // Public and string-typed in BOTH 25.2.0 and 26.1.0; asserted for real by
@@ -164,14 +164,14 @@ function return_app_list_strings_language($language, $useCache = true) {
     ]];
 }
 $GLOBALS['fake_manifest'] = ['version' => '0.9.42-rcTEST'];
-$GLOBALS['fake_installdefs'] = ['post_execute' => ['<basepath>/scripts/post_install.php']];
+$GLOBALS['fake_installdefs'] = ['post_execute' => ['<basepath>/scripts/post_execute.php']];
 
 $failure = null;
 try {
     if (strpos($scenario, 'no_object_scope') === 0) {
         // The other include shape: top level, no $this. Channel 3 must be
         // skipped, not fatal.
-        require 'scripts/post_install.php';
+        require 'scripts/post_execute.php';
     } else {
         require_once 'ModuleInstall/ModuleInstaller.php';
         $mi = new ModuleInstaller();
@@ -226,7 +226,7 @@ class StepReportTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="bench-step-report-") as tmp:
             target = Path(tmp)
             for relative in (
-                "scripts/post_install.php",
+                "scripts/post_execute.php",
                 "custom/Extension/application/Ext/Language/en_us.bd_stage_doms.php",
             ):
                 path = target / relative
@@ -475,7 +475,7 @@ class StepReportStructureTest(unittest.TestCase):
         self.assertIn("PID", source)
 
     def test_the_uninstall_instruction_names_the_same_log(self):
-        source = (PACKAGE / "scripts/pre_uninstall.php").read_text()
+        source = (PACKAGE / "scripts/bd_pre_uninstall.php").read_text()
         self.assertNotRegex(source, r"grep sugarcrm\.log")
         self.assertIn("package_install.log", source)
         self.assertIn("Package Install Log File", source)

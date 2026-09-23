@@ -33,7 +33,7 @@
  * install of 0.9.41 and the whole 0.9.42 line, and Module Loader reported
  * 19/19 success either way.
  *
- * pre_uninstall.php:40-53 in this same package had already worked this out and
+ * bd_pre_uninstall.php:40-53 in this same package had already worked this out and
  * says it at length: top-level code is correct whether the loader merely
  * requires the file or also calls a function named for the key; a function is
  * correct under only one of those, and under the other it is a SILENT no-op.
@@ -41,6 +41,26 @@
  * demonstrably lands on the same tenant, with the same installer, in the same
  * install cycle. Both uninstall scripts here were converted years of rcs ago.
  * This one finally follows them.
+ *
+ * WHY THIS FILE IS NOT NAMED post_install.php (0.9.42-rc69, G294 / G295)
+ *
+ * Through rc68 it was, and Sugar RAN IT TWICE per install. scripts/
+ * post_install.php is one of four RESERVED paths (PackageZipFile::
+ * PACKAGE_SCRIPT_LIST, byte-identical in SugarEnt 25.2.0 and 26.1.0), and
+ * PackageManager::installPackage() plain-`include`s it (runPackageScript())
+ * right AFTER ModuleInstaller::install() has already require_once'd it as the
+ * post_execute installdef. `include` does not consult the require_once table.
+ * Measured on rc68 (Ophir, one PID, 2438880): pass 1 at 01:30:27 inside the
+ * installer logged "step report (0.9.42-rc68): 8/8"; pass 2 at 01:31:54, with no
+ * $manifest and $this a PackageZipFile, logged "step report (unknown): 8/8",
+ * OVERWROTE the durable config row below with version "unknown", and could not
+ * reach installation-status. So a failure in pass 1 was wiped by pass 2, and a
+ * failure in pass 2 never reached channel 3. Under this name runPackageScript()
+ * finds nothing and returns: the installdef is the only route, so this runs
+ * ONCE, inside the installer, with the version in scope. ERP-Epicor ships its
+ * install step as scripts/post_execute.php, and the same grade measured it
+ * logging a single pass. Do not rename it back;
+ * scripts/tests/test_g294_single_pass.py runs both routes over the built zip.
  *
  * NOTHING IN THIS FILE MAY THROW PAST ITS OWN CATCH
  *
@@ -50,7 +70,7 @@
  * altogether. While the body was unreachable that was harmless; the moment it
  * became live it stopped being harmless. So:
  *   - every block keeps its own try/catch (Throwable) and its own
- *     file_exists/class_exists guard, exactly as pre_uninstall.php does;
+ *     file_exists/class_exists guard, exactly as bd_pre_uninstall.php does;
  *   - the stage-language verification at the bottom, which used to rethrow a
  *     RuntimeException, now LOGS AND RETURNS. A missing stage domain is a real
  *     defect and must be visible, but it is not worth deleting the package and
@@ -161,9 +181,13 @@
  *     upgrade_history process_status described above (DiagnosticRun.php:281).
  *
  *  2. FIND THIS INSTALL'S PID. Every Sugar log line is prefixed with the PID of
- *     the process that wrote it. Locate `BenchDogs-Ext: post_install running`
- *     for the version you installed and take the PID off that line; on Bench's
- *     rc65 install it was 2069085.
+ *     the process that wrote it. Locate `BenchDogs-Ext: post_install running
+ *     (<version>)` naming the version you installed and take the PID off that
+ *     line; on Bench's rc65 install it was 2069085. The version is in that line
+ *     from rc69 on. Through rc68 it was not, and the line appeared TWICE per
+ *     install under one PID (see "WHY THIS FILE IS NOT NAMED post_install.php"):
+ *     for those, take the PID off the verdict line in step 4, which does name
+ *     the version, and ignore its "(unknown)" twin.
  *
  *  3. SCOPE TO IT. Read only the lines carrying that PID - they are this
  *     install and nothing else. TIMING IS NOT THE ATTRIBUTION: two installs
@@ -180,8 +204,10 @@
  *  5. NO `post_install running` LINE AT ALL, on a package_install.log that
  *     DOES carry that install's other lines (the scanner verdict,
  *     mergeModuleFiles), is the one case that still means "treat the wiring as
- *     broken" - that is what this line was always for. It is emitted exactly
- *     once per install request.
+ *     broken" - that is what this line was always for. From rc69 it is emitted
+ *     once per install request, because this file is no longer at a path Sugar
+ *     runs a second time. TWO running lines under one PID means a reserved-name
+ *     copy is shipping again.
  *
  * WHY EVERY LINE LOGS AT FATAL
  *
@@ -201,14 +227,20 @@
  * require_once inside ModuleInstaller::post_execute() executes this file in
  * that METHOD's scope, which has already run extract($data) over the manifest.
  * An unprefixed $manifest/$installdefs/$modules here would overwrite the
- * installer's own locals mid-install. pre_uninstall.php prefixes for the same
+ * installer's own locals mid-install. bd_pre_uninstall.php prefixes for the same
  * reason.
  */
 
-// Proof of life. See the note above; this is the only thing that can tell an
-// operator whether the post_execute wiring is alive, and it is emitted exactly
-// once per install request.
-$GLOBALS['log']->fatal('BenchDogs-Ext: post_install running - writing deployed metadata');
+// The installed version. ModuleInstaller::post_execute() has run
+// extract($data) over the manifest before require_once'ing this file, so
+// $manifest is in scope; it is read once, here, for the running line and the
+// report. 'unknown' means this file was run some other way.
+$bdVersion = isset($manifest['version']) ? (string) $manifest['version'] : 'unknown';
+
+// Proof of life, and the line an operator takes this install's PID from. See
+// "HOW TO READ IT" above. Once per install request: this file is not at a
+// reserved path (see "WHY THIS FILE IS NOT NAMED post_install.php").
+$GLOBALS['log']->fatal('BenchDogs-Ext: post_install running (' . $bdVersion . ') - writing deployed metadata');
 
 // G294. Every block below writes exactly one entry here before it leaves, and
 // the block at the bottom publishes the whole map. 'ok' means the step ran;
@@ -624,8 +656,7 @@ try {
 // is not lost, so a reporting channel that is itself broken must not take the
 // other two down with it. The one thing this block may never do is raise - a
 // reporter that force-uninstalls the package is worse than the defect it
-// reports.
-$bdVersion = isset($manifest['version']) ? (string) $manifest['version'] : 'unknown';
+// reports. $bdVersion is set at the top of this file.
 $bdNotApplied = array();
 $bdApplied = 0;
 foreach ($bdStepReport as $bdStepName => $bdOutcome) {

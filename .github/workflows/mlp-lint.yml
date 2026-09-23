@@ -185,20 +185,26 @@ jobs:
       # MLP_LINT_SUGAR_ROOT unset); at 0.9.42-rc68 that reproduces run
       # 35804953494's progress line character for character.
       #
-      # Of those 14, 7 are NOT COLLECTED here. Each reads SugarCRM's own
+      # Of those 14, 7 are NOT COLLECTED here, and 2 more since rc69, so 9 in
+      # all. Each reads SugarCRM's own
       # source (licensed under the Master Subscription Agreement, no public
       # copy), so CI can never run them, and pinning excerpts would make them
       # fixtures that test their own belief. They declare
       # `requires_sugarent_tree = True`; scripts/tests/conftest.py turns that
       # into the `sugarent_tree` marker; the two pytest runs here pass
       # `-m "not sugarent_tree"`; and the step after this one fails if the set
-      # left out is not exactly these 7:
+      # left out is not exactly these 9:
       #   test_post_install_step_report SugarPlatformContractTest (6) - G294's
       #     platform facts (setInstallationError is public, post_execute
       #     require_once's inside its method, a throw force-uninstalls, the log
       #     is package_install.log, Diagnostic carries all three channels,
       #     config.value is text), read from SugarEnt-Full 25.2.0 and 26.1.0.
       #     They have NEVER run in CI; they run where a tree exists.
+      #   test_g294_single_pass PlatformReservedScriptContractTest (2) - rc69,
+      #     G294's second grade: PackageManager include()s the reserved
+      #     scripts/{pre,post}_{install,uninstall}.php paths as well as the
+      #     installdefs, which is why the lifecycle scripts moved off them.
+      #     The anchor for that suite's stub, read from the same two trees.
       #   test_g268_retired_stage_names test_merge_function_matches_sugar (1) -
       #     the transcribed getExtensionFileContents against 26.1.0's
       #     ModuleInstaller. It already skipped at rc65, when this comment named
@@ -263,11 +269,13 @@ jobs:
           scripts/tests/test_post_install_step_report.py::SugarPlatformContractTest::test_set_installation_error_is_public_and_takes_a_string
           scripts/tests/test_post_install_step_report.py::SugarPlatformContractTest::test_the_config_value_column_is_text_not_a_short_varchar
           scripts/tests/test_post_install_step_report.py::SugarPlatformContractTest::test_the_diagnostic_tool_can_retrieve_all_three_channels
+          scripts/tests/test_g294_single_pass.py::PlatformReservedScriptContractTest::test_sugar_includes_the_reserved_paths_after_the_installer
+          scripts/tests/test_g294_single_pass.py::PlatformReservedScriptContractTest::test_the_installer_requires_the_installdef_inside_its_own_method
           EOF
           echo "left out of CI ($(wc -l < /tmp/left-out.txt)):"
           cat /tmp/left-out.txt
           if ! diff -u /tmp/named.txt /tmp/left-out.txt; then
-            echo "::error::the tests CI does not collect are not the 7 named in mlp-lint.yml."
+            echo "::error::the tests CI does not collect are not the 9 named in mlp-lint.yml."
             echo "::error::A test left out of CI is not a guard; name it at the ceiling or run it."
             exit 1
           fi

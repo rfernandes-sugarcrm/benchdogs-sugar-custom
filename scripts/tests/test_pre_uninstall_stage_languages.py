@@ -42,7 +42,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = Path(os.environ.get("BD_PKG", ROOT / "sugar-sell/BenchDogs-Ext"))
-SCRIPT = PACKAGE / "scripts/pre_uninstall.php"
+SCRIPT = PACKAGE / "scripts/bd_pre_uninstall.php"
 
 HARNESS = r'''<?php
 $events = [];
@@ -64,7 +64,7 @@ function return_app_list_strings_language($language, $useCache = true) {
 }
 $failure = null;
 try {
-    require 'scripts/pre_uninstall.php';
+    require 'scripts/bd_pre_uninstall.php';
 } catch (Throwable $e) { $failure = $e->getMessage(); }
 echo json_encode(['failure' => $failure, 'events' => $events, 'errors' => $errors]);
 '''
@@ -93,7 +93,7 @@ class UninstallLeavesTheStagesAloneTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="bench-stage-uninstall-") as tmp:
             target = Path(tmp)
             (target / "scripts").mkdir(parents=True)
-            shutil.copy2(SCRIPT, target / "scripts/pre_uninstall.php")
+            shutil.copy2(SCRIPT, target / "scripts/bd_pre_uninstall.php")
             (target / "ModuleInstall").mkdir()
             (target / "ModuleInstall/ModuleInstaller.php").write_text(INSTALLER_STUB)
             result = subprocess.run(["php"], input=HARNESS, text=True, cwd=target,
@@ -116,7 +116,9 @@ class UninstallLeavesTheStagesAloneTest(unittest.TestCase):
 
     def test_it_still_runs_and_cannot_kill_an_uninstall(self):
         self.assertIsNone(self.observed["failure"])
-        self.assertIn("BenchDogs-Ext: pre_uninstall running - cleaning up deployed metadata",
+        # The version comes from the installer's extract($data); a bare
+        # top-level require has none, so here it reads "(unknown)".
+        self.assertIn("BenchDogs-Ext: pre_uninstall running (unknown) - cleaning up deployed metadata",
                       self.observed["errors"])
 
     def test_the_source_names_no_stage_key(self):
