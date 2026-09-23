@@ -385,9 +385,15 @@ class ThePinsAreTheRealBodies(unittest.TestCase):
         # this case would then `continue` silently on every local run.
         repos = {"benchdogs-sugar-custom": REPO_ROOT, "erp-integration-sugar": shared_sugar.SIBLING}
         compared = 0
+        git = shutil.which("git")
+        if git is None:
+            # CI's php:8.2-cli image ships no git binary at all (measured: PR #27's
+            # first run died FileNotFoundError here). Same outcome as an
+            # unreachable commit: the sha256 case above is what holds the pin.
+            return
         for name, meta in PROVENANCE["files"].items():
             repo = repos[meta["repository"]]
-            shown = subprocess.run(["git", "-C", str(repo), "show", f"{meta['commit']}:{meta['source']}"],
+            shown = subprocess.run([git, "-C", str(repo), "show", f"{meta['commit']}:{meta['source']}"],
                                    capture_output=True)
             if shown.returncode != 0:
                 continue
