@@ -21,6 +21,11 @@
  *   scripts/post_execute.php, bd_pre_uninstall.php, post_uninstall.php
  *       the lifecycle of the above.
  *
+ * G380 / G381 (owner rulings 🔒 1705b) add the ADM company's required quote
+ * values: four Quote fields + labels, one before_save defaults hook, the
+ * lookup-type labels and two tenant lists, the BdAdm* classes, and answers to
+ * ERP-Epicor's two ordering hook points (ErpQuoteHooks/). See README.
+ *
  * Everything else earlier builds shipped is gone. Retiring it from a tenant
  * that already has it is the job of the disposable one-off
  * sugar-sell/ONEOFF-RetireBdResidue (🔒 1521), not of this package;
@@ -34,7 +39,7 @@
 
 $packageID      = 'sugarai_benchdogs_ext';
 $packageLabel   = 'SugarAI: Bench Dogs Extensions';
-$description    = 'Bench Dogs extensions for Sugar Sell: the two customer-group fields on Accounts (Epicor customer group code and name) and their record-view placement. Nothing else.';
+$description    = 'Bench Dogs extensions for Sugar Sell: the two customer-group fields on Accounts, and the ADM company\'s required quote values (Lead Source, Lead Type, Reference, Project pickers; part-less lines blocked from ordering).';
 $supportedVersionRegex = '(26|25|14)\\..*$';
 $acceptableSugarFlavors = array('ENT', 'ULT', 'PRO');
 

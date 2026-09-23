@@ -329,7 +329,11 @@ class RetiredStageNames(unittest.TestCase):
         )
         out = subprocess.run(["php", "-r", probe], capture_output=True, text=True, check=True)
         observed = json.loads(out.stdout)
-        self.assertEqual(observed["doms"], seed, "a shipped fragment still declares stage keys")
+        # Only the three STAGE lists are this test's business. G380/G381
+        # (🔒 1705b) ships other lists (erp_lookup_type_list keys, the ADM
+        # tenant lists), which must not read as a stage key.
+        self.assertEqual({k: observed["doms"].get(k) for k in seed}, seed,
+                         "a shipped fragment still declares stage keys")
         self.assertEqual(observed["style"], {"sales_stage_dom_style": {"SEED": 1}},
                          "a shipped fragment still declares a stage style")
 

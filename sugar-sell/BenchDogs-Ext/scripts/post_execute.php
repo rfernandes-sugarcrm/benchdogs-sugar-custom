@@ -18,8 +18,17 @@
  *       category (REQ-19), core has no equivalent, and ERP-Epicor's
  *       AccountsLayout owns that view in replace mode, so an append to the
  *       deployed view is the only placement that survives it.
- *   repair_rebuild  vardef / extension / metadata cache for Accounts, the only
- *       module this package still extends.
+ *   repair_rebuild  vardef / extension / metadata cache for Accounts and
+ *       Quotes, the only modules this package extends.
+ *
+ * AND ONE MORE, G380 / G381 (owner rulings 🔒 1705b, the per-item consent
+ * 🔒 1520 asks for; build authorised under 🔒 1704b):
+ *
+ *   quotes_adm_fields  BdAdmQuoteFieldsLayout::place() appends Lead Source,
+ *       Lead Type, Reference and Project to the DEPLOYED Quotes record view's
+ *       ERP panel, only the ones not already on it. They are Bench Dogs' ADM
+ *       company's required values (measured: ADM refuses the quote and the
+ *       order without them); ERP-Epicor must not carry one customer's ERP rule.
  *
  * WHAT WENT, AND WHERE IT LIVES NOW - each removal is behaviour-neutral on
  * every QA tenant, and the reason is recorded here rather than in a release
@@ -256,11 +265,40 @@ try {
     $bdStepReport['accounts_customer_group_field'] = 'FAILED: ' . get_class($e) . ': ' . $e->getMessage();
 }
 
-// Accounts is the only module this package still extends (two vardefs, two
-// labels, one record-view placement), so it is the only one rebuilt.
+// G380 / G381 (🔒 1705b): the four ADM fields a Bench Dogs seller fills
+// (Lead Source, Lead Type, Reference, Project) on the Quotes record view, in
+// ERP-Epicor's ERP panel. Append only, and only the ones not already on the
+// view. See BdAdmQuoteFieldsLayout. Their DB columns are created by
+// ModuleInstaller itself: its install() runs repairDatabase over all modules,
+// with execute on, after this package's Ext vardefs are merged.
+try {
+    $bdAdmHelper = 'custom/modules/Quotes/BdAdmQuoteFieldsLayout.php';
+    if (file_exists($bdAdmHelper)) {
+        require_once $bdAdmHelper;
+        if (class_exists('BdAdmQuoteFieldsLayout')) {
+            BdAdmQuoteFieldsLayout::place();
+            $bdStepReport['quotes_adm_fields'] = 'ok';
+        } else {
+            $GLOBALS['log']->fatal(
+                "BenchDogs-Ext: {$bdAdmHelper} loaded but class BdAdmQuoteFieldsLayout is undefined"
+            );
+            $bdStepReport['quotes_adm_fields'] = 'NOT-LOADED: class BdAdmQuoteFieldsLayout';
+        }
+    } else {
+        $GLOBALS['log']->fatal("BenchDogs-Ext: {$bdAdmHelper} missing, ADM quote fields not placed");
+        $bdStepReport['quotes_adm_fields'] = 'MISSING: ' . $bdAdmHelper;
+    }
+} catch (Throwable $e) {
+    $GLOBALS['log']->fatal('BenchDogs-Ext: ADM quote fields failed: ' . $e->getMessage());
+    $bdStepReport['quotes_adm_fields'] = 'FAILED: ' . get_class($e) . ': ' . $e->getMessage();
+}
+
+// Accounts (the customer group) and, since G380/G381, Quotes (the four ADM
+// fields, their labels, the defaults hook) are the only modules this package
+// extends, so they are the only ones rebuilt.
 try {
     SugarAutoLoader::load('modules/Administration/QuickRepairAndRebuild.php');
-    $bdRepairModules = array('Accounts');
+    $bdRepairModules = array('Accounts', 'Quotes');
     $bdRac = new RepairAndClear();
     $bdRac->show_output = false;
     $bdRac->module_list = $bdRepairModules;

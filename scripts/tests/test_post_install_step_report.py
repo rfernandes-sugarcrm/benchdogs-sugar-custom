@@ -188,12 +188,15 @@ echo json_encode(['failure' => $failure, 'events' => $events, 'errors' => $error
                   'settings' => $GLOBALS['settings']]);
 '''
 
-# The one helper class post_execute.php reaches for (rc69). A scenario may
-# replace it; absent means the file is not written at all.
+# The helper classes post_execute.php reaches for: rc69's Accounts placement,
+# and G380/G381's Quotes placement. A scenario may replace the Accounts one;
+# absent means the file is not written at all.
 ACCOUNTS_HELPER = "custom/modules/Accounts/BdAccountsLayoutExtensions.php"
 HELPERS = {
     ACCOUNTS_HELPER:
         "<?php class BdAccountsLayoutExtensions { public static function writeCustomerGroupField() {} }",
+    "custom/modules/Quotes/BdAdmQuoteFieldsLayout.php":
+        "<?php class BdAdmQuoteFieldsLayout { public static function place() { return []; } }",
 }
 
 # 🚩 NOT a synthetic exception. `private` makes PHP itself raise
@@ -216,7 +219,8 @@ HELPER_OVERRIDES = {
 }
 HELPER_ABSENT = {"accounts_layout_missing"}
 
-STEP_COUNT = 2
+# accounts_customer_group_field, quotes_adm_fields (G380/G381), repair_rebuild
+STEP_COUNT = 3
 STEP = "accounts_customer_group_field"
 
 

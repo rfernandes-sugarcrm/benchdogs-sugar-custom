@@ -253,8 +253,10 @@ HELPER_FILES = {
     "custom/modules/Quotes/BdQuotesLayoutExtensions.php": "BdQuotesLayoutExtensions",
     "custom/modules/Accounts/BdAccountsLayoutExtensions.php": "BdAccountsLayoutExtensions",
     "custom/modules/Opportunities/BdOpportunitiesLayoutExtensions.php": "BdOpportunitiesLayoutExtensions",
+    # G380/G381: the Quotes ADM field placement (place on install, remove on uninstall).
+    "custom/modules/Quotes/BdAdmQuoteFieldsLayout.php": "BdAdmQuoteFieldsLayout",
 }
-HELPER_METHODS = ("write", "writeCustomerGroupField", "remove")
+HELPER_METHODS = ("write", "writeCustomerGroupField", "remove", "place")
 
 
 def helper_source(cls: str) -> str:

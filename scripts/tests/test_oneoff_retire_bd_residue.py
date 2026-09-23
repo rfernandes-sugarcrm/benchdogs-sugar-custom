@@ -42,13 +42,26 @@ import subprocess
 import unittest
 import zipfile
 
+import hashlib
+
 from bd_retirement import ONEOFF_POST_EXECUTE, PKG, built_zip, oneoff_worklist, zip_names
 from test_g280_minimal_footprint import KEPT
 
 ONEOFF = ONEOFF_POST_EXECUTE.parents[1]
 ADAPTER = "custom/modules/Quotes/ErpQuoteHooks/ResolveOrderableLines.php"
 PLANNER = "custom/modules/Quotes/BdSubmitOrderPlan.php"
-RC69_ON_TENANT = {k for k in KEPT if k.startswith("custom/")}
+#: rc69's copy list, FROZEN. The one-off (spent, 1.0.2) was written against
+#: rc69 and its "KEPT BY rc69" report names exactly these four; it is not
+#: re-cut per package build. Until G380/G381 this was read off the package's
+#: live KEPT list, which silently assumed the package would never grow again.
+RC69_ON_TENANT = {
+    "custom/Extension/modules/Accounts/Ext/Vardefs/bd_customer_group.php",
+    "custom/Extension/modules/Accounts/Ext/Language/en_us.bd_customer_group.php",
+    "custom/modules/Accounts/BdAccountsLayoutExtensions.php",
+    "custom/clients/base/api/BdBenchDogsActionsApi.php",
+}
+#: What THIS build installs on a tenant - rc69's four plus G380/G381's.
+BUILD_ON_TENANT = {k for k in KEPT if k.startswith("custom/")}
 
 
 def _not_ours_block() -> str:
@@ -83,11 +96,34 @@ class TheOneOffNeverTakesWhatRc69Ships(unittest.TestCase):
         self.assertEqual(kept_by_rc69_in_the_report(), RC69_ON_TENANT)
 
     def test_the_report_matches_the_built_rc69_manifest_too(self):
-        """KEPT is the source-side list; this is what Module Loader is handed."""
+        """The one-off's rc69 list is still ALL shipped: this build dropped none
+        of rc69's four (it only added G380/G381's), which is what Module Loader
+        is handed."""
         with zipfile.ZipFile(built_zip()) as zipped:
             manifest = zipped.read("manifest.php").decode()
         copied = set(re.findall(r"'to'\s*=>\s*'([^']+)'", manifest))
-        self.assertEqual(kept_by_rc69_in_the_report(), copied)
+        self.assertLessEqual(kept_by_rc69_in_the_report(), copied)
+        self.assertEqual(copied, BUILD_ON_TENANT)
+
+
+class TheOneOffNeverTakesWhatThisBuildShips(unittest.TestCase):
+    """G380/G381 grew the package past rc69. The one-off may be re-run after
+    this build (its README asks for that on any tenant that took a Bench build
+    after its last run), so it must not remove anything this build installs."""
+
+    def test_no_worklist_names_a_file_this_build_ships(self):
+        self.assertEqual(set(oneoff_worklist()) & BUILD_ON_TENANT, set())
+
+    def test_the_new_adapter_is_not_the_body_the_one_off_deletes(self):
+        """The one-off deletes ResolveOrderableLines.php ONLY when its md5 is
+        the rc37-rc40 Bench body, and reports any other body under SKIPPED.
+        This build's G381 adapter must therefore never match that md5."""
+        source = ONEOFF_POST_EXECUTE.read_text(encoding="utf-8")
+        start = source.index("$bdAdapterBenchMd5 = array(")
+        targeted = set(re.findall(r"'([0-9a-f]{32})'", source[start:source.index(");", start)]))
+        self.assertTrue(targeted, "the one-off names no adapter md5 - the parse is wrong")
+        ours = hashlib.md5((PKG / ADAPTER).read_bytes()).hexdigest()
+        self.assertNotIn(ours, targeted)
 
     def test_the_report_no_longer_claims_an_owner_keep_for_the_repair_route(self):
         """🔒 1573: no such ruling exists; rc69 ships the file EMPTY."""
@@ -96,18 +132,30 @@ class TheOneOffNeverTakesWhatRc69Ships(unittest.TestCase):
 
 class Rc69NeitherShipsNorRestoresTheAdapter(unittest.TestCase):
     """rc69's uninstall_copy() restores only its own copy list's backups, so a
-    path it never copies is one it can never put back."""
+    path it never copies is one it can never put back.
 
-    def test_neither_half_of_the_pair_is_in_rc69(self):
+    🔁 RE-POINTED for G380/G381. This build DOES copy ResolveOrderableLines.php
+    again - a new, self-contained body (the ADM non-part block, 🔒 1705b), not
+    the rc37 planner adapter. What stays true, and is pinned below: the PLANNER
+    never ships, and the new adapter never reaches for it, so it cannot refuse
+    "planner not installed" the way the orphan did on Ophir (quote 368).
+
+    ⚠️ THE ONE HAZARD COPYING THE PATH REOPENS: on a tenant that still holds the
+    rc37 body, install_copy backs it up and a later Bench uninstall RESTORES it.
+    So the one-off 1.0.2 must have run on a tenant with rc37-rc40 history BEFORE
+    this build is installed there (BenchDogs-Ext README, G380/G381 section)."""
+
+    def test_the_planner_never_ships_and_the_adapter_never_names_it(self):
         names = zip_names()
-        for rel in (ADAPTER, PLANNER):
-            with self.subTest(path=rel):
-                self.assertFalse((PKG / rel).exists())
-                self.assertNotIn(rel, names)
+        self.assertFalse((PKG / PLANNER).exists())
+        self.assertNotIn(PLANNER, names)
         with zipfile.ZipFile(built_zip()) as zipped:
             manifest = zipped.read("manifest.php").decode()
-        self.assertNotIn("ResolveOrderableLines", manifest)
+            adapter = zipped.read(ADAPTER).decode()
         self.assertNotIn("BdSubmitOrderPlan", manifest)
+        self.assertNotIn("BdSubmitOrderPlan", adapter)
+        self.assertIn("BdAdmRules::nonPartRefusal", adapter,
+                      "the shipped adapter is not the G381 body")
 
 
 class TheLogNamesTheVersionThatRan(unittest.TestCase):

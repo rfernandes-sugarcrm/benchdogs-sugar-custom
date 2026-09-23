@@ -21,6 +21,69 @@ and the package ships no module of its own.
 >
 > `scripts/tests/test_g280_minimal_footprint.py` pins this list against the
 > source tree AND the built zip, so it cannot grow silently.
+>
+> **Grown by G380 / G381, with the owner's per-item consent (🔒 1705b; build
+> authorised by 🔒 1704b).** Nine files, every one a rule of Bench Dogs' ADM
+> company that ERP-Epicor must not carry (gate G2), and every one gated on the
+> quote's ERP company. See the section below.
+>
+> | Path | What it is | Why it is here and not in core |
+> |---|---|---|
+> | `custom/Extension/modules/Quotes/Ext/Vardefs/bd_adm_required_fields.php` + `.../Language/en_us.bd_adm_required_fields.php` | Quote fields `bd_reference`, `bd_lead_source`, `bd_lead_type`, `bd_project_id`, and their labels | ADM refuses the quote without Reference / Lead Source / Lead Type and the order without a Project; no other company asks for them |
+> | `custom/Extension/modules/Quotes/Ext/LogicHooks/bd_adm_quote_defaults.php` | before_save: fills an EMPTY Reference (ship-to city + state) and an EMPTY Project (product-group default) on an unsent ADM quote | ADM-only defaults; creates nothing (🔒 1499 still holds, `test_g243…` pins it) |
+> | `custom/Extension/application/Ext/Language/en_us.bd_adm_lists.php` | labels for the three `ERP_LookupValues` types, and two TENANT lists: `bd_adm_companies_list`, `bd_adm_project_by_group_list` | Bench data, edited in Dropdown Editor |
+> | `custom/modules/Quotes/BdAdmRules.php`, `BdAdmLookupOptions.php`, `BdAdmQuoteFieldsLayout.php` | the rules, the pickers' option functions, the record-view placement and its undo | — |
+> | `custom/modules/Quotes/ErpQuoteHooks/ResolveOrderableLines.php`, `OrderSelectedLinesPolicy.php` | ERP-Epicor's two ordering hook points, answered: a part-less line on an ADM quote is blocked | ERP-Epicor offers these seams for exactly this; the rule is one customer's |
+
+## G380 / G381 — what Bench Dogs' ADM company requires (🔒 1705b)
+
+Measured on stage t7 (benchdogs-dev → ADM), 2026-09-23: ADM refuses Send to
+Estimation with *"Reference is required. Expected Close is required. Lead Source
+is required. Lead Type is required."* and Submit Order with *"Part is required.
+Group is required. Project ID is required."* EPIC06 enforces none of it.
+
+**What this package does (Sugar side):**
+
+- **Lead Source / Lead Type** are pickers the SELLER fills. Their options are
+  ADM's own ACTIVE codes (user-code types `LEADSRC` / `LEADTYPE`, 🔒 1710b),
+  which the Bench Dogs connector extension publishes into `ERP_LookupValues`
+  (types `BdLeadSources` / `BdLeadTypes`). Never defaulted.
+- **Reference** defaults to the ship-to's city and state (`WAYNE NJ`) when
+  empty, on an ADM quote not yet sent; the seller may change it.
+- **Project** is a picker of ADM's active projects (`BdProjects`), pre-filled
+  when every line's product group maps to the same project in
+  `bd_adm_project_by_group_list`.
+- **A line with no ERP part number** (e.g. the smoke fixture's "PALLET", whose
+  part 49000450 never reached Sugar, G382) is **blocked from Submit Order and
+  Order Selected Lines** on an ADM quote, with a seller message naming it.
+- **Expected Close** needs no field: it is the Opportunity's close date.
+
+**Tenant data (Admin → Dropdown Editor), no code change needed:**
+
+| List | Key | Label | Shipped |
+|---|---|---|---|
+| `bd_adm_project_by_group_list` | product group (Epicor ProdCode) | ADM ProjectID | `CMI → 20065` only: the one group whose history is ≥ 95 % one project (1,281 of 1,299 lines, 🔒 1710b). **Bench Dogs to confirm and extend.** |
+| `bd_adm_companies_list` | ERP company code | same | `ADM` |
+
+Both ship as GUARDED defaults, so an admin's Dropdown Editor edit survives
+every reinstall of this package (Sugar merges Ext fragments in mtime order;
+`scripts/tests/bd_adm_rules_test.php` F1/F2 run both orders).
+
+🛑 **What this package CANNOT do yet: send these values to ADM.** Core builds
+both ERP payloads (`quote_to_quote`, `quote_to_order`) and, at core staging
+`cbd3053`, offers no seam for an extension to add payload fields or refuse the
+send. The Bench Dogs connector extension carries the builders and refusals
+(`connector_ext_benchdogs/adm_rules.py`); they go live when core adds that
+seam. Until then ADM still answers Send to Estimation and a real-part Submit
+Order with its 400. The non-part block above works today.
+
+⚠️ **Install prerequisite on a tenant that ever had BenchDogs-Ext rc37–rc40**
+(Ophir, stock, et): run `ONEOFF-RetireBdResidue` 1.0.2 **before** this build.
+This build installs a NEW `ErpQuoteHooks/ResolveOrderableLines.php`; over the
+retired rc37 adapter, Module Loader would back that body up, and a later Bench
+Dogs uninstall would RESTORE it — the orphan that refused every Submit Order on
+Ophir (quote 368). The one-off deletes only the rc37 body (md5) and leaves this
+one (pinned by `test_oneoff_retire_bd_residue.py`).
 
 ## What rc69 removed, and where each piece lives now
 

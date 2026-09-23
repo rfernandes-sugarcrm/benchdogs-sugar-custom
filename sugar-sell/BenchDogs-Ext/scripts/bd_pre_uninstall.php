@@ -28,8 +28,9 @@
  * (et 2026-09-22 22:22Z, stock and Ophir 2026-09-23 00:58Z, G234 CLOSED),
  * nothing re-adds either, and a deployed record.php is in no package's copy
  * list, so an uninstall cannot restore them. Their helper classes are no longer
- * shipped. What remains is the undo of the one placement this package still
- * makes: the two customer-group fields.
+ * shipped. What remains is the undo of the placements this package still
+ * makes: the two customer-group fields, and (G380 / G381, 🔒 1705b) the four
+ * ADM fields on the Quotes record view's ERP panel.
  *
  * 🛑 G276 / 🔒 1504 - NO BUTTON LOGIC HERE EITHER. Until rc64 the Quotes step here
  * also dropped this package's retired bd_* buttons and put back the ERP-Epicor
@@ -131,7 +132,7 @@
 // longer at a path Sugar runs a second time - see "WHY THIS FILE IS NOT NAMED
 // pre_uninstall.php" above. Through rc68 it appeared twice per uninstall.
 //
-// 📌 The one step below still only ->error()s its failure, one line, with no
+// 📌 The two steps below still only ->error() their failures, one line each, with no
 // aggregation - the same reporting shape G294 fixes on the install side. It is not fixed here in this change: G294 is filed against
 // post_execute.php and widening the blast radius of an uninstall script was not
 // worth the risk in one pass. Flagged, not silently carried.
@@ -139,7 +140,7 @@
 $bdVersion = isset($manifest['version']) ? (string) $manifest['version'] : 'unknown';
 $GLOBALS['log']->fatal('BenchDogs-Ext: pre_uninstall running (' . $bdVersion . ') - cleaning up deployed metadata');
 
-// The ONE step: take the two REQ-19 customer-group fields back off the
+// Step one: take the two REQ-19 customer-group fields back off the
 // Accounts record view. BdAccountsLayoutExtensions::remove() sweeps every
 // panel, so an admin who moved them is cleaned up too.
 try {
@@ -156,6 +157,25 @@ try {
     }
 } catch (Throwable $e) {
     $GLOBALS['log']->error('BenchDogs-Ext: Accounts layout cleanup failed: ' . $e->getMessage());
+}
+
+// G380 / G381: take the four ADM fields back off the Quotes record view, from
+// every panel, before their vardefs go - a field left on a view whose vardef is
+// gone is the orphan-on-a-view the G280 grade looks for.
+try {
+    $bdAdmHelper = 'custom/modules/Quotes/BdAdmQuoteFieldsLayout.php';
+    if (file_exists($bdAdmHelper)) {
+        if (!class_exists('BdAdmQuoteFieldsLayout', false)) {
+            require_once $bdAdmHelper;
+        }
+        if (class_exists('BdAdmQuoteFieldsLayout')) {
+            BdAdmQuoteFieldsLayout::remove();
+        }
+    } else {
+        $GLOBALS['log']->error("BenchDogs-Ext: {$bdAdmHelper} missing; Quotes record view not cleaned up");
+    }
+} catch (Throwable $e) {
+    $GLOBALS['log']->error('BenchDogs-Ext: Quotes ADM field cleanup failed: ' . $e->getMessage());
 }
 
 // The *_cstm columns behind the bd_* fields are left in the database. Removing

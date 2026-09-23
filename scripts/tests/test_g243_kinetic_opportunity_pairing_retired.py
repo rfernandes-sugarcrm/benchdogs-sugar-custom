@@ -208,27 +208,53 @@ echo json_encode(array('total' => $total, 'events' => $events));
 class TheRegistrationRegistersNothing(unittest.TestCase):
     """The first half of the retirement, EXECUTED."""
 
+    #: The ONE hook this package may register (G380/G381, 🔒 1705b): it fills an
+    #: EMPTY Reference / Project on an unsent ADM quote and creates nothing.
+    ALLOWED = [["before_save", "custom/modules/Quotes/BdAdmRules.php", "BdAdmRules", "beforeSave"]]
+
     def test_no_shipped_fragment_registers_a_hook(self):
         """Every Extension fragment this package ships, INCLUDED into a harness
         that pre-seeds $hook_array - not grepped, because retirement prose names
         pairOnSave and after_save for the reader. Stronger than the rc60 case,
         which executed only bd_kinetic_opportunity.php: a re-registration under
-        any other filename is caught too."""
+        any other filename is caught too.
+
+        🔁 G380/G381 (🔒 1705b): exactly ONE registration is allowed, named in
+        full (event, file, class, method), and its target is held below to
+        creating and saving nothing - the property 🔒 1499 is about. Any other
+        registration, under any file name, still fails here."""
         fragments = sorted(PACKAGE.glob("custom/Extension/**/*.php"))
         self.assertTrue(fragments, "no Extension fragment found - PACKAGE points at nothing")
+        harness_body = (
+            "$hook_array = array();\n"
+            "foreach (array_slice($argv, 1) as $f) { require $f; }\n"
+            "$entries = array();\n"
+            "foreach ($hook_array as $event => $list) {\n"
+            "    foreach ((array) $list as $e) { $entries[] = array($event, $e[2], $e[3], $e[4]); }\n"
+            "}\n"
+            "echo json_encode(array('entries' => $entries));\n")
         with tempfile.NamedTemporaryFile("w", suffix=".php", delete=False) as fh:
-            fh.write("<?php\n$dictionary = array(); $mod_strings = array();\n"
-                     + _REGISTRATION_HARNESS.replace("require $argv[1];",
-                                                     "foreach (array_slice($argv, 1) as $f) { require $f; }"))
+            fh.write("<?php\n$dictionary = array(); $mod_strings = array(); $app_list_strings = array();\n"
+                     + harness_body)
             harness = fh.name
         done = subprocess.run([_php(), harness] + [str(f) for f in fragments],
                               capture_output=True, text=True, check=False)
         self.assertEqual(0, done.returncode, (done.stderr or "")[:600])
         result = json.loads(done.stdout[done.stdout.find("{"):])
         self.assertEqual(
-            0, result["total"],
-            f"this package registers {result['total']} logic hook(s) on {result['events']}. "
-            "🔒 1499: the sync must NEVER create an Opportunity.")
+            self.ALLOWED, result["entries"],
+            f"this package registers {result['entries']}. Only the ADM defaults hook is "
+            "allowed. 🔒 1499: the sync must NEVER create an Opportunity.")
+
+    def test_the_one_allowed_hook_creates_and_saves_nothing(self):
+        """The allowed hook's class, code only: it may set fields on the bean
+        it is handed (before_save), and must never create or save a record."""
+        body = (PACKAGE / self.ALLOWED[0][1]).read_text(encoding="utf-8")
+        code = re.sub(r"/\*.*?\*/", "", body, flags=re.S)
+        code = re.sub(r"(?m)(^|\s)//[^\n]*", r"\1", code)
+        for forbidden in ("->save(", "::newBean('Opportunities'", "Opportunit"):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, code)
 
     def test_rc39s_registration_is_retired_off_the_tenant(self):
         """An ABSENT file retires nothing: rc39's copy simply survives - which

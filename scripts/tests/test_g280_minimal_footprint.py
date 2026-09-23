@@ -27,6 +27,10 @@ WHAT SHIPS (0.9.42-rc69), and why each item cannot live upstream:
 Everything else is REMOVED, and every removed path has a named route off a
 tenant that already carries it - asserted below, not assumed.
 
+GROWN ONCE SINCE, WITH CONSENT: G380 / G381 (🔒 1705b, the per-item consent
+🔒 1520 asks for) add nine files for Bench Dogs' ADM company's required quote
+values. Each is listed in KEPT with its reason; see the package README.
+
 MUTATION-VERIFIED (each applied, this file re-run, the named case observed red):
   restore one retired stub (git checkout 019fbe1 -- <stub>)
       -> test_the_source_tree_is_exactly_the_kept_list
@@ -71,9 +75,34 @@ KEPT = {
     "scripts/post_execute.php": "lifecycle",
     "scripts/bd_pre_uninstall.php": "lifecycle",
     "scripts/post_uninstall.php": "lifecycle",
+    # ── G380 / G381: the owner's per-item consent is 🔒 1705b ("Lead Source and
+    # Lead Type ... required pickers in Sugar loaded from ADM's own code
+    # lists"; "Project ID becomes a picker of ADM projects on the quote,
+    # PRE-FILLED from a product-group -> project default list"; "non-part
+    # catalog lines ... blocked from ordering"), build authorised by 🔒 1704b.
+    # Every one is a rule of ONE customer's ERP company (ADM) that ERP-Epicor
+    # must not carry (gate G2), and each is gated on the quote's company.
+    "custom/Extension/modules/Quotes/Ext/Vardefs/bd_adm_required_fields.php":
+        "G380/G381: bd_reference, bd_lead_source, bd_lead_type, bd_project_id on Quote",
+    "custom/Extension/modules/Quotes/Ext/Language/en_us.bd_adm_required_fields.php":
+        "their four labels, in ADM's own words",
+    "custom/Extension/modules/Quotes/Ext/LogicHooks/bd_adm_quote_defaults.php":
+        "G380/G381: before_save fills an EMPTY Reference / Project on an unsent ADM quote",
+    "custom/Extension/application/Ext/Language/en_us.bd_adm_lists.php":
+        "the three lookup-type labels + the two tenant lists (companies, group->project)",
+    "custom/modules/Quotes/BdAdmRules.php":
+        "the ADM rules themselves: company gate, defaults, non-part block, options",
+    "custom/modules/Quotes/BdAdmLookupOptions.php":
+        "the pickers' option functions (vardef 'function' needs a plain function)",
+    "custom/modules/Quotes/BdAdmQuoteFieldsLayout.php":
+        "the four fields' placement on the deployed Quotes record view, and its undo",
+    "custom/modules/Quotes/ErpQuoteHooks/ResolveOrderableLines.php":
+        "G381: ERP-Epicor's Submit Order hook, answered - blocks a part-less ADM line",
+    "custom/modules/Quotes/ErpQuoteHooks/OrderSelectedLinesPolicy.php":
+        "G381: ERP-Epicor's Order Selected Lines hook, answered - the same block",
 }
 
-ONEOFF = "the one-off deletes or blanks it (🔒 1521); re-run it after installing rc69"
+ONEOFF ="the one-off deletes or blanks it (🔒 1521); re-run it after installing rc69"
 INERT = ("nothing shipped calls it any more; the copy an upgraded tenant keeps is "
          "unreachable (the one-off does not blank it yet - flagged for its owner)")
 PF_OWNS = ("Partial Fulfillment ships the SAME path (>= 1.0.41 with the G282 preserve "
@@ -259,27 +288,32 @@ class TheKeptFieldsAreExactlyTheTwo(unittest.TestCase):
 
 
 class TheLifecycleDoesOnlyTheKeptWork(unittest.TestCase):
-    def test_post_install_runs_exactly_the_two_steps(self):
+    def test_post_install_runs_exactly_the_kept_steps(self):
         code = code_only(PKG / "scripts/post_execute.php")
         steps = sorted(set(re.findall(r"\$bdStepReport\['([a-z_]+)'\]\s*=\s*'ok'", code)))
-        self.assertEqual(steps, ["accounts_customer_group_field", "repair_rebuild"])
+        self.assertEqual(steps, ["accounts_customer_group_field", "quotes_adm_fields",
+                                 "repair_rebuild"])
         for gone in ("partial_order_sales_stage", "uninstall_languages", "zz_bd_stage_doms",
                      "saveSetting('erp_integration'", "rebuild_tabledictionary",
                      "return_app_list_strings_language"):
             self.assertNotIn(gone, code, f"post_install still does '{gone}'")
-        self.assertIn("array('Accounts')", code, "the rebuild is not narrowed to Accounts")
+        self.assertIn("array('Accounts', 'Quotes')", code,
+                      "the rebuild is not narrowed to the two modules this package extends")
 
-    def test_pre_uninstall_undoes_only_the_customer_group_placement(self):
+    def test_pre_uninstall_undoes_only_the_kept_placements(self):
         code = code_only(PKG / "scripts/bd_pre_uninstall.php")
         self.assertEqual(sorted(set(re.findall(r"\b(Bd[A-Za-z]+)::", code))),
-                         ["BdAccountsLayoutExtensions"])
+                         ["BdAccountsLayoutExtensions", "BdAdmQuoteFieldsLayout"])
         self.assertIn("BdAccountsLayoutExtensions::remove()", code,
                       "the uninstall no longer takes the two fields off the view: that "
                       "is the orphan-on-a-view the G280 grade looks for")
+        self.assertIn("BdAdmQuoteFieldsLayout::remove()", code,
+                      "the uninstall leaves the four ADM fields on the Quotes view "
+                      "after their vardefs are gone")
 
-    def test_post_uninstall_rebuilds_only_accounts(self):
+    def test_post_uninstall_rebuilds_only_the_extended_modules(self):
         code = code_only(PKG / "scripts/post_uninstall.php")
-        self.assertRegex(code, r"\$bdModules\s*=\s*array\(\s*'Accounts',\s*\);")
+        self.assertRegex(code, r"\$bdModules\s*=\s*array\(\s*'Accounts',\s*'Quotes',\s*\);")
         self.assertIn("MetaDataManager::refreshCache()", code)
 
     def test_partial_fulfillment_is_new_enough_to_own_what_this_stopped_doing(self):

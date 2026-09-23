@@ -24,10 +24,13 @@ are asserted: an exit code alone cannot see a suite that stopped running checks,
 which is the same hole in miniature.
 """
 
+import os
 import shutil
 import subprocess
 import unittest
 from pathlib import Path
+
+import shared_sugar
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -39,14 +42,19 @@ HERE = Path(__file__).resolve().parent
 SUITES = (
     "bench_panel_retired_test.php",
     "bench_governing_origin_retired_test.php",
+    "bd_adm_rules_test.php",
 )
 
 php = shutil.which("php")
 
 
 def run(name: str) -> subprocess.CompletedProcess:
+    # bd_adm_rules_test.php runs the Bench hook adapters THROUGH ERP-Epicor's
+    # real dispatcher: the sibling checkout's file when present, else the pin.
+    env = {**os.environ,
+           "BD_ERP_QUOTE_HOOKS": str(shared_sugar.resolve("ErpQuoteHooks.php"))}
     return subprocess.run(
-        [php, str(HERE / name)], cwd=ROOT, capture_output=True, text=True,
+        [php, str(HERE / name)], cwd=ROOT, capture_output=True, text=True, env=env,
     )
 
 
@@ -67,6 +75,12 @@ class PhpSuitesTest(unittest.TestCase):
         """G116: bd_governing_origin is taken off the Opportunity record view
         on install, and never put back."""
         self.assert_suite_passes("bench_governing_origin_retired_test.php")
+
+    def test_bd_adm_rules(self):
+        """G380/G381: the Bench Dogs ADM rules (company gate, Reference and
+        Project defaults, the non-part block through ERP-Epicor's real hook
+        dispatcher, the pickers' options, placement, vardefs)."""
+        self.assert_suite_passes("bd_adm_rules_test.php")
 
 
 class PhpSuiteCoverageTest(unittest.TestCase):
