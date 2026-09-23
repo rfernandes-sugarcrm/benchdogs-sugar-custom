@@ -62,7 +62,7 @@ Group is required. Project ID is required."* EPIC06 enforces none of it.
 
 | List | Key | Label | Shipped |
 |---|---|---|---|
-| `bd_adm_project_by_group_list` | product group (Epicor ProdCode) | ADM ProjectID | `CMI → 20065` only: the one group whose history is ≥ 95 % one project (1,281 of 1,299 lines, 🔒 1710b). **Bench Dogs to confirm and extend.** |
+| `bd_adm_project_by_group_list` | product group (Epicor ProdCode) | ADM ProjectID | `CMI → 20065` only: the owner's rule (🔒 1712b) is to pre-fill only where history is ≥ 95 % one project (1,281 of 1,299 CMI lines, 🔒 1710b). Every other group: the seller picks. Bench Dogs extends it here. |
 | `bd_adm_companies_list` | ERP company code | same | `ADM` |
 
 Both ship as GUARDED defaults, so an admin's Dropdown Editor edit survives
