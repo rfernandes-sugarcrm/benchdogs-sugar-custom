@@ -289,8 +289,12 @@ class TheKeptFieldsAreExactlyTheTwo(unittest.TestCase):
             capture_output=True, text=True, check=True)
         observed = json.loads(out.stdout)
         self.assertEqual(sorted(observed["fields"]), ["bd_customer_group", "bd_customer_group_code"])
-        self.assertEqual(observed["labels"], {"LBL_BD_CUSTOMER_GROUP_CODE": "Customer Group Code",
-                                              "LBL_BD_CUSTOMER_GROUP": "Customer Group"})
+        # G532: short enough to read in full at the record view's label width
+        # (about 12 characters show before the ellipsis), and not the same text.
+        self.assertEqual(observed["labels"], {"LBL_BD_CUSTOMER_GROUP_CODE": "Group Code",
+                                              "LBL_BD_CUSTOMER_GROUP": "Cust. Group"})
+        for text in observed["labels"].values():
+            self.assertLessEqual(len(text), 11, text)
 
 
 class TheLifecycleDoesOnlyTheKeptWork(unittest.TestCase):
