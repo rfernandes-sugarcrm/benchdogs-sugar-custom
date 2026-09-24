@@ -1,75 +1,65 @@
 {
-  "upstream_commit": "c6a1285bd36e0753f353ee773b2224ff25f21833",
+  "upstream_commit": "a0f6b632df13e1152d31d5f33519884366997ce0",
   "files": {
     "QuoteOpportunityAmount.php": {
       "source": "sugar-sell/ERP-Core/src/custom/modules/Quotes/QuoteOpportunityAmount.php",
-      "sha256": "e09e092009c097fa977c98842e9f5a49126a16ab0729e3003d03efec8bf1277d",
-      "bytes": 19403,
-      "pinned_from": "62c34494c22ed089e2c081aedddbb9f919dd69bc"
+      "sha256": "234a6605e0c743c13abd0cb3c25fe20a08791799dc67476c274c27b6ea3038b8",
+      "bytes": 23002
     },
     "ErpOpportunityValuation.php": {
       "source": "sugar-sell/ERP-Epicor-PartialFulfillment/custom/modules/Quotes/ErpOpportunityValuation.php",
-      "sha256": "7681ba3d1f8871eb5025d89ee2e8a61d0053485d142eb5b092421b10330c956f",
-      "bytes": 66404
+      "sha256": "a0c33f71c27527339b37622ffa7ef2f8c536b52c288aab3bb41252e6774e5913",
+      "bytes": 72670
     },
     "ErpQuoteLineRollup.php": {
       "source": "sugar-sell/ERP-Epicor-PartialFulfillment/custom/modules/Quotes/ErpQuoteLineRollup.php",
-      "sha256": "9c915747bf0fe7b08aacc8d52347fbd488e65b20740beaabc0be6ae86c30f330",
-      "bytes": 19013
-    },
-    "BaseErpLayout.php": {
-      "source": "sugar-sell/ERP-Core/scripts/BaseErpLayout.php",
-      "sha256": "ff290f701849a322f0438be7a1052ff04dcf7d4e9d21ba1891e0ce660f13df32",
-      "bytes": 89437,
-      "pinned_from": "62c34494c22ed089e2c081aedddbb9f919dd69bc"
-    },
-    "QuotesLayout.php": {
-      "source": "sugar-sell/ERP-Epicor/scripts/Modules/QuotesLayout.php",
-      "sha256": "c07fb4924dfe8d9b715c9c23b75c0b895909a3ce3d426907f3b23b8c894b4077",
-      "bytes": 78171,
-      "pinned_from": "62c34494c22ed089e2c081aedddbb9f919dd69bc"
+      "sha256": "cdfb301fc01af04cdc84b9d974b0a41c677275935506b535e00a2cc1fa671ea9",
+      "bytes": 21636
     },
     "QuotePrimaryQuoteSoleEnforcer.php": {
       "source": "sugar-sell/ERP-Core/src/custom/modules/Quotes/QuotePrimaryQuoteSoleEnforcer.php",
-      "sha256": "c9dbf79adc9952e207614e952127b1df43df28b2d2c67bb9aac10e0b5e49df3b",
-      "bytes": 43002,
-      "pinned_from": "62c34494c22ed089e2c081aedddbb9f919dd69bc"
+      "sha256": "6f0cd6cd642f33ac390a3f96a6817dd8b23d43e3ea0e78519c6298c22609be16",
+      "bytes": 63653
     },
     "ErpAccountCountryGuard.php": {
       "source": "sugar-sell/ERP-Core/src/custom/modules/Accounts/ErpAccountCountryGuard.php",
       "sha256": "d4ef6c065324340694bbab29c7cadcd20ccbecec4a47143badaed160fcd31d71",
-      "bytes": 11246,
-      "pinned_from": "62c34494c22ed089e2c081aedddbb9f919dd69bc"
+      "bytes": 11246
     },
     "AccountsErpActionsApi.php": {
       "source": "sugar-sell/ERP-Epicor/src/custom/clients/base/api/AccountsErpActionsApi.php",
-      "sha256": "dd585d1ec5122ccac198f07c7a9d5f82aa8b18512cf7dc6d4796702ebe324255",
-      "bytes": 24782,
-      "pinned_from": "62c34494c22ed089e2c081aedddbb9f919dd69bc"
+      "sha256": "19ba39bc02b12bc05e731532f89220ad32340c199122d4f6389c08db4f0d5ba5",
+      "bytes": 43200
     },
     "en_us.erp_create_opp_quote.php": {
       "source": "sugar-sell/ERP-Epicor/src/custom/Extension/modules/Accounts/Ext/Language/en_us.erp_create_opp_quote.php",
-      "sha256": "b59f287ec5ff437ef342042f3840eaed4a5f3747c62dfd5a97b40dc47475c6ed",
-      "bytes": 455,
-      "pinned_from": "62c34494c22ed089e2c081aedddbb9f919dd69bc"
+      "sha256": "0dca5532a83951b7881cf54330eb86c4935009753f0aeee4cfaab91044eace74",
+      "bytes": 4524
+    },
+    "BaseErpLayout.php": {
+      "source": "sugar-sell/ERP-Core/scripts/BaseErpLayout.php",
+      "sha256": "ff290f701849a322f0438be7a1052ff04dcf7d4e9d21ba1891e0ce660f13df32",
+      "bytes": 89437
+    },
+    "QuotesLayout.php": {
+      "source": "sugar-sell/ERP-Epicor/scripts/Modules/QuotesLayout.php",
+      "sha256": "23365179faeb4d87778697dc114e34c32e62e325fc8d120cae32ee5d2d19d2a3",
+      "bytes": 103087
     },
     "ErpQuoteFacts.php": {
       "source": "sugar-sell/ERP-Epicor/src/custom/modules/Quotes/ErpQuoteFacts.php",
       "sha256": "5b98979b4d6195f1e56d4e688486d39544800e24b8e1604edd6669d7deffd14c",
-      "bytes": 8268,
-      "pinned_from": "a0f6b632df13e1152d31d5f33519884366997ce0"
+      "bytes": 8268
     },
     "ErpLayoutExtraFields.php": {
       "source": "sugar-sell/ERP-Core/src/custom/include/ErpLayoutExtraFields.php",
       "sha256": "567ba0013cd2507be365ff7995b9073fbbdce4bc6e64ae0f5700218c268a499c",
-      "bytes": 13134,
-      "pinned_from": "a0f6b632df13e1152d31d5f33519884366997ce0"
+      "bytes": 13134
     },
     "erp_reference.php": {
       "source": "sugar-sell/ERP-Core/src/custom/Extension/modules/Quotes/Ext/Vardefs/erp_reference.php",
       "sha256": "6f36efff43b656fa2b620a36b7e9aa2b68cc162af1a1a5f429ff88532b6496d3",
-      "bytes": 3075,
-      "pinned_from": "a0f6b632df13e1152d31d5f33519884366997ce0"
+      "bytes": 3075
     }
   }
 }

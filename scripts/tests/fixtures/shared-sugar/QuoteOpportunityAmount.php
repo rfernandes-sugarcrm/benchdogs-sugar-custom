@@ -84,6 +84,14 @@ class QuoteOpportunityAmount
         if (!$was) {
             return false;
         }
+        // 🔒 1468 (G215): a quote that was primary with NO Opportunity and
+        // yielded on joining a deal that already had a primary was never THIS
+        // Opportunity's primary. Its clear withdraws nothing, and blanking the
+        // deal here would unvalue a deal whose primary is still standing.
+        if (QuotePrimaryQuoteSoleEnforcer::triggerFor((string) $quote->id)
+            === QuotePrimaryQuoteSoleEnforcer::TRIGGER_YIELDED_ON_JOIN) {
+            return false;
+        }
         if (!empty($quote->deleted)) {
             return true;
         }
@@ -219,7 +227,32 @@ class QuoteOpportunityAmount
         // change - and an amount-only comparison would return here and record
         // no reason for the one event I4 exists to explain. Two quotes at
         // 5,000.00 is not an exotic fixture; it is a revised quote.
-        $amountSame = ((float) ($opportunity->amount ?? 0) === $amount);
+        //
+        // 🛑 G199 — AN UNVALUED OPPORTUNITY NEVER "MATCHES" A ZERO WINNER.
+        // 🔒 1428 / decision 59 again: zero is not nothing. The old test read
+        // `(float) ($opportunity->amount ?? 0)`, which coerces the NULL that
+        // unvalue() writes into 0.0 - so a winner whose total is exactly 0.00
+        // compared EQUAL to a blank deal and the publish returned here.
+        //
+        // That is reachable on EVERY hijack, not in some exotic corner:
+        // movePrimaryTo() -> clearRivals() -> demoteAndSave($loser) fires the
+        // LOSER's refresh, where primaryWasWithdrawn() is true, so unvalue()
+        // NULLs the amount mid-move. The winner's own priority-20 publish is
+        // what heals it. With a zero-total winner the heal was skipped and the
+        // deal stayed BLANK - unknown rendered as nothing, on a record where
+        // "we have not valued this" and "this is worth 0.00" are different
+        // claims and only one of them is true.
+        //
+        // The $sourceSame clause below happens to mask this today, because
+        // unvalue() also clears erp_amount_source so the sentences differ.
+        // 🚩 THAT IS AN ACCIDENTAL GUARD ON AN UNRELATED FIELD: it holds only
+        // for as long as I4's reason string keeps being written, and a future
+        // narrowing of it (say, writing the source only when a trigger was
+        // noted) would silently hand the blank deal back. The NULL test is
+        // what makes the heal structural, so the two clauses are independent
+        // and either one alone is sufficient.
+        $unvalued = ($opportunity->amount === null || $opportunity->amount === '');
+        $amountSame = !$unvalued && ((float) $opportunity->amount === $amount);
         $sourceSame = ((string) ($opportunity->erp_amount_source ?? '') === $source);
         if ($amountSame && $sourceSame) {
             // Genuinely nothing to say. Writing anyway would re-stamp
@@ -397,6 +430,27 @@ class QuoteOpportunityAmount
             return (float) $quote->total;
         }
         require_once \Sugarcrm\Sugarcrm\Util\Files\FileLoader::validateFilePath($file);
+        // G282 — THE FILE EXISTING IS NOT THE CLASS EXISTING, AND THE
+        // DIFFERENCE IS EVERY OPPORTUNITY'S HEADLINE AMOUNT.
+        //
+        // Two packages ship this path; retiring one of them by shipping an
+        // EMPTY STUB there would leave the class undefined. The `new` below
+        // would then raise Error, refresh()'s catch(\Throwable) would swallow
+        // it, and every Opportunity would silently keep its previous amount
+        // for ever - a frozen estate whose only trace is a log line about a
+        // class name. This makes that failure SAY what it is, in the same
+        // preserve-and-log boundary: throwing here (rather than returning
+        // $quote->total) keeps the contract "applicable but unresolved
+        // throws", so the old amount is preserved rather than overwritten by
+        // a number this package had no provider to compute.
+        if (!class_exists('ErpQuoteOpportunityContribution', false)) {
+            throw new \UnexpectedValueException(
+                'The Opportunity contribution provider at ' . $file . ' defines no '
+                . 'ErpQuoteOpportunityContribution class, so this Opportunity keeps the amount it '
+                . 'already had. A package that retires this file must drop it from its build or '
+                . 'ship a working provider - never an empty stub at this path (G282).'
+            );
+        }
         $amount = (new ErpQuoteOpportunityContribution())->resolve($quote);
         if ($amount === null) {
             return (float) $quote->total;

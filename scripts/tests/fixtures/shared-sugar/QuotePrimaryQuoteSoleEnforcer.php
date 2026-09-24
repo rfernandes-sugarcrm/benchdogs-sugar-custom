@@ -228,6 +228,30 @@ class QuotePrimaryQuoteSoleEnforcer
     public const TRIGGER_HIJACK = 'hijack';
 
     /**
+     * 🔒 1468 (G215): a quote that was ALREADY primary joined a deal that
+     * already had one, and yielded. Read by restoreUnsanctionedClear() (do not
+     * put the flag back) and by QuoteOpportunityAmount (this quote was never
+     * the Opportunity's primary, so its clear withdraws nothing).
+     */
+    public const TRIGGER_YIELDED_ON_JOIN = 'yielded on join';
+
+    /**
+     * 🔒 1472 — erp_quote_origin's two stated values. Empty means UNKNOWN (the
+     * quote predates the stamp), which is neither of them.
+     */
+    public const ORIGIN_SYNC = 'erp_sync';
+    public const ORIGIN_SUGAR = 'sugar';
+
+    /**
+     * The OAuth platform(s) the connector authenticates on. ERP-Epicor
+     * registers `sugarai_erp_connector` (Ext/Platforms) and connector_core's
+     * SugarSellClient defaults to it. A destination that overrides its
+     * platform must register that one in Sugar AND add it here, or quotes it
+     * creates are stamped 'sugar'.
+     */
+    public const SYNC_PLATFORMS = array('sugarai_erp_connector');
+
+    /**
      * Record why this quote just became - or stayed - the primary one.
      *
      * Only this class writes the flag, so only this class can say why.
@@ -312,6 +336,15 @@ class QuotePrimaryQuoteSoleEnforcer
         if (!($bean instanceof SugarBean) || empty($bean->id) || !empty($bean->deleted)) {
             return;
         }
+        // 🔒 1472 — record WHO created the quote, in the creating save, before
+        // any rule below reads it. clearOrphanPrimary() needs it in this very
+        // save: the connector's create of an Epicor quote IS a before_save of
+        // a quote with no Opportunity.
+        $this->stampOriginAtBirth($bean, $event);
+        // 🔒 1472 (G215) — and a quote the sync creates is primary in that same
+        // creating save, whatever the payload carried. Reads the origin just
+        // stamped, so it must stay after it and before any rule below.
+        $this->stampPrimaryAtSyncBirth($bean, $event);
         // after_relationship_add fires for every link on the module; only the
         // Opportunity link can change which Opportunity this quote competes on.
         if ($event === 'after_relationship_add' && ($arguments['link'] ?? '') !== 'opportunities') {
@@ -332,6 +365,26 @@ class QuotePrimaryQuoteSoleEnforcer
             // Opportunity, in which case it is the primary by construction.
             $this->bootstrapFirstPrimary($bean, $event);
 
+            return;
+        }
+
+        // G167 I3 — A QUOTE WITH NO OPPORTUNITY CANNOT BE PRIMARY. Runs
+        // BEFORE the mode gate below, because in the shipped 'move' mode that
+        // gate returns on every before_save and this rule would never fire.
+        if ($this->clearOrphanPrimary($bean, $event)) {
+            return;
+        }
+
+        // 🔒 1468 (G215) — LINKING IS NOT MARKING. A quote that was already
+        // primary before it joined this deal (an Epicor-created quote, primary
+        // from creation with no Opportunity - 🔒 1473) yields to a primary the
+        // deal already has. BEFORE the mode gate so it holds in BOTH modes: in
+        // 'move' the move below would hand the deal to the joiner and demote
+        // the seller's primary; in 'refuse' the gate returns on every event
+        // but before_save, so a yield placed after it never runs and the deal
+        // is left with TWO primaries. (Mutation-found: in 'move' alone the
+        // placement is invisible.)
+        if ($this->yieldOnJoin($bean, $event)) {
             return;
         }
 
@@ -451,6 +504,13 @@ class QuotePrimaryQuoteSoleEnforcer
         if ($event !== 'before_save' || self::$sanctionedDemotion) {
             return false;
         }
+        // 🔒 1468: a joiner that yielded to the deal's primary in THIS save is a
+        // sanctioned clear, not an un-tick. Without this, the create-or-edit
+        // path (the link rides the quote's own save) would put the flag back
+        // here and the after_save move would then demote the incumbent.
+        if (self::triggerFor((string) $bean->id) === self::TRIGGER_YIELDED_ON_JOIN) {
+            return false;
+        }
         // Nothing to restore unless the DATABASE said true a moment ago. A
         // bean assembled in memory with no fetched_row (the connector builds
         // these) has no prior state to contradict, and inventing one would
@@ -468,6 +528,291 @@ class QuotePrimaryQuoteSoleEnforcer
             . $bean->id . ' - primary is a radio across the Opportunity\'s quotes (decision 709).'
             . ' Tick Primary on another quote instead; that demotes this one in the same save.'
         );
+
+        return true;
+    }
+
+    /**
+     * 🔒 1472 — STAMP WHO CREATED THIS QUOTE, ONCE, IN ITS CREATING SAVE.
+     *
+     * The fact used is the request's OAuth PLATFORM, read from
+     * $_SESSION['platform'] - the same value RestService resolves the request
+     * platform from (include/api/RestService.php:177), written by BOTH
+     * authentication paths (SugarOAuth2Storage.php:511 for legacy OAuth,
+     * IdM's OIDC SessionListener.php:73). The connector authenticates on its
+     * own registered platform; nothing a person or Sugar-side job does arrives
+     * on it.
+     *
+     * 🛑 NOT erp_sync_key, which a Sugar quote acquires LATER from the
+     * write-back stamp, and NOT created_by, which the package cannot know (the
+     * connector's user is per-tenant configuration: an IdM service user on
+     * Bench, Administrator on older setups).
+     *
+     * A CREATE is SugarBean::isUpdate() === false - the platform's own signal:
+     * save() calls ensureHasId() BEFORE saveData(), which sets new_with_id, and
+     * isUpdate() is false while new_with_id is set (data/SugarBean.php:1849,
+     * :2043). An UPDATE never stamps - so a Sugar quote the connector later
+     * writes back to stays Sugar-born.
+     *
+     * 🛑 ON A CREATE THE PLATFORM ALWAYS DECIDES, WHATEVER THE PAYLOAD SAYS.
+     * The field is readonly in the UI but the REST API still writes readonly
+     * fields, so "keep a value the create arrived with" would let any REST
+     * client claim erp_sync and exempt its quote from the orphan rule.
+     * (Mutation-found: an earlier "never overwrite" guard did exactly that,
+     * and protected nothing, because an update never reaches this line.)
+     */
+    private function stampOriginAtBirth(SugarBean $bean, string $event): void
+    {
+        if ($event !== 'before_save' || !method_exists($bean, 'isUpdate') || $bean->isUpdate()) {
+            return;
+        }
+        $platform = isset($_SESSION['platform']) ? (string) $_SESSION['platform'] : '';
+        $bean->erp_quote_origin = in_array($platform, self::SYNC_PLATFORMS, true)
+            ? self::ORIGIN_SYNC
+            : self::ORIGIN_SUGAR;
+    }
+
+    /**
+     * 🔒 1472 (G215) — "WHEN EVER A QUOTE IS SYNCED FOR THE FIRST TIME TO
+     * SUGAR IT SHOULD BE MARKED AS PRIMARY AS PART OF THE CREATION".
+     *
+     * WHAT WAS MEASURED (Bench, 2026-09-22). Connector-created quotes 317
+     * (EPIC06__1269) and 318 (EPIC06__1270) were inserted at 22:13:14 with
+     * the flag 0 - no create-time audit row for it, although team_name's
+     * create-time row IS there - and `erp_is_primary_quote` audits "0"->"1"
+     * at 22:13:20/21 from a separate save. End state right, mechanism not the
+     * owner's.
+     *
+     * WHY THE SUGAR SIDE OWNS THIS, read out of the code rather than assumed.
+     * Connector core (a6b746ec transformers/quotes.py:616-635) puts the flag
+     * in the create body only on what IT judges a first landing: no `quotes`
+     * cache hit AND no `quotes_xref` / `quote_to_quote_xref` binding in its
+     * own store (:592-597). A resync that re-lands an Epicor quote whose
+     * binding survived (its Sugar row deleted) is an INSERT in Sugar with no
+     * flag in the body. Nothing on this side answered 🔒 1472 for that
+     * insert, so it went in at the vardef default, 0. When the body DOES
+     * carry it, it already survives every Quotes hook into the insert (this
+     * class: clearOrphanPrimary() spares ORIGIN_SYNC; the copy shed returns
+     * for the connector platform) - pinned by
+     * scripts/tests/test_primary_at_sync_birth.py.
+     *
+     * THE RULE, stated from Sugar's own facts, so it cannot depend on the
+     * sender's bookkeeping: a CREATE (isUpdate() false, the same test
+     * stampOriginAtBirth() uses) on a SYNC platform (the origin just
+     * stamped) with NO Opportunity is primary in this before_save, so the
+     * flag rides the INSERT itself. Idempotent with the connector's own flag.
+     *
+     * 🛑 NO OPPORTUNITY, OR NOTHING. With one, "first" is the deal's question,
+     * not the sync's: 🔒 710 (bootstrapFirstPrimary) stamps the first quote on
+     * a deal, and 🔒 1468 (yieldOnJoin) keeps a deal's existing primary. The
+     * connector's own rule is the same ("a create that carries an
+     * Opportunity fails toward NOT primary"). A link that cannot be read is
+     * not "no Opportunity" - it is not stamped.
+     *
+     * 🛑 NEVER A SUGAR-BORN CREATE. A UI copy, a hand-made quote, the seed
+     * loader (its own 'epicor_seed' platform) all stamp ORIGIN_SUGAR and are
+     * untouched here, so a copy still opens non-primary and G167 I3 still
+     * clears an orphan Sugar quote's flag.
+     */
+    private function stampPrimaryAtSyncBirth(SugarBean $bean, string $event): void
+    {
+        if ($event !== 'before_save' || !method_exists($bean, 'isUpdate') || $bean->isUpdate()) {
+            return;
+        }
+        if ($this->originOf($bean) !== self::ORIGIN_SYNC || !empty($bean->erp_is_primary_quote)) {
+            return;
+        }
+        if (!empty($bean->opportunity_id)) {
+            return;
+        }
+        if (!$bean->load_relationship('opportunities') || !is_object($bean->opportunities)) {
+            return;
+        }
+        if ($this->getOpportunityIds($bean) !== array()) {
+            return;
+        }
+
+        $bean->erp_is_primary_quote = true;
+        $GLOBALS['log']->info(
+            'QuotePrimaryQuoteSoleEnforcer: quote ' . $bean->id . ' is created by the sync with no'
+            . ' Opportunity and is primary in its creating save (🔒 1472)'
+        );
+    }
+
+    /**
+     * erp_quote_origin as stated, or '' when the quote predates the stamp.
+     */
+    private function originOf(SugarBean $bean): string
+    {
+        $origin = trim((string) ($bean->erp_quote_origin ?? ''));
+
+        return in_array($origin, array(self::ORIGIN_SYNC, self::ORIGIN_SUGAR), true) ? $origin : '';
+    }
+
+    /**
+     * G167 I3 — "A QUOTE WITH NO OPPORTUNITY CANNOT BE PRIMARY. The flag is
+     * cleared, or refused on write."
+     *
+     * Returns true when it cleared the flag, so doEnforce() stops: there is no
+     * Opportunity, therefore nothing to be sole primary OF, and every step
+     * below this point needs exactly one.
+     *
+     * 🛑 CLEARED, NOT REFUSED, AND THE CHOICE IS THE WHOLE RISK OF THIS RULE.
+     * G167 offers both; refusing is the one that breaks the product. 93% of
+     * quotes here (146 of 157, measured for 🔒 710) are created with NO
+     * Opportunity and linked afterwards - the seed loader, "Create Opportunity
+     * and Quote", every REST integration. A save-time refusal on a flagged
+     * orphan turns each of those into a failed button, which is precisely the
+     * regression G179's guard had to be un-armed for (`AccountsErpActionsApi`
+     * set the billing account before the opportunity link existed). A gap
+     * about data quality must not ship as a broken create.
+     *
+     * 🛑 AND IT COSTS NOTHING TO DO IT THIS WAY ROUND, because 🔒 710 puts the
+     * flag back the moment the quote joins a deal: bootstrapFirstPrimary()
+     * fires on after_relationship_add and stamps the first quote on an
+     * Opportunity. So the create-then-link path ends in exactly the state the
+     * seller wanted - it simply never passes THROUGH the illegal one. That is
+     * §DG's unreachable-rather-than-detected, obtained by doing less.
+     *
+     * before_save ONLY, for restoreUnsanctionedClear()'s reason: the cleared
+     * value never reaches the database, so `erp_is_primary_quote` being
+     * 'audited' does not produce a change-log row for a flag that was never
+     * legitimately set. Clearing in after_save would need a nested save - the
+     * thing this class refuses to do anywhere (see bootstrapFirstPrimary).
+     *
+     * 🚩 A RELATIONSHIP THAT WILL NOT LOAD IS NOT AN ABSENT ONE. getOpportunityIds()
+     * answers array() for BOTH "no link rows" and "load_relationship() failed",
+     * and clearing a live primary quote's flag because a link read failed
+     * would be this rule doing real damage on no evidence. So the load is
+     * tested separately here and a failure leaves the flag alone.
+     *
+     * ⚠️ WHAT THIS DOES NOT DO, stated rather than discovered later: the 41
+     * orphans already carrying the flag on the tenant are NOT healed by this.
+     * They are only reached when somebody saves them. G167 sequences that
+     * deliberately - "ship the rule first, THEN correct the data, then
+     * re-measure" - because a sweep run before the rule re-arms. The sweep is
+     * a separate, owner-authorised data task and is not code.
+     */
+    private function clearOrphanPrimary(SugarBean $bean, string $event): bool
+    {
+        if ($event !== 'before_save') {
+            return false;
+        }
+        // 🔒 1472 / 🔒 1473 — THE FOURTH GATE. A quote the connector created
+        // from Epicor is primary from creation with NO Opportunity; a seller
+        // links one later. Clearing it here would clear it in the very create
+        // that set it. So the clear is for a quote KNOWN to be Sugar-born.
+        //
+        // 🛑 AND "UNKNOWN" IS NOT "SUGAR" (🔒 1428). A quote that predates the
+        // stamp carries no origin at all. Treating that as Sugar-born would
+        // clear every existing Epicor-created orphan on its next save - and
+        // the connector re-saves Epicor quotes on every sync, so that would
+        // happen within one sync of the deploy, before anyone had reviewed
+        // which ones they were. Those rows are decided by
+        // scripts/clear_orphan_primary_flags.py, from their creation facts,
+        // after a dry run the owner sees.
+        if ($this->originOf($bean) !== self::ORIGIN_SUGAR) {
+            return false;
+        }
+        if (!$bean->load_relationship('opportunities') || !is_object($bean->opportunities)) {
+            // Could not ask. Not an answer, and not a licence to clear.
+            $GLOBALS['log']->error(
+                'QuotePrimaryQuoteSoleEnforcer: could not load the opportunities link on quote '
+                . $bean->id . ' - leaving erp_is_primary_quote alone rather than clearing it on a'
+                . ' read that did not happen (G167 I3)'
+            );
+
+            return false;
+        }
+        if ($this->getOpportunityIds($bean) !== array()) {
+            return false;
+        }
+
+        $bean->erp_is_primary_quote = false;
+        $GLOBALS['log']->info(
+            'QuotePrimaryQuoteSoleEnforcer: cleared erp_is_primary_quote on quote ' . $bean->id
+            . ' - it has no Opportunity, so there is nothing for it to be the primary quote of'
+            . ' (G167 I3). Link it to an Opportunity and decision 710 stamps it back.'
+        );
+
+        return true;
+    }
+
+    /**
+     * 🔒 1468 (G215) — LINKING IS NOT MARKING: A PRIMARY QUOTE THAT JOINS A
+     * DEAL WHICH ALREADY HAS ONE YIELDS TO IT.
+     *
+     * 🔒 1472 / 🔒 1473 make an Epicor-created quote primary from creation
+     * with NO Opportunity; a seller links one later. When the deal they link
+     * it to already has a primary, the owner's rule is: the person's existing
+     * primary stays, the linked quote's flag clears, exactly one results.
+     *
+     * 🛑 WHAT THE CODE DID BEFORE THIS, MEASURED ON THE SHIPPED MODE ('move').
+     * after_relationship_add reached doEnforce() with the joiner primary, the
+     * mode gate let it through (it is not before_save), otherPrimaryQuoteIds()
+     * found the incumbent, and movePrimaryTo() handed the deal to the JOINER -
+     * demoting the seller's primary and republishing the Opportunity amount
+     * from a quote nobody chose. In 'refuse' mode it returned instead and left
+     * TWO primaries. Neither is the ruling.
+     *
+     * THE DISCRIMINATOR IS "WAS IT PRIMARY BEFORE THIS OPERATION", from
+     * fetched_row - the platform's own pre-save snapshot. A quote the database
+     * already held as primary is being LINKED; a quote whose flag goes
+     * false -> true in this same save is being MARKED by a person, and the
+     * existing move rule (the seller's tick wins) still applies to it.
+     *
+     * ONLY after_relationship_add ON THE OPPORTUNITIES LINK (doEnforce()
+     * filters the link). A deal with NO primary is left alone here: the joiner
+     * keeps its flag and QuoteOpportunityAmount, at priority 20 on the same
+     * event, gives the Opportunity its total.
+     *
+     * THE CLEAR IS ADMITTED BY SingleDemotionSiteTest by name and by guard. It
+     * cannot leave a deal with zero primaries, because it fires only when the
+     * deal already has one. It records TRIGGER_YIELDED_ON_JOIN so that
+     * restoreUnsanctionedClear() does not put the flag back, and so that
+     * QuoteOpportunityAmount does not read this clear as the Opportunity's
+     * primary being withdrawn - it never was that quote, and blanking the
+     * amount here would be G199's hole reopened from the other side.
+     *
+     * Persistence follows bootstrapFirstPrimary() exactly: inside a save in
+     * flight the flag rides that write; on the link-later path (the quote was
+     * loaded fresh by the relationship code) it is saved here, once.
+     */
+    private function yieldOnJoin(SugarBean $bean, string $event): bool
+    {
+        if ($event !== 'after_relationship_add') {
+            return false;
+        }
+        if (empty($bean->fetched_row['erp_is_primary_quote'])) {
+            return false;
+        }
+        $oppIds = $this->getOpportunityIds($bean);
+        if (count($oppIds) !== 1) {
+            return false;
+        }
+        $oppId = (string) reset($oppIds);
+        if (!$this->otherPrimaryQuoteIds($oppId, $bean->id)) {
+            return false;
+        }
+
+        $bean->erp_is_primary_quote = false;
+        self::noteTrigger((string) $bean->id, self::TRIGGER_YIELDED_ON_JOIN);
+        $GLOBALS['log']->info(
+            'QuotePrimaryQuoteSoleEnforcer: quote ' . $bean->id . ' was already primary and joined'
+            . ' opportunity ' . $oppId . ', which has its own primary quote - it yields to that'
+            . ' one (🔒 1468: linking is not marking)'
+        );
+
+        if (!empty($bean->in_save)) {
+            return true;
+        }
+
+        self::$enforcing = true;
+        try {
+            $bean->save();
+        } finally {
+            self::$enforcing = false;
+        }
 
         return true;
     }
@@ -538,6 +883,30 @@ class QuotePrimaryQuoteSoleEnforcer
         // it from the scan is right, and this is the SAME "who is primary"
         // read the move path uses - a rule written twice drifts.)
         if ($this->otherPrimaryQuoteIds($oppId, $bean->id)) {
+            return;
+        }
+
+        // 🛑 "NO OTHER PRIMARY" IS NOT "FIRST". 🔒 710's own word is FIRST -
+        // "every quote that is created as FIRST on opperunty is paimary" - and
+        // the check above only asked whether anybody else holds the flag. On a
+        // deal whose primary was withdrawn (🔒 787(4): left visibly unvalued,
+        // re-affirmed by the owner 2026-09-22 with "no sibling is
+        // auto-promoted") every later joiner passed it, was stamped primary,
+        // was labelled "first-created pick", and the unvalued deal was then
+        // valued off it by QuoteOpportunityAmount. Shown by executing this
+        // method on a CONSTRUCTED fixture (a copy joining a deal with nine
+        // live quotes and no primary came out PRIMARY) - not on quote 310's
+        // measured state: c176ed74 is in G167's 09-21 baseline as a deal WITH
+        // a primary, and on such a deal the check above already declined to
+        // stamp. So this closes the zero-primary variant of the copy concern,
+        // which is the system choosing the replacement 787(4) reserves for a
+        // human; it is not claimed as 310's mechanism.
+        //
+        // 📌 hasOtherLiveQuote() SUBSUMES the otherPrimaryQuoteIds() check
+        // above - any other primary is a live quote. That check is kept for
+        // its log-free cheap exit on the common case, not because it still
+        // decides anything the second one would not.
+        if ($this->hasOtherLiveQuote($oppId, (string) $bean->id)) {
             return;
         }
 
@@ -830,6 +1199,40 @@ class QuotePrimaryQuoteSoleEnforcer
         }
 
         return $rivals;
+    }
+
+    /**
+     * 🔒 710's "FIRST": does $oppId carry any OTHER live quote besides $selfId?
+     *
+     * Deleted siblings do not count - a deal whose only earlier quote was
+     * deleted has no quote a seller could have chosen instead, so the joiner
+     * really is the first live one and 710 applies.
+     *
+     * 🛑 AN UNREADABLE DEAL ANSWERS "YES", i.e. do not promote. Not knowing
+     * whether this is the first quote is not licence to stamp it: the wrong
+     * stamp values a deal off a quote nobody chose, while the withheld stamp
+     * leaves it in 787(4)'s VISIBLE unvalued state, which a seller can see and
+     * fix by ticking Primary. Same reads as otherPrimaryQuoteIds(), for the
+     * same reason: `use_cache => false` so the Link2 really re-queries.
+     */
+    private function hasOtherLiveQuote(string $oppId, string $selfId): bool
+    {
+        $opportunity = BeanFactory::retrieveBean('Opportunities', $oppId, array('use_cache' => false));
+        if (!$opportunity || !$opportunity->load_relationship('quotes') || !is_object($opportunity->quotes)) {
+            return true;
+        }
+
+        foreach ((array) $opportunity->quotes->get() as $quoteId) {
+            if ((string) $quoteId === $selfId || empty($quoteId)) {
+                continue;
+            }
+            $sibling = BeanFactory::retrieveBean('Quotes', $quoteId, array('use_cache' => false));
+            if ($sibling && empty($sibling->deleted)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** Opportunity ids this quote is linked to, through the relationship. */

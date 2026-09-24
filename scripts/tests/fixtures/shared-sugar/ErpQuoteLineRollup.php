@@ -79,6 +79,8 @@ class ErpQuoteLineRollup
      *                       the old answers. 'origin' says where the line
      *                       came from: two lines are alternatives to one
      *                       another only if they share a group AND an origin.
+     *                       'discount' is this line's concession in DOCUMENT
+     *                       CURRENCY - already resolved, see lineValue().
      * @param string $policy one of POLICIES; anything else falls back to
      *                       POLICY_SUM rather than throwing - a typo in an
      *                       admin setting must not be able to stop an order
@@ -122,7 +124,7 @@ class ErpQuoteLineRollup
         $anyPin = false;
 
         foreach ($lines as $i => $line) {
-            $value = (float) ($line['quantity'] ?? 0) * (float) ($line['price'] ?? 0);
+            $value = self::lineValue($line);
             $key = self::groupKey($line, $i);
             $pinKey = self::pinGroupKey($line, $i);
 
@@ -242,6 +244,52 @@ class ErpQuoteLineRollup
             'open' => $open,
             'total' => round($ordered + $open, 2),
         ];
+    }
+
+    /**
+     * WHAT ONE LINE IS WORTH: quantity x price, LESS the concession the seller
+     * gave on it.
+     *
+     * 🛑 THE DISCOUNT TERM IS WHY G89 EXISTED. This was `quantity * price` and
+     * nothing else, so a quote carrying per-line discounts produced TWO sums of
+     * the same lines that could not agree: this class's figure, published to
+     * Opportunities.erp_open_amount and added into Opportunities.amount, and
+     * Sugar's own enforced Grand Total (Quotes.new_sub = the bundles'
+     * subtotal - deal_tot, a line contributing Products.total_amount). Measured
+     * live on Bench quote 273, 2026-09-21: erp_open_amount 25,100.00 beside
+     * Quotes.total 24,100.00 - over by exactly the 402.33 + 597.67 the seller
+     * had taken off two lines. The manager's pipeline read 1,000.00 more than
+     * the number printed on the customer's quote. See
+     * tests/ErpQuote273LineDiscountProbeTest.php.
+     *
+     * A CURRENCY AMOUNT, ALREADY RESOLVED, AND THAT SPLIT IS DELIBERATE. Sugar
+     * spells one concession two ways - a percent of the line when
+     * Products.discount_select is set, flat dollars otherwise. Teaching this
+     * class that flag would mean teaching it Sugar, and its whole value is that
+     * it needs no Sugar to run (see the class docblock). The translation lives
+     * with the bean reader, in ErpOpportunityValuation::lineDiscount(); this
+     * takes the money.
+     *
+     * ABSENT IS 0.0, WHICH IS THE POINT. Every caller that has never heard of
+     * the key - and every fixture written before it - gets the arithmetic this
+     * class always had, byte for byte. Same promise, same reason, as
+     * 'governing' and 'origin' beside it.
+     *
+     * NOT CLAMPED AT ZERO. Sugar permits a discount larger than the line, and
+     * a line that is genuinely a credit is worth a negative number. Flooring it
+     * would fabricate a zero over a figure the quote itself carries - decision
+     * 59's defect, with the sign reversed.
+     *
+     * NON-NUMERIC IS 0.0 AND NEVER A THROW. This runs inside an after_save hook
+     * on Quotes; a malformed cell must not be able to fail a seller's save. The
+     * quantity and price beside it already degrade the same way.
+     */
+    private static function lineValue(array $line): float
+    {
+        $gross = (float) ($line['quantity'] ?? 0) * (float) ($line['price'] ?? 0);
+        $discount = $line['discount'] ?? null;
+
+        return is_numeric($discount) ? $gross - (float) $discount : $gross;
     }
 
     /**

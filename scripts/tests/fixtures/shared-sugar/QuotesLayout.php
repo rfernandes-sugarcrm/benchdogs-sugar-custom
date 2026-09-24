@@ -10,8 +10,81 @@ class QuotesLayout extends BaseErpLayout
     /** The OTHER grand-totals view. The helpers default to the footer. */
     private const TOTALS_HEADER_VIEW = 'quote-data-grand-totals-header';
 
+    /**
+     * G229 — why this quote's discounts no longer fit what it is worth. Named
+     * once, because install() has to place it on an UPGRADED tenant as well as
+     * declare it in erpPanel(), and two spellings of one row is how a field
+     * comes to be added twice.
+     */
+    const ERP_DISCOUNT_REFUSAL_FIELD = [
+        'name' => 'erp_discount_refusal',
+        'label' => 'LBL_ERP_DISCOUNT_REFUSAL',
+        'readonly' => true,
+    ];
+
+    /**
+     * G402 — the ERP panel's read-only datetimes, on the package field type that
+     * renders them as a formatted datetime in EVERY mode (ERP-Core
+     * custom/clients/base/fields/erp-readonly-datetime). Named once so the panel
+     * definition and the test that proves the type reaches an upgraded tenant
+     * (scripts/tests/test_g402_erp_datetimes_read_only_in_edit.py) read the same
+     * rows. Labels and readonly are unchanged from 1.1.123.
+     */
+    const ERP_READONLY_DATETIME_FIELDS = [
+        'erp_priced_at' => [
+            'name' => 'erp_priced_at',
+            'label' => 'LBL_ERP_PRICED_AT',
+            'readonly' => true,
+            'type' => 'erp-readonly-datetime',
+        ],
+        'erp_writeback_at' => [
+            'name' => 'erp_writeback_at',
+            'readonly' => true,
+            'label' => 'LBL_ERP_WRITEBACK_AT',
+            'type' => 'erp-readonly-datetime',
+        ],
+    ];
+
+    /**
+     * G380 (d) / 🔒 1724b — the seller's Reference for the ERP quote header
+     * (QuoteHed.Reference; core sends it on Send to Estimation when it is
+     * filled). EDITABLE, and ALWAYS SHOWN: it is an input, and a
+     * hide-when-empty rule (erpPanelEmptyFieldDependencies) would hide it
+     * exactly when it still needs filling - so it is deliberately NOT in that
+     * list. erpPanel() declares it for a fresh install; on an UPGRADED tenant
+     * its vardef's `erp_layout` marker places it (ErpLayoutExtraFields::sync(),
+     * the last step of install()), which - unlike addFieldsToRecordView(),
+     * whose add-if-absent looks at ONE panel - leaves it wherever an admin
+     * already put it instead of adding a second copy.
+     */
+    const ERP_REFERENCE_FIELD = [
+        'name' => 'erp_reference',
+        'label' => 'LBL_ERP_REFERENCE',
+    ];
+
     const COMMENTS_PANEL_NAME = 'LBL_RECORDVIEW_PANEL_ERP_COMMENTS';
     const DISCOUNT_PANEL_NAME = 'LBL_RECORDVIEW_PANEL_ERP_DISCOUNT';
+
+    /**
+     * G396 — the Comments tab's status line, which replaced the Add Comment
+     * box, the Update button and the queue receipt (🔒 1702b Q1). Named once:
+     * install() PLACES it on an upgraded tenant and commentsPanel() declares
+     * it for a fresh one, and two spellings of one row is how a field comes to
+     * be added twice.
+     *
+     * related_fields is what makes Sidecar FETCH the ledger it counts from
+     * (view.js getFieldNames() plucks related_fields from the panels, and from
+     * nothing else); the field renders no value of its own.
+     */
+    const COMMENT_LOG_STATUS_FIELD = [
+        'name' => 'erp_comment_log_status',
+        'type' => 'erp-comment-log-status',
+        'label' => 'LBL_ERP_COMMENT_LOG_STATUS',
+        'dismiss_label' => true,
+        'readonly' => true,
+        'span' => 12,
+        'related_fields' => ['erp_commentlog_sync', 'erp_display_sync_key', 'erp_quote_type'],
+    ];
 
     public function install(): void
     {
@@ -40,25 +113,133 @@ class QuotesLayout extends BaseErpLayout
         // metadata, and the gate stays silently constant - which is precisely
         // how the 1.1.39 attempt was judged "inert" and deleted.
         $this->reconcileFieldsInRecordViewPanel('Quotes', ['name' => self::ERP_PANEL_NAME], $this->erpPanel()['fields']);
-        // THE QUANTITY-BREAK LADDER, AS A SUB-SECTION AND NOT A TAB.
+        // G75: the reconcile above only updates fields a tenant ALREADY has, and
+        // addPanelToRecordViewBefore() returned early wherever the ERP panel
+        // exists - so on an upgraded tenant the revision row is PLACED here,
+        // after the ERP ID it refers to. Add-if-absent by name.
+        $this->addFieldsToRecordView(
+            'Quotes',
+            [self::ERP_PARENT_QUOTE_NUM_FIELD],
+            ['name' => self::ERP_PANEL_NAME],
+            'erp_display_sync_key'
+        );
+        // Its OWN rule, not a new entry in erpPanelEmptyFieldDependencies():
+        // that one is a single serialized shape, and adding a target would land
+        // a second copy beside the deployed one on every tenant (G78).
+        $this->addDependenciesToRecordView('Quotes', $this->erpParentQuoteNumDependency());
+        // G229 — THE DISCOUNT WARNING, PLACED THE SAME WAY AND FOR THE SAME
+        // REASON THE REVISION ROW ABOVE IS.
         //
-        // Rendered as peer line items in the main grid the rungs read as
-        // several things being bought, and the grid's Grand Total adds them up:
-        // EPIC06 quote 1203 shows $24,850.00 for one prototype plus THREE
-        // mutually exclusive prices for the SAME part. They are alternatives.
+        // 🛑 A NEW FIELD IN erpPanel() DOES NOT REACH AN UPGRADED TENANT.
+        // addPanelToRecordViewBefore() returns early wherever the ERP panel
+        // already exists, and reconcileFieldsInRecordViewPanel() only updates
+        // fields a tenant ALREADY has. All three QA tenants are upgrades, so
+        // without this add-if-absent placement the warning would be stamped on
+        // the quote and rendered nowhere - which is the 1.1.39 "inert" shape.
+        $this->addFieldsToRecordView(
+            'Quotes',
+            [self::ERP_DISCOUNT_REFUSAL_FIELD],
+            ['name' => self::ERP_PANEL_NAME],
+            'erp_quote_type'
+        );
+        // Its OWN rule as well, never a target appended to
+        // erpPanelEmptyFieldDependencies() - G78 again: that shape is
+        // serialized once, so a new target lands a SECOND copy beside the
+        // deployed one on every tenant that already has it.
+        $this->addDependenciesToRecordView('Quotes', $this->erpDiscountRefusalDependency());
+
+        // QUOTE SETTINGS STAYS A TAB. panel_setting_body is Sugar's stock
+        // "Quote Settings" panel (assigned user, teams; in tabs mode
+        // panel_hidden is grouped under it). This call has been here since the
+        // package's first commit and has nothing to do with quantity breaks.
         //
-        // newTab => false is the point. A tab is somewhere you go and find;
-        // this belongs beside the lines it qualifies.
+        // 🛑 G315 WAS FILED AGAINST THIS LINE FROM A STALE COMMENT. 3f6cba6
+        // placed the ladder PANEL just above this call under the note
+        // "newTab => false is the point"; c7b583b moved the ladder out and
+        // deleted that call, leaving the note orphaned over this unrelated
+        // line, where it read as a contradiction. The ladder is no record-view
+        // panel now: QuotesQuantityAlternativesLayout REMOVES the old panel
+        // (🔒 693) and erp-break-select injects the rungs as a full-width row
+        // directly beneath their line (🔒 672/676).
+        //
+        // DO NOT FLIP THIS TO INLINE "FOR THE LADDER". It moves nothing about
+        // the ladder, and it folds Quote Settings and panel_hidden into the tab
+        // before it - the Comments tab, whose header erp-comment-log-status.js
+        // (update-erp-comment.js before G396) hides on every non-advanced quote. test_g315_ladder_is_not_a_tab.py
+        // pins both halves by running this installer.
         $this->setPanelAsNewTab('Quotes', 'panel_setting_body');
         // THE COMMENTS TAB (REQ-30), AND newTab => true IS THE OWNER'S WORD.
         //
-        // The quantity-break ladder above is deliberately NOT a tab, because it
-        // qualifies the lines it sits beside. A comment is the opposite: it is
+        // The quantity-break ladder is deliberately NOT a tab, because it
+        // qualifies the lines it sits beside - it renders inside the line grid
+        // (see QuotesQuantityAlternativesLayout). A comment is the opposite: it is
         // a conversation with the ERP about the whole quote, it can be long,
         // and it is somewhere a seller GOES rather than something they read in
         // passing. The owner asked for "a tab on the quote called Comments"
         // and then confirmed it: "add comemnts as a tab".
         $this->addPanelToRecordViewBefore('Quotes', $this->commentsPanel(), 'panel_setting_body');
+        // 🛑 AND THE LINE ABOVE IS NOT ENOUGH, FOR THE FOURTH TIME IN THIS
+        // PACKAGE (🔒 774, G114, the erp_quote_type related_fields case, and
+        // now this). addPanelToRecordViewBefore() RETURNS EARLY when the panel
+        // already exists and this is not a replace build, so a field added to
+        // commentsPanel() alone reaches a FRESH install and NO UPGRADED TENANT
+        // — every tenant that already has the Comments tab, which is all of
+        // them. The ERP panel above carries a reconcile for exactly this
+        // reason; the Comments panel had none, so G189's read-back field would
+        // have shipped, linted clean, installed "successfully" and still been
+        // absent from every seller's screen.
+        //
+        // Three calls, because they do different jobs and none substitutes
+        // for another:
+        //   removeFieldsFromRecordViewPanel() RETIRES what 🔒 1702b Q1 took off
+        //     the tab (G396: the Comment Log is the only place to write ERP
+        //     comments) - the Add Comment box, the Update button and G189's
+        //     queue receipt. Dropping them from commentsPanel() alone would
+        //     reach a FRESH install and no upgraded tenant: every tenant would
+        //     keep a second, retired way to write, which is the thing ruled
+        //     out. Scoped to this package's own panel (L-0009);
+        //   addFieldsToRecordView() PLACES the status line the panel does not
+        //     have, after erp_quote_comment - it carries the tab-header toggle
+        //     (🔒 670) that lived in the retired button, so it must reach every
+        //     upgraded tenant or the Comments tab reappears on sales orders;
+        //   reconcileFieldsInRecordViewPanel() brings the DEFINITION of every
+        //     field in this panel up to date — the "What Epicor holds" label,
+        //     the placeholder, the rows — on a tenant that already has it.
+        $this->removeFieldsFromRecordViewPanel(
+            'Quotes',
+            ['name' => self::COMMENTS_PANEL_NAME],
+            $this->retiredCommentsPanelFields()
+        );
+        $this->addFieldsToRecordView(
+            'Quotes',
+            [self::COMMENT_LOG_STATUS_FIELD],
+            ['name' => self::COMMENTS_PANEL_NAME],
+            'erp_quote_comment'
+        );
+        $this->reconcileFieldsInRecordViewPanel(
+            'Quotes',
+            ['name' => self::COMMENTS_PANEL_NAME],
+            $this->commentsPanel()['fields']
+        );
+        // G396 Q4 — THE ROLLOUT COPIES NO HISTORY. Every quote's thread is
+        // recorded as already reflected in the Comment Log, in one UPDATE with
+        // no bean save, so installing creates no entries and no notifications.
+        // Here rather than in post_execute*.php because this installer runs in
+        // both (append-only and replace) and those two files are packaging's.
+        // include_once, not require_once: the layout suites run this installer
+        // with only BaseErpLayout on the path, and a missing file there must
+        // not be a fatal. It is LOUD instead, so a package that ships without
+        // it cannot pass for one that ran it.
+        if (!class_exists('QuoteCommentMirrorBaseline', false)) {
+            @include_once 'custom/include/scripts/Modules/QuoteCommentMirrorBaseline.php';
+        }
+        if (class_exists('QuoteCommentMirrorBaseline', false)) {
+            (new QuoteCommentMirrorBaseline())->install();
+        } elseif (isset($GLOBALS['log']) && is_object($GLOBALS['log'])) {
+            $GLOBALS['log']->fatal('[QuotesLayout] QuoteCommentMirrorBaseline is missing: the Comment Log mirror '
+                . 'baseline was NOT set, so the first ERP comment change on an existing quote is diffed against '
+                . 'the value before that save instead (ErpCommentNotificationHook).');
+        }
         $this->addFieldsToListView('Quotes', $this->listViewFields());
         $this->moveRecordViewFieldsToHidden('Quotes', $this->recordViewCleanupFields());
         // Every tenant installed before 687.1 carries order_stage in panel_hidden,
@@ -131,7 +312,16 @@ class QuotesLayout extends BaseErpLayout
         // anything, and the tenant keeps the old surface for ever.
         $this->removeButtonsFromRecordView('Quotes', ['erp_discount_button']);
         $this->addPanelToRecordView('Quotes', $this->erpDiscountPanel());
-        $this->addDependenciesToRecordView('Quotes', $this->erpDiscountVisibilityDependencies());
+        // 🛑 G212: THE DISCOUNT PANEL IS OFFERED ON SALES ORDERS TOO (owner,
+        // quote 287). The rule this package deployed was advanced-quote-only
+        // (G106 / decision 702), and dependencies match by EXACT SERIALIZED
+        // SHAPE - so adding the new rule alone would land it BESIDE the old one
+        // on every upgraded tenant, two SetVisibility rules on one target, the
+        // G78 defect. The old shape is therefore removed BY VALUE first, then
+        // the new one added. erpDiscountVisibilityDependencies() is kept
+        // byte-for-byte as that removal target and must never be edited.
+        $this->removeDependenciesFromRecordView('Quotes', $this->erpDiscountVisibilityDependencies());
+        $this->addDependenciesToRecordView('Quotes', $this->erpDiscountTypeVisibilityDependencies());
         // 🔒 638: blank/diagnostic ERP-panel rows hidden until the ERP fills them.
         $this->removeDependenciesFromRecordView('Quotes', $this->legacyIsEmptyPanelEmptyFieldDependencies());
         $this->addDependenciesToRecordView('Quotes', $this->erpPanelEmptyFieldDependencies());
@@ -146,6 +336,7 @@ class QuotesLayout extends BaseErpLayout
         $this->addFieldsToNestedCollection('Quotes', 'product_bundle_items', $this->priceAvailabilityLineItemFields());
         $this->addFieldsToNestedCollection('Quotes', 'product_bundle_items', $this->erpLineDeeplinkLineItemFields());
         $this->addFieldsToNestedCollection('Quotes', 'product_bundle_items', $this->unitOfMeasureLineItemFields());
+        $this->addFieldsToNestedCollection('Quotes', 'product_bundle_items', $this->orderPriceGuardLineItemFields());
         // Epicor's OWN stated tax, on the totals footer the seller actually
         // reads. Shipping is deliberately absent here: ErpNativeShippingMirror
         // assigns the ERP freight to the NATIVE `shipping` field, so the
@@ -209,6 +400,86 @@ class QuotesLayout extends BaseErpLayout
         // passed because the helper defaults to the footer.
         $this->removeFieldsFromTotalsFooter('Quotes', array('tax'));
         $this->removeFieldsFromTotalsFooter('Quotes', array('tax'), self::TOTALS_HEADER_VIEW);
+
+        // G274 — THE HEADER STRIP SHOWS THE SAME TAX THE FOOTER DOES. Owner,
+        // 2026-09-22 ~15:20Z: "add a tax header next to the grand total at the
+        // top between disoscunted and grand total that shoudl be a tax header
+        // showing the same field you use for ERP tax". Measured on Bench
+        // (advanced quote, 140 x $6.00): header Order Discount $0.00 ·
+        // Discounted Subtotal $840.00 · Shipping $0.00 · Grand Total $840.23;
+        // footer ... · Tax (via ERP) $0.23 · ... - the $0.23 that makes the
+        // header's own Grand Total add up was nowhere in the header.
+        //
+        // SAME FIELD, SAME LABEL, SAME PLACE, SAME GATE as the footer row:
+        // erp_tax_amount, "Tax (via ERP)", before `shipping` (so after
+        // Discounted Subtotal once G165 took Sugar's `tax` out above), and
+        // shown on advanced quotes only by the header view override
+        // (clients/base/views/quote-data-grand-totals-header/), exactly as the
+        // footer override does it.
+        //
+        // REMOVE-THEN-ADD, for the footer's reason above: the add helper is
+        // add-if-absent by name, so a later change to this row's definition
+        // would never reach a tenant whose stored header already holds it.
+        // Both helpers load the tenant's STORED header viewdef (the custom
+        // file, or stock where there is none) and write it back - which is
+        // how this reaches an upgraded tenant at all.
+        //
+        // G321 / 🔒 1544a — THE STRIP READS LEFT TO RIGHT AS A SUM. Owner,
+        // 2026-09-23: *"first order Discounted Subtotal and hte Order Level
+        // Disocunt (show only the oreder level dissocunt amonut and % from the
+        // Discounted Subtotal) so the top line make sense if you do the math"*.
+        // Stock puts deal_tot FIRST; it is moved to sit after new_sub, and it is
+        // relabelled with the footer row's own key, LBL_ERP_DOCUMENT_DISCOUNT_AMOUNT
+        // ("Order Level Discount"). What it DISPLAYS is decided by the ERP-Epicor
+        // Quotes currency field (the order-level discount and its % of new_sub).
+        // The strip becomes
+        //   [new_sub, deal_tot, erp_tax_amount, shipping, total]
+        //   156.80  - 47.04   + 5.21          + 0.00   = 114.97
+        //
+        // 🚩 ONE remove, ONE add, both rows together. The add helper appends at
+        // the END when its anchor is missing, so deal_tot is anchored on
+        // `shipping` (always present) in the same call as erp_tax_amount rather
+        // than on erp_tax_amount. Removing deal_tot first is also what MOVES it
+        // on an upgraded tenant: add-if-absent would otherwise leave stock's
+        // first-position deal_tot exactly where it is, with stock's label.
+        $this->removeFieldsFromTotalsFooter(
+            'Quotes',
+            array('deal_tot', 'erp_tax_amount'),
+            self::TOTALS_HEADER_VIEW
+        );
+        $this->addFieldsToTotalsFooterBefore(
+            'Quotes',
+            $this->erpTotalsHeaderFields(),
+            'shipping',
+            self::TOTALS_HEADER_VIEW
+        );
+
+        // G380 (f) — LAST: every package's `erp_layout`-marked Quotes field
+        // (erp_reference, and a customer package's own) is placed on the view
+        // this install just wrote, so reinstalling ERP-Epicor never drops them.
+        self::syncExtraFields('Quotes');
+    }
+
+    /**
+     * G380 (f): ErpLayoutExtraFields::sync($module), loaded the
+     * QuoteCommentMirrorBaseline way - class-guarded (MLP001), include_once
+     * rather than require_once so a harness that runs this installer with only
+     * BaseErpLayout on the path is not a fatal, and LOUD when it is missing so
+     * a package shipped without it cannot pass for one that ran it.
+     * AccountsLayout carries the same few lines: it runs BEFORE this class is
+     * loaded in post_execute, so it cannot borrow this method.
+     */
+    private static function syncExtraFields(string $module): void
+    {
+        if (!class_exists('ErpLayoutExtraFields', false)) {
+            @include_once 'custom/include/ErpLayoutExtraFields.php';
+        }
+        if (class_exists('ErpLayoutExtraFields', false)) {
+            ErpLayoutExtraFields::sync($module);
+        } elseif (isset($GLOBALS['log']) && is_object($GLOBALS['log'])) {
+            $GLOBALS['log']->fatal('[' . $module . 'Layout] custom/include/ErpLayoutExtraFields.php is missing: '
+                . 'fields other packages mark with erp_layout were NOT placed on the ' . $module . ' record view.');
+        }
     }
 
     public function uninstall(): void
@@ -216,11 +487,27 @@ class QuotesLayout extends BaseErpLayout
         $this->removePanelFromRecordView('Quotes');
         $this->removeErpFieldsFromListView('Quotes');
         $this->removeButtonsFromRecordView('Quotes', ['create_erp_order_button', 'advanced_quote_button', 'refresh_price_availability_button', 'erp_discount_button']);
+        // G212's rule. The legacy advanced-only shape is still removed below,
+        // for a tenant that never ran the install that swapped it.
+        $this->removeDependenciesFromRecordView('Quotes', $this->erpDiscountTypeVisibilityDependencies());
+        // G75's rule. The row itself leaves with the ERP panel (removePanelFromRecordView).
+        $this->removeDependenciesFromRecordView('Quotes', $this->erpParentQuoteNumDependency());
         $this->removeDependenciesFromRecordView('Quotes', $this->erpFieldVisibilityDependencies());
         $this->removeDependenciesFromRecordView('Quotes', $this->erpEstimateVisibilityDependencies());
         $this->removeDependenciesFromRecordView('Quotes', $this->erpCommentVisibilityDependencies());
         $this->removeDependenciesFromRecordView('Quotes', $this->erpDiscountVisibilityDependencies());
         $this->removePanelsFromRecordView('Quotes', [self::DISCOUNT_PANEL_NAME]);
+        // G189: a field this package PLACED, this package takes back. The
+        // Comments panel itself is deliberately not removed here (it predates
+        // this change and nothing in uninstall() has ever removed it), so
+        // leaving erp_comment_queue on it would strand a row pointing at a
+        // vardef that left with the package — a labelled empty box on the
+        // seller's tab for ever. Scoped to this package's own panel (L-0009).
+        $this->removeFieldsFromRecordViewPanel(
+            'Quotes',
+            ['name' => self::COMMENTS_PANEL_NAME],
+            ['erp_comment_queue', self::COMMENT_LOG_STATUS_FIELD['name']]
+        );
         $this->removeDependenciesFromRecordView('Quotes', $this->erpPanelEmptyFieldDependencies());
         $this->removeDependenciesFromRecordView('Quotes', $this->sendToEstimationRatchetDependency());
         $this->removeDependenciesFromRecordView('Quotes', $this->legacyErpEstimateVisibilityDependencies());
@@ -229,6 +516,19 @@ class QuotesLayout extends BaseErpLayout
         $this->removeFieldsFromNestedCollection('Quotes', 'product_bundle_items', $this->erpLineDeeplinkLineItemFields());
         $this->removeFieldsFromNestedCollection('Quotes', 'product_bundle_items', $this->unitOfMeasureLineItemFields());
         $this->removeFieldsFromTotalsFooter('Quotes', array('erp_tax_amount', 'erp_document_discount_amount'));
+        // G274: the header's copy of the ERP tax row leaves with the package too.
+        $this->removeFieldsFromTotalsFooter('Quotes', array('erp_tax_amount'), self::TOTALS_HEADER_VIEW);
+
+        // 🔒 1544a: deal_tot is a STOCK header cell that install() moved and
+        // relabelled, so it goes back to stock's first position with stock's
+        // own definition, verbatim - before new_sub, where stock has it.
+        $this->removeFieldsFromTotalsFooter('Quotes', array('deal_tot'), self::TOTALS_HEADER_VIEW);
+        $this->addFieldsToTotalsFooterBefore(
+            'Quotes',
+            $this->stockDealTotHeaderField(),
+            'new_sub',
+            self::TOTALS_HEADER_VIEW
+        );
 
         // G165: `tax` is a STOCK Sugar row, so removing it in install() obliges
         // us to put it back — otherwise uninstalling this package leaves Sugar's
@@ -316,6 +616,61 @@ class QuotesLayout extends BaseErpLayout
     }
 
     /**
+     * 🔒 1544a: stock Sugar's own `deal_tot` header cell, verbatim from
+     * modules/Quotes/clients/base/views/quote-data-grand-totals-header/
+     * quote-data-grand-totals-header.php, so uninstall() restores exactly what
+     * install() moved and relabelled.
+     */
+    private function stockDealTotHeaderField(): array
+    {
+        return array(
+            array(
+                'name' => 'deal_tot',
+                'label' => 'LBL_LIST_DEAL_TOT',
+                'css_class' => 'quote-totals-row-item',
+                'related_fields' => array('deal_tot_discount_percentage'),
+            ),
+        );
+    }
+
+    /**
+     * The header strip's ERP cells, in the order they sit before `shipping`.
+     *
+     * 🔒 1544a — deal_tot, as the ORDER LEVEL DISCOUNT tile. Stock's cell,
+     * moved to follow new_sub and labelled with the footer row's key. It stays
+     * the deal_tot field because the stock header template prints a percentage
+     * only for a field NAMED deal_tot; the ERP-Epicor Quotes currency field
+     * makes it show erp_document_discount_amount and its % of new_sub.
+     * related_fields kept from stock, so the record still fetches the stored
+     * percentage reports use.
+     *
+     * G274 — the footer's "Tax (via ERP)" row, with the HEADER's cell class:
+     * stock's header template draws its dividers from `quote-totals-row-item`
+     * (modules/Quotes/clients/base/views/quote-data-grand-totals-header/
+     * quote-data-grand-totals-header.hbs:18), and every stock header cell
+     * carries it. `currency`, not a custom type, for G165's measured reason:
+     * a type with no template for the view's action renders nothing.
+     */
+    private function erpTotalsHeaderFields(): array
+    {
+        return array(
+            array(
+                'name' => 'deal_tot',
+                'label' => 'LBL_ERP_DOCUMENT_DISCOUNT_AMOUNT',
+                'css_class' => 'quote-totals-row-item',
+                'related_fields' => array('deal_tot_discount_percentage'),
+            ),
+            array(
+                'name' => 'erp_tax_amount',
+                'label' => 'LBL_ERP_TAX_AMOUNT',
+                'type' => 'currency',
+                'css_class' => 'quote-totals-row-item',
+                'convertToBase' => false,
+            ),
+        );
+    }
+
+    /**
      * 🔒 1413 — NOTHING. `order_stage` IS NO LONGER PLACED ON THE QUOTE.
      *
      * Owner, 2026-09-20, verbatim: *"thenlets remove this form the quote such a
@@ -366,6 +721,9 @@ class QuotesLayout extends BaseErpLayout
                 ['name' => 'erp_quotes_billing_terms_name', 'label' => 'LBL_ERP_QUOTES_BILLING_TERMS_FROM_ERP_LOOKUPVALUES_TITLE'],
                 ['name' => 'erp_quotes_fob_name', 'label' => 'LBL_ERP_QUOTES_FOB_FROM_ERP_LOOKUPVALUES_TITLE'],
                 ['name' => 'erp_quotes_ship_via_name', 'label' => 'LBL_ERP_QUOTES_SHIP_VIA_FROM_ERP_LOOKUPVALUES_TITLE'],
+                // G380 (d): the seller's Reference, beside the other values the
+                // ERP document carries. Placed on upgraded tenants by install().
+                self::ERP_REFERENCE_FIELD,
                 // 🛑 erp_quoted_value IS REMOVED FROM THIS PANEL (🔒 640). It is a
                 // DUPLICATE THAT DISAGREES, and the owner named both halves:
                 // "WE ALREADY SHOW TOTAL ON THE QUOTE" and "WHY DO WE EVEN HAVE
@@ -396,13 +754,31 @@ class QuotesLayout extends BaseErpLayout
                 // nothing shows a seller this number any more.
                 // Hyperlinks to epicor_deeplink_url - see custom/clients/base/fields/erp-id-link/.
                 ['name' => 'erp_display_sync_key', 'label' => 'LBL_ERP_DISPLAY_SYNC_KEY', 'type' => 'erp-id-link', 'readonly' => true],
+                // G75: "Revision of ERP quote <n>", beside the ERP ID it revises.
+                // Shown only when set - see erpParentQuoteNumDependency().
+                self::ERP_PARENT_QUOTE_NUM_FIELD,
                 // Fields the ERP quote mirror used to reflect onto the Quote. The
                 // mirror (ERP_Quotes and its ErpQuoteReflectionHook) is retired;
                 // see ERP-Epicor/docs/quote-mirror.md. All readonly.
                 // erp_governing_line is no longer placed here: see
                 // retiredErpPanelFields().
+                // G229 — why this quote's discounts no longer fit what it is
+                // worth. Shown ONLY when set (erpPanelEmptyFieldDependencies),
+                // so it is a warning that appears rather than a row that is
+                // usually blank: quote 314 reached -$26.43 in Closed Accepted
+                // with nothing on the page objecting, and this is the objection.
+                self::ERP_DISCOUNT_REFUSAL_FIELD,
                 ['name' => 'erp_estimate_stage', 'label' => 'LBL_ERP_ESTIMATE_STAGE', 'readonly' => true],
-                ['name' => 'erp_priced_at', 'label' => 'LBL_ERP_PRICED_AT', 'readonly' => true],
+                // G402 — a read-only datetime that reads as one in EDIT mode too.
+                // As a stock datetimecombo it rendered "[object Object]" on the
+                // quote's edit view (owner screenshot, #1023): readonly keeps the
+                // detail template while the action can still become 'edit', and
+                // stock format() returns an object for 'edit'. The package field
+                // pins both to detail - see erp-readonly-datetime.js. The TYPE
+                // reaches an upgraded tenant through
+                // reconcileFieldsInRecordViewPanel() below (G114), which merges
+                // every key of these definitions onto the deployed field.
+                self::ERP_READONLY_DATETIME_FIELDS['erp_priced_at'],
                 // G172 — render the RESOLVED label, falling back to the code.
                 // The label was computed and stored correctly on every quote
                 // that has a code (43/43 on Bench) and appeared in NONE of the
@@ -420,7 +796,8 @@ class QuotesLayout extends BaseErpLayout
                     'readonly' => true,
                 ],
                 ['name' => 'erp_writeback_status', 'readonly' => true, 'label' => 'LBL_ERP_WRITEBACK_STATUS'],
-                ['name' => 'erp_writeback_at', 'readonly' => true, 'label' => 'LBL_ERP_WRITEBACK_AT'],
+                // G402 — "ERP Status At", the same fix as erp_priced_at above.
+                self::ERP_READONLY_DATETIME_FIELDS['erp_writeback_at'],
                 ['name' => 'erp_writeback_msg', 'readonly' => true, 'label' => 'LBL_ERP_WRITEBACK_MSG', 'span' => 12],
             ],
         ];
@@ -429,10 +806,12 @@ class QuotesLayout extends BaseErpLayout
     /**
      * 🛑 FETCHED ONTO THE MODEL, RENDERED ON NO PANEL (G114).
      *
-     * THE PROBLEM. `create-erp-order.js::_isSubmittable()` reads
-     * `this.model.get('order_stage')` and treats ABSENT as not-yet-sent:
+     * THE PROBLEM. The order-button rule (🔒 1540: the ERP-Core
+     * QuotesErpAction plugin's `_erpOrderingIsOpen()`, read by Submit Order
+     * and Order Selected Lines; before it, `create-erp-order.js::_isSubmittable()`)
+     * reads `this.model.get('order_stage')` and treats ABSENT as not-yet-sent:
      *
-     *     return !stage || stage === 'CRM Only' || stage === 'ERP Error';
+     *     PRE_HANDOFF_ORDER_STAGES = ['', 'CRM Only', 'ERP Error']
      *
      * 🔒 1413 took order_stage off the quote entirely ("we dont need the drop
      * down adn we dont need the logic"), so on a model that never fetched it
@@ -583,8 +962,9 @@ class QuotesLayout extends BaseErpLayout
         //
         // The guard the old comment protected is real and still is:
         //
-        //   create-erp-order.js:472  const stage = this.model.get('order_stage');
-        //   _isSubmittable(): return !stage || stage === 'CRM Only' || ...
+        //   QuotesErpAction.js _erpOrderingIsOpen() (🔒 1540; was
+        //   create-erp-order.js _isSubmittable()):
+        //     var orderStage = model.get('order_stage') || '';  // '' = not yet sent
         //
         // An unfetched field reads empty, empty reads "not yet sent", and the
         // Submit control returns on an already-ordered quote — the
@@ -758,6 +1138,104 @@ class QuotesLayout extends BaseErpLayout
     // on SalesOrderSvc keyed by OrderNum. Until that ships, this gate is
     // correct rather than conservative.
     /**
+     * G75 — the revision row, as placed in the ERP panel. One definition, read
+     * by erpPanel() (fresh installs) and by install()'s placement call
+     * (upgraded tenants), so the two can never disagree.
+     */
+    const ERP_PARENT_QUOTE_NUM_FIELD = [
+        'name' => 'erp_parent_quote_num',
+        'label' => 'LBL_ERP_PARENT_QUOTE_NUM',
+        'readonly' => true,
+    ];
+
+    /**
+     * G75 — "Revision of ERP quote <n>" when this quote IS a revision, and no
+     * row at all when it is not.
+     *
+     * 🛑 NULL MUST READ AS "NOT A REVISION", NEVER AS 0. Measured in Sidecar's
+     * own SugarLogic (sidecar/lib/sugarlogic/sidecarExpressionContext.js
+     * getValue): a null value falls to the final branch and becomes `""`, so
+     * `not(equal($f, ""))` is false and the row hides; a NUMBER is cast to a
+     * string first, so a 0 becomes "0" and the row SHOWS. That is why the
+     * vardef carries no default - a 0 written for "none" would put "Revision
+     * of ERP quote 0" on every quote.
+     *
+     * Its own dependency rather than a target added to
+     * erpPanelEmptyFieldDependencies(), whose single serialized shape is
+     * already deployed; changing it would leave the old copy beside the new.
+     */
+    private function erpParentQuoteNumDependency(): array
+    {
+        return $this->visibleWhenNotEmptyDependency(['erp_parent_quote_num']);
+    }
+
+    /**
+     * G229 — the Discount Warning row is shown ONLY when it has something to
+     * say.
+     *
+     * A quote whose discounts still fit carries an empty string here, and an
+     * always-present "Discount Warning" row that is usually blank teaches
+     * sellers to stop reading it - 🔒 642's whole point about which rows are
+     * worth having.
+     */
+    private function erpDiscountRefusalDependency(): array
+    {
+        return $this->visibleWhenNotEmptyDependency(['erp_discount_refusal']);
+    }
+
+    /**
+     * 🛑 G212 — THE DISCOUNT PANEL'S GATE, NOW BOTH QUOTE TYPES.
+     *
+     * Owner, on sales-order quote 287: the control to apply a discount is
+     * offered only on Advanced Quotes, and it is wanted on sales orders too.
+     * The server already agrees - `POST erp-discount` applied a 5% quote
+     * discount to 287 - so this is visibility alone.
+     *
+     * 📌 THIS REVERSES G106 / DECISION 702 FOR THIS ONE CONTROL, ON THE
+     * OWNER'S WORD. 702's rule was "a new control inherits its siblings'
+     * gates, or it is a leak", and the siblings are advanced-only. The owner
+     * has now ruled that the discount control is the exception; its siblings
+     * are untouched.
+     *
+     * NAMED TYPES, NOT "ANY TYPE". erp_quote_type_list has exactly two keys
+     * today, so `not(equal($erp_quote_type, ""))` would be equivalent - until
+     * a third type is added, when it would silently offer the panel there
+     * too. Naming both keeps it fail-CLOSED for a type nobody has ruled on,
+     * and for the unfetched value while the record loads (G205's lesson).
+     *
+     * `or(equal(), equal())`, never isEmpty(): the isEmpty form parsed to
+     * nothing on a tenant (sendToEstimationRatchetDependency's note).
+     *
+     * The stage half - an accepted quote is settled - is NOT here. It never
+     * was: erp-discount.js's _isEligibleQuote() owns it, and the server
+     * refuses the edit outright.
+     */
+    private function erpDiscountTypeVisibilityDependencies(): array
+    {
+        $actions = [];
+        foreach ([self::DISCOUNT_PANEL_NAME, 'erp_discount_panel'] as $target) {
+            $actions[] = [
+                'action' => 'SetVisibility',
+                'params' => [
+                    'target' => $target,
+                    'value' => 'or(equal($erp_quote_type, "advanced_quote"), '
+                        . 'equal($erp_quote_type, "sales_order"))',
+                ],
+            ];
+        }
+
+        return [
+            [
+                'hooks' => ['all'],
+                'trigger' => 'true',
+                'triggerFields' => ['erp_quote_type'],
+                'onload' => true,
+                'actions' => $actions,
+            ],
+        ];
+    }
+
+    /**
      * The seller's discount panel — one field that draws the whole control.
      *
      * It is NOT a newTab panel: 🚩 a `newTab` panel's TAB HEADER escapes
@@ -798,6 +1276,29 @@ class QuotesLayout extends BaseErpLayout
         ]);
     }
 
+    /**
+     * ⚠️ `erp_comment_queue` IS DELIBERATELY NOT IN THIS LIST, AND THAT IS A
+     * RECORDED TRADE, NOT AN OVERSIGHT.
+     *
+     * Adding it would be the G78 defect this file already documents: add and
+     * remove match a dependency by EXACT SERIALIZED SHAPE, so a six-target
+     * rule does not REPLACE the five-target rule already deployed on every
+     * tenant - it lands BESIDE it, and two SetVisibility rules on one target
+     * is precisely what G78 was filed about. Doing it properly means shipping
+     * the five-target shape as a legacy removal first, which is a bigger and
+     * riskier change than the field it would cover.
+     *
+     * What it costs, stated rather than buried: `self::COMMENTS_PANEL_NAME`
+     * is the first target here, so the whole tab is already gated on an
+     * advanced quote. If that panel-level target does not reach the field -
+     * and the author of this list evidently did not rely on it alone, or the
+     * four field targets below would be redundant - then on a SALES ORDER a
+     * seller sees one extra read-only box reading "Nothing queued.". It is
+     * cosmetic and it is always empty: a sales order has no advanced-quote
+     * brief to hold.
+     *
+     * The next person doing the legacy-removal dance should fold it in then.
+     */
     private function erpCommentVisibilityDependencies(): array
     {
         return $this->advancedQuoteOnlyDependency([
@@ -882,28 +1383,30 @@ class QuotesLayout extends BaseErpLayout
      * its own number of rungs, and a Sugar panel cannot express that shape.
      */
     /**
-     * REQ-30's Comments tab.
+     * REQ-30's Comments tab, as G396 / 🔒 1702b leaves it.
      *
-     * THREE FIELDS, NOT ONE, and the split is the design rather than clutter.
-     * A single editable field that is also the ERP's value cannot work: the
-     * next sync would overwrite whatever the seller typed, and they would have
-     * no way to tell "what Epicor says" from "what I am about to send".
+     * THE COMMENT LOG IS THE ONLY PLACE TO WRITE ERP COMMENTS (Q1). Each entry
+     * goes to the Epicor quote on its own, the moment it is typed (Q2), and the
+     * estimator's replies come back as entries (Q3). So this tab no longer
+     * WRITES anything; it shows what Epicor holds and says where comments go:
      *
-     *   erp_quote_comment        READ-ONLY. What Epicor holds right now.
-     *   erp_comment_text         Editable. What the seller wants APPENDED.
-     *   erp_comment_requested_at READ-ONLY. When Update last swept it.
+     *   erp_quote_comment        READ-ONLY. "What Epicor holds" - the whole
+     *                            QuoteHed.QuoteComment, kept as the raw view
+     *                            the owner asked to keep.
+     *   erp_comment_log_status   the status line: on an unsent quote, how many
+     *                            Comment Log entries go at Send to Estimation;
+     *                            on a sent one, any entry that did not arrive
+     *                            and why. It also carries the tab-header toggle
+     *                            (🔒 670) the retired button used to.
      *
-     * labelsOnTop + span 12: these are paragraphs, not values. A comment
-     * rendered in a half-width right-hand column wraps into a ribbon and is
-     * the reason nobody reads it.
+     * RETIRED, by retiredCommentsPanelFields() on every upgraded tenant:
+     * erp_comment_text ("Add Comment"), update_erp_comment_button ("Update")
+     * and erp_comment_queue (G189's receipt). Their vardefs and columns stay -
+     * retiring a control never destroys what someone may still read - and a
+     * queue that exists today is still sent, split into its entries (G387).
      *
-     * THE WRITER APPENDS, NEVER OVERWRITES - QuoteHed.QuoteComment also carries
-     * the Sugar<->Kinetic link marker, so an overwrite orphans the quote from
-     * its Sugar record. That is why the editable field is called "Add Comment"
-     * and not "Edit Comment": the label has to describe what the button does.
+     * labelsOnTop + span 12: a thread is paragraphs, not a value.
      */
-
-
     private function commentsPanel(): array
     {
         return [
@@ -917,85 +1420,45 @@ class QuotesLayout extends BaseErpLayout
             'fields' => [
                 [
                     'name' => 'erp_quote_comment',
-                    'label' => 'LBL_ERP_QUOTE_COMMENT',
+                    // "What Epicor holds" (Q1). A NEW KEY, not a new value for
+                    // LBL_ERP_QUOTE_COMMENT: that one is also the field's vname,
+                    // which list views and reports print.
+                    'label' => 'LBL_ERP_QUOTE_COMMENT_HELD',
                     'readonly' => true,
                     'span' => 12,
                     // A WIDE TEXT AREA, NOT A ONE-LINE INPUT, AND BIG - the
                     // owner asked for roughly a third of the screen. At the
-                    // ~20px line-height Sugar renders, 14 rows is ~280px, which
-                    // is about a third of a 900px record view and still leaves
-                    // the Add box and the button on screen under it.
+                    // ~20px line-height Sugar renders, 14 rows is ~280px.
                     //
-                    // NO maxlength, DELIBERATELY. I could not establish
-                    // Epicor's documented cap for QuoteHed.QuoteComment: it is
-                    // absent from every schema, BAQ and metadata file in this
-                    // repo, and the SDK models it as an UNCONSTRAINED str
-                    // (connector_base...QuoteERP.quote_comment: annotation=str,
-                    // default=''), with no max_length. Inventing a Sugar-side
-                    // limit would truncate a comment the ERP would have
-                    // accepted, and a client-side cap on a field whose real
-                    // bound is unknown is a guess that silently destroys a
-                    // seller's text. The field is also already carrying a full
-                    // URL (the Advanced Quoting link marker) plus appended
-                    // entries, so it is demonstrably not short.
+                    // NO maxlength, DELIBERATELY: Epicor's cap for
+                    // QuoteHed.QuoteComment is not established anywhere this
+                    // package can read, and a guessed limit silently destroys
+                    // text the ERP would have kept.
+                    //
                     // An empty ERP comment must read as EMPTY, not as broken.
-                    // With no placeholder the tab opened on a bare label over
-                    // white space, which looks like a failed load - and on rc44
-                    // it actually WAS one.
                     'displayParams' => [
                         'rows' => 14,
                         'cols' => 140,
                         'placeholder' => 'LBL_ERP_QUOTE_COMMENT_EMPTY',
                     ],
                 ],
-                [
-                    'name' => 'erp_comment_text',
-                    'label' => 'LBL_ERP_COMMENT_TEXT',
-                    'span' => 12,
-                    // Room to actually write a paragraph - smaller than the
-                    // read-back above on purpose, so the ERP's existing comment
-                    // stays the thing your eye lands on and the box you type
-                    // into sits under it.
-                    'displayParams' => ['rows' => 8, 'cols' => 140],
-                ],
-                [
-                    // THE BUTTON SITS UNDER THE FIELD, which is what the owner
-                    // asked for ("a button under with update"). A record-view
-                    // ACTION button would have landed in the header next to
-                    // Edit - far from the box the seller just typed into, and
-                    // on every tab rather than this one. Declaring it as a
-                    // panel FIELD with a custom type is how erp_quantity_breaks
-                    // already renders a non-field control inside a panel, so
-                    // this follows a pattern the package proved rather than
-                    // inventing placement.
-                    'name' => 'update_erp_comment_button',
-                    'type' => 'update-erp-comment',
-                    'label' => 'LBL_ERP_UPDATE_COMMENT_BUTTON',
-                    // 🛑 dismiss_label, OR THE WORD "Update" APPEARS TWICE.
-                    // The field's own detail.hbs renders {{str label}} as the
-                    // button's text, so with labelsOnTop the panel ALSO drew
-                    // "Update" above it - which is how the first build ended up
-                    // looking like a form row with an empty box rather than a
-                    // button. The label stays declared because the template
-                    // reads it; only the panel's copy is suppressed.
-                    'dismiss_label' => true,
-                    'css_class' => 'rowaction actionbuttons actionbuttons-button btn btn-primary',
-                    'acl_action' => 'edit',
-                    'span' => 12,
-                ],
+                self::COMMENT_LOG_STATUS_FIELD,
                 // 🛑 erp_comment_requested_at IS DELIBERATELY NOT ON THIS TAB.
-                // It is the connector's delta watermark - the machine trigger
-                // the write-back sweeps on - and rendering it as "Comment Sent
-                // At" put an internal timestamp in front of a seller as though
-                // it were something to read or act on. It told them nothing
-                // useful either: it says when the request was QUEUED, not when
-                // Epicor accepted it, so a seller reading it as confirmation
-                // would be reading it wrong. The honest confirmation is the ERP
-                // Comment field above refreshing with their appended text on
-                // the next sync. The field remains declared, audited and
-                // written - it is simply not a thing the seller is shown.
+                // It is the connector's delta watermark - a machine trigger -
+                // and it says when a request was QUEUED, not when Epicor
+                // accepted it. The field remains declared, audited and written.
             ],
         ];
+    }
+
+    /**
+     * What 🔒 1702b Q1 took off the Comments tab. Removed from this package's
+     * own panel on every install, because an add-only installer cannot retire
+     * anything (🔒 774) - see install().
+     */
+    private function retiredCommentsPanelFields(): array
+    {
+        return ['erp_comment_text', 'update_erp_comment_button', 'erp_comment_queue'];
     }
 
 
@@ -1410,5 +1873,19 @@ class QuotesLayout extends BaseErpLayout
     private function unitOfMeasureLineItemFields(): array
     {
         return ['erp_unit_of_measure'];
+    }
+
+    // G415 — the order buttons refuse a seller line with no Unit Price
+    // (QuotesErpAction::_erpRefuseUnpricedOrder, ERP-Core) with G379 (c)'s
+    // exemptions, one of which is the stamped estimation placeholder. The
+    // client reads the rest of what it needs from lists already here or in
+    // stock (discount_price, mft_part_num, name; erp_sync_key and
+    // erp_ladder_group via QuotesQuantityAlternativesLayout), and fails OPEN
+    // on a line whose flag was never fetched - so without this entry the
+    // client half would stand down on every line and only the server would
+    // refuse. A new name on an add-if-absent list, so an upgraded tenant gets it.
+    private function orderPriceGuardLineItemFields(): array
+    {
+        return ['erp_estimation_placeholder'];
     }
 }
