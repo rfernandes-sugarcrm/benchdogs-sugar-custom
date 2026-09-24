@@ -16,7 +16,7 @@ ERP-Core's `ErpLayoutExtraFields`, `ErpQuoteFacts`) and Partial Fulfillment
 | Change | Why |
 |---|---|
 | **Removed** `bd_reference` (and its label) | Reference is ERP-Epicor's generic `erp_reference`; this package only DEFAULTS it (ship-to "CITY ST") on an ADM quote |
-| **Removed** `BdAccountsLayoutExtensions.php`, and the unreleased `BdAdmQuoteFieldsLayout.php` | no layout code: the fields carry ERP-Epicor's `erp_layout` marker and ERP-Core's `ErpLayoutExtraFields::sync()` places / retires them. The Account fields stay on `panel_body`, where rc69 put them |
+| **Removed** `BdAccountsLayoutExtensions.php`, and the unreleased `BdAdmQuoteFieldsLayout.php` | no layout code: the fields carry ERP-Epicor's `erp_layout` marker and ERP-Core's `ErpLayoutExtraFields::sync()` places / retires them. The Account fields stay on `panel_body`, where rc69 put them. An upgraded tenant KEEPS the old `BdAccountsLayoutExtensions.php` (Module Loader never deletes a file a later build stops shipping, §CW / G37) - inert, nothing requires it |
 | **Removed** the unreleased `ErpQuoteHooks/ResolveOrderableLines.php` + `OrderSelectedLinesPolicy.php` | the part-number refusal is ERP-Epicor's per-company switch |
 | **Removed** `bd_adm_companies_list` | "ADM" from one source: a quote is ADM when its company has published `BdLeadSources` rows (core, from the ADM connection's `lookup_code_lists`) |
 | `BdAdmRules` asks ERP-Epicor's `ErpQuoteFacts` for the company and each line's group | its private copies had already drifted from what ERP-Epicor sends (footprint SB8) |

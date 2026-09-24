@@ -62,10 +62,11 @@ RC69_ON_TENANT = {
 #: What THIS build installs on a tenant - rc69's four less the layout writer
 #: 🔒 1724b retired, plus G380/G381's.
 BUILD_ON_TENANT = {k for k in KEPT if k.startswith("custom/")}
-#: rc69 files this build no longer ships. They leave a tenant through rc69's OWN
-#: uninstall_copy() when rc70 upgrades it (they were in rc69's copy list and
-#: nothing was under them when rc69 copied them), so the one-off need not
-#: touch them - and must not, while a tenant may still run rc69.
+#: rc69 files this build no longer ships. Module Loader never deletes a file a
+#: later build stops shipping (§CW / G37), so an upgraded tenant keeps them -
+#: inert, since nothing rc70 ships requires them (test_g280_minimal_footprint
+#: routes them INERT). The one-off must not blank them while a tenant may still
+#: run rc69, whose install and uninstall call them.
 RC69_DROPPED_BY_THIS_BUILD = {"custom/modules/Accounts/BdAccountsLayoutExtensions.php"}
 
 
@@ -104,8 +105,9 @@ class TheOneOffNeverTakesWhatRc69Ships(unittest.TestCase):
         """The one-off's rc69 list is what rc69 shipped. This build keeps all of
         it but ONE file - the Accounts layout writer 🔒 1724b retired (ERP-Core's
         ErpLayoutExtraFields places the fields from their vardef marker now) -
-        and that one leaves the tenant through rc69's own uninstall on the
-        upgrade, not through the one-off."""
+        and that one stays on an upgraded tenant, inert (Module Loader never
+        deletes a file a later build stops shipping, §CW / G37); the one-off
+        does not touch it."""
         with zipfile.ZipFile(built_zip()) as zipped:
             manifest = zipped.read("manifest.php").decode()
         copied = set(re.findall(r"'to'\s*=>\s*'([^']+)'", manifest))

@@ -102,15 +102,18 @@ INERT = ("nothing shipped calls it any more; the copy an upgraded tenant keeps i
          "unreachable (the one-off does not blank it yet - flagged for its owner)")
 PF_OWNS = ("Partial Fulfillment ships the SAME path (>= 1.0.41 with the G282 preserve "
            "gate); reinstall PF after rc69 so PF's body is the one on disk (G282)")
-UPGRADE = ("rc69 copied it, so rc69's OWN uninstall_copy() deletes it when rc70 upgrades "
-           "the tenant (nothing was under it to restore); the one-off must not touch it "
-           "while a tenant may still run rc69")
+
 
 #: Every path rc68 shipped that rc69 does not, and every path rc69 shipped that
 #: rc70 does not, with the route off a tenant.
 REMOVED = {
     # rc70 (🔒 1724b): ERP-Core's ErpLayoutExtraFields places the fields now.
-    "custom/modules/Accounts/BdAccountsLayoutExtensions.php": UPGRADE,
+    # Module Loader never deletes a file a later build stops shipping (§CW /
+    # G37), so an upgraded tenant KEEPS this file - inert: nothing shipped
+    # requires it (test_nothing_shipped_still_names_a_removed_class). The
+    # one-off must not blank it while a tenant may still run rc69, whose
+    # install and uninstall call it.
+    "custom/modules/Accounts/BdAccountsLayoutExtensions.php": INERT,
     "custom/modules/Quotes/ErpQuoteHooks/OpportunityContribution.php": PF_OWNS,
     "custom/modules/Quotes/BdQuotesLayoutExtensions.php": INERT,
     "custom/modules/Opportunities/BdOpportunitiesLayoutExtensions.php": INERT,
@@ -217,9 +220,6 @@ class EveryRemovedPathLeavesTheTenant(unittest.TestCase):
                 elif route is PF_OWNS:
                     self.assertNotIn(rel, worklist,
                                      "the one-off must never blank a provider path (G280)")
-                elif route is UPGRADE:
-                    self.assertNotIn(rel, worklist,
-                                     "the one-off would take it off a tenant still on rc69")
                 else:
                     self.assertIs(route, INERT)
                     self.assertNotIn(rel, worklist)

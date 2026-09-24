@@ -4,6 +4,7 @@
 # no zip, because it is the thing somebody uploads to an instance.
 sugar-sell/*/releases/
 sugar-predict/*/releases/
+archive/*/releases/
 
 __pycache__/
 *.pyc

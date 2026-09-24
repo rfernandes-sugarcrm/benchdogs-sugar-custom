@@ -22,7 +22,9 @@ and the package ships no module of its own.
 > ERP-Epicor's `erp_layout` vardef marker, and ERP-Core's
 > `ErpLayoutExtraFields::sync()` places them on the views ERP-Epicor owns (and
 > takes them off once their vardef is gone). `BdAccountsLayoutExtensions.php`
-> leaves an upgraded tenant through rc69's own uninstall.
+> stays on an upgraded tenant as an INERT orphan - Module Loader never deletes
+> a file a later build stops shipping (§CW / G37), and nothing rc70 ships
+> requires it; the one-off does not blank it yet (flagged for its owner).
 >
 > `scripts/tests/test_g280_minimal_footprint.py` pins this list against the
 > source tree AND the built zip, so it cannot grow silently.
