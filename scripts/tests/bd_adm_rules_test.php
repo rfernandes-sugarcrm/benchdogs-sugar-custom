@@ -3,9 +3,11 @@
 /**
  * G380 / G381 (🔒 1705b, 🔒 1724b): the Bench Dogs ADM rules, Sugar half, EXECUTED.
  *
- * Run:  php scripts/tests/bd_adm_rules_test.php
+ * Run:  BD_QUOTE_FACTS=<ERP-Epicor's ErpQuoteFacts.php> php scripts/tests/bd_adm_rules_test.php
  *       BD_NO_QUOTE_FACTS=1 php scripts/tests/bd_adm_rules_test.php   (section O)
- *       (scripts/tests/test_php_suites.py runs both)
+ *       (scripts/tests/test_php_suites.py runs both, with the sibling
+ *       checkout's file when present, else the pin from the landed Sugar
+ *       target a0f6b632 under fixtures/shared-sugar/)
  * Exit: 0 all passed, 1 one or more failed.
  *
  * What is proved, each against the real shipped file:
@@ -25,13 +27,12 @@
  *   O. (BD_NO_QUOTE_FACTS=1) an ERP-Epicor without ErpQuoteFacts: defaults
  *      skipped and logged, the save never fails
  *
- * 🚩 ErpQuoteFacts IS A STAND-IN HERE. It is ERP-Epicor's class (G380 (g), lane
- * D), not this package's; the stand-in encodes the contract
- * (g380-contract.md §2(g): companyCode($quote): string, productGroup($line):
- * string, '' for unknown) and counts its calls so the exit ORDER is observable.
- * That the real class has those two methods is checked by test_php_suites.py
- * against ERP-Epicor's file when a checkout carries it - a fixture cannot test
- * the belief it encodes.
+ * ErpQuoteFacts IS ERP-EPICOR'S REAL CLASS (G380 (g), landed a0f6b632), not a
+ * stand-in: a stand-in would encode our belief about it. Only BeanFactory is
+ * faked - it serves the records and COUNTS every read, which is what makes the
+ * exit ORDER observable (a quote the hook cannot touch reads nothing).
+ * Measured facts the real class brings that a stand-in hid: companyCode has
+ * NO erp_sync_key-prefix fallback (A8), and productGroup trims (A9).
  */
 
 namespace {
@@ -89,10 +90,14 @@ namespace {
     class BeanFactory
     {
         public static $created = 0;
+        public static $beans = [];
+        /** Every record read, as "Module:id", in order. */
+        public static $reads = [];
 
         public static function retrieveBean($module, $id)
         {
-            throw new RuntimeException("BdAdmRules read a {$module} record itself; it must ask ErpQuoteFacts");
+            self::$reads[] = $module . ':' . $id;
+            return self::$beans[$module][$id] ?? null;
         }
 
         public static function newBean($module)
@@ -178,24 +183,16 @@ namespace {
         }
     }
 
+    // ERP-Epicor's REAL ErpQuoteFacts, loaded before BdAdmRules exactly as a
+    // tenant has it (QuotesErpActionsApi loads it first; BdAdmRules's own
+    // guarded include then finds the class declared).
+    $factsFile = getenv('BD_QUOTE_FACTS');
     if (!$noFacts) {
-        /** The contract stand-in for ERP-Epicor's ErpQuoteFacts (see the header). */
-        class ErpQuoteFacts
-        {
-            public static $calls = [];
-
-            public static function companyCode($quote): string
-            {
-                self::$calls[] = 'companyCode';
-                return (string) ($quote->test_company ?? '');
-            }
-
-            public static function productGroup($line): string
-            {
-                self::$calls[] = 'productGroup';
-                return (string) ($line->test_group ?? '');
-            }
+        if (!is_string($factsFile) || !is_file($factsFile)) {
+            fwrite(STDERR, "BD_QUOTE_FACTS must name ERP-Epicor's ErpQuoteFacts.php\n");
+            exit(2);
         }
+        require $factsFile;
     }
 
     function return_app_list_strings_language($lang)
@@ -238,20 +235,48 @@ namespace {
     ];
 
     $b = fn(array $f) => new BdTestBean($f);
-    $line = fn(string $id, string $group) => $b(['id' => $id, 'test_group' => $group]);
-    $lCmi = $line('l-cmi', 'CMI');
-    $lCmi2 = $line('l-cmi2', 'CMI');
-    $l49 = $line('l-49', 'DISPLAYS');
-    $quote = function (string $company, array $f = []) use ($b) {
-        return $b(['id' => 'q-' . $company, 'test_company' => $company] + $f);
+    // The records ErpQuoteFacts reads: account -> ERP company, template ->
+    // category (measured ADM facts, 🔒 1710b: CMI-211967V3K is group CMI,
+    // 49000450 is DISPLAYS).
+    BeanFactory::$beans = [
+        'ERP_Companies' => [
+            'co-adm' => $b(['id' => 'co-adm', 'erp_sync_key' => 'ADM']),
+            'co-epic' => $b(['id' => 'co-epic', 'erp_sync_key' => 'EPIC06']),
+        ],
+        'Accounts' => [
+            'acct-adm' => $b(['id' => 'acct-adm', 'erp_companies_accountserp_companies_ida' => 'co-adm',
+                              'erp_sync_key' => 'ADM__70']),
+            'acct-epic' => $b(['id' => 'acct-epic', 'erp_companies_accountserp_companies_ida' => 'co-epic',
+                               'erp_sync_key' => 'EPIC06__94']),
+            // An ADM-keyed account with NO company relate: the payload sends no
+            // company for it, so neither may the rules (no prefix fallback).
+            'acct-adm-nolink' => $b(['id' => 'acct-adm-nolink', 'erp_sync_key' => 'ADM__25392']),
+        ],
+        'ProductTemplates' => [
+            'pt-cmi' => $b(['id' => 'pt-cmi', 'erp_display_sync_key' => 'CMI-211967V3K', 'category_id' => 'cat-cmi']),
+            'pt-cmi2' => $b(['id' => 'pt-cmi2', 'erp_display_sync_key' => 'CMI-100', 'category_id' => 'cat-cmi']),
+            'pt-49' => $b(['id' => 'pt-49', 'erp_display_sync_key' => '49000450', 'category_id' => 'cat-disp']),
+        ],
+        'ProductCategories' => [
+            'cat-cmi' => $b(['id' => 'cat-cmi', 'erp_display_sync_key' => ' CMI ']),
+            'cat-disp' => $b(['id' => 'cat-disp', 'erp_display_sync_key' => 'DISPLAYS']),
+        ],
+    ];
+    $line = fn(string $id, string $template) => $b(['id' => $id, 'product_template_id' => $template]);
+    $lCmi = $line('l-cmi', 'pt-cmi');
+    $lCmi2 = $line('l-cmi2', 'pt-cmi2');
+    $l49 = $line('l-49', 'pt-49');
+    $accountOf = ['ADM' => 'acct-adm', 'EPIC06' => 'acct-epic', 'ADM-NOLINK' => 'acct-adm-nolink'];
+    $quote = function (string $company, array $f = []) use ($b, $accountOf) {
+        return $b(['id' => 'q-' . $company, 'billing_account_id' => $accountOf[$company]] + $f);
     };
     $freshQuery = function () {
         BdAdmRules::forgetAdmCompanies();
         SugarQuery::$constructed = 0;
-        if (class_exists('ErpQuoteFacts', false) && property_exists('ErpQuoteFacts', 'calls')) {
-            ErpQuoteFacts::$calls = [];
-        }
+        BeanFactory::$reads = [];
     };
+    // The modules read, in order (ids dropped).
+    $readModules = fn() => array_map(fn($r) => strstr($r, ':', true), BeanFactory::$reads);
 
     if ($noFacts) {
         // ── O. an ERP-Epicor without ErpQuoteFacts ──────────────────────────
@@ -361,34 +386,44 @@ namespace {
         $check('H2 Reference is the ship-to city and state, in the GENERIC field', ['WAYNE NJ', null],
             [$fresh->erp_reference, $fresh->bd_reference ?? null]);
         $check('H3 Project is the default for its all-CMI lines', '20065', $fresh->bd_project_id);
-        $check('H4 the company and each line\'s group were ASKED of ErpQuoteFacts',
-            ['companyCode', 'productGroup', 'productGroup'], ErpQuoteFacts::$calls);
+        $check('H4 the company and each line\'s group were read through ErpQuoteFacts, in that order',
+            ['Accounts', 'ERP_Companies', 'ProductTemplates', 'ProductCategories', 'ProductTemplates',
+             'ProductCategories'], $readModules());
 
         $freshQuery();
         $typed = $quote('ADM', ['shipping_address_city' => 'WAYNE', 'shipping_address_state' => 'NJ',
                                 'erp_reference' => 'SHOW BOOTH 4', 'bd_project_id' => '22008', 'lines' => [$lCmi]]);
         $check('H5 both set: nothing overwritten, and NOTHING read (exit 2)', [[], 'SHOW BOOTH 4', '22008', 0, []],
             [BdAdmRules::applyDefaults($typed), $typed->erp_reference, $typed->bd_project_id,
-             SugarQuery::$constructed, ErpQuoteFacts::$calls]);
+             SugarQuery::$constructed, BeanFactory::$reads]);
 
         $freshQuery();
         $sent = $quote('ADM', ['erp_display_sync_key' => '8761', 'shipping_address_city' => 'WAYNE',
                                'shipping_address_state' => 'NJ', 'lines' => [$lCmi]]);
         $check('H6 a quote already in the ERP: left alone, NOTHING read (exit 1)', [[], 0, []],
-            [BdAdmRules::applyDefaults($sent), SugarQuery::$constructed, ErpQuoteFacts::$calls]);
+            [BdAdmRules::applyDefaults($sent), SugarQuery::$constructed, BeanFactory::$reads]);
 
         $freshQuery();
         SugarQuery::$rows = [$ADM_ROWS[3]];                  // a tenant with no lead sources at all
         $stock = $quote('ADM', ['shipping_address_city' => 'WAYNE', 'lines' => [$lCmi]]);
         $check('H7 no company published lead sources: one query, no company lookup (exit 3)', [[], 1, []],
-            [BdAdmRules::applyDefaults($stock), SugarQuery::$constructed, ErpQuoteFacts::$calls]);
+            [BdAdmRules::applyDefaults($stock), SugarQuery::$constructed, BeanFactory::$reads]);
         SugarQuery::$rows = $ADM_ROWS;
 
         $freshQuery();
         $epic = $quote('EPIC06', ['shipping_address_city' => 'AUSTIN', 'shipping_address_state' => 'TX',
                                   'lines' => [$lCmi]]);
-        $check('H8 an EPIC06 quote is left alone (control); its lines are never read', [[], null, ['companyCode']],
-            [BdAdmRules::applyDefaults($epic), $epic->erp_reference ?? null, ErpQuoteFacts::$calls]);
+        $check('H8 an EPIC06 quote is left alone (control); its lines are never read',
+            [[], null, ['Accounts', 'ERP_Companies']],
+            [BdAdmRules::applyDefaults($epic), $epic->erp_reference ?? null, $readModules()]);
+
+        $freshQuery();
+        $nolink = $quote('ADM-NOLINK', ['shipping_address_city' => 'WAYNE', 'lines' => [$lCmi]]);
+        $check('A8 an ADM-keyed account with no company relate is NOT ADM (the payload sends no company '
+            . 'for it; ErpQuoteFacts has no key-prefix fallback)', [[], null],
+            [BdAdmRules::applyDefaults($nolink), $nolink->erp_reference ?? null]);
+        $check('A9 a padded category code is trimmed by ErpQuoteFacts, so it still maps', '20065',
+            BdAdmRules::defaultProject([ErpQuoteFacts::productGroup($lCmi)]));
 
         $freshQuery();
         $mixed = $quote('ADM', ['shipping_address_city' => 'WAYNE', 'lines' => [$lCmi, $l49]]);
@@ -412,7 +447,7 @@ namespace {
         try {
             (new BdAdmRules())->beforeSave(new class {
                 public $id = 'q-broken';
-                public $test_company = 'ADM';
+                public $billing_account_id = 'acct-adm';
                 public function load_relationship($n) { throw new RuntimeException('link table unreadable'); }
             }, 'before_save', []);
         } catch (\Throwable $e) {

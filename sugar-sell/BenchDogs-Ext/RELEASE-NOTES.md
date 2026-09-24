@@ -1,12 +1,42 @@
 # 0.9.42-rc70 — G380 / G381 slim (🔒 1724b): ADM config + ADM rules only
 
 Owner ruling 🔒 1724b: *Bench keeps ONLY ADM config + ADM rules; the generic
-parts move out.* This build is the Sugar half of that split. (The G380/G381
-branch this replaces was never released: never merged, and it kept rc69's
-version, which Module Loader declines as an upgrade. If a tenant ever took a
-hand-built copy of it, its `bd_reference` column is left in the database -
-a vardef removal drops no column - and `bd_adm_companies_list` stays in its
-language cache until a rebuild; neither is read by anything any more.)
+parts move out.* This build is the Sugar half of that split.
+
+**`bd_reference` (and the other fields of the unreleased G380/G381 branch) was
+never installed on any tenant.** rc69 - the build on every tenant - was cut from
+`main` (`9496b7e`, 2026-09-23 03:18Z) and carries no Quotes field at all; the
+G380/G381 branch began 19 hours later (`a74bf19`, 22:04Z), was never merged,
+never took a version of its own (it kept rc69's, which Module Loader declines
+as an upgrade), and the decision register records no install of it. That
+matters because ERP-Core's `ErpLayoutExtraFields::sync()` only ever retires a
+field it has seen MARKED: an unmarked `bd_reference` on a Quotes panel would
+never be taken off by it (pinned in `bd_erp_layout_test.php` T4e). Evidence is
+documentary; a read-only check of a tenant is one metadata read (Quotes fields,
+look for `bd_reference`).
+
+**Verified against the LANDED ERP-Epicor code** (Sugar target `a0f6b632`, lane D),
+not stand-ins - pinned under `scripts/tests/fixtures/shared-sugar/`:
+
+- `ErpQuoteFacts` (real) answers the company and each line's group for the
+  defaults hook. Its `companyCode` has NO `erp_sync_key`-prefix fallback, so an
+  ADM-keyed account with no company relate is not ADM - the same answer the
+  payload gives (`bd_adm_rules_test.php` A8). `partNumber` (untrimmed) is not
+  used here at all.
+- `ErpLayoutExtraFields::sync()` (real) runs through rc70's real
+  `post_execute.php` / `bd_pre_uninstall.php` / `post_uninstall.php`
+  (`bd_erp_layout_test.php`): upgrade from rc69 (the two Account fields rc69
+  placed unmarked stay put and become RECORDED, so an uninstall can retire
+  them), reinstall, ERP-Epicor reinstall, and uninstall both fresh and over a
+  restored rc69 backup.
+- Uninstall ORDER (lane D rule 3): `post_uninstall.php` rebuilds the extensions
+  and only then calls `sync()`. Sugar's own `ModuleInstaller::uninstall()` also
+  runs `uninstall_extensions()` (which rebuilds) before `post_uninstall`
+  (SugarEnt 26.1.0), and the test's extension compiler is deliberately
+  stricter - it changes only on rebuild - so removing the rebuild from
+  `post_uninstall.php` fails the test (mutant S19).
+- ERP-Core ships INSIDE the ERP-Epicor package (`buildPackages.sh` merges it),
+  so the ERP-Epicor floor also covers `ErpLayoutExtraFields` and `erp_reference`.
 
 **Requires (the manifest refuses otherwise):** ERP-Epicor **≥ 1.1.125** (G380
 (d)–(g): `Quotes.erp_reference`, `ERP_Companies.erp_order_requires_part_number`,

@@ -80,6 +80,18 @@ SOURCES = {
         "sugar-sell/ERP-Core/scripts/BaseErpLayout.php",
     "QuotesLayout.php":
         "sugar-sell/ERP-Epicor/scripts/Modules/QuotesLayout.php",
+    # 0.9.42-rc70 (G380 / 🔒 1724b): what the slimmed Bench package now ASKS of
+    # ERP-Epicor >= 1.1.125 instead of carrying itself - the quote facts
+    # (company, product group), the marker-driven field placement, and the
+    # generic erp_reference field whose marker the Bench pickers are placed
+    # after. Pinned from the LANDED Sugar target a0f6b632, so rc70's tests run
+    # against lane D's real code, not stand-ins.
+    "ErpQuoteFacts.php":
+        "sugar-sell/ERP-Epicor/src/custom/modules/Quotes/ErpQuoteFacts.php",
+    "ErpLayoutExtraFields.php":
+        "sugar-sell/ERP-Core/src/custom/include/ErpLayoutExtraFields.php",
+    "erp_reference.php":
+        "sugar-sell/ERP-Core/src/custom/Extension/modules/Quotes/Ext/Vardefs/erp_reference.php",
 }
 
 

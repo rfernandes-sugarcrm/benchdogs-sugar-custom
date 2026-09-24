@@ -43,6 +43,7 @@ SUITES = (
     "bench_panel_retired_test.php",
     "bench_governing_origin_retired_test.php",
     "bd_adm_rules_test.php",
+    "bd_erp_layout_test.php",
 )
 
 php = shutil.which("php")
@@ -55,11 +56,13 @@ def run(name: str, **env: str) -> subprocess.CompletedProcess:
     )
 
 
-#: ERP-Epicor's quote facts (G380 (g), lane D) in the sibling checkout, when it
-#: carries them. bd_adm_rules_test.php runs BdAdmRules against a stand-in for
-#: this class; the stand-in's two method names are only worth anything while
-#: the real class has them.
-QUOTE_FACTS = shared_sugar.SIBLING / "sugar-sell/ERP-Epicor/src/custom/modules/Quotes/ErpQuoteFacts.php"
+#: rc70 (G380, 🔒 1724b) runs against ERP-Epicor's REAL code (lane D, landed
+#: a0f6b632): the sibling checkout's files when present, else the pins.
+LANDED = {
+    "BD_QUOTE_FACTS": str(shared_sugar.resolve("ErpQuoteFacts.php")),
+    "BD_LAYOUT_FIELDS": str(shared_sugar.resolve("ErpLayoutExtraFields.php")),
+    "BD_ERP_REFERENCE": str(shared_sugar.resolve("erp_reference.php")),
+}
 
 
 @unittest.skipUnless(php, "requires a PHP CLI")
@@ -86,18 +89,15 @@ class PhpSuitesTest(unittest.TestCase):
         pickers' options, the vardef markers) - and, in a second run with no
         ErpQuoteFacts at all, that an older ERP-Epicor skips the defaults and
         never fails a save."""
-        self.assert_suite_passes("bd_adm_rules_test.php")
+        self.assert_suite_passes("bd_adm_rules_test.php", **LANDED)
         self.assert_suite_passes("bd_adm_rules_test.php", BD_NO_QUOTE_FACTS="1")
 
+    def test_bd_erp_layout(self):
+        """rc70: the Bench fields are placed and retired by ERP-Core's REAL
+        ErpLayoutExtraFields through rc70's REAL lifecycle scripts - upgrade from
+        rc69, reinstall, ERP-Epicor reinstall, uninstall fresh and upgraded."""
+        self.assert_suite_passes("bd_erp_layout_test.php", **LANDED)
 
-
-@unittest.skipUnless(QUOTE_FACTS.is_file(), "no ERP-Epicor checkout carrying ErpQuoteFacts")
-class QuoteFactsStandInTest(unittest.TestCase):
-    def test_the_stand_in_matches_erp_epicors_quote_facts(self):
-        """The stand-in in bd_adm_rules_test.php must not outlive the real API."""
-        real = QUOTE_FACTS.read_text(encoding="utf-8")
-        for method in ("companyCode", "productGroup"):
-            self.assertRegex(real, rf"public static function {method}\(\$\w+\): string")
 
 
 class PhpSuiteCoverageTest(unittest.TestCase):
