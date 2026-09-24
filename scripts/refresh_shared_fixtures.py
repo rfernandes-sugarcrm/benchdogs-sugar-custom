@@ -72,6 +72,8 @@ PINNED = {
         "sugar-sell/ERP-Core/src/custom/include/ErpLayoutExtraFields.php",
     "erp_reference.php":
         "sugar-sell/ERP-Core/src/custom/Extension/modules/Quotes/Ext/Vardefs/erp_reference.php",
+    "account_type_dom.replace.php":
+        "sugar-sell/ERP-Core/src/custom/dropdowntemplates/account_type_dom.replace.php",
 }
 
 

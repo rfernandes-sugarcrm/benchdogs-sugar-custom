@@ -1,3 +1,43 @@
+# Unreleased (on 0.9.42-rc73) — G450 revived: the "Suspect" account type (🔒1783b)
+
+The customer reversed 🔒1775b (Layne, relayed by the owner 2026-09-25 02:19Z):
+*"The Bench Dogs team said they want all 3 record types to sync to Sugar,
+including Suspects."* This re-applies the VOIDed rc71 change (`fix/g450-suspect-account-type`
+ae3cd4a) on rc73 unchanged in substance; only the WRITER it names has moved.
+
+**Measured read-only (2026-09-25 02:30Z, stage core's stored ADM connection +
+each tenant's stored Sugar destination, GET only):** ADM holds 1,511 customers:
+SUS 1,022 (846 active, 176 inactive), PRO 110 (97 / 13), CUS 379 (329 / 50).
+benchdogs-dev AND benchdogs-sandbox each hold all 1,511 as ADM-keyed Accounts
+(0 missing, 0 duplicate keys, 0 orphans), every SUS typed **Prospect**; both
+serve `account_type_dom` = {Customer, Prospect}; neither ADM connection sets
+`customer_type_extra`. So Suspects already sync; they only lack their own type.
+
+| Change | Why |
+|---|---|
+| **Added** `custom/Extension/application/Ext/Language/_override_en_us.bd_account_type_suspect.php`: `account_type_dom['Suspect'] = 'Suspect'`, only when absent | the value core's accounts step writes for an Epicor SUS customer once the ADM connection's `customer_type_extra` is `{"SUS": "Suspect"}` (core `connector_epicor.normalize.customer_type_extra`, live since c54). The key is byte-exact: core writes the configured value as given, and a key the dom lacks renders BLANK. Customer / Prospect are untouched; an admin's relabel in Dropdown Editor survives a reinstall |
+| The `_override` name | SugarEnt 25.2/26.1 merge `_override*` fragments after every plain one, whatever the mtime; ERP-Core's REPLACE install assigns `account_type_dom` as a whole array, which would otherwise wipe the key after an ERP-Epicor REPLACE upgrade (rc23 measured this for the lookup-type label) |
+| Tests: `scripts/tests/test_g450_suspect_account_type.py` | executes Sugar's fragment merge in PHP over a stock seed with ERP-Core's REAL template (pinned under `fixtures/shared-sugar/`; byte-identical at the pin 6ed6f1b1, at release/1.1.131 and at the Sugar target 31a7ad05), incl. the control that a plain name loses the key; the order rule is pinned against both SugarEnt trees (named in `mlp-lint.yml`) |
+
+No field, no layout, no script change. `account_type` locks only on a keyed
+CUSTOMER (ERP-Core's `account_type_readonly_formula`, G495), so a keyed Suspect
+is seller-editable: Suspect -> Customer writes `CUS` back to Epicor; Suspect ->
+Prospect over an Epicor SUS sends nothing (coordinator ruling on G450, accepted).
+
+**Rollout order (each step its own owner yes):**
+1. Install this package; verify `GET /Accounts/enum/account_type` serves
+   Customer, Prospect AND Suspect. **Not before this:** otherwise step 2 writes
+   an out-of-dom value that renders blank on ~1,022 accounts.
+2. God's View: PATCH the ADM connection with `{"customer_type_extra": {"SUS": "Suspect"}}` (byte-exact).
+3. One FULL accounts run (L300, `sync_mode: full`), not a delta: the accounts
+   delta selects only customers whose `SysRevID` moved, so it would re-type
+   almost none of the existing Suspects. Only on a core carrying G546's fix
+   (7f6ffcf45).
+
+The Bench connector's own `account_suspect` feature (ext 0.3.1+) must stay OFF
+(never named in `SUGARAI_BD_MLP_FIELDS`): core is now the only writer of the
+type, and naming it would make two writers of one field.
+
 # 0.9.42-rc73 — build: G460 + G530 + G532 on rc72
 
 The two "Unreleased (on 0.9.42-rc72)" sections below ship together as

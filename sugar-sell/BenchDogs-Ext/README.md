@@ -48,6 +48,15 @@ and the package ships no module of its own.
 > | `custom/Extension/application/Ext/Language/en_us.bd_adm_lists.php` | labels for the five `ERP_LookupValues` types, and ONE tenant list: `bd_adm_project_by_group_list` | Bench data, edited in Dropdown Editor |
 > | `custom/modules/Quotes/BdAdmRules.php`, `BdAdmLookupOptions.php` | the rules (which companies are ADM, the two defaults) and the pickers' option functions | — |
 
+> **Grown by G450 (0.9.42-rc74), with the owner's per-item consent** (his Yes to
+> a Bench-only third account type "Suspect" beside the stock Customer/Prospect,
+> never renaming them; GAPS.md G450; voided with rc71 by 🔒1775b, revived by the
+> customer's 🔒1783b). One file:
+>
+> | Path | What it is | Why it is here and not in core |
+> |---|---|---|
+> | `custom/Extension/application/Ext/Language/_override_en_us.bd_account_type_suspect.php` | ONE key, `account_type_dom['Suspect']`, set only when absent | Epicor types a customer CUS / PRO / SUS; ERP-Core's dom has two values, so an Epicor SUS shows as Prospect (ADM: 1,022 of 1,132 "Prospects"). Core writes `Suspect` for SUS customers once the ADM connection's `customer_type_extra` is `{"SUS": "Suspect"}`; the value is Bench's (a dom key core cannot add). `_override` so it merges after ERP-Core's whole-array REPLACE assignment (the rc23 lesson) |
+
 ## G380 / G381 — what Bench Dogs' ADM company requires (🔒 1705b, 🔒 1724b)
 
 Measured on stage t7 (benchdogs-dev → ADM), 2026-09-23: ADM refuses Send to

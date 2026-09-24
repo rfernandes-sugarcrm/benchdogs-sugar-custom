@@ -92,6 +92,12 @@ SOURCES = {
         "sugar-sell/ERP-Core/src/custom/include/ErpLayoutExtraFields.php",
     "erp_reference.php":
         "sugar-sell/ERP-Core/src/custom/Extension/modules/Quotes/Ext/Vardefs/erp_reference.php",
+    # 0.9.42-rc71 (G450): ERP-Core's REPLACE-mode account_type_dom, a WHOLE-ARRAY
+    # assignment {Prospect, Customer}. The hostile case the Bench Suspect fragment
+    # must survive (test_g450_suspect_account_type.py). Byte-identical at a0f6b632
+    # and at the Sugar target c9b74508 (last changed f4a3036d).
+    "account_type_dom.replace.php":
+        "sugar-sell/ERP-Core/src/custom/dropdowntemplates/account_type_dom.replace.php",
 }
 
 

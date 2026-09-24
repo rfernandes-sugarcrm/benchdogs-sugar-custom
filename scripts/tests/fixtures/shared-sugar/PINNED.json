@@ -60,6 +60,11 @@
       "source": "sugar-sell/ERP-Core/src/custom/Extension/modules/Quotes/Ext/Vardefs/erp_reference.php",
       "sha256": "d22c3ae97828fbbd0874d0925e086d9de6d68eb079cd477ac4687675c2eb6113",
       "bytes": 4226
+    },
+    "account_type_dom.replace.php": {
+      "source": "sugar-sell/ERP-Core/src/custom/dropdowntemplates/account_type_dom.replace.php",
+      "sha256": "54bcdbfd81b283e2133cd84241ba8195a4a4daf2568672a9822468eb8fb109c0",
+      "bytes": 117
     }
   }
 }

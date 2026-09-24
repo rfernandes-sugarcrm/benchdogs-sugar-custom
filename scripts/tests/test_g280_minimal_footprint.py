@@ -99,6 +99,15 @@ KEPT = {
         "the ADM rules themselves: which companies are ADM, the two defaults, options",
     "custom/modules/Quotes/BdAdmLookupOptions.php":
         "the pickers' option functions (vardef 'function' needs a plain function)",
+    # ── G450 (0.9.42-rc74): the owner's per-item consent is his Yes to "a
+    # Bench-only third type Suspect, alongside the stock Customer/Prospect,
+    # never renaming them" (GAPS.md G450 row; register ~06:55Z 2026-09-24),
+    # voided with rc71 by 🔒1775b and REVIVED by the customer's reversal
+    # 🔒1783b (2026-09-25 02:19Z: "all 3 record types ... including Suspects").
+    # A dom VALUE, not a field and not a layout: one key on the stock
+    # account_type_dom. The writer is core's customer_type_extra {"SUS": "Suspect"}.
+    "custom/Extension/application/Ext/Language/_override_en_us.bd_account_type_suspect.php":
+        "G450: account_type_dom['Suspect'] beside Customer/Prospect (Epicor SUS)",
 }
 
 ONEOFF ="the one-off deletes or blanks it (🔒 1521); re-run it after installing rc69"
