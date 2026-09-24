@@ -44,6 +44,7 @@ SUITES = (
     "bench_governing_origin_retired_test.php",
     "bd_adm_rules_test.php",
     "bd_erp_layout_test.php",
+    "bd_customer_group_move_test.php",
 )
 
 php = shutil.which("php")
@@ -97,6 +98,16 @@ class PhpSuitesTest(unittest.TestCase):
         ErpLayoutExtraFields through rc70's REAL lifecycle scripts - upgrade from
         rc69, reinstall, ERP-Epicor reinstall, uninstall fresh and upgraded."""
         self.assert_suite_passes("bd_erp_layout_test.php", **LANDED)
+
+    def test_bd_customer_group_move(self):
+        """G507: the one-off takes the customer-group pair out of the Account
+        HEADER (where rc69 put it on a view with no panel_body - reproduced with
+        rc69's real writer) onto the first tab, after Industry, labelled; keeps an
+        admin's placement; places nothing without a vardef; writes once. Beside
+        rc72's real scripts and ERP-Core's real sync(): rc72 alone does not move
+        them, a fresh rc72 install lands in the same slots, either install order
+        ends the same, and uninstall takes them off."""
+        self.assert_suite_passes("bd_customer_group_move_test.php", **LANDED)
 
 
 

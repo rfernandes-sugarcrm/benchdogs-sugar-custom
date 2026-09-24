@@ -15,8 +15,12 @@
  *       Quotes, the only modules this package extends. FIRST, so the steps
  *       below read the merged vardefs this install just added.
  *   accounts_erp_layout  ErpLayoutExtraFields::sync('Accounts') places the two
- *       REQ-19 customer-group fields (panel_body, where rc69 put them) when they
- *       are on no panel. A field an admin moved is left where it is.
+ *       REQ-19 customer-group fields (panel_overview, after Industry - rc72,
+ *       G507) when they are on no panel. A field already on the view - an
+ *       admin's placement, or rc69's HEADER placement on a view without
+ *       panel_body (Ophir) - is left where it is: taking them out of the header
+ *       is the one-off ONEOFF-MoveBdCustomerGroup's job, not this package's
+ *       (🔒 1724b: no layout code here).
  *   quotes_erp_layout  ErpLayoutExtraFields::sync('Quotes') places Lead Source,
  *       Lead Type and Project on ERP-Epicor's ERP panel, after Reference.
  *
@@ -265,7 +269,7 @@ try {
 // per module, so a failure names the module it hit.
 $bdLayoutHelper = 'custom/include/ErpLayoutExtraFields.php';
 
-// REQ-19: the two customer-group fields, on Accounts' panel_body (their marker).
+// REQ-19: the two customer-group fields, on Accounts' panel_overview (their marker).
 try {
     if (!class_exists('ErpLayoutExtraFields', false) && file_exists($bdLayoutHelper)) {
         require_once $bdLayoutHelper;

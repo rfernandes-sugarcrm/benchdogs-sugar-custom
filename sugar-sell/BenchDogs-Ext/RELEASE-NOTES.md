@@ -1,3 +1,42 @@
+# 0.9.42-rc72 — G507: the customer group leaves the header for the Overview tab
+
+Owner, on Ophir (ADDISON WB I85L06), 2026-09-24 17:43Z: *"can we move this fields
+into the overview?"* — "Distribution" and "DIST" sat beside the account name,
+unlabelled, where sellers read them as buttons.
+
+**Measured before building** (Ophir, SugarEnt 26.1.0, served Accounts record
+view, read-only): `panel_header` carried `bd_customer_group` and
+`bd_customer_group_code` (each with a baked `type: text`). That view has **no
+`panel_body`**: its tabs are `panel_overview` ("Overview"), Sugar Predict, Record
+Information and ERP. rc69's writer placed the pair on `panel_body`, else on *the
+first panel that holds fields* — which there is the header. rc70/rc71's vardef
+comment ("rc69 put them on panel_body on every live tenant") was wrong for
+Ophir; its marker would also have resolved `panel_body` to the ERP tab there.
+
+| Change | Why |
+|---|---|
+| `bd_customer_group.php` vardef: `erp_layout` panel `panel_body` → **`panel_overview`, after `industry`** (the code after the name) | the first tab of the measured Bench tenant, beside Type / Industry. A FIRST-EVER placement (fresh install) lands there; `sync()` never moves a placed field |
+| same vardef: **`'readonly' => true`** on both | `sync()` writes only name + label, so read-only has to come from the vardef: Sidecar's `isFieldAlwaysReadOnly()` falls back to it (26.1.0 `utils.js`), so the pair renders in detail mode even in Edit. Client-side only on Accounts: `populateFromApi()` checks field ACLs, not `readonly`, and ERP-Core's `SugarACLErpOwnedFields` is registered on ERP_* modules only — the connector's REST writes are unaffected |
+| **NEW one-off** `sugar-sell/ONEOFF-MoveBdCustomerGroup` 1.0.0 (separate package, id `oneoff_move_bd_customer_group`) | rc72 ALONE DOES NOT MOVE THEM on an upgraded tenant: a header entry is "on the view", and `sync()` leaves placed fields alone. 🔒 1724b forbids layout code in this package (`test_no_shipped_file_touches_a_record_view`), so the one-time move is a disposable one-off, like ONEOFF-RetireBdResidue. It evicts the pair from HEADER panels only, recreates them labelled on the first tab after Industry, keeps an admin's placement elsewhere, places nothing without a vardef, writes once |
+| No script change | `post_execute.php` comments corrected (the marker panel, and whose job the header is) |
+
+**Built on rc70, not rc71.** rc71 (G450, the Bench-only "Suspect" account type) is VOID (🔒 1775b: the customer does not need it; Customer Type is left alone) and was never shipped; rc72 does NOT carry `_override_en_us.bd_account_type_suspect.php`, and rc71's number is never reused.
+
+**Close path on Ophir: rc72 + the one-off, either order** (pinned both ways in
+`scripts/tests/bd_customer_group_move_test.php` L2/L5). **Known limit:** on a view
+with `panel_body` and no `panel_overview` (stock 26.1.0 GA), a first-ever placement
+by the marker falls back to the ERP tab (ERP-Core's order: named → ERP panel →
+`panel_body`); pinned in `bd_erp_layout_test.php` T3. The one-off itself uses the
+first tab on either shape. benchdogs-dev / sandbox layouts were NOT read (not
+signed in).
+
+**Tests:** NEW `bd_customer_group_move_test.php` (29 checks: rc69's REAL writer
+reproduces the header placement on the Ophir-shaped view; the one-off's unit cases;
+the tenant's life with rc72's real scripts and ERP-Core's real `sync()`; the vardef).
+`bd_erp_layout_test.php` T3/T5a re-pinned for the GA-shape fallback and its rc69
+stand-in replaced by the real rc69 file (`fixtures/rc69/`); `bd_adm_rules_test.php`
+M6 re-pinned. Mutants 17/17 killed.
+
 # 0.9.42-rc70 — G380 / G381 slim (🔒 1724b): ADM config + ADM rules only
 
 Owner ruling 🔒 1724b: *Bench keeps ONLY ADM config + ADM rules; the generic

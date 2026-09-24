@@ -26,6 +26,12 @@ and the package ships no module of its own.
 > a file a later build stops shipping (§CW / G37), and nothing rc70 ships
 > requires it; the one-off does not blank it yet (flagged for its owner).
 >
+> **rc72 (G507): the Account pair's marker is `panel_overview` after Industry,
+> and both fields are `readonly`.** Moving the pair OUT of the header rc69 put it
+> in (on a view with no `panel_body`, e.g. Ophir) is not this package's job - a
+> placed field is never moved by `sync()` and this package writes no layout - it
+> is the disposable one-off `sugar-sell/ONEOFF-MoveBdCustomerGroup`.
+>
 > `scripts/tests/test_g280_minimal_footprint.py` pins this list against the
 > source tree AND the built zip, so it cannot grow silently.
 >

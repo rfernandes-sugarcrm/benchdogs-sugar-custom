@@ -517,9 +517,11 @@ namespace {
         $check('M5 every field has its label, and no orphan label is left', [[], 3], [$missing, count($mod_strings)]);
         $dictionary = [];
         include 'custom/Extension/modules/Accounts/Ext/Vardefs/bd_customer_group.php';
-        $check('M6 the two Account fields: panel_body (where rc69 put them), name then code', [
-                'bd_customer_group' => ['view' => 'record', 'panel' => 'panel_body', 'after' => ''],
-                'bd_customer_group_code' => ['view' => 'record', 'panel' => 'panel_body', 'after' => 'bd_customer_group'],
+        // rc72 (G507): panel_overview after Industry - the first tab of the measured
+        // Bench tenant, which has no panel_body (rc69 put them in its HEADER).
+        $check('M6 the two Account fields: panel_overview after Industry, name then code', [
+                'bd_customer_group' => ['view' => 'record', 'panel' => 'panel_overview', 'after' => 'industry'],
+                'bd_customer_group_code' => ['view' => 'record', 'panel' => 'panel_overview', 'after' => 'bd_customer_group'],
             ], array_map(fn($f) => $f['erp_layout'] ?? null, $dictionary['Account']['fields'] ?? []));
 
         // ── N. the before_save registration ─────────────────────────────────

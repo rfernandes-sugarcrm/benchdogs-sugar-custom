@@ -182,9 +182,10 @@ namespace {
     $rc70Quotes = file_get_contents("$pkg/custom/Extension/modules/Quotes/Ext/Vardefs/bd_adm_required_fields.php");
     $rc70Accounts = file_get_contents("$pkg/custom/Extension/modules/Accounts/Ext/Vardefs/bd_customer_group.php");
     // rc69's Account vardef: the same two fields, with NO marker (rc69 placed them
-    // with its own layout writer). Built from rc70's by removing the markers, and
-    // checked below so the removal cannot silently fail.
-    $rc69Accounts = preg_replace("/\\s*'erp_layout' => array\\([^)]*\\),/s", '', $rc70Accounts);
+    // with its own layout writer). rc72 (G507): the REAL rc69 file, a byte copy of
+    // the rc69 cut (fixtures/rc69/PROVENANCE.md), no longer derived from rc70's by
+    // regex - rc72's vardef also carries 'readonly', which rc69's did not.
+    $rc69Accounts = file_get_contents(__DIR__ . '/fixtures/rc69/bd_customer_group.php.txt');
 
     // A throwaway tenant docroot: ERP-Core's class at its fixed path, and the
     // Extension files the compiler reads.
@@ -251,7 +252,7 @@ namespace {
     };
     $report = fn() => json_decode($GLOBALS['bd_config']['benchdogs_ext']['install_report'] ?? '{}', true);
 
-    $check('X0 the rc69 stand-in really has no marker, and rc70 has two', [0, 2],
+    $check('X0 rc69\'s vardef really has no marker, and this build\'s has two', [0, 2],
         [substr_count($rc69Accounts, "'erp_layout' => array("), substr_count($rc70Accounts, "'erp_layout' => array(")]);
 
     // ── T0: ERP-Epicor 1.1.125 + Bench rc69 ────────────────────────────────
@@ -298,10 +299,22 @@ namespace {
     $check('T2 a second install places nothing and writes no view', [], ViewdefManager::$saves);
 
     // ── T3: ERP-Epicor reinstalled ─────────────────────────────────────────
+    // WORST CASE: $erpEpicorLayouts() rewrites the WHOLE view without any Bench
+    // field, so this is a first-ever placement. (The real REPLACE install rebuilds
+    // only ERP-Epicor's own panels and carries customer fields - G452 - so a field
+    // on panel_body survives it untouched; this case is what happens when it
+    // does not.)
+    // 🔁 rc72 (G507): the Account marker names panel_overview, the first tab of the
+    // measured Bench tenant (Ophir has no panel_body). THIS view is SugarEnt GA's
+    // shape, which has no panel_overview, so ERP-Core's fallback (named panel ->
+    // the module's ERP panel -> panel_body) puts a FIRST-EVER placement on the ERP
+    // tab. Pinned so the day ERP-Core takes an ordered list of panels this flips
+    // visibly. Ophir's shape - the header, the one-off, a fresh install - is
+    // bd_customer_group_move_test.php's.
     $erpEpicorLayouts();
-    $check('T3 ERP-Epicor\'s own sync() puts every Bench field back, same places, same order',
+    $check('T3 ERP-Epicor\'s own sync() puts every Bench field back; on a GA-shaped view (no panel_overview) the Account pair falls back to the ERP tab',
         [['erp_quote_type', 'erp_quotes_ship_via_name', 'erp_reference', 'bd_lead_source', 'bd_lead_type', 'bd_project_id'],
-         ['website', 'bd_customer_group', 'bd_customer_group_code'], ['erp_credit_hold_badge']],
+         ['website'], ['erp_credit_hold_badge', 'bd_customer_group', 'bd_customer_group_code']],
         [$panel('Quotes', 'LBL_RECORDVIEW_PANEL_ERP'), $panel('Accounts', 'panel_body'),
          $panel('Accounts', 'LBL_RECORDVIEW_PANEL_ERP')]);
 
@@ -335,9 +348,13 @@ namespace {
     unlink($QV . 'bd_adm_required_fields.php');       // uninstall_copy ...
     file_put_contents($AV . 'bd_customer_group.php', $rc69Accounts);   // ... restores rc69's backup
     $lifecycle('post_uninstall.php');
+    // T4 took the pair off; this post_execute is a first-ever placement again on
+    // the GA-shaped view, so (T3) it lands on the ERP tab - and stays there.
     $check('T5a the pickers go; the Account fields, defined again by the restored rc69 vardef, stay',
-        [['erp_quote_type', 'erp_quotes_ship_via_name', 'erp_reference'], ['website', 'bd_customer_group', 'bd_customer_group_code']],
-        [$panel('Quotes', 'LBL_RECORDVIEW_PANEL_ERP'), $panel('Accounts', 'panel_body')]);
+        [['erp_quote_type', 'erp_quotes_ship_via_name', 'erp_reference'], ['website'],
+         ['erp_credit_hold_badge', 'bd_customer_group', 'bd_customer_group_code']],
+        [$panel('Quotes', 'LBL_RECORDVIEW_PANEL_ERP'), $panel('Accounts', 'panel_body'),
+         $panel('Accounts', 'LBL_RECORDVIEW_PANEL_ERP')]);
     $check('T5b no layout error was logged across the whole life', [],
         array_values(array_filter($GLOBALS['log']->lines,
             fn($l) => str_contains($l[1], '[ErpLayoutExtraFields]') || str_contains($l[1], 'layout sync failed'))));
