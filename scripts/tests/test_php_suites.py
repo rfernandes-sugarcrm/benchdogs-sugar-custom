@@ -48,20 +48,24 @@ SUITES = (
 php = shutil.which("php")
 
 
-def run(name: str) -> subprocess.CompletedProcess:
-    # bd_adm_rules_test.php runs the Bench hook adapters THROUGH ERP-Epicor's
-    # real dispatcher: the sibling checkout's file when present, else the pin.
-    env = {**os.environ,
-           "BD_ERP_QUOTE_HOOKS": str(shared_sugar.resolve("ErpQuoteHooks.php"))}
+def run(name: str, **env: str) -> subprocess.CompletedProcess:
     return subprocess.run(
-        [php, str(HERE / name)], cwd=ROOT, capture_output=True, text=True, env=env,
+        [php, str(HERE / name)], cwd=ROOT, capture_output=True, text=True,
+        env={**os.environ, **env},
     )
+
+
+#: ERP-Epicor's quote facts (G380 (g), lane D) in the sibling checkout, when it
+#: carries them. bd_adm_rules_test.php runs BdAdmRules against a stand-in for
+#: this class; the stand-in's two method names are only worth anything while
+#: the real class has them.
+QUOTE_FACTS = shared_sugar.SIBLING / "sugar-sell/ERP-Epicor/src/custom/modules/Quotes/ErpQuoteFacts.php"
 
 
 @unittest.skipUnless(php, "requires a PHP CLI")
 class PhpSuitesTest(unittest.TestCase):
-    def assert_suite_passes(self, name: str) -> None:
-        result = run(name)
+    def assert_suite_passes(self, name: str, **env: str) -> None:
+        result = run(name, **env)
         report = result.stdout + result.stderr
         self.assertIn("checks, 0 failed", report, report)
         self.assertEqual(result.returncode, 0, report)
@@ -77,10 +81,23 @@ class PhpSuitesTest(unittest.TestCase):
         self.assert_suite_passes("bench_governing_origin_retired_test.php")
 
     def test_bd_adm_rules(self):
-        """G380/G381: the Bench Dogs ADM rules (company gate, Reference and
-        Project defaults, the non-part block through ERP-Epicor's real hook
-        dispatcher, the pickers' options, placement, vardefs)."""
+        """G380/G381 (🔒 1724b): the Bench Dogs ADM rules (which companies are
+        ADM, the Reference and Project defaults and their exit order, the
+        pickers' options, the vardef markers) - and, in a second run with no
+        ErpQuoteFacts at all, that an older ERP-Epicor skips the defaults and
+        never fails a save."""
         self.assert_suite_passes("bd_adm_rules_test.php")
+        self.assert_suite_passes("bd_adm_rules_test.php", BD_NO_QUOTE_FACTS="1")
+
+
+
+@unittest.skipUnless(QUOTE_FACTS.is_file(), "no ERP-Epicor checkout carrying ErpQuoteFacts")
+class QuoteFactsStandInTest(unittest.TestCase):
+    def test_the_stand_in_matches_erp_epicors_quote_facts(self):
+        """The stand-in in bd_adm_rules_test.php must not outlive the real API."""
+        real = QUOTE_FACTS.read_text(encoding="utf-8")
+        for method in ("companyCode", "productGroup"):
+            self.assertRegex(real, rf"public static function {method}\(\$\w+\): string")
 
 
 class PhpSuiteCoverageTest(unittest.TestCase):

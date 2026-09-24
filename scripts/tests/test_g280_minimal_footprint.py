@@ -14,9 +14,9 @@ WHAT SHIPS (0.9.42-rc69), and why each item cannot live upstream:
       CustGrup.GroupDesc. Core has no equivalent field, and core's schema
       enforcement dead-letters the Bench connector's erp_customers writes
       without the vardef.
-  custom/modules/Accounts/BdAccountsLayoutExtensions.php
-      the placement of those two fields on the deployed Accounts record view
-      (append only), and its undo on uninstall.
+      (Placed on the Accounts record view by ERP-Core's ErpLayoutExtraFields
+      from their `erp_layout` vardef marker since rc70 - 🔒 1724b retired
+      BdAccountsLayoutExtensions.php, this package's own layout writer.)
   custom/clients/base/api/BdBenchDogsActionsApi.php
       EMPTY. The one retirement stub left: an api file is require_once'd by
       path on every REST dictionary rebuild, and dropping it would leave rc68's
@@ -28,8 +28,11 @@ Everything else is REMOVED, and every removed path has a named route off a
 tenant that already carries it - asserted below, not assumed.
 
 GROWN ONCE SINCE, WITH CONSENT: G380 / G381 (🔒 1705b, the per-item consent
-🔒 1520 asks for) add nine files for Bench Dogs' ADM company's required quote
-values. Each is listed in KEPT with its reason; see the package README.
+🔒 1520 asks for) add files for Bench Dogs' ADM company's required quote values.
+🔒 1724b ("Bench keeps ONLY ADM config + ADM rules") then cut that to six: the
+generic parts (Reference, the part-number refusal, field placement, the
+company and product-group answers) are ERP-Epicor's. Each is listed in KEPT
+with its reason; see the package README.
 
 MUTATION-VERIFIED (each applied, this file re-run, the named case observed red):
   restore one retired stub (git checkout 019fbe1 -- <stub>)
@@ -68,8 +71,6 @@ KEPT = {
         "the customer category (REQ-19): the two Account fields",
     "custom/Extension/modules/Accounts/Ext/Language/en_us.bd_customer_group.php":
         "their two labels",
-    "custom/modules/Accounts/BdAccountsLayoutExtensions.php":
-        "their placement on the deployed Accounts record view, and its undo",
     "custom/clients/base/api/BdBenchDogsActionsApi.php":
         "EMPTY: unregisters rc68's bd-tools/repair-ui on upgraded tenants",
     "scripts/post_execute.php": "lifecycle",
@@ -78,28 +79,22 @@ KEPT = {
     # ── G380 / G381: the owner's per-item consent is 🔒 1705b ("Lead Source and
     # Lead Type ... required pickers in Sugar loaded from ADM's own code
     # lists"; "Project ID becomes a picker of ADM projects on the quote,
-    # PRE-FILLED from a product-group -> project default list"; "non-part
-    # catalog lines ... blocked from ordering"), build authorised by 🔒 1704b.
-    # Every one is a rule of ONE customer's ERP company (ADM) that ERP-Epicor
-    # must not carry (gate G2), and each is gated on the quote's company.
+    # PRE-FILLED from a product-group -> project default list"), build
+    # authorised by 🔒 1704b, cut to ADM's own by 🔒 1724b. Every one is a rule
+    # or value of ONE customer's ERP company (ADM) that ERP-Epicor must not
+    # carry (gate G2), and each is gated on the quote's company.
     "custom/Extension/modules/Quotes/Ext/Vardefs/bd_adm_required_fields.php":
-        "G380/G381: bd_reference, bd_lead_source, bd_lead_type, bd_project_id on Quote",
+        "G380/G381: bd_lead_source, bd_lead_type, bd_project_id on Quote (erp_layout-marked)",
     "custom/Extension/modules/Quotes/Ext/Language/en_us.bd_adm_required_fields.php":
-        "their four labels, in ADM's own words",
+        "their three labels, in ADM's own words",
     "custom/Extension/modules/Quotes/Ext/LogicHooks/bd_adm_quote_defaults.php":
         "G380/G381: before_save fills an EMPTY Reference / Project on an unsent ADM quote",
     "custom/Extension/application/Ext/Language/en_us.bd_adm_lists.php":
-        "the three lookup-type labels + the two tenant lists (companies, group->project)",
+        "the three lookup-type labels + the one tenant list (group->project)",
     "custom/modules/Quotes/BdAdmRules.php":
-        "the ADM rules themselves: company gate, defaults, non-part block, options",
+        "the ADM rules themselves: which companies are ADM, the two defaults, options",
     "custom/modules/Quotes/BdAdmLookupOptions.php":
         "the pickers' option functions (vardef 'function' needs a plain function)",
-    "custom/modules/Quotes/BdAdmQuoteFieldsLayout.php":
-        "the four fields' placement on the deployed Quotes record view, and its undo",
-    "custom/modules/Quotes/ErpQuoteHooks/ResolveOrderableLines.php":
-        "G381: ERP-Epicor's Submit Order hook, answered - blocks a part-less ADM line",
-    "custom/modules/Quotes/ErpQuoteHooks/OrderSelectedLinesPolicy.php":
-        "G381: ERP-Epicor's Order Selected Lines hook, answered - the same block",
 }
 
 ONEOFF ="the one-off deletes or blanks it (🔒 1521); re-run it after installing rc69"
@@ -107,9 +102,15 @@ INERT = ("nothing shipped calls it any more; the copy an upgraded tenant keeps i
          "unreachable (the one-off does not blank it yet - flagged for its owner)")
 PF_OWNS = ("Partial Fulfillment ships the SAME path (>= 1.0.41 with the G282 preserve "
            "gate); reinstall PF after rc69 so PF's body is the one on disk (G282)")
+UPGRADE = ("rc69 copied it, so rc69's OWN uninstall_copy() deletes it when rc70 upgrades "
+           "the tenant (nothing was under it to restore); the one-off must not touch it "
+           "while a tenant may still run rc69")
 
-#: Every path rc68 shipped that rc69 does not, with the route off a tenant.
+#: Every path rc68 shipped that rc69 does not, and every path rc69 shipped that
+#: rc70 does not, with the route off a tenant.
 REMOVED = {
+    # rc70 (🔒 1724b): ERP-Core's ErpLayoutExtraFields places the fields now.
+    "custom/modules/Accounts/BdAccountsLayoutExtensions.php": UPGRADE,
     "custom/modules/Quotes/ErpQuoteHooks/OpportunityContribution.php": PF_OWNS,
     "custom/modules/Quotes/BdQuotesLayoutExtensions.php": INERT,
     "custom/modules/Opportunities/BdOpportunitiesLayoutExtensions.php": INERT,
@@ -158,6 +159,8 @@ REMOVED = {
 REMOVED_CLASSES = (
     "ErpQuoteOpportunityContribution", "BdQuotesLayoutExtensions",
     "BdOpportunitiesLayoutExtensions", "BdKineticOpportunityHook", "BdBenchDogsActionsApi",
+    # rc70 (🔒 1724b), and the unreleased G380 branch's own layout writer.
+    "BdAccountsLayoutExtensions", "BdAdmQuoteFieldsLayout",
 )
 
 
@@ -214,6 +217,9 @@ class EveryRemovedPathLeavesTheTenant(unittest.TestCase):
                 elif route is PF_OWNS:
                     self.assertNotIn(rel, worklist,
                                      "the one-off must never blank a provider path (G280)")
+                elif route is UPGRADE:
+                    self.assertNotIn(rel, worklist,
+                                     "the one-off would take it off a tenant still on rc69")
                 else:
                     self.assertIs(route, INERT)
                     self.assertNotIn(rel, worklist)
@@ -291,8 +297,10 @@ class TheLifecycleDoesOnlyTheKeptWork(unittest.TestCase):
     def test_post_install_runs_exactly_the_kept_steps(self):
         code = code_only(PKG / "scripts/post_execute.php")
         steps = sorted(set(re.findall(r"\$bdStepReport\['([a-z_]+)'\]\s*=\s*'ok'", code)))
-        self.assertEqual(steps, ["accounts_customer_group_field", "quotes_adm_fields",
-                                 "repair_rebuild"])
+        self.assertEqual(steps, ["accounts_erp_layout", "quotes_erp_layout", "repair_rebuild"])
+        self.assertEqual(code.count("ErpLayoutExtraFields::sync("), 2)
+        self.assertLess(code.index("rebuildExtensions"), code.index("ErpLayoutExtraFields::sync("),
+                        "sync() must read the vardefs AFTER the rebuild merged this package's")
         for gone in ("partial_order_sales_stage", "uninstall_languages", "zz_bd_stage_doms",
                      "saveSetting('erp_integration'", "rebuild_tabledictionary",
                      "return_app_list_strings_language"):
@@ -301,15 +309,17 @@ class TheLifecycleDoesOnlyTheKeptWork(unittest.TestCase):
                       "the rebuild is not narrowed to the two modules this package extends")
 
     def test_pre_uninstall_undoes_only_the_kept_placements(self):
-        code = code_only(PKG / "scripts/bd_pre_uninstall.php")
-        self.assertEqual(sorted(set(re.findall(r"\b(Bd[A-Za-z]+)::", code))),
-                         ["BdAccountsLayoutExtensions", "BdAdmQuoteFieldsLayout"])
-        self.assertIn("BdAccountsLayoutExtensions::remove()", code,
-                      "the uninstall no longer takes the two fields off the view: that "
-                      "is the orphan-on-a-view the G280 grade looks for")
-        self.assertIn("BdAdmQuoteFieldsLayout::remove()", code,
-                      "the uninstall leaves the four ADM fields on the Quotes view "
-                      "after their vardefs are gone")
+        """rc70 (🔒 1724b): nothing before the files go. The marked fields are
+        taken off both views by post_uninstall's ErpLayoutExtraFields::sync(),
+        once their vardefs are gone - leaving them would be the
+        orphan-on-a-view the G280 grade looks for."""
+        pre = code_only(PKG / "scripts/bd_pre_uninstall.php")
+        self.assertEqual(re.findall(r"\b([A-Z][A-Za-z]+)::", pre), [])
+        post = code_only(PKG / "scripts/post_uninstall.php")
+        self.assertIn("ErpLayoutExtraFields::sync($bdModule)", post)
+        self.assertIn("foreach (array('Accounts', 'Quotes') as $bdModule)", post)
+        self.assertLess(post.index("rebuildExtensions"), post.index("ErpLayoutExtraFields::sync"),
+                        "sync() must read the vardefs AFTER the rebuild dropped this package's")
 
     def test_post_uninstall_rebuilds_only_the_extended_modules(self):
         code = code_only(PKG / "scripts/post_uninstall.php")
@@ -326,8 +336,15 @@ class TheLifecycleDoesOnlyTheKeptWork(unittest.TestCase):
         pf = re.search(r"'id_name'\s*=>\s*'sugarai_erp_epicor_partialfulfillment',\s*"
                        r"'version'\s*=>\s*'([0-9.]+)'", manifest)
         self.assertIsNotNone(pf, "the Partial Fulfillment dependency is gone")
-        self.assertEqual(pf.group(1), "1.0.43")
-        self.assertRegex(manifest, r"'id_name'\s*=>\s*'sugarai_erp_epicor',\s*'version'")
+        # 1.0.50 since rc70: the PF release that ships with ERP-Epicor 1.1.125
+        # (coordinator, 2026-09-24).
+        self.assertEqual(pf.group(1), "1.0.50")
+        epicor = re.search(r"'id_name'\s*=>\s*'sugarai_erp_epicor',\s*'version'\s*=>\s*'([0-9.]+)'",
+                           manifest)
+        self.assertIsNotNone(epicor)
+        # 1.1.125: the release carrying G380 (d)-(g) - erp_reference, the
+        # part-number switch, ErpLayoutExtraFields, ErpQuoteFacts (🔒 1724b).
+        self.assertEqual(epicor.group(1), "1.1.125")
 
 
 if __name__ == "__main__":

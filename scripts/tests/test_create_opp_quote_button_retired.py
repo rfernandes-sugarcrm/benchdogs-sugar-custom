@@ -34,12 +34,17 @@ array. Every tenant that ran rc49..rc61 already had the Bench button stripped
 still pins: the Bench button is never INJECTED again, the two packages still
 share one label (the root cause), the customer group fields are untouched, and
 neither the install nor the uninstall path of this class touches a button.
+
+🔁 0.9.42-rc70 (🔒 1724b): THE CLASS ITSELF IS GONE. BdAccountsLayoutExtensions
+was this package's writer on the Accounts record view; the two customer-group
+fields now carry ERP-Epicor's `erp_layout` marker and ERP-Core's
+ErpLayoutExtraFields places them. So the guard is stronger than "this class
+leaves buttons alone": NO shipped file of this package touches a record view -
+no ViewdefManager, no saveViewdef, no `buttons` key - and so none can inject or
+strip a button.
 """
 
-import json
 import re
-import subprocess
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -65,115 +70,43 @@ EPICOR_LABELS = shared_sugar.resolve("en_us.erp_create_opp_quote.php")
 BD_BUTTON = "bd_create_opp_quote_button"
 ERP_BUTTON = "erp_create_opp_quote_button"
 
-HARNESS = r'''
-namespace Sugarcrm\Sugarcrm\MetaData {
-    class ViewdefManager {
-        public static $defs = [];
-        public static $saves = 0;
-        public function loadViewdef($platform, $module, $view, $loadBase = false, $isLayout = false) {
-            return self::$defs;
-        }
-        public function saveViewdef($viewdef, $module, $platform, $view, $isLayout = false) {
-            self::$saves++;
-            self::$defs = $viewdef;
-        }
-    }
-}
-
-namespace {
-    use Sugarcrm\Sugarcrm\MetaData\ViewdefManager;
-
-    class MetaDataFiles {
-        public static function clearModuleClientCache($modules = [], $type = '', $platforms = []) {}
-    }
-    // deployRecordView() ends with `include_once 'include/TemplateHandler/...'`
-    // then TemplateHandler::clearCache(). Outside a Sugar root that include is a
-    // warning and the call is FATAL, so the class is declared here. Without it the
-    // harness dies AFTER the retirement has already been applied - which reads as
-    // the fix failing rather than the harness being incomplete.
-    class TemplateHandler {
-        public static function clearCache($module = null, $view = null) {}
-    }
-    // The class logs through $GLOBALS['log']; give it a sink so the real code path runs.
-    class _Log { public function __call($m, $a) {} }
-    $GLOBALS['log'] = new _Log();
-
-    require $argv[1];
-
-    function run(array $buttons): array {
-        // loadViewdef() returns the INNER defs; loadRecordView() wraps them as
-        // ['base']['view']['record'] itself.
-        $panels = [['name' => 'panel_body', 'fields' => [['name' => 'website']]]];
-        ViewdefManager::$defs = ['buttons' => $buttons, 'panels' => $panels];
-        ViewdefManager::$saves = 0;
-        BdAccountsLayoutExtensions::writeCustomerGroupField();   // the install path
-        $afterInstall = ViewdefManager::$defs['buttons'] ?? [];
-        BdAccountsLayoutExtensions::remove();                    // the uninstall path
-        $afterRemove = ViewdefManager::$defs['buttons'] ?? [];
-        return [
-            'before'        => json_encode($buttons),
-            'after_install' => json_encode($afterInstall),
-            'after_remove'  => json_encode($afterRemove),
-            'saves'         => ViewdefManager::$saves,
-            'has_button_method' => method_exists('BdAccountsLayoutExtensions', 'writeButtons'),
-        ];
-    }
-
-    $bd  = ['name' => 'bd_create_opp_quote_button',  'label' => 'LBL_BD_CREATE_OPP_QUOTE_BUTTON'];
-    $erp = ['name' => 'erp_create_opp_quote_button', 'label' => 'LBL_ERP_CREATE_OPP_QUOTE_BUTTON'];
-    $edit = ['name' => 'edit_button', 'label' => 'LBL_EDIT_BUTTON'];
-    $main = ['name' => 'main_dropdown', 'label' => 'LBL_MAIN'];
-
-    echo json_encode([
-        // the defect as it shipped: BOTH buttons on the deployed view
-        'duplicated' => run([$edit, $bd, $erp, $main]),
-        // an upgraded tenant carrying only ours
-        'bench_only' => run([$edit, $bd, $main]),
-        // a clean tenant that never had ours - must be a NO-OP, no churn
-        'core_only'  => run([$edit, $erp, $main]),
-    ]);
-}
-'''
+#: Anything a shipped file would need in order to read or write a record view's
+#: buttons (or any of it). None may appear in this package since rc70.
+VIEW_WRITERS = ("ViewdefManager", "saveViewdef", "loadViewdef", "'buttons'", "writeButtons",
+                "'type' => 'bd-create-opp-quote'", "DeployedMetaDataImplementation")
 
 
-def _run_harness():
-    with tempfile.NamedTemporaryFile("w", suffix=".php", delete=False) as fh:
-        fh.write("<?php\n" + HARNESS)
-        harness = fh.name
-    out = subprocess.run(
-        # `include_once 'include/TemplateHandler/...'` cannot resolve outside a
-        # Sugar root and emits a WARNING to stdout, ahead of our JSON. Silencing
-        # it here is honest: the include is irrelevant to what this test asserts,
-        # and TemplateHandler is stubbed above so the call itself still runs.
-        ["php", "-d", "error_reporting=E_ALL & ~E_WARNING", harness, str(LAYOUT)],
-        capture_output=True, text=True, check=False,
-    )
-    if out.returncode != 0:
-        raise AssertionError(f"harness failed rc={out.returncode}: {out.stderr[:600]}")
-    # Parse from the first brace so any residual notice cannot break the read.
-    start = out.stdout.find("{")
-    if start < 0:
-        raise AssertionError(f"harness produced no JSON: {out.stdout[:400]!r}")
-    return json.loads(out.stdout[start:])
+def shipped_php():
+    return sorted(p for top in ("custom", "scripts") for p in (PKG / top).rglob("*.php"))
+
+
+def code_only(path) -> str:
+    """PHP with comments stripped: the retirement NOTES name what is gone."""
+    body = re.sub(r"/\*.*?\*/", "", path.read_text(encoding="utf-8"), flags=re.S)
+    return re.sub(r"(?m)(^|\s)(//|#)[^\n]*", r"\1", body)
 
 
 class CreateOppQuoteButtonRetiredStatic(unittest.TestCase):
-    def test_the_source_never_injects_the_button_again(self):
-        """The shape that ADDED it must not come back."""
-        src = LAYOUT.read_text(encoding="utf-8")
-        self.assertNotIn(
-            "'type' => 'bd-create-opp-quote'", src,
-            "BdAccountsLayoutExtensions injects the Bench Create Opportunity & Quote "
-            "button again. Core's erp_create_opp_quote_button owns this action "
-            "(it carries ETO-PENDING and the Advanced Quote typing); adding ours "
-            "back puts TWO identical buttons in front of the seller (G15).",
-        )
+    def test_the_layout_writer_is_gone(self):
+        self.assertFalse(LAYOUT.exists(), "BdAccountsLayoutExtensions ships again (🔒 1724b)")
+
+    def test_no_shipped_file_touches_a_record_view(self):
+        """The shape that ADDED the button - and every shape that could - is gone:
+        no shipped file loads, saves or edits a record view."""
+        files = shipped_php()
+        self.assertGreaterEqual(len(files), 8, "the scan reached too few files to mean anything")
+        offenders = [f"{p.relative_to(PKG)}: {w}" for p in files for w in VIEW_WRITERS
+                     if w in code_only(p)]
+        self.assertEqual(offenders, [])
 
     def test_the_customer_group_fields_are_untouched(self):
-        """🔒 1044: these two are the whole Bench layer. The G15 fix must not take them."""
-        src = LAYOUT.read_text(encoding="utf-8")
+        """🔒 1044: these two are the whole Bench Accounts layer. They are still
+        declared, and still placed on the view - by their `erp_layout` marker."""
+        src = (PKG / "custom/Extension/modules/Accounts/Ext/Vardefs/bd_customer_group.php").read_text(
+            encoding="utf-8")
         for field in ("bd_customer_group", "bd_customer_group_code"):
-            self.assertIn(field, src, f"{field} lost from the Accounts layout (🔒 1044)")
+            self.assertIn(f"$dictionary['Account']['fields']['{field}']", src)
+        self.assertEqual(src.count("'erp_layout' => array("), 2)
 
     def test_the_bench_label_is_gone_and_cores_is_not(self):
         """THE ROOT CAUSE, retired rather than merely pinned.
@@ -196,32 +129,6 @@ class CreateOppQuoteButtonRetiredStatic(unittest.TestCase):
         erp = EPICOR_LABELS.read_text(encoding="utf-8")
         self.assertRegex(erp, r"\$mod_strings\['LBL_ERP_CREATE_OPP_QUOTE_BUTTON'\]\s*=\s*'[^']+'",
                          "core no longer labels its own Create Opportunity & Quote button")
-
-
-class CreateOppQuoteButtonRetiredBehaviour(unittest.TestCase):
-    """Drives the REAL class through a stubbed ViewdefManager."""
-
-    @classmethod
-    def setUpClass(cls):
-        if subprocess.run(["which", "php"], capture_output=True).returncode != 0:
-            raise unittest.SkipTest("php not available")
-        cls.r = _run_harness()
-
-    def test_the_install_path_leaves_every_button_alone(self):
-        """G276 / 🔒 1504: placing the customer group fields must not read or
-        rewrite the buttons array, whatever is in it - ours included."""
-        for case in ("duplicated", "bench_only", "core_only"):
-            with self.subTest(case=case):
-                self.assertEqual(self.r[case]["after_install"], self.r[case]["before"])
-
-    def test_the_uninstall_path_leaves_every_button_alone(self):
-        for case in ("duplicated", "bench_only", "core_only"):
-            with self.subTest(case=case):
-                self.assertEqual(self.r[case]["after_remove"], self.r[case]["before"])
-
-    def test_no_button_method_remains(self):
-        self.assertFalse(self.r["core_only"]["has_button_method"],
-                         "BdAccountsLayoutExtensions::writeButtons() is back (🔒 1504)")
 
 
 if __name__ == "__main__":

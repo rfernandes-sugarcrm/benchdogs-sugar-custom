@@ -21,7 +21,11 @@
  *      five bd_* fields whose vardefs had just been deleted.
  *   2. The two customer group fields stayed on Accounts.
  *
- * 🛑 ONLY (2) IS LEFT FOR THIS FILE (0.9.42-rc69, G280 / 🔒 1567). The Quotes
+ * 🛑 NEITHER IS THIS FILE'S ANY MORE (0.9.42-rc70, G380 / 🔒 1724b): see the note
+ * at the bottom - the marked fields are retired by ERP-Core's
+ * ErpLayoutExtraFields from post_uninstall.php. History:
+ *
+ * ONLY (2) WAS LEFT FOR THIS FILE (0.9.42-rc69, G280 / 🔒 1567). The Quotes
  * panel (K-2) and the Opportunities `bd_governing_origin` marker (K-3) were
  * one-shot retirements, and they are SPENT: the disposable one-off "Retire
  * Bench Dogs Residue" removed both from the deployed views on every QA tenant
@@ -140,43 +144,14 @@
 $bdVersion = isset($manifest['version']) ? (string) $manifest['version'] : 'unknown';
 $GLOBALS['log']->fatal('BenchDogs-Ext: pre_uninstall running (' . $bdVersion . ') - cleaning up deployed metadata');
 
-// Step one: take the two REQ-19 customer-group fields back off the
-// Accounts record view. BdAccountsLayoutExtensions::remove() sweeps every
-// panel, so an admin who moved them is cleaned up too.
-try {
-    $bdAccountsHelper = 'custom/modules/Accounts/BdAccountsLayoutExtensions.php';
-    if (file_exists($bdAccountsHelper)) {
-        if (!class_exists('BdAccountsLayoutExtensions', false)) {
-            require_once $bdAccountsHelper;
-        }
-        if (class_exists('BdAccountsLayoutExtensions')) {
-            BdAccountsLayoutExtensions::remove();
-        }
-    } else {
-        $GLOBALS['log']->error("BenchDogs-Ext: {$bdAccountsHelper} missing; Accounts record view not cleaned up");
-    }
-} catch (Throwable $e) {
-    $GLOBALS['log']->error('BenchDogs-Ext: Accounts layout cleanup failed: ' . $e->getMessage());
-}
-
-// G380 / G381: take the four ADM fields back off the Quotes record view, from
-// every panel, before their vardefs go - a field left on a view whose vardef is
-// gone is the orphan-on-a-view the G280 grade looks for.
-try {
-    $bdAdmHelper = 'custom/modules/Quotes/BdAdmQuoteFieldsLayout.php';
-    if (file_exists($bdAdmHelper)) {
-        if (!class_exists('BdAdmQuoteFieldsLayout', false)) {
-            require_once $bdAdmHelper;
-        }
-        if (class_exists('BdAdmQuoteFieldsLayout')) {
-            BdAdmQuoteFieldsLayout::remove();
-        }
-    } else {
-        $GLOBALS['log']->error("BenchDogs-Ext: {$bdAdmHelper} missing; Quotes record view not cleaned up");
-    }
-} catch (Throwable $e) {
-    $GLOBALS['log']->error('BenchDogs-Ext: Quotes ADM field cleanup failed: ' . $e->getMessage());
-}
+// NOTHING TO UNDO HERE ANY MORE (0.9.42-rc70, G380 / 🔒 1724b). The two
+// placement helpers this file used to call (BdAccountsLayoutExtensions::remove,
+// BdAdmQuoteFieldsLayout::remove) are retired with the placements: this
+// package's fields carry ERP-Epicor's `erp_layout` marker, and ERP-Core's
+// ErpLayoutExtraFields takes a marked field off every panel once its vardef is
+// GONE - which is after the files are deleted, so that call lives in
+// post_uninstall.php, not here. This file stays as the pre_uninstall installdef
+// and the proof-of-life line above, so an uninstall still says it ran.
 
 // The *_cstm columns behind the bd_* fields are left in the database. Removing
 // a vardef does not drop its column, and dropping them here would make the

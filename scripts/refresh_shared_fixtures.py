@@ -66,8 +66,6 @@ PINNED = {
         "sugar-sell/ERP-Core/scripts/BaseErpLayout.php",
     "QuotesLayout.php":
         "sugar-sell/ERP-Epicor/scripts/Modules/QuotesLayout.php",
-    "ErpQuoteHooks.php":
-        "sugar-sell/ERP-Epicor/src/custom/modules/Quotes/ErpQuoteHooks.php",
 }
 
 

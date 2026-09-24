@@ -23,20 +23,17 @@
  * Accounts records with {'created': 0, 'updated': 0, 'failed': 29}. The
  * per-field exemption decorator is not reachable across the container
  * boundary, so the vardef is the only way through.
+ *
+ * PLACEMENT (G380 (f), 🔒 1724b): each field carries ERP-Epicor's `erp_layout`
+ * marker, and ErpLayoutExtraFields::sync('Accounts') (ERP-Core,
+ * custom/include/) places it and retires it after uninstall - this package ships
+ * no layout code (BdAccountsLayoutExtensions is gone). The panel is panel_body,
+ * NOT ERP-Epicor's ERP panel, because that is where rc69 put them on every live
+ * tenant: sync() leaves an already-placed field alone, so any other panel here
+ * would make a fresh install differ from an upgraded one. Defined name first,
+ * code second, because sync() places marked fields in vardef order and the code
+ * follows the name (rc69's order).
  */
-
-$dictionary['Account']['fields']['bd_customer_group_code'] = array(
-    'name' => 'bd_customer_group_code',
-    'vname' => 'LBL_BD_CUSTOMER_GROUP_CODE',
-    'type' => 'varchar',
-    'len' => 10,
-    'comment' => 'Epicor Customer.GroupCode verbatim - the stable key to group and filter on',
-    'reportable' => true,
-    'audited' => true,
-    'importable' => false,
-    'massupdate' => false,
-    'inline_edit' => false,
-);
 
 $dictionary['Account']['fields']['bd_customer_group'] = array(
     'name' => 'bd_customer_group',
@@ -49,4 +46,27 @@ $dictionary['Account']['fields']['bd_customer_group'] = array(
     'importable' => false,
     'massupdate' => false,
     'inline_edit' => false,
+    'erp_layout' => array(
+        'view' => 'record',
+        'panel' => 'panel_body',
+        'after' => '',
+    ),
+);
+
+$dictionary['Account']['fields']['bd_customer_group_code'] = array(
+    'name' => 'bd_customer_group_code',
+    'vname' => 'LBL_BD_CUSTOMER_GROUP_CODE',
+    'type' => 'varchar',
+    'len' => 10,
+    'comment' => 'Epicor Customer.GroupCode verbatim - the stable key to group and filter on',
+    'reportable' => true,
+    'audited' => true,
+    'importable' => false,
+    'massupdate' => false,
+    'inline_edit' => false,
+    'erp_layout' => array(
+        'view' => 'record',
+        'panel' => 'panel_body',
+        'after' => 'bd_customer_group',
+    ),
 );

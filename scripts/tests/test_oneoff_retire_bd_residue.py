@@ -42,7 +42,6 @@ import subprocess
 import unittest
 import zipfile
 
-import hashlib
 
 from bd_retirement import ONEOFF_POST_EXECUTE, PKG, built_zip, oneoff_worklist, zip_names
 from test_g280_minimal_footprint import KEPT
@@ -60,8 +59,14 @@ RC69_ON_TENANT = {
     "custom/modules/Accounts/BdAccountsLayoutExtensions.php",
     "custom/clients/base/api/BdBenchDogsActionsApi.php",
 }
-#: What THIS build installs on a tenant - rc69's four plus G380/G381's.
+#: What THIS build installs on a tenant - rc69's four less the layout writer
+#: 🔒 1724b retired, plus G380/G381's.
 BUILD_ON_TENANT = {k for k in KEPT if k.startswith("custom/")}
+#: rc69 files this build no longer ships. They leave a tenant through rc69's OWN
+#: uninstall_copy() when rc70 upgrades it (they were in rc69's copy list and
+#: nothing was under them when rc69 copied them), so the one-off need not
+#: touch them - and must not, while a tenant may still run rc69.
+RC69_DROPPED_BY_THIS_BUILD = {"custom/modules/Accounts/BdAccountsLayoutExtensions.php"}
 
 
 def _not_ours_block() -> str:
@@ -96,14 +101,17 @@ class TheOneOffNeverTakesWhatRc69Ships(unittest.TestCase):
         self.assertEqual(kept_by_rc69_in_the_report(), RC69_ON_TENANT)
 
     def test_the_report_matches_the_built_rc69_manifest_too(self):
-        """The one-off's rc69 list is still ALL shipped: this build dropped none
-        of rc69's four (it only added G380/G381's), which is what Module Loader
-        is handed."""
+        """The one-off's rc69 list is what rc69 shipped. This build keeps all of
+        it but ONE file - the Accounts layout writer 🔒 1724b retired (ERP-Core's
+        ErpLayoutExtraFields places the fields from their vardef marker now) -
+        and that one leaves the tenant through rc69's own uninstall on the
+        upgrade, not through the one-off."""
         with zipfile.ZipFile(built_zip()) as zipped:
             manifest = zipped.read("manifest.php").decode()
         copied = set(re.findall(r"'to'\s*=>\s*'([^']+)'", manifest))
-        self.assertLessEqual(kept_by_rc69_in_the_report(), copied)
+        self.assertEqual(kept_by_rc69_in_the_report() - copied, RC69_DROPPED_BY_THIS_BUILD)
         self.assertEqual(copied, BUILD_ON_TENANT)
+        self.assertEqual(set(oneoff_worklist()) & RC69_DROPPED_BY_THIS_BUILD, set())
 
 
 class TheOneOffNeverTakesWhatThisBuildShips(unittest.TestCase):
@@ -114,16 +122,15 @@ class TheOneOffNeverTakesWhatThisBuildShips(unittest.TestCase):
     def test_no_worklist_names_a_file_this_build_ships(self):
         self.assertEqual(set(oneoff_worklist()) & BUILD_ON_TENANT, set())
 
-    def test_the_new_adapter_is_not_the_body_the_one_off_deletes(self):
-        """The one-off deletes ResolveOrderableLines.php ONLY when its md5 is
-        the rc37-rc40 Bench body, and reports any other body under SKIPPED.
-        This build's G381 adapter must therefore never match that md5."""
+    def test_this_build_ships_no_adapter_the_one_off_could_meet(self):
+        """The unreleased G380/G381 branch shipped a new ResolveOrderableLines.php
+        (the ADM non-part block). 🔒 1724b moved that rule into ERP-Epicor (a
+        per-company switch), so this build ships no adapter at all: the
+        one-off's md5-gated delete can never meet a body of ours."""
+        self.assertFalse((PKG / ADAPTER).exists())
+        self.assertNotIn(ADAPTER, zip_names())
         source = ONEOFF_POST_EXECUTE.read_text(encoding="utf-8")
-        start = source.index("$bdAdapterBenchMd5 = array(")
-        targeted = set(re.findall(r"'([0-9a-f]{32})'", source[start:source.index(");", start)]))
-        self.assertTrue(targeted, "the one-off names no adapter md5 - the parse is wrong")
-        ours = hashlib.md5((PKG / ADAPTER).read_bytes()).hexdigest()
-        self.assertNotIn(ours, targeted)
+        self.assertIn("$bdAdapterBenchMd5 = array(", source)   # anti-vacuity
 
     def test_the_report_no_longer_claims_an_owner_keep_for_the_repair_route(self):
         """🔒 1573: no such ruling exists; rc69 ships the file EMPTY."""
@@ -134,28 +141,21 @@ class Rc69NeitherShipsNorRestoresTheAdapter(unittest.TestCase):
     """rc69's uninstall_copy() restores only its own copy list's backups, so a
     path it never copies is one it can never put back.
 
-    🔁 RE-POINTED for G380/G381. This build DOES copy ResolveOrderableLines.php
-    again - a new, self-contained body (the ADM non-part block, 🔒 1705b), not
-    the rc37 planner adapter. What stays true, and is pinned below: the PLANNER
-    never ships, and the new adapter never reaches for it, so it cannot refuse
-    "planner not installed" the way the orphan did on Ophir (quote 368).
+    🔁 STILL TRUE AT rc70 (🔒 1724b): the unreleased G380/G381 branch would have
+    copied ResolveOrderableLines.php again, reopening the restore-on-uninstall
+    hazard over an rc37 body; the part-number rule moved into ERP-Epicor
+    instead, so neither the planner nor the adapter ships."""
 
-    ⚠️ THE ONE HAZARD COPYING THE PATH REOPENS: on a tenant that still holds the
-    rc37 body, install_copy backs it up and a later Bench uninstall RESTORES it.
-    So the one-off 1.0.2 must have run on a tenant with rc37-rc40 history BEFORE
-    this build is installed there (BenchDogs-Ext README, G380/G381 section)."""
-
-    def test_the_planner_never_ships_and_the_adapter_never_names_it(self):
+    def test_the_planner_never_ships_and_neither_does_the_adapter(self):
         names = zip_names()
         self.assertFalse((PKG / PLANNER).exists())
         self.assertNotIn(PLANNER, names)
+        self.assertNotIn(ADAPTER, names)
         with zipfile.ZipFile(built_zip()) as zipped:
             manifest = zipped.read("manifest.php").decode()
-            adapter = zipped.read(ADAPTER).decode()
         self.assertNotIn("BdSubmitOrderPlan", manifest)
-        self.assertNotIn("BdSubmitOrderPlan", adapter)
-        self.assertIn("BdAdmRules::nonPartRefusal", adapter,
-                      "the shipped adapter is not the G381 body")
+        self.assertNotIn("ResolveOrderableLines", manifest)
+        self.assertIn("sugarai_benchdogs_ext", manifest)   # anti-vacuity
 
 
 class TheLogNamesTheVersionThatRan(unittest.TestCase):

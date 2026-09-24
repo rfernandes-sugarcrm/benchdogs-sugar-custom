@@ -351,7 +351,7 @@ if __name__ == "__main__":  # pragma: no cover
 # manifest mentions, 0 bd01 files). Assertions that the worksheet "still ships"
 # therefore fail because the design changed, not because something regressed.
 # They also reference ONEOFF-DropRetiredQuoteMirrorTables, a package the tree no
-# longer has (it carries ONEOFF-DropBdQuoteMirrorTables and ONEOFF-RetireBdQuoteMirror).
+# longer has (it carries ONEOFF-RetireBdQuoteMirror, and archive/ONEOFF-DropBdQuoteMirrorTables).
 #
 # WHAT SURVIVES IS THE PART THAT MATTERS, and it PASSES against the current tree:
 # the structural guard that the mirror never returns — no module tree, no custom

@@ -78,12 +78,6 @@ SOURCES = {
         "sugar-sell/ERP-Epicor/src/custom/Extension/modules/Accounts/Ext/Language/en_us.erp_create_opp_quote.php",
     "BaseErpLayout.php":
         "sugar-sell/ERP-Core/scripts/BaseErpLayout.php",
-    # G380 / G381: Bench Dogs now answers two of ERP-Epicor's ordering hook
-    # points (ResolveOrderableLines, OrderSelectedLinesPolicy). The proof runs
-    # the Bench adapters THROUGH core's real dispatcher, so a Bench answer core
-    # would read as a contract violation fails here, not on a tenant.
-    "ErpQuoteHooks.php":
-        "sugar-sell/ERP-Epicor/src/custom/modules/Quotes/ErpQuoteHooks.php",
     "QuotesLayout.php":
         "sugar-sell/ERP-Epicor/scripts/Modules/QuotesLayout.php",
 }

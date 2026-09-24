@@ -182,6 +182,7 @@ namespace {
         'settings' => $GLOBALS['settings'],
         'trace' => $trace,
         'logged' => $GLOBALS['logged'],
+        'synced' => $GLOBALS['synced'] ?? [],
     ]);
 }
 '''
@@ -201,6 +202,14 @@ def run(defs, steps=("bench",)):
             " public $installdefs; public function install_languages() {}"
             " public function rebuild_tabledictionary() {}"
             " public function rebuild_languages($l = [], $m = []) {} }")
+        # rc70 (🔒 1724b): the placement is ERP-Core's ErpLayoutExtraFields. A
+        # recording stand-in: it proves the install ASKS for placement, and -
+        # touching no view itself - leaves every button check below about
+        # this package's own code.
+        (t / "custom/include").mkdir(parents=True, exist_ok=True)
+        (t / "custom/include/ErpLayoutExtraFields.php").write_text(
+            "<?php class ErpLayoutExtraFields { public static function sync($m) {"
+            " $GLOBALS['synced'][] = $m; return ['added' => [], 'removed' => []]; } }")
         (t / "include/TemplateHandler").mkdir(parents=True)
         (t / "include/TemplateHandler/TemplateHandler.php").write_text(
             "<?php class TemplateHandler { public static function clearCache($m = null, $v = null) {} }")
@@ -255,10 +264,12 @@ class BenchDogsInstallLeavesButtonsAlone(unittest.TestCase):
         self.assertIn("BdQuotesLayoutExtensions::write();", oneoff,
                       "nothing removes the retired Bench Dogs panel any more")
 
-    def test_control_the_customer_group_fields_are_still_placed(self):
-        body = [p for p in self.full["defs"]["Accounts"]["panels"] if p["name"] == "panel_body"][0]
-        self.assertEqual([f["name"] for f in body["fields"]],
-                         ["website", "bd_customer_group", "bd_customer_group_code"])
+    def test_control_the_install_asks_erp_core_to_place_the_fields(self):
+        """ANTI-VACUITY: the install really ran. Since rc70 (🔒 1724b) it places
+        nothing itself - it asks ERP-Core's ErpLayoutExtraFields, once per
+        module, and writes no view of its own."""
+        self.assertEqual(self.full["synced"], ["Accounts", "Quotes"])
+        self.assertEqual(self.full["saves"], [])
 
 
 @unittest.skipUnless(shutil.which("php"), "requires php")
@@ -310,14 +321,16 @@ class NoButtonLogicShipped(unittest.TestCase):
             with self.subTest(file=rel):
                 assert_retired_by_oneoff(self, rel, "labels for retired buttons")
 
-    def test_neither_layout_class_has_a_button_method(self):
+    def test_neither_layout_class_ships(self):
         # The Quotes class no longer ships at all (rc69); the one-off carries
-        # its own copy for K-2. The Accounts class is the one left to check.
+        # its own copy for K-2. The Accounts class went at rc70 (🔒 1724b):
+        # ERP-Core's ErpLayoutExtraFields places the fields from their marker.
         self.assertFalse((PKG / "custom/modules/Quotes/BdQuotesLayoutExtensions.php").exists())
-        for rel in ("custom/modules/Accounts/BdAccountsLayoutExtensions.php",):
-            code = self._code(PKG / rel)
+        self.assertFalse((PKG / "custom/modules/Accounts/BdAccountsLayoutExtensions.php").exists())
+        for php in sorted((PKG / "custom").rglob("*.php")) + sorted((PKG / "scripts").rglob("*.php")):
+            code = self._code(php)
             for method in ("writeButtons", "nextSurvivor", "stashRemoved", "stashedButtons", "clearStash"):
-                self.assertNotRegex(code, rf"function\s+{method}\b", f"{rel} still defines {method}()")
+                self.assertNotRegex(code, rf"function\s+{method}\b", f"{php.name} defines {method}()")
 
 
 if __name__ == "__main__":

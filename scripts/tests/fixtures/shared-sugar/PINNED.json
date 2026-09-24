@@ -52,12 +52,6 @@
       "sha256": "b59f287ec5ff437ef342042f3840eaed4a5f3747c62dfd5a97b40dc47475c6ed",
       "bytes": 455,
       "pinned_from": "62c34494c22ed089e2c081aedddbb9f919dd69bc"
-    },
-    "ErpQuoteHooks.php": {
-      "source": "sugar-sell/ERP-Epicor/src/custom/modules/Quotes/ErpQuoteHooks.php",
-      "sha256": "d3fc7fc73526c3b60560cfdd4b3081af80d4b1364ba717406f61e277cfee905b",
-      "bytes": 19326,
-      "pinned_from": "62c34494c22ed089e2c081aedddbb9f919dd69bc"
     }
   }
 }

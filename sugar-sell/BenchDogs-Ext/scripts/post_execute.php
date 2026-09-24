@@ -1,34 +1,34 @@
 <?php
 
 /**
- * Bench Dogs post_install: place the two customer-group fields, rebuild, report.
+ * Bench Dogs post_install: rebuild, have ERP-Epicor place the marked fields, report.
  *
- * WHAT THIS FILE DOES, AND ALL IT DOES (0.9.42-rc69, G280 / 🔒 1567)
+ * WHAT THIS FILE DOES, AND ALL IT DOES (0.9.42-rc70, G380 / 🔒 1724b)
  *
  * Owner, verbatim: *"Benchdog MLP shoudl be mininal with mininal foot print of
- * overide"* and *"just if we have to"* (🔒 1567), on top of 🔒 1508 / 🔒 1520:
- * the package carries customer-category code and nothing else. So this file
- * has exactly two steps:
+ * overide"* (🔒 1567), and 🔒 1724b: Bench keeps ONLY ADM config and ADM rules.
+ * This package ships NO layout code any more. Its fields carry ERP-Epicor's
+ * `erp_layout` vardef marker (G380 (f)), and ERP-Core's ErpLayoutExtraFields
+ * places them on the record views ERP-Epicor owns. So this file has three steps:
  *
- *   accounts_customer_group_field  BdAccountsLayoutExtensions::
- *       writeCustomerGroupField() appends `bd_customer_group` and
- *       `bd_customer_group_code` to the DEPLOYED Accounts record view, only if
- *       neither is already anywhere on it. The one override this package makes,
- *       and why it cannot live upstream: the two fields are Bench's customer
- *       category (REQ-19), core has no equivalent, and ERP-Epicor's
- *       AccountsLayout owns that view in replace mode, so an append to the
- *       deployed view is the only placement that survives it.
  *   repair_rebuild  vardef / extension / metadata cache for Accounts and
- *       Quotes, the only modules this package extends.
+ *       Quotes, the only modules this package extends. FIRST, so the steps
+ *       below read the merged vardefs this install just added.
+ *   accounts_erp_layout  ErpLayoutExtraFields::sync('Accounts') places the two
+ *       REQ-19 customer-group fields (panel_body, where rc69 put them) when they
+ *       are on no panel. A field an admin moved is left where it is.
+ *   quotes_erp_layout  ErpLayoutExtraFields::sync('Quotes') places Lead Source,
+ *       Lead Type and Project on ERP-Epicor's ERP panel, after Reference.
  *
- * AND ONE MORE, G380 / G381 (owner rulings 🔒 1705b, the per-item consent
- * 🔒 1520 asks for; build authorised under 🔒 1704b):
+ * ERP-Epicor also calls sync() at the end of its own Quotes and Accounts layout
+ * installs, so reinstalling ERP-Epicor keeps these fields. The file is ERP-Core's
+ * (custom/include/ErpLayoutExtraFields.php); a MISSING report here means ERP-Core
+ * / ERP-Epicor is older than the manifest floor allows.
  *
- *   quotes_adm_fields  BdAdmQuoteFieldsLayout::place() appends Lead Source,
- *       Lead Type, Reference and Project to the DEPLOYED Quotes record view's
- *       ERP panel, only the ones not already on it. They are Bench Dogs' ADM
- *       company's required values (measured: ADM refuses the quote and the
- *       order without them); ERP-Epicor must not carry one customer's ERP rule.
+ * RETIRED under 🔒 1724b: accounts_customer_group_field
+ * (BdAccountsLayoutExtensions) and quotes_adm_fields (BdAdmQuoteFieldsLayout),
+ * this package's own writers on views ERP-Epicor owns - replaced by the marker
+ * and sync() above.
  *
  * WHAT WENT, AND WHERE IT LIVES NOW - each removal is behaviour-neutral on
  * every QA tenant, and the reason is recorded here rather than in a release
@@ -240,62 +240,10 @@ $GLOBALS['log']->fatal('BenchDogs-Ext: post_install running (' . $bdVersion . ')
 //               shape pointed the other way, and it is a silent off switch.
 $bdStepReport = array();
 
-// REQ-19: the two customer-group fields on the Accounts record view. Append
-// only, and only when neither field is already anywhere on the view - an admin
-// may have moved them somewhere better. See BdAccountsLayoutExtensions.
-try {
-    $bdAccountsHelper = 'custom/modules/Accounts/BdAccountsLayoutExtensions.php';
-    if (file_exists($bdAccountsHelper)) {
-        require_once $bdAccountsHelper;
-        if (class_exists('BdAccountsLayoutExtensions')) {
-            BdAccountsLayoutExtensions::writeCustomerGroupField();
-            $bdStepReport['accounts_customer_group_field'] = 'ok';
-        } else {
-            $GLOBALS['log']->fatal(
-                "BenchDogs-Ext: {$bdAccountsHelper} loaded but class BdAccountsLayoutExtensions is undefined"
-            );
-            $bdStepReport['accounts_customer_group_field'] = 'NOT-LOADED: class BdAccountsLayoutExtensions';
-        }
-    } else {
-        $GLOBALS['log']->fatal("BenchDogs-Ext: {$bdAccountsHelper} missing, customer group fields not placed");
-        $bdStepReport['accounts_customer_group_field'] = 'MISSING: ' . $bdAccountsHelper;
-    }
-} catch (Throwable $e) {
-    $GLOBALS['log']->fatal('BenchDogs-Ext: Accounts customer group field failed: ' . $e->getMessage());
-    $bdStepReport['accounts_customer_group_field'] = 'FAILED: ' . get_class($e) . ': ' . $e->getMessage();
-}
-
-// G380 / G381 (🔒 1705b): the four ADM fields a Bench Dogs seller fills
-// (Lead Source, Lead Type, Reference, Project) on the Quotes record view, in
-// ERP-Epicor's ERP panel. Append only, and only the ones not already on the
-// view. See BdAdmQuoteFieldsLayout. Their DB columns are created by
-// ModuleInstaller itself: its install() runs repairDatabase over all modules,
-// with execute on, after this package's Ext vardefs are merged.
-try {
-    $bdAdmHelper = 'custom/modules/Quotes/BdAdmQuoteFieldsLayout.php';
-    if (file_exists($bdAdmHelper)) {
-        require_once $bdAdmHelper;
-        if (class_exists('BdAdmQuoteFieldsLayout')) {
-            BdAdmQuoteFieldsLayout::place();
-            $bdStepReport['quotes_adm_fields'] = 'ok';
-        } else {
-            $GLOBALS['log']->fatal(
-                "BenchDogs-Ext: {$bdAdmHelper} loaded but class BdAdmQuoteFieldsLayout is undefined"
-            );
-            $bdStepReport['quotes_adm_fields'] = 'NOT-LOADED: class BdAdmQuoteFieldsLayout';
-        }
-    } else {
-        $GLOBALS['log']->fatal("BenchDogs-Ext: {$bdAdmHelper} missing, ADM quote fields not placed");
-        $bdStepReport['quotes_adm_fields'] = 'MISSING: ' . $bdAdmHelper;
-    }
-} catch (Throwable $e) {
-    $GLOBALS['log']->fatal('BenchDogs-Ext: ADM quote fields failed: ' . $e->getMessage());
-    $bdStepReport['quotes_adm_fields'] = 'FAILED: ' . get_class($e) . ': ' . $e->getMessage();
-}
-
-// Accounts (the customer group) and, since G380/G381, Quotes (the four ADM
-// fields, their labels, the defaults hook) are the only modules this package
-// extends, so they are the only ones rebuilt.
+// Accounts (the customer group) and Quotes (the three ADM pickers, their
+// labels, the defaults hook) are the only modules this package extends, so they
+// are the only ones rebuilt. FIRST: the two layout steps below read the merged
+// vardefs, and the markers they place by are in this package's Ext fragments.
 try {
     SugarAutoLoader::load('modules/Administration/QuickRepairAndRebuild.php');
     $bdRepairModules = array('Accounts', 'Quotes');
@@ -309,6 +257,59 @@ try {
 } catch (Throwable $e) {
     $GLOBALS['log']->fatal('BenchDogs-Ext: repair/rebuild failed: ' . $e->getMessage());
     $bdStepReport['repair_rebuild'] = 'FAILED: ' . get_class($e) . ': ' . $e->getMessage();
+}
+
+// G380 (f) / 🔒 1724b: ERP-Core's ErpLayoutExtraFields places every field of
+// the module whose vardef carries the `erp_layout` marker and that is on no
+// panel yet. It never throws and never moves a field an admin placed. One block
+// per module, so a failure names the module it hit.
+$bdLayoutHelper = 'custom/include/ErpLayoutExtraFields.php';
+
+// REQ-19: the two customer-group fields, on Accounts' panel_body (their marker).
+try {
+    if (!class_exists('ErpLayoutExtraFields', false) && file_exists($bdLayoutHelper)) {
+        require_once $bdLayoutHelper;
+    }
+    if (class_exists('ErpLayoutExtraFields', false)) {
+        $bdSynced = ErpLayoutExtraFields::sync('Accounts');
+        $GLOBALS['log']->fatal('BenchDogs-Ext: Accounts marked fields placed: '
+            . implode(', ', (array) ($bdSynced['added'] ?? array())));
+        $bdStepReport['accounts_erp_layout'] = 'ok';
+    } elseif (file_exists($bdLayoutHelper)) {
+        $GLOBALS['log']->fatal("BenchDogs-Ext: {$bdLayoutHelper} loaded but class ErpLayoutExtraFields is undefined");
+        $bdStepReport['accounts_erp_layout'] = 'NOT-LOADED: class ErpLayoutExtraFields';
+    } else {
+        $GLOBALS['log']->fatal("BenchDogs-Ext: {$bdLayoutHelper} missing (ERP-Core older than the G380"
+            . ' release?), Accounts fields not placed');
+        $bdStepReport['accounts_erp_layout'] = 'MISSING: ' . $bdLayoutHelper;
+    }
+} catch (Throwable $e) {
+    $GLOBALS['log']->fatal('BenchDogs-Ext: Accounts layout sync failed: ' . $e->getMessage());
+    $bdStepReport['accounts_erp_layout'] = 'FAILED: ' . get_class($e) . ': ' . $e->getMessage();
+}
+
+// G380 / G381: Lead Source, Lead Type and Project on ERP-Epicor's ERP panel,
+// after Reference (their markers).
+try {
+    if (!class_exists('ErpLayoutExtraFields', false) && file_exists($bdLayoutHelper)) {
+        require_once $bdLayoutHelper;
+    }
+    if (class_exists('ErpLayoutExtraFields', false)) {
+        $bdSynced = ErpLayoutExtraFields::sync('Quotes');
+        $GLOBALS['log']->fatal('BenchDogs-Ext: Quotes marked fields placed: '
+            . implode(', ', (array) ($bdSynced['added'] ?? array())));
+        $bdStepReport['quotes_erp_layout'] = 'ok';
+    } elseif (file_exists($bdLayoutHelper)) {
+        $GLOBALS['log']->fatal("BenchDogs-Ext: {$bdLayoutHelper} loaded but class ErpLayoutExtraFields is undefined");
+        $bdStepReport['quotes_erp_layout'] = 'NOT-LOADED: class ErpLayoutExtraFields';
+    } else {
+        $GLOBALS['log']->fatal("BenchDogs-Ext: {$bdLayoutHelper} missing (ERP-Core older than the G380"
+            . ' release?), Quotes fields not placed');
+        $bdStepReport['quotes_erp_layout'] = 'MISSING: ' . $bdLayoutHelper;
+    }
+} catch (Throwable $e) {
+    $GLOBALS['log']->fatal('BenchDogs-Ext: Quotes layout sync failed: ' . $e->getMessage());
+    $bdStepReport['quotes_erp_layout'] = 'FAILED: ' . get_class($e) . ': ' . $e->getMessage();
 }
 
 // 🛑 THE STEP REPORT (0.9.42-rc67, G294). See "HOW A FAILED STEP IS REPORTED"

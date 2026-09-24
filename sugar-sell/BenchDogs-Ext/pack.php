@@ -12,19 +12,22 @@
  *       Bench's customer category (REQ-19): Epicor Customer.GroupCode and
  *       CustGrup.GroupDesc. Core has no equivalent, and the Bench connector's
  *       erp_customers step cannot deliver them without the vardef.
- *   custom/modules/Accounts/BdAccountsLayoutExtensions.php
- *       places those two fields on the deployed Accounts record view (append
- *       only) and takes them off again on uninstall.
+ *       Placed on the Accounts record view by ERP-Core's ErpLayoutExtraFields
+ *       from their `erp_layout` vardef marker (G380 (f), 🔒 1724b); this
+ *       package ships no layout code.
  *   custom/clients/base/api/BdBenchDogsActionsApi.php
  *       EMPTY, and the one retirement stub left: it unregisters rc68's
  *       bd-tools/repair-ui route on upgraded tenants (see the file).
  *   scripts/post_execute.php, bd_pre_uninstall.php, post_uninstall.php
  *       the lifecycle of the above.
  *
- * G380 / G381 (owner rulings 🔒 1705b) add the ADM company's required quote
- * values: four Quote fields + labels, one before_save defaults hook, the
- * lookup-type labels and two tenant lists, the BdAdm* classes, and answers to
- * ERP-Epicor's two ordering hook points (ErpQuoteHooks/). See README.
+ * G380 / G381 (owner rulings 🔒 1705b, 🔒 1724b: ADM config + ADM rules ONLY)
+ * add ADM's own quote values: three Quote pickers (Lead Source, Lead Type,
+ * Project) + labels, one before_save defaults hook (Reference and Project),
+ * the lookup-type labels and one tenant list, and the BdAdm* classes. Reference
+ * is ERP-Epicor's generic erp_reference; the part-number refusal is
+ * ERP-Epicor's per-company switch; this package no longer fills ERP-Epicor's
+ * ordering hook points. See README.
  *
  * Everything else earlier builds shipped is gone. Retiring it from a tenant
  * that already has it is the job of the disposable one-off
@@ -39,7 +42,7 @@
 
 $packageID      = 'sugarai_benchdogs_ext';
 $packageLabel   = 'SugarAI: Bench Dogs Extensions';
-$description    = 'Bench Dogs extensions for Sugar Sell: the two customer-group fields on Accounts, and the ADM company\'s required quote values (Lead Source, Lead Type, Reference, Project pickers; part-less lines blocked from ordering).';
+$description    = 'Bench Dogs extensions for Sugar Sell: the two customer-group fields on Accounts, and the ADM company\'s own quote values (Lead Source, Lead Type and Project pickers; Reference and Project defaults).';
 $supportedVersionRegex = '(26|25|14)\\..*$';
 $acceptableSugarFlavors = array('ENT', 'ULT', 'PRO');
 
@@ -74,11 +77,21 @@ $manifest = array(
     // Refuse unsafe install order before copying any file.
     'dependencies'              => array(
         array(
-            // The customer-group placement appends to the Accounts record view
-            // that ERP-Epicor's AccountsLayout owns in replace mode, so
-            // ERP-Epicor installs first.
+            // 1.1.125 is the floor because this package now RELIES on four
+            // things ERP-Epicor ships from that release (G380 (d)-(g),
+            // 🔒 1724b; the coordinator gates the 1.1.125 cut on all four):
+            //  - Quotes.erp_reference (ERP-Core), the field the Reference
+            //    default fills;
+            //  - ERP_Companies.erp_order_requires_part_number, the part-number
+            //    refusal this package stopped carrying;
+            //  - custom/include/ErpLayoutExtraFields.php (ERP-Core), which
+            //    places this package's marked fields - it ships no layout code;
+            //  - custom/modules/Quotes/ErpQuoteFacts.php, the company and
+            //    product-group answers BdAdmRules asks for.
+            // Below it every one of those is missing: the fields would sit on no
+            // panel and the defaults would skip (logged, never fatal).
             'id_name' => 'sugarai_erp_epicor',
-            'version' => '1.1.24-rc9',
+            'version' => '1.1.125',
         ),
         array(
             'id_name' => 'sugarai_erp_epicor_partialfulfillment',
@@ -96,7 +109,11 @@ $manifest = array(
             //    🔒 1519, 356af62), which is what post_execute.php used to write.
             // Under this floor, Module Loader refuses with ERR_UW_NO_DEPENDENCY
             // (UpgradeHistory.php:440, greaterThanOrEqualTo) - fail closed.
-            'version' => '1.0.43',
+            //
+            // 1.0.50 since 0.9.42-rc70: the Partial Fulfillment release that
+            // ships with ERP-Epicor 1.1.125 (coordinator, 2026-09-24), so the
+            // two floors name one tested pair.
+            'version' => '1.0.50',
         ),
     ),
 );
@@ -134,8 +151,8 @@ $installdefs = array(
     'post_uninstall' => array('<basepath>/scripts/post_uninstall.php'),
 );
 
-// Add custom/ files: the two customer-group Extension files, their placement
-// class and the empty REST stub. There is no modules/ tree to add: the package
+// Add custom/ files: the customer-group and ADM Extension files, the BdAdm*
+// classes and the empty REST stub. There is no modules/ tree to add: the package
 // ships no module.
 $customReal = realpath('custom');
 if ($customReal) {
@@ -157,41 +174,12 @@ if ($customReal) {
     }
 }
 
-// These three ship via the post_execute / pre_uninstall / post_uninstall
-// installdefs above, not as plain copy entries - excluded here so they aren't
-// ALSO copied to custom/include/bd_scripts/, where nothing would ever run
-// them. The uninstall pair matters more than the install one: a copy of
-// pre_uninstall.php under custom/ would be deleted by the very uninstall it is
-// supposed to run during.
-$lifecycleScripts = array(
-    'post_execute.php',
-    'bd_pre_uninstall.php',
-    'post_uninstall.php',
-);
-
-// Add scripts/ files (kept on the instance for later re-runs)
-$scriptsReal = realpath('scripts');
-if ($scriptsReal) {
-    $it = new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator($scriptsReal, RecursiveDirectoryIterator::SKIP_DOTS),
-        RecursiveIteratorIterator::LEAVES_ONLY
-    );
-    foreach ($it as $file) {
-        if (!$file->isFile()) {
-            continue;
-        }
-        if (in_array($file->getFilename(), $lifecycleScripts, true)) {
-            continue;
-        }
-        $real = $file->getRealPath();
-        $relInZip = 'scripts' . str_replace($scriptsReal, '', $real);
-        $relInZip = str_replace(DIRECTORY_SEPARATOR, '/', $relInZip);
-        $installdefs['copy'][] = array(
-            'from' => "<basepath>/{$relInZip}",
-            'to'   => 'custom/include/bd_' . $relInZip,
-        );
-    }
-}
+// scripts/ ships ONLY the three lifecycle scripts, and they reach the instance
+// through the post_execute / pre_uninstall / post_uninstall installdefs above,
+// never as copy entries. The loop that used to copy every OTHER script to
+// custom/include/bd_scripts/ copied nothing (no other script exists) and is
+// removed (0.9.42-rc70, footprint S7, 🔒 1724b). A new non-lifecycle script
+// would need a reason to reach a tenant, and its own copy entry here.
 
 // ---------------------------------------------------------------------------
 // Build the zip

@@ -89,12 +89,12 @@ class RetiredProviderDoesNotShip(unittest.TestCase):
         the G282 preserve gate), so the whole `ErpQuoteHooks/` tree is gone and
         the control is that PKG really is the Bench Dogs package.
 
-        🔁 G380/G381 (🔒 1705b) brings the `ErpQuoteHooks/` directory back with
-        exactly two files - the ordering hook adapters for the ADM non-part
-        block - and never this provider path or PF's OpportunityContribution."""
+        🔁 The unreleased G380/G381 branch (🔒 1705b) brought the directory back
+        with two ordering hook adapters; 🔒 1724b moved that rule into
+        ERP-Epicor (a per-company switch), so the whole `ErpQuoteHooks/` tree is
+        gone again - never this provider path or PF's OpportunityContribution."""
         hooks = PKG / "custom/modules/Quotes/ErpQuoteHooks"
-        self.assertEqual(sorted(p.name for p in hooks.iterdir()) if hooks.exists() else [],
-                         ["OrderSelectedLinesPolicy.php", "ResolveOrderableLines.php"])
+        self.assertEqual(sorted(p.name for p in hooks.iterdir()) if hooks.exists() else [], [])
         self.assertTrue((PKG / "pack.php").is_file(), "PKG is not the package - the cases above prove nothing")
         self.assertIn("sugarai_benchdogs_ext", (PKG / "pack.php").read_text(encoding="utf-8"))
 

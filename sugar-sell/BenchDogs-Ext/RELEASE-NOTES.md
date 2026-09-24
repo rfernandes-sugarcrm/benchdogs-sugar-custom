@@ -1,3 +1,33 @@
+# 0.9.42-rc70 — G380 / G381 slim (🔒 1724b): ADM config + ADM rules only
+
+Owner ruling 🔒 1724b: *Bench keeps ONLY ADM config + ADM rules; the generic
+parts move out.* This build is the Sugar half of that split. (The G380/G381
+branch this replaces was never released: never merged, and it kept rc69's
+version, which Module Loader declines as an upgrade. If a tenant ever took a
+hand-built copy of it, its `bd_reference` column is left in the database -
+a vardef removal drops no column - and `bd_adm_companies_list` stays in its
+language cache until a rebuild; neither is read by anything any more.)
+
+**Requires (the manifest refuses otherwise):** ERP-Epicor **≥ 1.1.125** (G380
+(d)–(g): `Quotes.erp_reference`, `ERP_Companies.erp_order_requires_part_number`,
+ERP-Core's `ErpLayoutExtraFields`, `ErpQuoteFacts`) and Partial Fulfillment
+**≥ 1.0.50**.
+
+| Change | Why |
+|---|---|
+| **Removed** `bd_reference` (and its label) | Reference is ERP-Epicor's generic `erp_reference`; this package only DEFAULTS it (ship-to "CITY ST") on an ADM quote |
+| **Removed** `BdAccountsLayoutExtensions.php`, and the unreleased `BdAdmQuoteFieldsLayout.php` | no layout code: the fields carry ERP-Epicor's `erp_layout` marker and ERP-Core's `ErpLayoutExtraFields::sync()` places / retires them. The Account fields stay on `panel_body`, where rc69 put them |
+| **Removed** the unreleased `ErpQuoteHooks/ResolveOrderableLines.php` + `OrderSelectedLinesPolicy.php` | the part-number refusal is ERP-Epicor's per-company switch |
+| **Removed** `bd_adm_companies_list` | "ADM" from one source: a quote is ADM when its company has published `BdLeadSources` rows (core, from the ADM connection's `lookup_code_lists`) |
+| `BdAdmRules` asks ERP-Epicor's `ErpQuoteFacts` for the company and each line's group | its private copies had already drifted from what ERP-Epicor sends (footprint SB8) |
+| The before_save hook exits cheapest-first | it runs on every Quote save; a quote it cannot touch loads no record |
+| post_execute: `repair_rebuild` → `accounts_erp_layout` → `quotes_erp_layout`; post_uninstall retires the marked fields | same G294 step report |
+| pack.php no longer has the scripts copy loop | it copied nothing (footprint S7) |
+| Repo: `ONEOFF-DropBdQuoteMirrorTables` moved to `archive/`; empty `sugar-predict/` placeholder removed | a data-deleting one-off does not sit beside shippable packages (S11); S14 |
+
+Kept, deliberately: the empty `BdBenchDogsActionsApi.php` stub (S3) until every
+tenant has taken rc69+.
+
 # 0.9.42-rc66 — G280 / 🔒 1508: only the customer-category code is left
 
 Owner, 2026-09-22 ~17:5xZ, verbatim: *"from all the non vustomer category code we
