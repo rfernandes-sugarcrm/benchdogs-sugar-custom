@@ -484,13 +484,16 @@ namespace {
             'HARRISBURG PA', $typedLong->erp_reference);
         // An ERP-Epicor older than G530 (ErpQuoteFacts without referenceMaxLength): no cut, no error.
         $older = shell_exec(escapeshellarg(PHP_BINARY) . ' -r ' . escapeshellarg(
-            'class ErpQuoteFacts {} chdir(' . var_export($pkg, true) . ');'
-            . ' require "custom/modules/Quotes/BdAdmRules.php";'
-            . ' echo json_encode([BdAdmRules::referenceMaxLength(new stdClass()),'
-            . ' BdAdmRules::defaultReference("HARRISBURG", "PA", BdAdmRules::referenceMaxLength(new stdClass()))]);')
+            'class ErpQuoteFacts {} class L { public $e = []; function error($m) { $this->e[] = $m; } }'
+            . ' $GLOBALS["log"] = new L(); chdir(' . var_export($pkg, true) . ');'
+            . ' require "custom/modules/Quotes/BdAdmRules.php"; $q = new stdClass(); $q->id = "q-old";'
+            . ' $max = BdAdmRules::referenceMaxLength($q);'
+            . ' echo json_encode([$max, BdAdmRules::defaultReference("HARRISBURG", "PA", $max),'
+            . ' count($GLOBALS["log"]->e) === 1 && strpos($GLOBALS["log"]->e[0], "older than G530") !== false'
+            . ' && strpos($GLOBALS["log"]->e[0], "q-old") !== false]);')
             . ' 2>&1');
-        $check('H17 G530 an older ERP-Epicor (no referenceMaxLength): limit 0, the full default, no error',
-            [0, 'HARRISBURG PA'], json_decode((string) $older, true));
+        $check('H17 G530 an older ERP-Epicor (no referenceMaxLength): limit 0, the full default, no error, '
+            . 'and the reason LOGGED with the quote', [0, 'HARRISBURG PA', true], json_decode((string) $older, true));
 
         $freshQuery();
         foreach (range(1, 5) as $i) {

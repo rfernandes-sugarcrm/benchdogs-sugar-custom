@@ -13,7 +13,7 @@ default to it.
 | Change | Why |
 |---|---|
 | `BdAdmRules::defaultReference($city, $state, $max)`: state kept, city cut to fit; no state / no room: first `$max` characters; `$max` 0 = unchanged | the documented rule (README "Reference"); `HARRISBURG PA` → `HARRISB PA` |
-| `BdAdmRules::referenceMaxLength($bean)`: asks `ErpQuoteFacts::referenceMaxLength()` behind `method_exists` | an ERP-Epicor older than G530 is tolerated: no cut, no error (the ERP answers as before) |
+| `BdAdmRules::referenceMaxLength($bean)`: asks `ErpQuoteFacts::referenceMaxLength()` behind `method_exists` | an ERP-Epicor older than G530 is tolerated: no cut, no error (the ERP answers as before), and the reason is logged |
 | `en_us.bd_customer_group.php`: "Cust. Group" / "Group Code" (G532) | both labels were cut to "Customer Gro…" on the Business Card; about 12 characters show, each is now ≤ 11. Keys unchanged, so an upgraded tenant gets the text |
 | `fixtures/shared-sugar/` re-pinned from `erp-integration-sugar` `fix/g530-g531-reference-length-catalog-search` (6ed6f1b1 = target 65413736 + G531 + G530) | the tests run against ERP-Epicor's REAL `ErpQuoteFacts::referenceMaxLength()` and ERP-Core's REAL `erp_reference` vardef. Six other pins were already stale against the target (a0f6b632 → 65413736); refreshed with them, suites green |
 
@@ -23,7 +23,7 @@ on an older ERP-Epicor changes nothing about Reference.
 
 **Tests:** `bd_adm_rules_test.php` B5–B13 (the rule) and H13–H17 (end to end
 through the real `ErpQuoteFacts` and the real vardef; the older-ERP-Epicor
-case in a child process) — mutants 8/8 killed. `test_g280_minimal_footprint.py`
+case in a child process, which must also LOG why the default was not cut) — mutants 9/9 killed. `test_g280_minimal_footprint.py`
 pins the two labels and the 11-character bound (2/2 killed).
 
 # 0.9.42-rc72 — G507: the customer group leaves the header for the Overview tab

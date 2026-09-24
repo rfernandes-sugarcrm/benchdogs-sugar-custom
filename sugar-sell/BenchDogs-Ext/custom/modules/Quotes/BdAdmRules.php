@@ -200,11 +200,19 @@ class BdAdmRules
      * asked of ERP-Epicor (ErpQuoteFacts::referenceMaxLength(), which reads
      * the field's erp_max_length), 0 when that ERP-Epicor is older and does
      * not say - then the default is not cut, and Send to Estimation's answer
-     * is the ERP's own, as before.
+     * is the ERP's own, as before. That case is LOGGED, like a missing
+     * ErpQuoteFacts: an uncut default is exactly the G530 symptom, and the
+     * log is where the reason must be findable.
      */
     public static function referenceMaxLength($bean): int
     {
         if (!method_exists('ErpQuoteFacts', 'referenceMaxLength')) {
+            if (isset($GLOBALS['log']) && is_object($GLOBALS['log'])) {
+                $GLOBALS['log']->error('BenchDogs-Ext: ERP-Epicor is older than G530 (no '
+                    . 'ErpQuoteFacts::referenceMaxLength), so the ADM Reference default is NOT shortened '
+                    . 'to the ERP limit for quote ' . (is_object($bean) ? (string) ($bean->id ?? '') : ''));
+            }
+
             return 0;
         }
 
