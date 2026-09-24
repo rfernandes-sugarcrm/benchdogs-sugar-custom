@@ -13,7 +13,7 @@
  * What is proved, each against the real shipped file:
  *   A. which companies are ADM: the ones that published BdLeadSources rows,
  *      split at the FIRST "__" in PHP (never SQL LIKE), one query per request
- *   B. Reference defaults to "CITY STATE"
+ *   B. Reference defaults to "CITY STATE", shortened to the ERP's limit (G530)
  *   E. the Project default: unanimous groups only; the list is tenant data
  *   F. an admin's Dropdown Editor list survives a package reinstall, either order
  *   G. erp_lookup_type_list is extended key by key; there is no company list
@@ -186,6 +186,10 @@ namespace {
     // ERP-Epicor's REAL ErpQuoteFacts, loaded before BdAdmRules exactly as a
     // tenant has it (QuotesErpActionsApi loads it first; BdAdmRules's own
     // guarded include then finds the class declared).
+    // G530: ERP-Core's erp_reference vardef, the one that states the limit. The
+    // sibling checkout's when BD_ERP_REFERENCE names it, else the pin.
+    $referenceVardef = getenv('BD_ERP_REFERENCE') ?: (__DIR__ . '/fixtures/shared-sugar/erp_reference.php');
+
     $factsFile = getenv('BD_QUOTE_FACTS');
     if (!$noFacts) {
         if (!is_string($factsFile) || !is_file($factsFile)) {
@@ -336,6 +340,22 @@ namespace {
         $check('B2 padding is trimmed', 'WAYNE NJ', BdAdmRules::defaultReference(' WAYNE ', ' NJ '));
         $check('B3 city alone', 'WAYNE', BdAdmRules::defaultReference('WAYNE', ''));
         $check('B4 nothing: nothing invented', '', BdAdmRules::defaultReference(' ', ''));
+        // G530: shortened to what the ERP takes - state kept, city cut.
+        $check('B5 G530 the sandbox #36 default fits in 10: HARRISBURG PA -> HARRISB PA', 'HARRISB PA',
+            BdAdmRules::defaultReference('HARRISBURG', 'PA', 10));
+        $check('B6 G530 a value that already fits is unchanged', 'WAYNE NJ', BdAdmRules::defaultReference('WAYNE', 'NJ', 10));
+        $check('B7 G530 exactly the limit is unchanged', 'HARRISB PA', BdAdmRules::defaultReference('HARRISB', 'PA', 10));
+        $check('B8 G530 no limit known (0): the full default, as before', 'HARRISBURG PA',
+            BdAdmRules::defaultReference('HARRISBURG', 'PA', 0));
+        $check('B9 G530 a cut ending on a space drops it (never a double space)', 'NEW NY',
+            BdAdmRules::defaultReference('NEW YORK', 'NY', 7));
+        $check('B10 G530 no state: the city is cut to the limit', 'HARRI', BdAdmRules::defaultReference('HARRISBURG', '', 5));
+        $check('B11 G530 no room for a city beside a long state: the first characters of the whole', 'AB LONGSTA',
+            BdAdmRules::defaultReference('AB', 'LONGSTATENAME', 10));
+        $check('B12 G530 characters, not bytes', 'MÜNCHEN NW', BdAdmRules::defaultReference('MÜNCHENGLADBACH', 'NW', 10));
+        $check('B13 G530 every cut fits the limit', [true, true, true, true],
+            array_map(fn($c) => mb_strlen(BdAdmRules::defaultReference($c[0], $c[1], $c[2]), 'UTF-8') <= $c[2],
+                [['HARRISBURG', 'PA', 10], ['SALT LAKE CITY', 'UT', 10], ['', 'PENNSYLVANIA', 10], ['X', 'NY', 3]]));
 
         // ── E. the Project default ──────────────────────────────────────────
         $check('E1 CMI -> 20065 (the shipped starting entry)', '20065', BdAdmRules::defaultProject(['CMI']));
@@ -435,6 +455,42 @@ namespace {
         $check('H11 Reference set, Project empty: Project only', ['bd_project_id'],
             BdAdmRules::applyDefaults($onlyProject));
         $check('H12 🔒 1499: the before_save hook creates no record, ever', 0, BeanFactory::$created - $createdBefore);
+
+        // G530, end to end: the limit is ERP-Epicor's (ErpQuoteFacts::referenceMaxLength(), the REAL
+        // class), read from ERP-Core's REAL erp_reference vardef (pinned with it), not restated here.
+        $dictionary = [];
+        include $referenceVardef;
+        $referenceDefs = ['erp_reference' => $dictionary['Quote']['fields']['erp_reference']];
+        $freshQuery();
+        $long = $quote('ADM', ['shipping_address_city' => 'HARRISBURG', 'shipping_address_state' => 'PA',
+                               'field_defs' => $referenceDefs, 'lines' => [$lCmi]]);
+        $check('H13 G530 the sandbox #36 ship-to (HARRISBURG PA) defaults to a Reference ADM takes',
+            [['erp_reference', 'bd_project_id'], 'HARRISB PA'],
+            [BdAdmRules::applyDefaults($long), $long->erp_reference ?? null]);
+        $check('H14 G530 the limit came from the field (the real vardef states 10)', 10,
+            BdAdmRules::referenceMaxLength($long));
+        $freshQuery();
+        $olderDefs = $referenceDefs;
+        unset($olderDefs['erp_reference']['erp_max_length']);   // an ERP-Core vardef from before G530
+        $noDefs = $quote('ADM', ['shipping_address_city' => 'HARRISBURG', 'shipping_address_state' => 'PA',
+                                 'field_defs' => $olderDefs, 'lines' => [$lCmi]]);
+        BdAdmRules::applyDefaults($noDefs);
+        $check('H15 G530 CONTROL a field that states no limit (older ERP-Core) keeps the full default',
+            'HARRISBURG PA', $noDefs->erp_reference ?? null);
+        $typedLong = $quote('ADM', ['shipping_address_city' => 'HARRISBURG', 'shipping_address_state' => 'PA',
+                                    'erp_reference' => 'HARRISBURG PA', 'field_defs' => $referenceDefs, 'lines' => [$lCmi]]);
+        BdAdmRules::applyDefaults($typedLong);
+        $check('H16 G530 CONTROL a Reference already set is never shortened here (the seller\'s, or older)',
+            'HARRISBURG PA', $typedLong->erp_reference);
+        // An ERP-Epicor older than G530 (ErpQuoteFacts without referenceMaxLength): no cut, no error.
+        $older = shell_exec(escapeshellarg(PHP_BINARY) . ' -r ' . escapeshellarg(
+            'class ErpQuoteFacts {} chdir(' . var_export($pkg, true) . ');'
+            . ' require "custom/modules/Quotes/BdAdmRules.php";'
+            . ' echo json_encode([BdAdmRules::referenceMaxLength(new stdClass()),'
+            . ' BdAdmRules::defaultReference("HARRISBURG", "PA", BdAdmRules::referenceMaxLength(new stdClass()))]);')
+            . ' 2>&1');
+        $check('H17 G530 an older ERP-Epicor (no referenceMaxLength): limit 0, the full default, no error',
+            [0, 'HARRISBURG PA'], json_decode((string) $older, true));
 
         $freshQuery();
         foreach (range(1, 5) as $i) {

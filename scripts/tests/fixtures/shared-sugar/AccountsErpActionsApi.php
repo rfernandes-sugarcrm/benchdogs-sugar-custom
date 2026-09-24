@@ -26,6 +26,14 @@ class AccountsErpActionsApi extends BaseErpActionsApi
     private const SUPPORTED_ACTIONS = ['create_customer'];
 
     /**
+     * G495 (🔒1759b) - what a seller reads when "Create Customer in Epicor"
+     * reaches an account Epicor already holds. The same sentence ships as
+     * LBL_CREATE_ERP_ACCOUNT_ALREADY_IN_ERP for the browser's own refusal.
+     */
+    public const ALREADY_IN_ERP_MESSAGE = 'This account is already in Epicor, so it cannot be created there again. '
+        . 'To make it a Customer, set Type to Customer and save: the change is sent to Epicor.';
+
+    /**
      * Administration config (category erp_integration) keys read by
      * createOppQuote(). Sugar's config.name column is 32 chars wide - keep
      * every key under it. Nothing customer-specific is hardcoded below: each
@@ -66,9 +74,6 @@ class AccountsErpActionsApi extends BaseErpActionsApi
     // cannot be read at all; the real default is the dom's first key.
     private const FALLBACK_SALES_STAGE = 'Prospecting';
 
-    /** The Accounts-side link to CORE-ShippingAddresses (its own vardefs name it). */
-    private const SHIP_TO_LINK = 'shipping_addresses_accounts';
-
     /**
      * The five address columns CORE-ShippingAddresses' populate_list copies
      * from the picked ShippingAddress onto the quote. Same names on both
@@ -80,6 +85,24 @@ class AccountsErpActionsApi extends BaseErpActionsApi
         'shipping_address_state',
         'shipping_address_postalcode',
         'shipping_address_country',
+    );
+
+    /**
+     * G444 (a) — the two ERP lookups billing_account_name's populate_list copies
+     * from the account onto the quote besides the company (G429):
+     * account relate id => [quote relate id, quote relate name]. The same pairs
+     * as billing_account_name_populate_erp_lookups.php, so the server-side
+     * create and the browser autofill fill the same fields.
+     */
+    private const ACCOUNT_LOOKUPS_ON_QUOTE = array(
+        'erp_billing_termserp_lookupvalues_idb' => array(
+            'erp_quotes_billing_termserp_lookupvalues_idb',
+            'erp_quotes_billing_terms_name',
+        ),
+        'erp_foberp_lookupvalues_idb' => array(
+            'erp_quotes_foberp_lookupvalues_idb',
+            'erp_quotes_fob_name',
+        ),
     );
 
     /**
@@ -139,22 +162,42 @@ class AccountsErpActionsApi extends BaseErpActionsApi
             throw new SugarApiExceptionNotAuthorized('No edit access to this account');
         }
 
-        // Mirrors create-erp-account.js's own visibility check - defense in
+        // G495 (🔒1759b) - AN ACCOUNT EPICOR ALREADY HOLDS IS REFUSED, FIRST.
+        //
+        // This used to answer `status: success, "Account is already
+        // provisioned in ERP."` - after the button had ALREADY saved
+        // account_type = Customer - so the seller read success while Epicor
+        // was never asked for anything (benchdogs-dev ACDELCO, ADM 1310). A
+        // Prospect Epicor holds becomes a Customer by its Type being changed
+        // in Sugar and the accounts write-back carrying the new customer type
+        // (decision 133(b)); it is never created a second time.
+        //
+        // Checked BEFORE the Customer test below, so a keyed Prospect hit
+        // directly is told the true reason, not "Only Customer accounts".
+        // Nothing is written on this path: no save, no ERP call, no
+        // erp_writeback_* stamp. The browser refuses the same click before it
+        // switches the type (create-erp-account.js _onErpActionClicked), which
+        // is what keeps account_type unchanged; this answer cannot undo a type
+        // an older browser copy already saved, because it does not know what
+        // the type was before.
+        if (trim((string) ($bean->erp_sync_key ?? '')) !== '') {
+            return array(
+                'status' => 'error',
+                'error' => 'Account is already linked to an ERP customer.',
+                'message' => self::ALREADY_IN_ERP_MESSAGE,
+                'record' => $bean->id,
+                'erp_id' => $bean->erp_account_id ?? '',
+            );
+        }
+
+        // Mirrors create-erp-account.js's own flow - the click switches the
+        // account to Customer and saves before calling here - as defense in
         // depth against the endpoint being hit directly.
         if (($bean->account_type ?? '') !== 'Customer') {
             return array(
                 'status' => 'error',
                 'message' => 'Only Customer accounts can be provisioned in ERP.',
                 'record' => $bean->id,
-            );
-        }
-
-        if (!empty($bean->erp_sync_key)) {
-            return array(
-                'status' => 'success',
-                'message' => 'Account is already provisioned in ERP.',
-                'record' => $bean->id,
-                'erp_id' => $bean->erp_account_id ?? '',
             );
         }
 
@@ -189,9 +232,9 @@ class AccountsErpActionsApi extends BaseErpActionsApi
             // account_type = Customer - if the ERP call itself then fails,
             // revert it back to Prospect so the account isn't left stuck in
             // a half-provisioned state (Customer, no erp_sync_key). The
-            // button's own visibility check (account_type === 'Prospect' ||
-            // !erp_sync_key) would still show it either way, but a Prospect
-            // reflects reality more accurately than an unprovisioned Customer.
+            // button's own visibility check (no erp_sync_key, G494) would
+            // still show it either way, but a Prospect reflects reality more
+            // accurately than an unprovisioned Customer.
             $bean->account_type = 'Prospect';
             if (!empty($result['error'])) {
                 $bean->erp_writeback_status = $result['status'];
@@ -242,13 +285,19 @@ class AccountsErpActionsApi extends BaseErpActionsApi
      *     estimating has priced anything. The connector's roll-up direction
      *     is ERP -> Sugar, so seeding values here would fight the sync.
      *
-     * Refuses an account with no ERP customer behind it: the quote raised
-     * here is meant to go to Epicor next, and that submission needs the
-     * customer to exist first (Create Customer in Epicor).
+     * Serves EVERY account, including one Epicor does not hold yet (owner,
+     * 🔒1760b). It used to refuse an account with no erp_display_sync_key;
+     * the quote's own hand-off now creates the Epicor record when it is
+     * needed - QuotesErpActionsApi::performWriteback() provisions the billing
+     * account as a Prospect at Send to Estimation and as a Customer at Submit
+     * Order (decision 550 / 133(c)) - so a customer need not exist first.
      *
      * Optional body args: name (overrides the configured name template),
      * placeholder (overrides the configured placeholder line name),
-     * quantity (placeholder line quantity, default 1).
+     * quantity (placeholder line quantity, default 1), description (the
+     * quote's note - G473: the Smart Prompts cards create their quote through
+     * this route and carry why it was raised, e.g. "The reorder window closed
+     * 2026-09-04.").
      */
     public function createOppQuote(ServiceBase $api, array $args): array
     {
@@ -271,17 +320,12 @@ class AccountsErpActionsApi extends BaseErpActionsApi
             throw new SugarApiExceptionNotAuthorized('No access to create opportunities and quotes');
         }
 
-        // Mirrors erp-create-opp-quote.js's own visibility check - defense
-        // in depth against the endpoint being hit directly. Same wording
-        // family as the Quotes actions' "not linked to an ERP customer".
-        if (trim((string) ($account->erp_display_sync_key ?? '')) === '') {
-            return array(
-                'status' => 'error',
-                'error' => 'Account is not linked to an ERP customer.',
-                'message' => 'Cannot create an opportunity and quote: account has no ERP customer ID. Create the customer in Epicor first.',
-                'record' => $account->id,
-            );
-        }
+        // 🔒1760b: NO "is it in Epicor?" refusal here any more. It read
+        // erp_display_sync_key, which every seed-loaded sandbox account lacks
+        // (G494, 379 of 379), and the owner has ruled the button serves every
+        // account: Send to Estimation / Submit Order create the Epicor record
+        // (QuotesErpActionsApi::performWriteback, decision 550). The record,
+        // not-found and ACL guards above are the ones that stay.
 
         $config = self::erpIntegrationConfig();
         $assigned = $api->user->id;
@@ -363,6 +407,11 @@ class AccountsErpActionsApi extends BaseErpActionsApi
         }
 
         $quote->name = $name;
+        // G473: the caller's note, verbatim; absent -> the quote has none, as before.
+        $description = trim((string) ($args['description'] ?? ''));
+        if ($description !== '') {
+            $quote->description = $description;
+        }
         $quote->quote_stage = $quoteStage;
         $quote->erp_quote_type = $quoteType;
         $quote->date_quote_expected_closed = $closeDate;
@@ -477,6 +526,23 @@ class AccountsErpActionsApi extends BaseErpActionsApi
             $quote->erp_companies_quotes_name = (string) ($company->name ?? '');
         }
 
+        // G444 (a) — AND ITS BILLING TERMS AND FOB, THE OTHER TWO LOOKUPS THE
+        // SAME populate_list COPIES (billing_account_name_populate_erp_lookups.php).
+        // Measured on stock (round-2 ADVANCED QUOTE smoke, 1.1.124): Dalton's
+        // account says "2/10 Net 30", its account button raised #1033 with
+        // Billing Terms EMPTY - the G429 cause again, a client autofill a
+        // server-side create never runs. Both are 'save' => true relates, so
+        // handle_remaining_relate_fields() writes each link in the same save.
+        // The account's own value or nothing: a lookup record that is deleted
+        // or does not resolve is not copied, and the name is the record's own.
+        foreach (self::ACCOUNT_LOOKUPS_ON_QUOTE as $accountId => $quoteFields) {
+            $lookup = $this->erpLookupOf($account, $accountId);
+            if ($lookup !== null) {
+                $quote->{$quoteFields[0]} = (string) $lookup->id;
+                $quote->{$quoteFields[1]} = (string) ($lookup->name ?? '');
+            }
+        }
+
         $quote->save();
         if ($quote->load_relationship('billing_accounts')) {
             $quote->billing_accounts->add($account);
@@ -573,6 +639,24 @@ class AccountsErpActionsApi extends BaseErpActionsApi
     }
 
     /**
+     * G444 (a) — the ERP_LookupValues record an account's relate id names, or
+     * null when the account has none, or the record is deleted or not found.
+     */
+    private function erpLookupOf(SugarBean $account, string $idField): ?SugarBean
+    {
+        $id = trim((string) ($account->{$idField} ?? ''));
+        if ($id === '') {
+            return null;
+        }
+        $lookup = BeanFactory::retrieveBean('ERP_LookupValues', $id);
+        if (!$lookup || empty($lookup->id) || !empty($lookup->deleted)) {
+            return null;
+        }
+
+        return $lookup;
+    }
+
+    /**
      * G429 — the account's own ERP company (the erp_companies_accounts relate),
      * or null when it has none or the record is gone. The relate id first (what
      * a retrieve fills, and what QuotesErpActionsApi::resolveErpCompanyCode()
@@ -653,18 +737,12 @@ class AccountsErpActionsApi extends BaseErpActionsApi
      */
     private static function defaultShippingAddress(SugarBean $account): ?SugarBean
     {
-        // A plain loop, not array_filter(): that function is on ModuleScanner's
-        // $blackList (MLP002) and one call has SugarCloud refuse the whole
-        // upload at the scan - the 1.1.24-rc29 lesson, re-learned on the
-        // branch tip 6f5c7da (lint caught it before an upload did).
-        $flagged = array();
-        foreach (self::activeShipTos($account) as $address) {
-            if (!empty($address->erp_primary_ship_to)) {
-                $flagged[] = $address;
-            }
-        }
+        // G474: the rule lives in ErpQuoteFacts::defaultShipToOfAccount() now,
+        // so a quote created any other way (a recommendation, a REST create)
+        // gets its default Ship To by the SAME rule - ErpQuoteShipToFollowsAccount.
+        self::loadQuoteFacts();
 
-        return count($flagged) === 1 ? $flagged[0] : null;
+        return ErpQuoteFacts::defaultShipToOfAccount($account);
     }
 
     /**
@@ -677,23 +755,28 @@ class AccountsErpActionsApi extends BaseErpActionsApi
      */
     private static function activeShipTos(SugarBean $account): array
     {
-        if (!$account->load_relationship(self::SHIP_TO_LINK)) {
-            return array();
-        }
-        $link = $account->{self::SHIP_TO_LINK} ?? null;
-        if (!is_object($link)) {
-            return array();
-        }
+        self::loadQuoteFacts();
 
-        $active = array();
-        foreach ($link->getBeans() as $address) {
-            if (!is_object($address) || !empty($address->deleted) || !empty($address->inactive)) {
-                continue;
-            }
-            $active[] = $address;
-        }
+        return ErpQuoteFacts::activeShipTosOfAccount($account);
+    }
 
-        return $active;
+    /**
+     * Load ErpQuoteFacts beside QuotesErpActionsApi's loader: guarded on the
+     * CLASS (MLP001), file_exists() first, __DIR__-relative. It ships in this
+     * package at a fixed path, so a missing one is a broken install - loud.
+     */
+    private static function loadQuoteFacts(): void
+    {
+        if (class_exists('ErpQuoteFacts', false)) {
+            return;
+        }
+        $path = __DIR__ . '/../../../modules/Quotes/ErpQuoteFacts.php';
+        if (file_exists($path)) {
+            require_once $path;
+        }
+        if (!class_exists('ErpQuoteFacts', false)) {
+            throw new RuntimeException('ErpQuoteFacts is not installed (custom/modules/Quotes/ErpQuoteFacts.php)');
+        }
     }
 
     /**

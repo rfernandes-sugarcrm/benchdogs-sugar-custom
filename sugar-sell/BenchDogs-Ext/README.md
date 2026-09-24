@@ -44,7 +44,7 @@ and the package ships no module of its own.
 > | Path | What it is | Why it is here and not in core |
 > |---|---|---|
 > | `custom/Extension/modules/Quotes/Ext/Vardefs/bd_adm_required_fields.php` + `.../Language/en_us.bd_adm_required_fields.php` | Quote pickers `bd_lead_source`, `bd_lead_type`, `bd_project_id` (each `erp_layout`-marked for the ERP panel, after Reference), and their labels | ADM's own UD columns (`LeadSrc_c`, `LeadType_c`) and ADM's one-project-per-quote rule; no other company asks for them |
-> | `custom/Extension/modules/Quotes/Ext/LogicHooks/bd_adm_quote_defaults.php` | before_save: fills an EMPTY `erp_reference` (ship-to city + state) and an EMPTY Project (product-group default) on an unsent ADM quote; exits before loading anything for a quote it cannot touch | ADM-only defaults; creates nothing (🔒 1499 still holds, `test_g243…` pins it) |
+> | `custom/Extension/modules/Quotes/Ext/LogicHooks/bd_adm_quote_defaults.php` | before_save: fills an EMPTY `erp_reference` (ship-to city + state, shortened to the ERP's limit, G530) and an EMPTY Project (product-group default) on an unsent ADM quote; exits before loading anything for a quote it cannot touch | ADM-only defaults; creates nothing (🔒 1499 still holds, `test_g243…` pins it) |
 > | `custom/Extension/application/Ext/Language/en_us.bd_adm_lists.php` | labels for the three `ERP_LookupValues` types, and ONE tenant list: `bd_adm_project_by_group_list` | Bench data, edited in Dropdown Editor |
 > | `custom/modules/Quotes/BdAdmRules.php`, `BdAdmLookupOptions.php` | the rules (which companies are ADM, the two defaults) and the pickers' option functions | — |
 
@@ -75,7 +75,16 @@ Group is required. Project ID is required."* EPIC06 enforces none of it.
   Never defaulted.
 - **Reference** (`erp_reference`, ERP-Epicor's field) defaults to the ship-to's
   city and state (`WAYNE NJ`) when empty, on an ADM quote not yet sent; the
-  seller may change it.
+  seller may change it. The ship-to is the QUOTE's (`shipping_address_city` /
+  `_state`, which ERP-Epicor copies from the account's ERP default ship-to
+  record), not the Account's own shipping columns. **G530:** Epicor takes at
+  most 10 characters in `QuoteHed.Reference` (the field's `erp_max_length`,
+  read through ERP-Epicor's `ErpQuoteFacts::referenceMaxLength()`), so a
+  longer default is SHORTENED: the state is kept and the city cut to fit
+  (`HARRISBURG PA` → `HARRISB PA`, `SALT LAKE CITY UT` → `SALT LA UT`); a cut
+  ending on a space drops it; with no state, or no room beside it, the first
+  10 characters. An ERP-Epicor that does not state the limit leaves the
+  default whole (Send to Estimation's own refusal, or the ERP, then names it).
 - **Project** is a picker of ADM's active projects (`BdProjects`), pre-filled
   when every line's product group maps to the same project in
   `bd_adm_project_by_group_list`.

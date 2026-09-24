@@ -295,19 +295,31 @@ class QuoteOpportunityAmount
      * what is on the screen and on the PDF. The id is the last resort rather
      * than the default, which is the opposite of what a log line would do -
      * this field is read by the seller, not by me.
+     *
+     * G445 — ONE NAME FOR ONE QUOTE, WHOEVER SAVED IT:
+     * `Quote #<Sugar number> (Epicor <Epicor number>) "<name>"`, each part only
+     * when known. Round 2 (stock, audit 03:31:11Z / 03:31:22Z) wrote the same
+     * quote as "quote 1378" and then "quote 1033": the Sugar number is read as
+     * STORED (sugarQuoteNumber()), and the Epicor number sits beside it
+     * instead of standing in for it.
      */
     private function sourceSentence(SugarBean $quote): string
     {
-        $num = trim((string) ($quote->quote_num ?? ''));
+        $num = self::sugarQuoteNumber($quote);
+        $erp = self::erpQuoteNumber($quote);
         $name = trim((string) ($quote->name ?? ''));
-        if ($num !== '' && $name !== '') {
-            $label = 'quote ' . $num . ' (' . $name . ')';
-        } elseif ($num !== '') {
-            $label = 'quote ' . $num;
+        if ($num !== '') {
+            $label = 'Quote #' . $num;
         } elseif ($name !== '') {
-            $label = 'quote "' . $name . '"';
+            $label = 'Quote "' . $name . '"';
         } else {
-            $label = 'quote ' . (string) $quote->id;
+            $label = 'Quote ' . (string) $quote->id;
+        }
+        if ($erp !== '') {
+            $label .= ' (Epicor ' . $erp . ')';
+        }
+        if ($num !== '' && $name !== '') {
+            $label .= ' "' . $name . '"';
         }
 
         $trigger = QuotePrimaryQuoteSoleEnforcer::triggerFor((string) $quote->id);
@@ -316,6 +328,44 @@ class QuoteOpportunityAmount
         }
 
         return 'Amount from ' . $label . '; ' . $trigger . '.';
+    }
+
+    /**
+     * G445 — the quote's OWN Sugar number, as STORED.
+     *
+     * quote_num is an auto_increment column, and Sugar never writes one on an
+     * update (include/database/DBManager.php:2480-2483, SugarEnt 26.1.0). But
+     * the connector's quote upsert puts Epicor's QuoteNum on the bean (core
+     * QuoteCoreTransformer::map_to_sell, `"quote_num": src.quote_num`), so
+     * during a connector save the bean says 1378 while the row - and the
+     * screen, and the PDF - say 1033. The fetched row is what is stored. A
+     * create has none, and there the bean is right: SugarBean::saveData()
+     * reloads auto_increment values after the insert
+     * (loadAutoIncrementValues()), before any after_save hook runs.
+     */
+    private static function sugarQuoteNumber(SugarBean $quote): string
+    {
+        $row = $quote->fetched_row ?? null;
+        $stored = is_array($row) ? trim((string) ($row['quote_num'] ?? '')) : '';
+
+        return $stored !== '' ? $stored : trim((string) ($quote->quote_num ?? ''));
+    }
+
+    /**
+     * G445 — the Epicor quote number, '' before the quote reaches Epicor: the
+     * raw display key the connector stamps, else the part of the scoped
+     * erp_sync_key after its company (`EPIC06__1378` -> `1378`).
+     */
+    private static function erpQuoteNumber(SugarBean $quote): string
+    {
+        $display = trim((string) ($quote->erp_display_sync_key ?? ''));
+        if ($display !== '') {
+            return $display;
+        }
+        $scoped = trim((string) ($quote->erp_sync_key ?? ''));
+        $cut = strpos($scoped, '__');
+
+        return $cut === false ? '' : trim(substr($scoped, $cut + 2));
     }
 
     /**

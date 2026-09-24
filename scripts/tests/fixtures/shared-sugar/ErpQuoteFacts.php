@@ -33,6 +33,27 @@
 class ErpQuoteFacts
 {
     /**
+     * G455 — the two ERP lookups billing_account_name's populate_list copies
+     * from the Account onto a Quote besides its company
+     * (ERP-Epicor Ext/Vardefs/billing_account_name_populate_erp_lookups.php):
+     * the Account's relate id field => [the Quote's link, its relate id field,
+     * its relate name field]. Read by ErpQuoteCompanyFollowsAccount, which gives
+     * a quote created without the browser autofill the same fields.
+     */
+    const ACCOUNT_LOOKUPS_ON_QUOTE = array(
+        'erp_billing_termserp_lookupvalues_idb' => array(
+            'erp_quotes_billing_terms',
+            'erp_quotes_billing_termserp_lookupvalues_idb',
+            'erp_quotes_billing_terms_name',
+        ),
+        'erp_foberp_lookupvalues_idb' => array(
+            'erp_quotes_fob',
+            'erp_quotes_foberp_lookupvalues_idb',
+            'erp_quotes_fob_name',
+        ),
+    );
+
+    /**
      * The quote's ERP company code (e.g. "EPIC06", "ADM"), '' when unknown.
      *
      * Exactly what getQuoteRecord() sends as `company`: the billing account's
@@ -57,19 +78,124 @@ class ErpQuoteFacts
      * The ERP company code of an Account, '' when it has no company relate or
      * the company record cannot be found. The body of what used to be
      * QuotesErpActionsApi::resolveErpCompanyCode(), unchanged: that method now
-     * delegates here.
+     * delegates here. The record is companyRecordOfAccount()'s - one read.
      *
      * @param SugarBean|null $account
      */
     public static function companyOfAccount($account): string
     {
+        $company = self::companyRecordOfAccount($account);
+
+        return $company ? (string) ($company->erp_sync_key ?? '') : '';
+    }
+
+    /**
+     * G435 - the Account's ERP_Companies RECORD (the erp_companies_accounts
+     * relate), null when it has none or the record cannot be found (a deleted
+     * company is not found). companyOfAccount() is this record's erp_sync_key,
+     * so the company a new quote is linked to at creation
+     * (ErpQuoteCompanyFollowsAccount) and the company its write-back payload
+     * names can never be two answers.
+     *
+     * @param SugarBean|null $account
+     * @return SugarBean|null
+     */
+    public static function companyRecordOfAccount($account)
+    {
         if (!$account || empty($account->erp_companies_accountserp_companies_ida)) {
-            return '';
+            return null;
         }
 
         $company = BeanFactory::retrieveBean('ERP_Companies', $account->erp_companies_accountserp_companies_ida);
 
-        return $company ? (string) ($company->erp_sync_key ?? '') : '';
+        return $company ?: null;
+    }
+
+    /**
+     * G455 — the ERP_LookupValues RECORD (payment terms, FOB) an Account's
+     * relate id field names, null when the Account has none or the record is
+     * deleted or cannot be found. The same rule as companyRecordOfAccount():
+     * the account's own value or nothing, never a default.
+     *
+     * @param SugarBean|null $account
+     * @param string $idField one of ACCOUNT_LOOKUPS_ON_QUOTE's keys
+     * @return SugarBean|null
+     */
+    public static function lookupRecordOfAccount($account, string $idField)
+    {
+        $id = $account ? trim((string) ($account->{$idField} ?? '')) : '';
+        if ($id === '') {
+            return null;
+        }
+        $lookup = BeanFactory::retrieveBean('ERP_LookupValues', $id);
+
+        return ($lookup && !empty($lookup->id) && empty($lookup->deleted)) ? $lookup : null;
+    }
+
+    /**
+     * G474 — the five address lines CORE-ShippingAddresses' populate_list copies
+     * from a picked ShippingAddress onto the quote (same names on both modules).
+     */
+    const SHIP_TO_ADDRESS_FIELDS = array(
+        'shipping_address_street',
+        'shipping_address_city',
+        'shipping_address_state',
+        'shipping_address_postalcode',
+        'shipping_address_country',
+    );
+
+    /**
+     * The Account's ship-tos that are candidates at all: linked through
+     * shipping_addresses_accounts, not deleted, not inactive (Epicor's own flag
+     * on the ship-to). [] when the link is not there (CORE-ShippingAddresses
+     * not installed).
+     *
+     * @param SugarBean|null $account
+     * @return SugarBean[]
+     */
+    public static function activeShipTosOfAccount($account): array
+    {
+        if (!$account || !$account->load_relationship('shipping_addresses_accounts')) {
+            return array();
+        }
+        $link = $account->shipping_addresses_accounts ?? null;
+        if (!is_object($link)) {
+            return array();
+        }
+
+        $active = array();
+        foreach ($link->getBeans() as $address) {
+            if (!is_object($address) || !empty($address->deleted) || !empty($address->inactive)) {
+                continue;
+            }
+            $active[] = $address;
+        }
+
+        return $active;
+    }
+
+    /**
+     * The Account's DEFAULT ship-to, or null when the data does not name one:
+     * the ONE active address carrying the ERP's own default flag
+     * (erp_primary_ship_to = Epicor Customer.ShipToNum). None, several with no
+     * flag, a lone unflagged one, or two flagged -> null: a fabricated default
+     * on a customer document is worse than an empty Ship To the seller is told
+     * about (G223 / G311 - the rule AccountsErpActionsApi's Account button has
+     * always applied; it now reads it from here).
+     *
+     * @param SugarBean|null $account
+     * @return SugarBean|null
+     */
+    public static function defaultShipToOfAccount($account)
+    {
+        $flagged = array();
+        foreach (self::activeShipTosOfAccount($account) as $address) {
+            if (!empty($address->erp_primary_ship_to)) {
+                $flagged[] = $address;
+            }
+        }
+
+        return count($flagged) === 1 ? $flagged[0] : null;
     }
 
     /**
@@ -153,6 +279,46 @@ class ErpQuoteFacts
         $category = BeanFactory::retrieveBean('ProductCategories', $categoryId);
 
         return $category ? trim((string) ($category->erp_display_sync_key ?? '')) : '';
+    }
+
+    /**
+     * G530 — the most characters the ERP takes in the quote's Reference
+     * (Epicor QuoteHed.Reference), 0 when the field states none.
+     *
+     * Read from the field itself: ERP-Core's erp_reference vardef carries it
+     * as `erp_max_length` (10, measured on ADM and in EPIC06's data
+     * dictionary - the measurement is recorded on the vardef). The Quotes
+     * views read the same attribute from the served metadata, so the save
+     * check, Send to Estimation's refusal and a package's default can never
+     * be three different numbers. `len` (50) is storage, not the limit.
+     *
+     * 0 ("not stated") means no limit is enforced here and the ERP answers
+     * for itself, exactly as before G530.
+     *
+     * @param SugarBean|null $quote a Quotes bean (its field_defs); null reads
+     *                              the Quote dictionary
+     */
+    public static function referenceMaxLength($quote = null): int
+    {
+        $def = null;
+        if (is_object($quote) && isset($quote->field_defs) && is_array($quote->field_defs)) {
+            $def = $quote->field_defs['erp_reference'] ?? null;
+        } elseif (isset($GLOBALS['dictionary']['Quote']['fields']['erp_reference'])) {
+            $def = $GLOBALS['dictionary']['Quote']['fields']['erp_reference'];
+        }
+        $max = is_array($def) ? (int) ($def['erp_max_length'] ?? 0) : 0;
+
+        return $max > 0 ? $max : 0;
+    }
+
+    /**
+     * G530 — the length the ERP will count for a Reference: characters, not
+     * bytes ("MÜNCHEN BY" is 10), of the value as core sends it (trimmed,
+     * connector_epicor quote_writeback read_quote_header_extras()).
+     */
+    public static function referenceLength(string $reference): int
+    {
+        return mb_strlen(trim($reference), 'UTF-8');
     }
 
     /**

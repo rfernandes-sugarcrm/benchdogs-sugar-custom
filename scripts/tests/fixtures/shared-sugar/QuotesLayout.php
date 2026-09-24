@@ -6,7 +6,7 @@ class QuotesLayout extends BaseErpLayout
 {
     /** Quotes-only; ERP_PANEL_NAME is inherited from BaseErpLayout. */
 
-    /** REQ-30: the Comments tab. */
+    /** REQ-30's Comments tab was retired by G517 - see COMMENTS_PANEL_NAME. */
     /** The OTHER grand-totals view. The helpers default to the footer. */
     private const TOTALS_HEADER_VIEW = 'quote-data-grand-totals-header';
 
@@ -62,15 +62,57 @@ class QuotesLayout extends BaseErpLayout
         'label' => 'LBL_ERP_REFERENCE',
     ];
 
+    /**
+     * REQ-30's Comments tab - RETIRED by G517 (🔒 1778b). The name stays: it is
+     * how install() finds the deployed panel to take off every upgraded tenant,
+     * and how the retired dependency shape below still names its first target.
+     */
     const COMMENTS_PANEL_NAME = 'LBL_RECORDVIEW_PANEL_ERP_COMMENTS';
     const DISCOUNT_PANEL_NAME = 'LBL_RECORDVIEW_PANEL_ERP_DISCOUNT';
 
     /**
-     * G396 — the Comments tab's status line, which replaced the Add Comment
-     * box, the Update button and the queue receipt (🔒 1702b Q1). Named once:
-     * install() PLACES it on an upgraded tenant and commentsPanel() declares
-     * it for a fresh one, and two spellings of one row is how a field comes to
-     * be added twice.
+     * G517 — every field this package has ever put on the Comments tab. When
+     * the tab is retired these leave with it; ANY OTHER field found on it (an
+     * admin's Studio placement, another package's field - whatever its prefix)
+     * is moved to Quote Settings first, never dropped. An explicit list rather
+     * than isErpField(): a stray erp_ field someone else placed there is still
+     * someone's field.
+     *
+     *   erp_quote_comment         "What Epicor holds", the raw QuoteComment
+     *                             thread (REQ-30; read-only since G396)
+     *   erp_comment_log_status    the G396 status line - it MOVES to the ERP
+     *                             panel, see COMMENT_LOG_STATUS_FIELD
+     *   erp_comment_text,
+     *   update_erp_comment_button,
+     *   erp_comment_queue         the write surface G396 retired (1.1.123 and
+     *                             earlier still carry it - benchdogs-sandbox)
+     *   erp_comment_requested_at  never placed there, listed so it can never be
+     *                             "carried" as someone else's
+     */
+    const COMMENTS_TAB_PACKAGE_FIELDS = [
+        'erp_quote_comment',
+        'erp_comment_log_status',
+        'erp_comment_text',
+        'update_erp_comment_button',
+        'erp_comment_queue',
+        'erp_comment_requested_at',
+    ];
+
+    /** G517 — where an admin's field on the retired Comments tab goes: Sugar's stock Quote Settings panel. */
+    const COMMENTS_TAB_FOREIGN_FIELDS_TARGET = 'panel_setting_body';
+
+    /**
+     * G396 — the Comment Log status line, which replaced the Add Comment box,
+     * the Update button and the queue receipt (🔒 1702b Q1). It says what the
+     * Comment Log dashlet cannot: on an unsent Advanced Quote, how many entries
+     * go at Send to Estimation; on a sent one, any entry that has NOT reached
+     * Epicor and why.
+     *
+     * G517 — it now sits on the ERP panel, under the ERP status rows, because
+     * the Comments tab it lived on is retired. Named once: install() PLACES it
+     * on an upgraded tenant (add-if-absent after erp_writeback_msg) and
+     * erpPanel() declares it for a fresh or replace build, and two spellings of
+     * one row is how a field comes to be added twice.
      *
      * related_fields is what makes Sidecar FETCH the ledger it counts from
      * (view.js getFieldNames() plucks related_fields from the panels, and from
@@ -164,62 +206,42 @@ class QuotesLayout extends BaseErpLayout
         //
         // DO NOT FLIP THIS TO INLINE "FOR THE LADDER". It moves nothing about
         // the ladder, and it folds Quote Settings and panel_hidden into the tab
-        // before it - the Comments tab, whose header erp-comment-log-status.js
-        // (update-erp-comment.js before G396) hides on every non-advanced quote. test_g315_ladder_is_not_a_tab.py
+        // before it (the Business Card tab, now that G517 retired the Comments
+        // tab that used to sit between them). test_g315_ladder_is_not_a_tab.py
         // pins both halves by running this installer.
         $this->setPanelAsNewTab('Quotes', 'panel_setting_body');
-        // THE COMMENTS TAB (REQ-30), AND newTab => true IS THE OWNER'S WORD.
+        // 🛑 G517 (🔒 1778b) — THE COMMENTS TAB IS RETIRED, ON EVERY TENANT.
         //
-        // The quantity-break ladder is deliberately NOT a tab, because it
-        // qualifies the lines it sits beside - it renders inside the line grid
-        // (see QuotesQuantityAlternativesLayout). A comment is the opposite: it is
-        // a conversation with the ERP about the whole quote, it can be long,
-        // and it is somewhere a seller GOES rather than something they read in
-        // passing. The owner asked for "a tab on the quote called Comments"
-        // and then confirmed it: "add comemnts as a tab".
-        $this->addPanelToRecordViewBefore('Quotes', $this->commentsPanel(), 'panel_setting_body');
-        // 🛑 AND THE LINE ABOVE IS NOT ENOUGH, FOR THE FOURTH TIME IN THIS
-        // PACKAGE (🔒 774, G114, the erp_quote_type related_fields case, and
-        // now this). addPanelToRecordViewBefore() RETURNS EARLY when the panel
-        // already exists and this is not a replace build, so a field added to
-        // commentsPanel() alone reaches a FRESH install and NO UPGRADED TENANT
-        // — every tenant that already has the Comments tab, which is all of
-        // them. The ERP panel above carries a reconcile for exactly this
-        // reason; the Comments panel had none, so G189's read-back field would
-        // have shipped, linted clean, installed "successfully" and still been
-        // absent from every seller's screen.
+        // Owner, 2026-09-24: "we should remove the comment tab we dont need it
+        // anymore". Comments live in the Comment Log (G396: each entry goes to
+        // Epicor, estimator replies come back as entries, G421 notifies the
+        // owner - all server-side hooks, wherever the entry is typed), and the
+        // Comment Log dashlet is on the quote's record dashboard (G515, the step
+        // below). REQ-30 built this tab with "newTab => true" at the owner's
+        // word; this is the owner's word taking it back.
         //
-        // Three calls, because they do different jobs and none substitutes
-        // for another:
-        //   removeFieldsFromRecordViewPanel() RETIRES what 🔒 1702b Q1 took off
-        //     the tab (G396: the Comment Log is the only place to write ERP
-        //     comments) - the Add Comment box, the Update button and G189's
-        //     queue receipt. Dropping them from commentsPanel() alone would
-        //     reach a FRESH install and no upgraded tenant: every tenant would
-        //     keep a second, retired way to write, which is the thing ruled
-        //     out. Scoped to this package's own panel (L-0009);
-        //   addFieldsToRecordView() PLACES the status line the panel does not
-        //     have, after erp_quote_comment - it carries the tab-header toggle
-        //     (🔒 670) that lived in the retired button, so it must reach every
-        //     upgraded tenant or the Comments tab reappears on sales orders;
-        //   reconcileFieldsInRecordViewPanel() brings the DEFINITION of every
-        //     field in this panel up to date — the "What Epicor holds" label,
-        //     the placeholder, the rows — on a tenant that already has it.
-        $this->removeFieldsFromRecordViewPanel(
-            'Quotes',
-            ['name' => self::COMMENTS_PANEL_NAME],
-            $this->retiredCommentsPanelFields()
-        );
+        // NOT by dropping the addPanelToRecordViewBefore() call alone: that
+        // retires the panel on a FRESH install and on no upgraded tenant - the
+        // add-if-absent trap this file has recorded four times (🔒 774). The
+        // deployed panel is taken off the view here, after any field someone
+        // else put on it has been moved to Quote Settings - see
+        // retireCommentsTab(). What leaves the screen with it:
+        //   - the G396 status line, which MOVES to the ERP panel (below), so
+        //     "N entries go at Send to Estimation" / "an entry has not reached
+        //     Epicor: <reason>" stays in front of the seller;
+        //   - erp_quote_comment ("What Epicor holds", the raw thread). Its data
+        //     stays, reportable and on the bean; what the seller loses is the
+        //     on-screen copy of the thread from before the G396 rollout, which
+        //     the Comment Log never received (G396 Q4 copied no history).
+        $this->retireCommentsTab();
+        // The status line's new home, on an UPGRADED tenant: add-if-absent,
+        // right under the ERP status rows. erpPanel() declares it for a fresh
+        // or replace build; the reconcile above keeps its definition current.
         $this->addFieldsToRecordView(
             'Quotes',
             [self::COMMENT_LOG_STATUS_FIELD],
-            ['name' => self::COMMENTS_PANEL_NAME],
-            'erp_quote_comment'
-        );
-        $this->reconcileFieldsInRecordViewPanel(
-            'Quotes',
-            ['name' => self::COMMENTS_PANEL_NAME],
-            $this->commentsPanel()['fields']
+            ['name' => self::ERP_PANEL_NAME],
+            'erp_writeback_msg'
         );
         // G396 Q4 — THE ROLLOUT COPIES NO HISTORY. Every quote's thread is
         // recorded as already reflected in the Comment Log, in one UPDATE with
@@ -239,6 +261,21 @@ class QuotesLayout extends BaseErpLayout
             $GLOBALS['log']->fatal('[QuotesLayout] QuoteCommentMirrorBaseline is missing: the Comment Log mirror '
                 . 'baseline was NOT set, so the first ERP comment change on an existing quote is diffed against '
                 . 'the value before that save instead (ErpCommentNotificationHook).');
+        }
+        // G515 (🔒 1776b) — SUGAR'S STOCK COMMENT LOG DASHLET ON THE QUOTE'S
+        // RECORD DASHBOARD: the shared default (what a new user sees) and every
+        // user's own Quotes record dashboard, APPENDED where absent, offered
+        // once per dashboard, never removing or moving a tile. Loaded exactly
+        // like QuoteCommentMirrorBaseline above, for the same reasons; see the
+        // class docblock for why it edits dashboard rows and not a layout file.
+        if (!class_exists('QuotesCommentLogDashlet', false)) {
+            @include_once 'custom/include/scripts/Modules/QuotesCommentLogDashlet.php';
+        }
+        if (class_exists('QuotesCommentLogDashlet', false)) {
+            (new QuotesCommentLogDashlet())->install();
+        } elseif (isset($GLOBALS['log']) && is_object($GLOBALS['log'])) {
+            $GLOBALS['log']->fatal('[QuotesLayout] QuotesCommentLogDashlet is missing: the Comment Log dashlet was '
+                . 'NOT added to the Quotes record dashboards (G515).');
         }
         $this->addFieldsToListView('Quotes', $this->listViewFields());
         $this->moveRecordViewFieldsToHidden('Quotes', $this->recordViewCleanupFields());
@@ -262,6 +299,12 @@ class QuotesLayout extends BaseErpLayout
         // Must run after addPanelToRecordViewBefore(), which unsets 'buttons' on every deploy.
         // Inserted before 'main_dropdown' so they sit next to the Edit button.
         $this->addButtonsToRecordView('Quotes', $this->erpActionButtons(), 'main_dropdown');
+        // G422: "Sync Now with ERP" in the Edit menu. ADD-IF-ABSENT (the helper
+        // appends and never updates), which is why the entry carries no rule of
+        // its own: when it shows, greys and what it does all live in the field
+        // type (fields/sync-with-erp), which reaches every tenant on upgrade.
+        // Its place in the menu is set at runtime (record.js _erpPlaceSyncEntry).
+        $this->addButtonsToDropdown('Quotes', 'main_dropdown', [$this->syncWithErpMenuEntry()]);
         // erp_display_sync_key only applies to advanced quotes, not sales orders;
         // hide it for sales orders via a real Sidecar dependency (the
         // 'depends_on' key on those fields in erpPanel() does nothing - nothing
@@ -286,16 +329,17 @@ class QuotesLayout extends BaseErpLayout
         $this->removeDependenciesFromRecordView('Quotes', $this->legacyIsEmptyEstimateVisibilityDependencies());
         $this->addDependenciesToRecordView('Quotes', $this->erpEstimateVisibilityDependencies());
         // ADVANCED QUOTES ONLY (REQ-30, owner: "update button on advanced
-        // quote only"). A sales order has no ERP quote behind it, so an Update
-        // control on one would post a comment nowhere.
+        // quote only"). A sales order has no ERP quote behind it, so an ERP
+        // comment control on one would post a comment nowhere.
         //
-        // A REAL SIDECAR DEPENDENCY, not the button's own JS class toggle. The
-        // field component hides itself too, but that runs on initialize/render
-        // and on change:erp_quote_type - a defence in depth, not the rule. This
-        // is the same mechanism erp_display_sync_key uses, and the reason it
-        // exists is recorded above: the 'depends_on' vardef key does nothing
-        // because nothing in the client ever reads it.
-        $this->addDependenciesToRecordView('Quotes', $this->erpCommentVisibilityDependencies());
+        // G517: the Comments tab this rule gated is retired, so its SHIPPED
+        // shape is removed BY VALUE (G78 - never edited, see the method) and
+        // the status line, the one comment row left on the record, gets its own
+        // rule in a NEW shape. A REAL SIDECAR DEPENDENCY, not only the field's
+        // own JS toggle: that hides the field's element, this hides its cell
+        // and row, so a sales order shows no empty band in the ERP panel.
+        $this->removeDependenciesFromRecordView('Quotes', $this->erpCommentVisibilityDependencies());
+        $this->addDependenciesToRecordView('Quotes', $this->erpCommentLogStatusVisibilityDependency());
         // 🛑 THE DISCOUNT PANEL (owner decision 701: "instead of dosciontun
         // as a button can it be a pannel"). It shipped first as a header button
         // opening a modal; the owner's screenshots found three faults in that
@@ -337,6 +381,7 @@ class QuotesLayout extends BaseErpLayout
         $this->addFieldsToNestedCollection('Quotes', 'product_bundle_items', $this->erpLineDeeplinkLineItemFields());
         $this->addFieldsToNestedCollection('Quotes', 'product_bundle_items', $this->unitOfMeasureLineItemFields());
         $this->addFieldsToNestedCollection('Quotes', 'product_bundle_items', $this->orderPriceGuardLineItemFields());
+        $this->addFieldsToNestedCollection('Quotes', 'product_bundle_items', $this->lineDateLineItemFields());
         // Epicor's OWN stated tax, on the totals footer the seller actually
         // reads. Shipping is deliberately absent here: ErpNativeShippingMirror
         // assigns the ERP freight to the NATIVE `shipping` field, so the
@@ -487,6 +532,8 @@ class QuotesLayout extends BaseErpLayout
         $this->removePanelFromRecordView('Quotes');
         $this->removeErpFieldsFromListView('Quotes');
         $this->removeButtonsFromRecordView('Quotes', ['create_erp_order_button', 'advanced_quote_button', 'refresh_price_availability_button', 'erp_discount_button']);
+        // G422: the Edit menu entry this package added.
+        $this->removeButtonsFromDropdown('Quotes', 'main_dropdown', [$this->syncWithErpMenuEntry()['name']]);
         // G212's rule. The legacy advanced-only shape is still removed below,
         // for a tenant that never ran the install that swapped it.
         $this->removeDependenciesFromRecordView('Quotes', $this->erpDiscountTypeVisibilityDependencies());
@@ -495,14 +542,16 @@ class QuotesLayout extends BaseErpLayout
         $this->removeDependenciesFromRecordView('Quotes', $this->erpFieldVisibilityDependencies());
         $this->removeDependenciesFromRecordView('Quotes', $this->erpEstimateVisibilityDependencies());
         $this->removeDependenciesFromRecordView('Quotes', $this->erpCommentVisibilityDependencies());
+        // G517's rule. The status line itself leaves with the ERP panel above.
+        $this->removeDependenciesFromRecordView('Quotes', $this->erpCommentLogStatusVisibilityDependency());
         $this->removeDependenciesFromRecordView('Quotes', $this->erpDiscountVisibilityDependencies());
         $this->removePanelsFromRecordView('Quotes', [self::DISCOUNT_PANEL_NAME]);
-        // G189: a field this package PLACED, this package takes back. The
-        // Comments panel itself is deliberately not removed here (it predates
-        // this change and nothing in uninstall() has ever removed it), so
-        // leaving erp_comment_queue on it would strand a row pointing at a
-        // vardef that left with the package — a labelled empty box on the
-        // seller's tab for ever. Scoped to this package's own panel (L-0009).
+        // G189 / G517: a field this package PLACED, this package takes back. On
+        // a tenant this version installed on, the Comments tab is already gone
+        // (install() retired it) and this is a no-op; it stays for a tenant
+        // whose view still carries the tab. Nothing here RESTORES the tab -
+        // the owner retired it (🔒 1778b). Scoped to this package's own panel
+        // (L-0009).
         $this->removeFieldsFromRecordViewPanel(
             'Quotes',
             ['name' => self::COMMENTS_PANEL_NAME],
@@ -515,6 +564,7 @@ class QuotesLayout extends BaseErpLayout
         $this->removeFieldsFromNestedCollection('Quotes', 'product_bundle_items', $this->priceAvailabilityLineItemFields());
         $this->removeFieldsFromNestedCollection('Quotes', 'product_bundle_items', $this->erpLineDeeplinkLineItemFields());
         $this->removeFieldsFromNestedCollection('Quotes', 'product_bundle_items', $this->unitOfMeasureLineItemFields());
+        $this->removeFieldsFromNestedCollection('Quotes', 'product_bundle_items', $this->lineDateLineItemFields());
         $this->removeFieldsFromTotalsFooter('Quotes', array('erp_tax_amount', 'erp_document_discount_amount'));
         // G274: the header's copy of the ERP tax row leaves with the package too.
         $this->removeFieldsFromTotalsFooter('Quotes', array('erp_tax_amount'), self::TOTALS_HEADER_VIEW);
@@ -799,6 +849,9 @@ class QuotesLayout extends BaseErpLayout
                 // G402 — "ERP Status At", the same fix as erp_priced_at above.
                 self::ERP_READONLY_DATETIME_FIELDS['erp_writeback_at'],
                 ['name' => 'erp_writeback_msg', 'readonly' => true, 'label' => 'LBL_ERP_WRITEBACK_MSG', 'span' => 12],
+                // G517: the Comment Log status line, moved here from the retired
+                // Comments tab - see COMMENT_LOG_STATUS_FIELD.
+                self::COMMENT_LOG_STATUS_FIELD,
             ],
         ];
     }
@@ -876,6 +929,14 @@ class QuotesLayout extends BaseErpLayout
         // the control. Harmless if it is fetched twice — getFieldNames()
         // uniques the list.
         'opportunity_id',
+        // G422 — "Sync Now with ERP" is offered when erp_sync_key is set, and the
+        // field (fields/sync-with-erp) reads it off the model. No panel shows
+        // the key, so without this line it is never fetched, reads empty, and
+        // every SENT Advanced Quote shows the entry greyed with "Use Send to
+        // Estimation first". Carried to upgraded tenants by the
+        // reconcileFieldsInRecordViewPanel() call in install(), like the two
+        // above. sync-with-erp-menu.test.js pins it.
+        'erp_sync_key',
     ];
 
     private function listViewFields(): array
@@ -1067,6 +1128,24 @@ class QuotesLayout extends BaseErpLayout
         ];
     }
 
+    /**
+     * G422 — the Edit menu's "Sync Now with ERP" (owner, 2026-09-23). A rowaction
+     * of the package type `sync-with-erp`, which owns the rule: offered when
+     * erp_sync_key is set or on a Sales Order quote with a linked ERP order,
+     * greyed with "Use Send to Estimation first" on an unsent Advanced Quote.
+     * 'edit' because a sync writes the quote (the connector's read-back).
+     */
+    private function syncWithErpMenuEntry(): array
+    {
+        return [
+            'type' => 'sync-with-erp',
+            'event' => 'button:sync_with_erp_button:click',
+            'name' => 'sync_with_erp_button',
+            'label' => 'LBL_ERP_SYNC_WITH_ERP_BUTTON',
+            'acl_action' => 'edit',
+        ];
+    }
+
     // erp_display_sync_key shows only for advanced quotes.
     private function erpFieldVisibilityDependencies(): array
     {
@@ -1242,12 +1321,36 @@ class QuotesLayout extends BaseErpLayout
      * SetVisibility entirely (measured on the Comments tab, 2026-09-20 — the
      * fields hid, the pane emptied, the tab stayed). An inline panel is
      * governed by the dependency below and needs no client-side tab hack.
+     *
+     * 🛑 G510 — `columns => 2`, LIKE EVERY OTHER PANEL ON THIS VIEW. Without
+     * it the owner saw "Apply a discount" pushed toward the middle of the row
+     * (x 267-437 of 2000) while Currency / Display Line Numbers sat at the left
+     * edge. Measured live on benchdogs-sandbox (Sugar 26.1): with labels on
+     * the side (the user's `field_name_placement`), the grid builder gives a
+     * label `labelSpan = floor(4 / columns)`, reading a missing `columns` as
+     * 1 - so this label got span4, a 19vw column, and Sugar floats a side
+     * label RIGHT inside its column. erpPanel() and the stock panels say 2 and
+     * get span2 (9vw), which is the rail the owner reads as "the left edge".
+     * The field keeps `span => 12`, so it still fills its row alone; with
+     * labels on top nothing moves (the label span there follows the field).
+     *
+     * Not `labelsOnTop`: record.js overwrites a panel's labelsOnTop with the
+     * user's preference on every render, so that key is inert here (the
+     * Comments panel declares it and still renders its labels on the side).
+     * It reaches upgraded tenants because both post_execute variants build
+     * this view with replace = true, which rebuilds this panel from this
+     * definition; an admin's own fields in it are carried (G452). Studio's
+     * parser writes `columns` (the view's maxColumns, 2 by default) on every
+     * panel it saves, so this is also the shape a Studio-saved tenant already
+     * had until a reinstall took it away.
+     * DiscountLabelRidesTheLabelColumnTest pins it.
      */
     private function erpDiscountPanel(): array
     {
         return [
             'name' => self::DISCOUNT_PANEL_NAME,
             'label' => self::DISCOUNT_PANEL_NAME,
+            'columns' => 2,
             'newTab' => false,
             'panelDefault' => 'expanded',
             'fields' => [
@@ -1277,27 +1380,15 @@ class QuotesLayout extends BaseErpLayout
     }
 
     /**
-     * ⚠️ `erp_comment_queue` IS DELIBERATELY NOT IN THIS LIST, AND THAT IS A
-     * RECORDED TRADE, NOT AN OVERSIGHT.
+     * REQ-30's advanced-quote gate for the Comments tab, IN ITS SHIPPED SHAPE.
      *
-     * Adding it would be the G78 defect this file already documents: add and
-     * remove match a dependency by EXACT SERIALIZED SHAPE, so a six-target
-     * rule does not REPLACE the five-target rule already deployed on every
-     * tenant - it lands BESIDE it, and two SetVisibility rules on one target
-     * is precisely what G78 was filed about. Doing it properly means shipping
-     * the five-target shape as a legacy removal first, which is a bigger and
-     * riskier change than the field it would cover.
-     *
-     * What it costs, stated rather than buried: `self::COMMENTS_PANEL_NAME`
-     * is the first target here, so the whole tab is already gated on an
-     * advanced quote. If that panel-level target does not reach the field -
-     * and the author of this list evidently did not rely on it alone, or the
-     * four field targets below would be redundant - then on a SALES ORDER a
-     * seller sees one extra read-only box reading "Nothing queued.". It is
-     * cosmetic and it is always empty: a sales order has no advanced-quote
-     * brief to hold.
-     *
-     * The next person doing the legacy-removal dance should fold it in then.
+     * 🛑 G517: A REMOVAL TARGET ONLY - NEVER EDIT IT, NEVER ADD IT AGAIN.
+     * install() removes it by value on every tenant (the tab it gated is
+     * retired) and uninstall() still removes it for a tenant this version never
+     * installed on. Add and remove match a dependency by EXACT SERIALIZED
+     * SHAPE (G78), so a single changed target here would strand the deployed
+     * copy on every tenant carrying it. The status line that outlived the tab
+     * has its own rule: erpCommentLogStatusVisibilityDependency().
      */
     private function erpCommentVisibilityDependencies(): array
     {
@@ -1383,84 +1474,138 @@ class QuotesLayout extends BaseErpLayout
      * its own number of rungs, and a Sugar panel cannot express that shape.
      */
     /**
-     * REQ-30's Comments tab, as G396 / 🔒 1702b leaves it.
-     *
-     * THE COMMENT LOG IS THE ONLY PLACE TO WRITE ERP COMMENTS (Q1). Each entry
-     * goes to the Epicor quote on its own, the moment it is typed (Q2), and the
-     * estimator's replies come back as entries (Q3). So this tab no longer
-     * WRITES anything; it shows what Epicor holds and says where comments go:
-     *
-     *   erp_quote_comment        READ-ONLY. "What Epicor holds" - the whole
-     *                            QuoteHed.QuoteComment, kept as the raw view
-     *                            the owner asked to keep.
-     *   erp_comment_log_status   the status line: on an unsent quote, how many
-     *                            Comment Log entries go at Send to Estimation;
-     *                            on a sent one, any entry that did not arrive
-     *                            and why. It also carries the tab-header toggle
-     *                            (🔒 670) the retired button used to.
-     *
-     * RETIRED, by retiredCommentsPanelFields() on every upgraded tenant:
-     * erp_comment_text ("Add Comment"), update_erp_comment_button ("Update")
-     * and erp_comment_queue (G189's receipt). Their vardefs and columns stay -
-     * retiring a control never destroys what someone may still read - and a
-     * queue that exists today is still sent, split into its entries (G387).
-     *
-     * labelsOnTop + span 12: a thread is paragraphs, not a value.
+     * G517 — the status line's own advanced-quote rule, in a NEW shape (the
+     * Comments tab's rule it used to ride is retired - see
+     * erpCommentVisibilityDependencies()). Never edit it once shipped: G78.
      */
-    private function commentsPanel(): array
+    private function erpCommentLogStatusVisibilityDependency(): array
     {
-        return [
-            'name' => self::COMMENTS_PANEL_NAME,
-            'label' => self::COMMENTS_PANEL_NAME,
-            'columns' => 1,
-            'labelsOnTop' => true,
-            'placeholders' => true,
-            'newTab' => true,
-            'collapsed' => false,
-            'fields' => [
-                [
-                    'name' => 'erp_quote_comment',
-                    // "What Epicor holds" (Q1). A NEW KEY, not a new value for
-                    // LBL_ERP_QUOTE_COMMENT: that one is also the field's vname,
-                    // which list views and reports print.
-                    'label' => 'LBL_ERP_QUOTE_COMMENT_HELD',
-                    'readonly' => true,
-                    'span' => 12,
-                    // A WIDE TEXT AREA, NOT A ONE-LINE INPUT, AND BIG - the
-                    // owner asked for roughly a third of the screen. At the
-                    // ~20px line-height Sugar renders, 14 rows is ~280px.
-                    //
-                    // NO maxlength, DELIBERATELY: Epicor's cap for
-                    // QuoteHed.QuoteComment is not established anywhere this
-                    // package can read, and a guessed limit silently destroys
-                    // text the ERP would have kept.
-                    //
-                    // An empty ERP comment must read as EMPTY, not as broken.
-                    'displayParams' => [
-                        'rows' => 14,
-                        'cols' => 140,
-                        'placeholder' => 'LBL_ERP_QUOTE_COMMENT_EMPTY',
-                    ],
-                ],
-                self::COMMENT_LOG_STATUS_FIELD,
-                // 🛑 erp_comment_requested_at IS DELIBERATELY NOT ON THIS TAB.
-                // It is the connector's delta watermark - a machine trigger -
-                // and it says when a request was QUEUED, not when Epicor
-                // accepted it. The field remains declared, audited and written.
-            ],
-        ];
+        return $this->advancedQuoteOnlyDependency([
+            self::COMMENT_LOG_STATUS_FIELD['name'],
+        ]);
     }
 
     /**
-     * What 🔒 1702b Q1 took off the Comments tab. Removed from this package's
-     * own panel on every install, because an add-only installer cannot retire
-     * anything (🔒 774) - see install().
+     * G517 (🔒 1778b) — TAKE THE COMMENTS TAB OFF THE DEPLOYED RECORD VIEW,
+     * LOSING NOBODY'S FIELD.
+     *
+     * The panel's fields are split in two:
+     *   - this package's own (COMMENTS_TAB_PACKAGE_FIELDS) leave with the tab -
+     *     the status line has already been declared on the ERP panel;
+     *   - EVERY OTHER named field (an admin's Studio placement, another
+     *     package's) is moved to the END of Quote Settings first, as it was
+     *     deployed, and the move is logged. Studio's unnamed padding cells are
+     *     not fields and are not moved.
+     *
+     * The panel is removed ONLY once every such field is verified to be on the
+     * view outside it. If the move could not be made (a view with no Quote
+     * Settings panel), the tab STAYS and the install log says which fields held
+     * it there: a Comments tab still showing is a visible, fixable outcome; a
+     * field silently gone is not.
+     *
+     * Idempotent: with no Comments panel deployed it reads, finds nothing and
+     * writes nothing. Uninstall does not put the tab back.
+     *
+     * The deployed view is read through ViewdefManager directly because
+     * BaseErpLayout's loadView() is private; every WRITE goes through the
+     * BaseErpLayout helpers, which deploy and clear the caches.
      */
-    private function retiredCommentsPanelFields(): array
+    private function retireCommentsTab(): void
     {
-        return ['erp_comment_text', 'update_erp_comment_button', 'erp_comment_queue'];
+        $panel = $this->deployedRecordPanel(self::COMMENTS_PANEL_NAME);
+        if ($panel === null) {
+            return;
+        }
+
+        $foreign = [];
+        foreach ((array) ($panel['fields'] ?? []) as $field) {
+            $name = is_array($field) ? (string) ($field['name'] ?? '') : (is_string($field) ? $field : '');
+            if ($name === '' || $name[0] === '(' || in_array($name, self::COMMENTS_TAB_PACKAGE_FIELDS, true)) {
+                continue;
+            }
+            $foreign[] = $field;
+        }
+
+        if ($foreign !== []) {
+            $this->addFieldsToRecordView('Quotes', $foreign, ['name' => self::COMMENTS_TAB_FOREIGN_FIELDS_TARGET]);
+            $stranded = [];
+            foreach ($this->collectFieldNames($foreign) as $name) {
+                if (!$this->isOnRecordViewOutside($name, self::COMMENTS_PANEL_NAME)) {
+                    $stranded[] = $name;
+                }
+            }
+            if ($stranded !== []) {
+                $this->logInstall(sprintf(
+                    'ERP layout: the Quotes Comments tab was NOT removed - %s could not be moved to %s (G517)',
+                    implode(', ', $stranded),
+                    self::COMMENTS_TAB_FOREIGN_FIELDS_TARGET
+                ));
+                return;
+            }
+            $this->logInstall(sprintf(
+                'ERP layout: moved %d field(s) from the retired Quotes Comments tab to %s: %s (G517)',
+                count($foreign),
+                self::COMMENTS_TAB_FOREIGN_FIELDS_TARGET,
+                implode(', ', $this->collectFieldNames($foreign))
+            ));
+        }
+
+        $this->removePanelsFromRecordView('Quotes', [self::COMMENTS_PANEL_NAME]);
     }
 
+    /** The deployed Quotes record view's panel of that name, or null. */
+    private function deployedRecordPanel(string $panelName): ?array
+    {
+        foreach ($this->deployedRecordPanels() as $panel) {
+            if (is_array($panel) && ($panel['name'] ?? '') === $panelName) {
+                return $panel;
+            }
+        }
+
+        return null;
+    }
+
+    /** Is the field placed on the deployed Quotes record view, in any panel but that one? */
+    private function isOnRecordViewOutside(string $fieldName, string $panelName): bool
+    {
+        foreach ($this->deployedRecordPanels() as $panel) {
+            if (!is_array($panel) || ($panel['name'] ?? '') === $panelName) {
+                continue;
+            }
+            if (in_array($fieldName, $this->collectFieldNames($panel['fields'] ?? []), true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * The guard is NOT an off switch on a tenant: class_exists() autoloads
+     * (ViewdefManager is namespaced under src/), and BaseErpLayout's own
+     * constructor already THROWS when it is missing, so no QuotesLayout that
+     * reaches this line on Sugar can take the early return. It exists for the
+     * installer harnesses that fake BaseErpLayout without a viewdef store
+     * (scripts/tests/test_quote_governing_line_retired.py), where there is no
+     * deployed view to read.
+     */
+    private function deployedRecordPanels(): array
+    {
+        if (!class_exists(\Sugarcrm\Sugarcrm\MetaData\ViewdefManager::class)) {
+            return [];
+        }
+        $defs = (new \Sugarcrm\Sugarcrm\MetaData\ViewdefManager())->loadViewdef('base', 'Quotes', 'record');
+
+        return is_array($defs) && isset($defs['panels']) && is_array($defs['panels']) ? $defs['panels'] : [];
+    }
+
+    /** fatal: the level sugarcrm.log keeps by default, so the install record says what happened. */
+    private function logInstall(string $message): void
+    {
+        if (isset($GLOBALS['log']) && is_object($GLOBALS['log'])) {
+            $GLOBALS['log']->fatal($message);
+        }
+    }
 
     private function retiredErpPanelFields(): array
     {
@@ -1873,6 +2018,16 @@ class QuotesLayout extends BaseErpLayout
     private function unitOfMeasureLineItemFields(): array
     {
         return ['erp_unit_of_measure'];
+    }
+
+    // G463 (🔒 1758b) — the line's own Need By / Ship By. ERP-Core's
+    // ProductsLayout adds the COLUMNS; without this allowlist entry the values
+    // never reach the client, so the columns would render empty and a date the
+    // seller typed would look unsaved (🔒 673 cost a release on exactly that).
+    // A new name on an add-if-absent list, so an upgraded tenant gets it.
+    private function lineDateLineItemFields(): array
+    {
+        return ['erp_need_by_date', 'erp_ship_by_date'];
     }
 
     // G415 — the order buttons refuse a seller line with no Unit Price

@@ -15,17 +15,33 @@
 // and a company that does refuses through its own write-back hook. Editable,
 // on the Quotes record view's ERP panel (see 'erp_layout' below).
 //
-// 🚩 len 50 IS THE CONTRACT'S ASSUMPTION, NOT A MEASUREMENT. The contract asked
-// for QuoteHed.Reference's MaxLength from Epicor's $metadata. It cannot come
-// from there: Epicor's OData $metadata carries no $MaxLength on any property
-// (connector_epicor/schema_meta.py, live-verified against EPIC06), and the
-// captured Erp.BO.QuoteSvc swagger declares Reference as a bare string. The
-// width lives in Epicor's data dictionary (Ice.BO.ZDataFieldSvc,
-// DataTableID 'QuoteHed', FieldName 'Reference': its Format, e.g. "x(50)"),
-// which is a read-only live probe nobody has run. Sugar holding FEWER
-// characters than Epicor allows is the safe direction (Epicor never truncates
-// what Sugar sent); if Epicor allows fewer than 50, a long value is refused by
-// the ERP with its own message.
+// G530 — EPICOR TAKES AT MOST 10 CHARACTERS, MEASURED. `len` 50 was the
+// G380 contract's assumption; it is now only STORAGE, and `erp_max_length`
+// below is the limit Sugar enforces:
+//   - ADM (Bench Dogs, benchdogs-sandbox quote #36, 2026-09-24 21:08:21Z):
+//     Send to Estimation with Reference "HARRISBURG PA" (13) came back
+//     "The maximum number of characters allowed for Reference is 10", and no
+//     ERP quote was created.
+//   - EPIC06 (read-only, 2026-09-24 23:20:37Z): Epicor's data dictionary,
+//     GET Ice.BO.ZDataTableSvc/ZDataTables('Erp','QuoteHed')/ZDataFields
+//     ?$filter=FieldName eq 'Reference' -> DefaultFormat "x(10)", nvarchar,
+//     FieldFormat and UDFieldFormat empty (no company override), Company "".
+//     So 10 is Epicor's SHIPPED width, not one customer's rule.
+//     (Ice.BO.ZDataFieldSvc is 404 over REST v2; the child navigation above
+//     is the route. OData $metadata carries no $MaxLength, see
+//     connector_epicor/schema_meta.py.)
+// A company whose Epicor overrides the format (a non-empty FieldFormat /
+// UDFieldFormat on that row) would need its own width here; none is known.
+//
+// WHO READS erp_max_length: the Quotes record and create views (a validation
+// on save, ERP-Epicor record.js / create.js), Send to Estimation's up-front
+// refusal (QuotesErpActionsApi, through ErpQuoteFacts::referenceMaxLength()),
+// and a customer package that DEFAULTS the field (Bench Dogs shortens its
+// "CITY ST" default to fit). One number, on the field, read by all three.
+//
+// `len` STAYS 50, deliberately: lowering it would make an upgrade ALTER the
+// column to varchar(10), which truncates, or under strict mode fails on, the
+// longer values tenants already hold (benchdogs-sandbox #36 holds 13).
 //
 // A plain varchar with a real column: no 'source' key
 // (scripts/tests/test_erp_core_vardefs_get_real_columns.py). Kept on a Quote
@@ -37,6 +53,9 @@ $dictionary['Quote']['fields']['erp_reference'] = array(
     'vname'           => 'LBL_ERP_REFERENCE',
     'type'            => 'varchar',
     'len'             => 50,
+    // G530: what Epicor accepts in QuoteHed.Reference (see above). Not a Sugar
+    // vardef key: a package attribute, served to the client with the field.
+    'erp_max_length'  => 10,
     'required'        => false,
     'comment'         => 'Epicor QuoteHed.Reference: the customer RFQ number or other reference, sent by core on Send to Estimation',
     'reportable'      => true,

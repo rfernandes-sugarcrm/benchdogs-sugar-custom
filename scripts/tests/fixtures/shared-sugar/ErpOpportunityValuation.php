@@ -18,6 +18,17 @@ require_once 'custom/modules/Quotes/ErpQuoteLineRollup.php';
  *    nothing. A partial release writes the partial stage; a release that
  *    leaves nothing open writes Closed Won (orderedInFullResolution(), G346).
  *
+ * 1b. ORDER-LIFE TIME - sales_stage again, the same writer (G498 / 🔒 1761b).
+ *    ERP-Epicor's ErpOrderLiveStage moves a quote to Closed Lost when every
+ *    order linked to it is dead (Void / Removed in ERP), and back to Closed
+ *    Won / Partially Closed when a live order returns; it then calls
+ *    ErpQuoteHooks::fireAfterLiveOrdersChanged(), implemented here as
+ *    afterOrdersLost() and afterOrderRevived(). Owner: *"if an order got
+ *    caneled and no new order for it the opperutnity and quote hsoudl change
+ *    to close lost untill a new order is created for it and then both cahnge
+ *    to closed won"*. Still one named cause per write: an ORDER'S LIFE, read
+ *    from ERP_Orders.status, never a typed stage.
+ *
  * 2. QUOTE-SAVE TIME - erp_ordered_amount / erp_open_amount. rollupHook() IS
  *    an after_save logic hook on Quotes, because these numbers must follow the
  *    quote as it is built rather than wait for a release. That is not a
@@ -54,7 +65,10 @@ require_once 'custom/modules/Quotes/ErpQuoteLineRollup.php';
  *     tenant's forecasting record; a connector that writes them has to know
  *     the tenant's forecasting model, and one that guesses corrupts the
  *     forecast silently. Keyed to the Sugar quote and nothing else.
- *   - Reopen a closed opportunity, or touch one it cannot find.
+ *   - Reopen a closed opportunity, or touch one it cannot find - with ONE
+ *     exception, G498 / 🔒 1761b: a Closed Lost opportunity whose quote lost
+ *     every order and then got a live one back (afterOrderRevived()). Closed
+ *     Won is never reopened.
  *   - Fail the order. Every caller wraps this in try/catch; a stale
  *     forecast is a lesser evil than an ERP order the CRM does not record.
  */
@@ -253,6 +267,14 @@ class ErpOpportunityValuation
     private const ERP_SHIPPING_FIELD = 'erp_shipping_amount';
 
     /**
+     * G466 (🔒 1758b / 🔒 1764b): shipping counts on an ADVANCED quote only. The
+     * field and the key ERP-Core's Grand Total formula compares
+     * (erp_total_carries_erp_tax.php: equal($erp_quote_type, "advanced_quote")).
+     */
+    private const QUOTE_TYPE_FIELD = 'erp_quote_type';
+    private const ADVANCED_QUOTE = 'advanced_quote';
+
+    /**
      * An ERP-born quote is one the connector keyed. Hand-built quotes are not
      * in scope for decision 122 at all: there is no ERP statement to source
      * from, and Sugar's own `tax`/`shipping` already flow into the native
@@ -263,11 +285,141 @@ class ErpOpportunityValuation
     private const TERMINAL_SALES_STAGES = ['Closed Won', 'Closed Lost'];
 
     /**
+     * G498 / 🔒 1761b: the stage of an opportunity whose quote lost every
+     * order - a stock sales_stage_dom key, the one TERMINAL_SALES_STAGES
+     * already names.
+     */
+    public const ORDERS_LOST_SALES_STAGE = 'Closed Lost';
+
+    /**
+     * G498: on a revival only Closed Won stays terminal. Closed Lost is the
+     * stage afterOrdersLost() wrote, and a live order is the fact that undoes
+     * it.
+     */
+    private const REVIVAL_TERMINAL_SALES_STAGES = ['Closed Won'];
+
+    /** The quote stages an order puts a quote in (ErpQuoteStageRules::COMMITTED_STAGES). */
+    private const COMMITTED_QUOTE_STAGES = ['Closed Accepted', 'Partially Fulfilled'];
+
+    /**
      * @param SugarBean $quote   the quote a release was just raised from,
      *                           re-retrieved after its stage save
      * @param bool      $partial true when open lines remain on the quote
      */
     public function afterLinesOrdered(SugarBean $quote, bool $partial): string
+    {
+        return $this->valueFromOrder($quote, $partial, self::TERMINAL_SALES_STAGES);
+    }
+
+    /**
+     * G498 / 🔒 1761b — a live order came back to a quote that had lost every
+     * order (ErpOrderLiveStage moved it Closed Lost -> Closed Won / Partially
+     * Closed). The opportunity is valued exactly as an order values it - the
+     * customer policy first, then Closed Won for a final release or the
+     * configured partial stage - except that a Closed Lost opportunity is
+     * reopened. Closed Won stays terminal.
+     */
+    public function afterOrderRevived(SugarBean $quote, bool $partial): string
+    {
+        return $this->valueFromOrder($quote, $partial, self::REVIVAL_TERMINAL_SALES_STAGES);
+    }
+
+    /**
+     * G498 / 🔒 1761b — every order linked to the quote is dead and the quote
+     * moved to Closed Lost; its opportunity follows to Closed Lost.
+     *
+     * Preserved, not written, when:
+     *   * the quote has no single opportunity (opportunity_missing);
+     *   * it is already Closed Lost (unchanged);
+     *   * ANOTHER quote on the same opportunity is at a committed stage - that
+     *     quote's order still wins the deal (sibling_committed);
+     *   * this instance's sales_stage_dom does not serve Closed Lost
+     *     (stage_not_served) - an unknown stage is never written.
+     * The probability is sales_probability_dom's figure for Closed Lost, as
+     * orderedInFullResolution() reads it for Closed Won.
+     */
+    public function afterOrdersLost(SugarBean $quote): string
+    {
+        $opportunity = $this->linkedOpportunity($quote);
+        if ($opportunity === null) {
+            return 'opportunity_missing';
+        }
+
+        $stage = self::ORDERS_LOST_SALES_STAGE;
+        if (($opportunity->sales_stage ?? '') === $stage) {
+            return 'unchanged';
+        }
+
+        if ($this->anotherQuoteIsCommitted($opportunity, (string) $quote->id)) {
+            $GLOBALS['log']->info('ErpOpportunityValuation: quote ' . $quote->id . ' lost every order, but another '
+                . 'quote on opportunity ' . $opportunity->id . ' is committed - the opportunity keeps its stage (G498)');
+            return 'sibling_committed';
+        }
+
+        $appListStrings = self::currentAppListStrings();
+        $dom = $appListStrings['sales_stage_dom'] ?? array();
+        if (!is_array($dom) || !array_key_exists($stage, $dom)) {
+            $GLOBALS['log']->warn('ErpOpportunityValuation: quote ' . $quote->id . ' lost every order, but '
+                . var_export($stage, true) . ' is not a sales_stage_dom key on this instance - the '
+                . 'Opportunity keeps its current stage (G498)');
+            return 'stage_not_served';
+        }
+        $probabilities = $appListStrings['sales_probability_dom'] ?? array();
+
+        $opportunity->sales_stage = $stage;
+        // In Revenue Line Items mode a bare sales_stage save is dropped;
+        // Opportunity::save() persists it through sales_stage_cascade (see
+        // valueFromOrder()).
+        $opportunity->sales_stage_cascade = $stage;
+        if (is_array($probabilities) && isset($probabilities[$stage]) && is_numeric($probabilities[$stage])) {
+            $opportunity->probability = max(0, min(100, (int) $probabilities[$stage]));
+        }
+        $opportunity->save();
+
+        $GLOBALS['log']->info('ErpOpportunityValuation: opportunity ' . $opportunity->id . ' moved to ' . $stage
+            . ' - every order of quote ' . $quote->id . ' is dead (G498)');
+
+        return 'updated';
+    }
+
+    /**
+     * Whether a quote on this opportunity OTHER than $quoteId sits at a
+     * committed stage. A read that throws answers true: preserving the stage
+     * is the safe side of doubt.
+     */
+    private function anotherQuoteIsCommitted(SugarBean $opportunity, string $quoteId): bool
+    {
+        try {
+            if (!$opportunity->load_relationship('quotes') || !is_object($opportunity->quotes)) {
+                return false;
+            }
+            foreach ((array) $opportunity->quotes->get() as $id) {
+                $id = (string) $id;
+                if ($id === '' || $id === $quoteId) {
+                    continue;
+                }
+                $sibling = BeanFactory::retrieveBean('Quotes', $id, array('use_cache' => false));
+                if ($sibling && empty($sibling->deleted)
+                    && in_array((string) ($sibling->quote_stage ?? ''), self::COMMITTED_QUOTE_STAGES, true)) {
+                    return true;
+                }
+            }
+        } catch (\Throwable $e) {
+            $GLOBALS['log']->error('ErpOpportunityValuation: could not read the quotes of opportunity '
+                . $opportunity->id . ': ' . $e->getMessage());
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * The release-time valuation shared by afterLinesOrdered() (every order)
+     * and afterOrderRevived() (G498). Only the terminal set differs.
+     *
+     * @param string[] $terminal sales stages this call never moves an opportunity out of
+     */
+    private function valueFromOrder(SugarBean $quote, bool $partial, array $terminal): string
     {
         // Refresh the line rollup from the release explicitly rather than
         // leaning on the Quotes after_save hook to fire in the right order:
@@ -282,7 +434,7 @@ class ErpOpportunityValuation
             return 'opportunity_missing';
         }
 
-        if (in_array($opportunity->sales_stage ?? '', self::TERMINAL_SALES_STAGES, true)) {
+        if (in_array($opportunity->sales_stage ?? '', $terminal, true)) {
             $GLOBALS['log']->info('ErpOpportunityValuation: opportunity ' . $opportunity->id . ' is already '
                 . $opportunity->sales_stage . ' - not reopening it for quote ' . $quote->id);
             return 'terminal';
@@ -1040,6 +1192,8 @@ class ErpOpportunityValuation
     public static function quoteLines(SugarBean $quote): array
     {
         $lines = array();
+        // G466: read once per quote; see the 'shipping' key below.
+        $shippingCounts = self::shippingCounts($quote);
 
         $quote->load_relationship('product_bundles');
         if (!$quote->product_bundles || !is_object($quote->product_bundles)) {
@@ -1130,7 +1284,14 @@ class ErpOpportunityValuation
                     // null rather than coalesced so the sum below can tell
                     // "nobody stated anything" from "everyone stated zero".
                     'tax' => self::statedCharge($product->erp_tax_amount ?? null),
-                    'shipping' => self::statedCharge($product->erp_shipping_amount ?? null),
+                    // G466 (🔒 1764b): shipping counts on an advanced quote
+                    // only. Elsewhere the line states NO shipping - null, not
+                    // 0.00 - so it adds nothing and does not claim the line
+                    // level over the document's own tax in
+                    // statedLineCharges() (a 0.00 would be "stated").
+                    'shipping' => $shippingCounts
+                        ? self::statedCharge($product->erp_shipping_amount ?? null)
+                        : null,
                     'governing' => !empty($product->erp_governing),
                     // Where the line came from, which decides what it can be
                     // an ALTERNATIVE to. erp_sync_key is set by the ERP quote
@@ -1204,7 +1365,14 @@ class ErpOpportunityValuation
         }
 
         $tax = self::statedCharge($quote->erp_tax_amount ?? null);
-        $shipping = self::statedCharge($quote->erp_shipping_amount ?? null);
+        // G466 (🔒 1764b): a quote that is not an advanced quote has no
+        // shipping by ruling - a 0.00, never "unstated" - the Grand Total's own
+        // shipping term. (Its tax term is not type-gated here, 🔒 1450's gate
+        // lives in the formula; this function has no production caller since
+        // 🔒 1468, so that is recorded rather than widened.)
+        $shipping = self::shippingCounts($quote)
+            ? self::statedCharge($quote->erp_shipping_amount ?? null)
+            : 0.0;
 
         // STATE 2. Offered and not answered.
         if ($tax === null || $shipping === null) {
@@ -1356,6 +1524,27 @@ class ErpOpportunityValuation
         }
 
         return $anyStated ? $total : null;
+    }
+
+    /**
+     * G466 (🔒 1758b / 🔒 1764b): does shipping count on this quote? Only on an
+     * advanced quote - anything that is not exactly the advanced key (null,
+     * '', an unknown key, a non-scalar) is not one, which is how
+     * equal($erp_quote_type, "advanced_quote") falls in the Grand Total.
+     *
+     * 📌 NOTHING HERE CHANGES A LIVE NUMBER, and that is recorded, not hidden:
+     * the two readers this gates (quoteLines()'s 'shipping' and
+     * statedDocumentCharges()) feed only statedLineCharges() /
+     * statedDocumentCharges(), which have had no production caller since
+     * 🔒 1468. The Opportunity's live figures (refreshLineRollup()) split the
+     * primary's Quotes.total, whose own formula carries the gate. This keeps
+     * the dormant rule consistent with it, should anything call it again.
+     */
+    private static function shippingCounts(SugarBean $quote): bool
+    {
+        $type = $quote->{self::QUOTE_TYPE_FIELD} ?? null;
+
+        return is_scalar($type) && (string) $type === self::ADVANCED_QUOTE;
     }
 
     private static function statedCharge($value): ?float

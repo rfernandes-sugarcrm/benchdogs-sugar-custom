@@ -12,7 +12,9 @@
  *  - Reference DEFAULTS to the ship-to's city and state ("WAYNE NJ") on an ADM
  *    quote not yet sent to the ERP. The field is ERP-Epicor's generic
  *    Quotes.erp_reference; only this default is Bench's. Only an EMPTY value is
- *    filled, so the seller may change it.
+ *    filled, so the seller may change it. G530: the default is SHORTENED to
+ *    what the ERP takes (Epicor QuoteHed.Reference, 10 characters, the field's
+ *    erp_max_length) - the state is kept and the city cut ("HARRISB PA").
  *  - Project is PRE-FILLED from the product-group -> project default list
  *    (bd_adm_project_by_group_list, tenant data an admin edits in Dropdown
  *    Editor; CMI -> 20065, owner rule 🔒 1712b), only when EVERY line's group
@@ -147,18 +149,66 @@ class BdAdmRules
 
     // ── G380: Reference defaults to the ship-to's city and state ─────────────
 
-    /** "WAYNE NJ": the city and the state, whichever are present, one space apart. */
-    public static function defaultReference(string $city, string $state): string
+    /**
+     * "WAYNE NJ": the city and the state, whichever are present, one space
+     * apart - SHORTENED to $max characters when it is longer (G530).
+     *
+     * Measured (benchdogs-sandbox #36, 2026-09-24 21:08:21Z): the default
+     * "HARRISBURG PA" (13) was refused by ADM, "The maximum number of
+     * characters allowed for Reference is 10", and no ERP quote was created.
+     *
+     * THE RULE, so a seller can predict it:
+     *   1. it fits ($max <= 0 means no limit is known): unchanged;
+     *   2. the STATE is kept whole and the CITY is cut to the room left
+     *      ($max - state - 1 for the space): "HARRISBURG PA" -> "HARRISB PA",
+     *      "SALT LAKE CITY UT" -> "SALT LA UT"; a cut that ends on a space
+     *      drops it ("NEW YORK NY" at 7 -> "NEW NY", never "NEW  NY");
+     *   3. no room for a city beside the state (a state of $max - 1 or more
+     *      characters), or no state: the first $max characters of what there
+     *      is, trailing space dropped.
+     * Characters, not bytes. The seller can overwrite it; only an EMPTY
+     * Reference is ever defaulted.
+     */
+    public static function defaultReference(string $city, string $state, int $max = 0): string
     {
+        $city = trim($city);
+        $state = trim($state);
         $parts = array();
         foreach (array($city, $state) as $part) {
-            $part = trim($part);
             if ($part !== '') {
                 $parts[] = $part;
             }
         }
+        $full = implode(' ', $parts);
+        if ($max <= 0 || mb_strlen($full, 'UTF-8') <= $max) {
+            return $full;
+        }
 
-        return implode(' ', $parts);
+        $room = $max - mb_strlen($state, 'UTF-8') - 1;
+        if ($city !== '' && $state !== '' && $room >= 1) {
+            $cut = rtrim(mb_substr($city, 0, $room, 'UTF-8'));
+            if ($cut !== '') {
+                return $cut . ' ' . $state;
+            }
+        }
+
+        return rtrim(mb_substr($full, 0, $max, 'UTF-8'));
+    }
+
+    /**
+     * G530: the most characters the ERP takes in this quote's Reference,
+     * asked of ERP-Epicor (ErpQuoteFacts::referenceMaxLength(), which reads
+     * the field's erp_max_length), 0 when that ERP-Epicor is older and does
+     * not say - then the default is not cut, and Send to Estimation's answer
+     * is the ERP's own, as before.
+     */
+    public static function referenceMaxLength($bean): int
+    {
+        if (!method_exists('ErpQuoteFacts', 'referenceMaxLength')) {
+            return 0;
+        }
+
+        return ErpQuoteFacts::referenceMaxLength($bean);
     }
 
     // ── G381: Project pre-filled from the product-group default list ─────────
@@ -258,7 +308,8 @@ class BdAdmRules
         if ($needsReference) {
             $reference = self::defaultReference(
                 (string) ($bean->shipping_address_city ?? ''),
-                (string) ($bean->shipping_address_state ?? '')
+                (string) ($bean->shipping_address_state ?? ''),
+                self::referenceMaxLength($bean)
             );
             if ($reference !== '') {
                 $bean->erp_reference = $reference;
