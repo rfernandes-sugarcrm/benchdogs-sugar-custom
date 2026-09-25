@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""ONEOFF-RetireBdResidue 1.0.2 - it never takes what rc69 ships, and it takes
-Bench Dogs' orphaned order adapter off the tenant.
+"""ONEOFF-RetireBdResidue 1.0.3 - it never takes what rc69 ships, and it takes
+Bench Dogs' orphaned order adapter (1.0.2) and orphaned release-stage policy
+(1.0.3, G594) off the tenant.
 
-TWO THINGS ARE PINNED HERE, AND BOTH ARE ABOUT THE TENANT, NOT THE REPO.
+THREE THINGS ARE PINNED HERE, AND ALL ARE ABOUT THE TENANT, NOT THE REPO.
 
 1. THE ONE-OFF NEVER REMOVES WHAT BenchDogs-Ext 0.9.42-rc69 SHIPS. rc69 (G280 /
    🔒 1567) installs exactly four files. The one-off is re-run after rc69 on every
@@ -22,6 +23,20 @@ TWO THINGS ARE PINNED HERE, AND BOTH ARE ABOUT THE TENANT, NOT THE REPO.
    one-off's own harness (Sugar's ModuleInstaller methods copied verbatim, run over
    synthetic tenants), which never ran in CI before this file; it runs here.
 
+3. THE ORPHANED RELEASE-STAGE POLICY (G594). Measured on benchdogs-dev (quote #8
+   ab7ca13c, 2026-09-25 08:52Z): the order that completed the quote left its
+   Opportunity at Partial Production Ordered / 90, not Closed Won / 100.
+   Partial Fulfillment finds custom/modules/Quotes/ErpQuoteHooks/
+   OpportunityReleaseStagePolicy.php by a hardcoded path and obeys it; the body
+   BenchDogs-Ext rc45-rc64 shipped answers the partial stage on EVERY release.
+   rc65 overwrote it with a null provider and rc66 stopped shipping the path, so
+   a tenant that jumped from rc64-or-earlier to rc66+ (dev: rc60 -> rc68) kept it,
+   and 1.0.2 left it alone by name. 1.0.3 deletes it when - and only when - its
+   body is one of the eight Bench Dogs shipped (every distinct body in the built
+   zips, pinned under the one-off's tests/fixtures/release-stage-policy/). What
+   Partial Fulfillment then decides is proven in
+   test_release_stage_absent_equals_null.py (case E), not here.
+
 MUTATION-VERIFIED (each applied, this file re-run, the named case observed red):
   1.0.1's post_execute.php (ef5963b) in place of 1.0.2's
       -> test_the_harness_passes (7 adapter checks red, incl. the Ophir state)
@@ -33,9 +48,20 @@ MUTATION-VERIFIED (each applied, this file re-run, the named case observed red):
       -> test_no_worklist_names_a_file_rc69_ships
   drop one "KEPT BY rc69" entry from $bdNotOurs
       -> test_the_kept_by_rc69_report_is_exactly_rc69s_copy_list
+  1.0.3 (G594), each run through tests/harness.php (so test_the_harness_passes):
+  1.0.2's post_execute.php (origin/main 27997c0) in place of 1.0.3's - RED-BEFORE
+      -> 16 release-stage checks red, incl. the benchdogs-dev state
+  drop the md5 check (delete any body)       -> the foreign-body CONTROL red
+  blank the policy instead of deleting it    -> 12 checks red
+  drop the rc45-rc64 allowlist entry         -> 8 red, incl. the benchdogs-dev state
+  drop the zip-only rc39-rc40 entry          -> its own body's check red
+  drop the rc65 null-stub entry              -> its own body's check red
+  add an allowlist entry with no pinned body
+      -> test_the_allowlist_is_exactly_the_pinned_bodies
 """
 from __future__ import annotations
 
+import hashlib
 import re
 import shutil
 import subprocess
@@ -48,6 +74,8 @@ from test_g280_minimal_footprint import KEPT
 
 ONEOFF = ONEOFF_POST_EXECUTE.parents[1]
 ADAPTER = "custom/modules/Quotes/ErpQuoteHooks/ResolveOrderableLines.php"
+RELEASE_POLICY = "custom/modules/Quotes/ErpQuoteHooks/OpportunityReleaseStagePolicy.php"
+RELEASE_POLICY_BODIES = ONEOFF / "tests/fixtures/release-stage-policy"
 PLANNER = "custom/modules/Quotes/BdSubmitOrderPlan.php"
 #: rc69's copy list, FROZEN. The one-off (spent, 1.0.2) was written against
 #: rc69 and its "KEPT BY rc69" report names exactly these four; it is not
@@ -168,6 +196,53 @@ class TheLogNamesTheVersionThatRan(unittest.TestCase):
         self.assertIn("$bdOneoffVersion = isset($manifest['version'])", code)
 
 
+class TheReleaseStagePolicyStep(unittest.TestCase):
+    """G594 / 1.0.3 step 4c. The DELETION itself is proven by the harness below
+    (Sugar's copy_path() verbatim, one synthetic tenant per body); these pin what
+    the harness cannot see: that the allowlist is exactly the pinned bodies, that
+    those bodies really are release-stage providers, and that the report no longer
+    files the path under "left alone"."""
+
+    @staticmethod
+    def allowlist() -> set[str]:
+        source = ONEOFF_POST_EXECUTE.read_text(encoding="utf-8")
+        start = source.index("$bdReleasePolicyBenchMd5 = array(")
+        block = source[start:source.index("\n);", start)]
+        return set(re.findall(r"^\s*'([0-9a-f]{32})',\s*$", block, re.M))
+
+    @staticmethod
+    def pinned() -> dict[str, str]:
+        return {hashlib.md5(p.read_bytes()).hexdigest(): p.name
+                for p in sorted(RELEASE_POLICY_BODIES.glob("OpportunityReleaseStagePolicy.*.php.txt"))}
+
+    def test_the_allowlist_is_exactly_the_pinned_bodies(self):
+        """Every md5 the one-off deletes has a body the harness deletes, and every
+        pinned body is on the list - so no entry is unexercised and no body is
+        pinned that the one-off would refuse."""
+        self.assertEqual(len(self.pinned()), 8, self.pinned())
+        self.assertEqual(self.allowlist(), set(self.pinned()))
+
+    def test_each_pinned_body_is_a_release_stage_provider(self):
+        """Anti-vacuity: the fixtures are the provider class Partial Fulfillment
+        loads, not arbitrary files that happen to hash."""
+        for path in RELEASE_POLICY_BODIES.glob("OpportunityReleaseStagePolicy.*.php.txt"):
+            with self.subTest(body=path.name):
+                self.assertIn("class ErpOpportunityReleaseStagePolicy", path.read_text(encoding="utf-8"))
+
+    def test_the_g594_body_is_on_the_list(self):
+        """The rc45-rc64 body benchdogs-dev holds (from rc60)."""
+        self.assertIn("e5e6e3fff432a5dcd6624accf6bb8598", self.allowlist())
+        self.assertEqual(self.pinned()["e5e6e3fff432a5dcd6624accf6bb8598"],
+                         "OpportunityReleaseStagePolicy.rc45-rc64.php.txt")
+
+    def test_the_policy_is_no_longer_reported_as_left_alone(self):
+        self.assertNotIn(RELEASE_POLICY, _not_ours_block())
+        self.assertNotIn(RELEASE_POLICY, oneoff_worklist())   # deleted by 4c, not blanked by 4
+
+    def test_the_one_off_is_1_0_3(self):
+        self.assertEqual((ONEOFF / "version").read_text().strip(), "1.0.3")
+
+
 @unittest.skipUnless(shutil.which("php"), "requires php")
 class TheHarness(unittest.TestCase):
     def test_the_harness_passes(self):
@@ -179,6 +254,10 @@ class TheHarness(unittest.TestCase):
         # The Ophir case is in this run, by name - not merely "something passed".
         self.assertIn("PASS  Ophir state (adapter + planner ALREADY blank): the adapter is DELETED",
                       out.stdout)
+        # G594: the benchdogs-dev state, and the foreign-body control, by name.
+        self.assertIn("PASS  benchdogs-dev state (rc45-rc64 body): the release-stage policy is DELETED, "
+                      "not blanked", out.stdout)
+        self.assertIn("PASS  CONTROL: a foreign release-stage policy is LEFT in place", out.stdout)
 
 
 if __name__ == "__main__":

@@ -54,13 +54,27 @@ sales_stage_dom, so against the new PF it read as that tenant: a FIXTURE
 artefact, not a runtime one. At runtime ERP-Core ships `Closed Won`
 (`dropdowntemplates/sales_stage_dom.replace.php`), and no Bench Dogs build
 ever reassigned or unset `sales_stage_dom` (only key-by-key additions, all
-retired), so rc69 and rc70 both reach `Closed Won`. And the status is only
+retired), so a tenant running rc69 or later reaches `Closed Won` - PROVIDED
+its disk holds rc65's null stub or nothing at that path. And the status is only
 REPORTED by ERP-Epicor's AfterLinesOrdered hook, after the order exists
 (`ErpQuoteHooks.php` allowlist): it cannot fail Submit Order either way.
 
 So the runs now carry the stock `Closed Won` key, and the one place the null
 and absent runs must still differ - PF's own name for the lookup branch - is
 read on a tenant WITHOUT it (case D), where G346 surfaces that name.
+
+🔁 G594 (2026-09-25) CORRECTS THE G440 NOTE ABOVE, which read "rc69 and rc70
+both reach Closed Won" as a fact about the PACKAGE. It is a fact about the
+tenant's DISK. Module Loader never deletes a file a later build stops shipping
+(§CW / G37), so a tenant that went from rc64-or-earlier straight to rc66+ -
+never taking rc65's overwrite - still holds the rc45-rc64 DECIDING body at PF's
+hardcoded path. That body answers `Partial Production Ordered` / 90 whenever any
+line is ordered, so on the FINAL release PF's `policy_valid` branch wins and
+G346's Closed Won is never reached. benchdogs-dev is that tenant (rc60 -> rc68
+kit -> rc69 -> rc72 -> rc74): quote #8's completing order 27600 left its
+Opportunity at Partial Production Ordered / 90. Case E below runs PF's real
+resolver over that exact body (pinned by the residue one-off, which deletes it
+from 1.0.3 on); `ONEOFF-RetireBdResidue` >= 1.0.3 is the fix, not a shipped stub.
 """
 
 from __future__ import annotations
@@ -82,6 +96,12 @@ ROOT = HERE.parents[1]
 #: for WHAT IS ON THE TENANT'S DISK after the 17:17:35Z install, which is the
 #: state case A is about — not for anything the package still carries.
 RC65_STUB = HERE / "fixtures/rc65/OpportunityReleaseStagePolicy.rc65.php"
+
+#: G594: the body BenchDogs-Ext rc45-rc64 shipped (md5 e5e6e3ff..., the one
+#: benchdogs-dev still holds from rc60). Pinned ONCE, by the residue one-off that
+#: deletes it (1.0.3 step 4c), and read from there so the two cannot drift apart.
+RC45_RC64_BODY = ROOT / ("sugar-sell/ONEOFF-RetireBdResidue/tests/fixtures/release-stage-policy/"
+                         "OpportunityReleaseStagePolicy.rc45-rc64.php.txt")
 
 POLICY_REL = "custom/modules/Quotes/ErpQuoteHooks/OpportunityReleaseStagePolicy.php"
 
@@ -108,7 +128,20 @@ namespace Sugarcrm\Sugarcrm\Util\Files {
 }
 
 namespace {
-class SugarBean { public $id = 'quote-1'; public $deleted = 0; }
+class SugarBean {
+    public $id = 'quote-1';
+    public $deleted = 0;
+    public $erp_ordered = 0;
+    public $products;
+    // G594 case E: the rc45-rc64 body reads the quote's native lines. Nothing PF
+    // itself does on this path touches either method.
+    public function load_relationship($name) {
+        if ($name !== 'products') { return false; }
+        $this->products = new LineLink();
+        return true;
+    }
+}
+class LineLink { public function get() { return array('line-1', 'line-2'); } }
 class AdminStub {
     public function getConfigForModule($c) {
         return array('partial_order_sales_stage' => 'Partial Production Ordered');
@@ -117,7 +150,14 @@ class AdminStub {
 class BeanFactory {
     public static function getBean($m) { return new AdminStub(); }
     public static function newBean($m) { return new SugarBean(); }
-    public static function retrieveBean($m, $id, $p = array()) { return null; }
+    public static function retrieveBean($m, $id, $p = array()) {
+        if ($m !== 'Products') { return null; }
+        $line = new SugarBean();
+        $line->id = $id;
+        // every line ordered: the quote is complete, so a FINAL release is honest
+        $line->erp_ordered = getenv('BD_NONE_ORDERED') === '1' ? 0 : 1;
+        return $line;
+    }
 }
 class TestLog { public function __call($m, $a) { $GLOBALS['logged'][] = $m; } }
 $GLOBALS['log'] = new TestLog();
@@ -169,7 +209,8 @@ class ProviderAbsentMatchesProviderNull(unittest.TestCase):
     """PF's real decision, taken three ways over one quote."""
 
     @classmethod
-    def run_pf(cls, provider_source: str | None, closed_won: bool = True) -> dict:
+    def run_pf(cls, provider_source: str | None, closed_won: bool = True,
+               none_ordered: bool = False) -> dict:
         """Run PF's releaseStageDecision with cwd where PF looks for the file."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -193,7 +234,8 @@ class ProviderAbsentMatchesProviderNull(unittest.TestCase):
                 env={**os.environ,
                      "BD_VALUATION": str(valuation),
                      "BD_POLICY_REL": POLICY_REL,
-                     "BD_NO_CLOSED_WON": "" if closed_won else "1"},
+                     "BD_NO_CLOSED_WON": "" if closed_won else "1",
+                     "BD_NONE_ORDERED": "1" if none_ordered else ""},
             )
             if "{" not in proc.stdout:
                 raise AssertionError(
@@ -207,6 +249,9 @@ class ProviderAbsentMatchesProviderNull(unittest.TestCase):
         cls.with_decider = cls.run_pf(DECIDING_PROVIDER)
         cls.null_no_closed_won = cls.run_pf(RC65_STUB.read_text(), closed_won=False)
         cls.absent_no_closed_won = cls.run_pf(None, closed_won=False)
+        cls.with_rc45_rc64 = cls.run_pf(RC45_RC64_BODY.read_text(encoding="utf-8"))
+        cls.rc45_rc64_nothing_ordered = cls.run_pf(RC45_RC64_BODY.read_text(encoding="utf-8"),
+                                                   none_ordered=True)
 
     # ---- the harness reached PF at all -------------------------------------
 
@@ -273,6 +318,39 @@ class ProviderAbsentMatchesProviderNull(unittest.TestCase):
                          {"sales_stage": "Prototype Ordered", "probability": 80})
         self.assertNotEqual(self.with_decider["partial"]["decision"],
                             self.with_no_file["partial"]["decision"])
+
+
+    # ---- E. G594: the rc45-rc64 residue a tenant keeps if it skipped rc65 --
+
+    def test_e_the_residue_holds_a_final_release_at_the_partial_stage(self):
+        """E. THE DEFECT, READ OUT OF PF. benchdogs-dev, quote #8, order 27600
+        completed the quote and the Opportunity stayed Partial Production
+        Ordered / 90. With the rc45-rc64 body at PF's hardcoded path, PF's
+        `policy_valid` branch answers the partial stage on the FINAL release
+        too, so G346's Closed Won is never reached."""
+        self.assertTrue(self.with_rc45_rc64["provider_on_disk"])
+        for release in ("partial", "final"):
+            with self.subTest(release=release):
+                self.assertEqual(self.with_rc45_rc64[release],
+                                 {"decision": {"sales_stage": "Partial Production Ordered", "probability": 90},
+                                  "status": "policy_valid"})
+
+    def test_e_deleting_it_is_what_reaches_closed_won(self):
+        """E, against B. The same final release with NOTHING at the path - what
+        ONEOFF-RetireBdResidue 1.0.3 leaves behind - reaches Closed Won / 100,
+        while the partial release is unchanged. So deleting the residue changes
+        exactly the one decision G594 is about."""
+        self.assertNotEqual(self.with_rc45_rc64["final"]["decision"], self.with_no_file["final"]["decision"])
+        self.assertEqual(self.with_no_file["final"]["decision"], {"sales_stage": "Closed Won", "probability": 100})
+        self.assertEqual(self.with_rc45_rc64["partial"]["decision"], self.with_no_file["partial"]["decision"])
+
+    def test_e_the_residue_really_ran_its_own_line_loop(self):
+        """Anti-vacuity for E: the body is not a constant. With no line ordered it
+        throws ("No committed Quote line is visible"), which PF turns into
+        `policy_provider_exception` and a preserved stage - so case E's answer
+        came from the body reading the harness's ordered lines."""
+        self.assertEqual(self.rc45_rc64_nothing_ordered["final"],
+                         {"decision": None, "status": "policy_provider_exception"})
 
 
 if __name__ == "__main__":

@@ -1,4 +1,37 @@
-# ONEOFF-RetireBdResidue 1.0.2
+# ONEOFF-RetireBdResidue 1.0.3
+
+> **What changed in 1.0.3** (G594)
+>
+> **It deletes Bench Dogs' orphaned release-stage policy**
+> `custom/modules/Quotes/ErpQuoteHooks/OpportunityReleaseStagePolicy.php` (step 4c). Partial
+> Fulfillment finds that file by a hardcoded path and obeys it, and the body BenchDogs-Ext
+> **rc45–rc64** shipped answers *Partial Production Ordered / 90* on every release, the final one
+> included — so the order that completes a quote never moves its Opportunity to Closed Won. rc65
+> overwrote it with a null provider and rc66 stopped shipping the path; Module Loader never deletes a
+> file a later build stops shipping, so a tenant that went from rc64-or-earlier **straight to rc66+
+> keeps it**. benchdogs-dev did (rc60 → rc68 kit → rc69 → rc72 → rc74): quote #8's completing order
+> 27600 (2026-09-25 08:52Z) left its Opportunity at Partial Production Ordered / 90. Up to 1.0.2 this
+> package left the file alone ("reads no class this package blanks"), which is true, but that body
+> decides the stage by itself.
+>
+> * **DELETED, never blanked**, the same way as the adapter (§2). A class-less file makes Partial
+>   Fulfillment return `policy_provider_invalid` and **keep the stage on every release**, which is worse.
+>   With no file, Partial Fulfillment writes the partial stage on a partial release and **Closed Won / 100** once
+>   nothing is left open (G346). `scripts/tests/test_release_stage_absent_equals_null.py` runs its
+>   real resolver over this body (case E) and over no file.
+> * **Only a body Bench Dogs shipped**: the eight distinct bodies found in the built BenchDogs-Ext zips
+>   (rc4 … rc65, including rc39/rc40's zip-only body and rc65's null stub), pinned under
+>   `tests/fixtures/release-stage-policy/`. Any other body is LEFT and reported under **SKIPPED** with
+>   its md5 and the hint *"If an Opportunity never reaches Closed Won after the order that completes its
+>   quote, this file is the cause"*.
+> * The REMOVED line names the md5 it deleted. On benchdogs-dev, expect
+>   `e5e6e3fff432a5dcd6624accf6bb8598` (rc45–rc64). That line is the first direct evidence of what
+>   was on the tenant's disk.
+>
+> **Run it on every tenant that ever had a Bench Dogs build from before rc65 and skipped rc65**:
+> benchdogs-dev and benchdogs-sandbox (both took the 2026-09-23 kit). It is idempotent, so a tenant
+> it has nothing to do on reports the path as already gone. The Opportunities of quotes already
+> completed are NOT corrected (this package writes no record); grade on a fresh quote.
 
 > **What changed in 1.0.2** (1.0.0 ran on et; 1.0.1 on stock and Ophir; both are spent)
 >
@@ -128,7 +161,8 @@ Plus, beyond the seven:
 | `custom/modules/Quotes/BdQuotesLayoutExtensions.php` | not shipped since rc69 and inert (K-2 runs this package's own `lib/` copy); left because an rc68-or-earlier Bench Dogs uninstall still requires it |
 | `custom/modules/Opportunities/BdOpportunitiesLayoutExtensions.php` | the same, for K-3 |
 | `custom/modules/Quotes/ErpQuoteHooks/OpportunityContribution.php` | **Partial Fulfillment 1.0.41 ships the same path.** Blanking puts an empty stub at a provider path (🔒 1508 / G280 forbid it); deleting drops ERP-Core to `(float) $quote->total`, the fabricated zero 🔒 1511 forbids. Retired only by the PF-reinstall sequence in the port review §4.1 |
-| `.../ErpQuoteHooks/OpportunityLineRollupPolicy.php`, `OpportunityReleaseStagePolicy.php`, `OrderSelectedLinesPolicy.php` | Bench Dogs' old adapters at hook paths, checked one by one in 1.0.2 and left because none can block anything: PF no longer consults the line-rollup policy (🔒 1468); the release-stage policy reads no class this package blanks; the order-selected policy answers "no objection" when its selector is blank. **Never blank a file at a hook path**: the hook still finds it and fails closed. |
+| `.../ErpQuoteHooks/OpportunityLineRollupPolicy.php`, `OrderSelectedLinesPolicy.php` | Bench Dogs' old adapters at hook paths, checked one by one in 1.0.2 and left because neither can block anything: PF no longer consults the line-rollup policy (🔒 1468); the order-selected policy answers "no objection" when its selector is blank. **Never blank a file at a hook path**: the hook still finds it and fails closed. |
+| `.../ErpQuoteHooks/OpportunityReleaseStagePolicy.php` | **no longer here — 1.0.3 DELETES it** when its body is one Bench Dogs shipped (G594, see the top of this file). 1.0.2 left it as "reads no class this package blanks", but the rc45–rc64 body decides the stage by itself |
 | `.../ErpQuoteHooks/ResolveOrderableLines.php` | **no longer here — 1.0.2 DELETES it** when it is Bench Dogs' body and its planner is blank or absent (see the top of this file) |
 | `custom/modules/ProductBundles/clients/base/views/quote-data-group-list/quote-data-group-list.js` | **ERP-Core ships this exact path** on the deployed tree. Removing it takes out the core quote grid on every tenant |
 | `custom/modules/Products/clients/base/views/quote-data-group-list/quote-data-group-list.php` | the Products grid viewdef ERP-Core also manages |
