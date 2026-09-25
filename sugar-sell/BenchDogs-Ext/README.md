@@ -127,8 +127,10 @@ reinstall of this package (Sugar merges Ext fragments in mtime order;
 `scripts/tests/bd_adm_rules_test.php` F1/F2 run both orders).
 
 **Prerequisites, in order (the manifest enforces the first two):** ERP-Epicor
-≥ 1.1.125 (G380 (d)–(g): `erp_reference`, the part-number switch,
-`ErpLayoutExtraFields`, `ErpQuoteFacts`); Partial Fulfillment ≥ 1.0.50; core
+≥ 1.1.131 (G380 (d)–(g): `erp_reference`, the part-number switch,
+`ErpLayoutExtraFields`, `ErpQuoteFacts`, all from 1.1.125; since rc73, G530's
+`erp_reference.erp_max_length` and `ErpQuoteFacts::referenceMaxLength()`,
+from 1.1.131); Partial Fulfillment ≥ 1.0.50; core
 carrying G380 (a)–(c); the Bench connector extension ≥ 0.3.0; on the ADM
 connection, `lookup_code_lists` (and, until core's short-page fix G424 is in,
 `extraction_page_size: 100`); on ADM's `ERP_Companies` record,

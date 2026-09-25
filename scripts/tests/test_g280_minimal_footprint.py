@@ -352,7 +352,10 @@ class TheLifecycleDoesOnlyTheKeptWork(unittest.TestCase):
         self.assertIsNotNone(epicor)
         # 1.1.125: the release carrying G380 (d)-(g) - erp_reference, the
         # part-number switch, ErpLayoutExtraFields, ErpQuoteFacts (🔒 1724b).
-        self.assertEqual(epicor.group(1), "1.1.125")
+        # 1.1.131 since rc73: the release carrying G530's limit on the field
+        # (erp_reference.erp_max_length, ErpQuoteFacts::referenceMaxLength()),
+        # which the Reference default is shortened to.
+        self.assertEqual(epicor.group(1), "1.1.131")
 
 
 if __name__ == "__main__":

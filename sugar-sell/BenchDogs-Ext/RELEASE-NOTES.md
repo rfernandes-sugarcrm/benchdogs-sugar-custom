@@ -1,3 +1,16 @@
+# 0.9.42-rc73 — build: G460 + G530 + G532 on rc72
+
+The two "Unreleased (on 0.9.42-rc72)" sections below ship together as
+**0.9.42-rc73**, cut from `fix/g460-marketing-campaign-event` bfc81ea2 (which
+carries G530/G532 from 8acec196). Lane E release cut, branch `release/rc73`.
+
+**Requires (the manifest refuses otherwise):** ERP-Epicor **≥ 1.1.131** (was
+1.1.125) and Partial Fulfillment **≥ 1.0.50** (unchanged). 1.1.131 is the
+release carrying G530's limit on the field, `Quotes.erp_reference`
+`erp_max_length` (10), read through `ErpQuoteFacts::referenceMaxLength()`,
+which this package's Reference default is shortened to. Install ERP-Epicor
+1.1.131 first; rc73 uploaded onto 1.1.130 is refused before any file copies.
+
 # Unreleased (on 0.9.42-rc72) — G460 Marketing Campaign + Marketing Event
 
 Version NOT bumped on this branch (as G530/G532 below): the landing picks the

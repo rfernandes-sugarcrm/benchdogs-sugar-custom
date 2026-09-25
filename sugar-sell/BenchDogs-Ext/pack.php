@@ -91,8 +91,18 @@ $manifest = array(
             //    product-group answers BdAdmRules asks for.
             // Below it every one of those is missing: the fields would sit on no
             // panel and the defaults would skip (logged, never fatal).
+            //
+            // 1.1.131 since 0.9.42-rc73 (lane D13's recommendation, G530): the
+            // Reference default is now SHORTENED to what the ERP takes, and the
+            // limit is ERP-Epicor's, on the field - Quotes.erp_reference
+            // 'erp_max_length' (10), read through
+            // ErpQuoteFacts::referenceMaxLength(). Both first ship in 1.1.131.
+            // On an older ERP-Epicor BdAdmRules tolerates the missing method
+            // (no cut, logged), so "HARRISBURG PA" (13) would again reach ADM
+            // and be refused at Send to Estimation. The floor keeps that pair
+            // from being installed apart.
             'id_name' => 'sugarai_erp_epicor',
-            'version' => '1.1.125',
+            'version' => '1.1.131',
         ),
         array(
             'id_name' => 'sugarai_erp_epicor_partialfulfillment',
