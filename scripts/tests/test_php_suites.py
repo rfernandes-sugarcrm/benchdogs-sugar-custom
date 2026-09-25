@@ -24,10 +24,13 @@ are asserted: an exit code alone cannot see a suite that stopped running checks,
 which is the same hole in miniature.
 """
 
+import os
 import shutil
 import subprocess
 import unittest
 from pathlib import Path
+
+import shared_sugar
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -39,21 +42,34 @@ HERE = Path(__file__).resolve().parent
 SUITES = (
     "bench_panel_retired_test.php",
     "bench_governing_origin_retired_test.php",
+    "bd_adm_rules_test.php",
+    "bd_erp_layout_test.php",
+    "bd_customer_group_move_test.php",
 )
 
 php = shutil.which("php")
 
 
-def run(name: str) -> subprocess.CompletedProcess:
+def run(name: str, **env: str) -> subprocess.CompletedProcess:
     return subprocess.run(
         [php, str(HERE / name)], cwd=ROOT, capture_output=True, text=True,
+        env={**os.environ, **env},
     )
+
+
+#: rc70 (G380, 🔒 1724b) runs against ERP-Epicor's REAL code (lane D, landed
+#: a0f6b632): the sibling checkout's files when present, else the pins.
+LANDED = {
+    "BD_QUOTE_FACTS": str(shared_sugar.resolve("ErpQuoteFacts.php")),
+    "BD_LAYOUT_FIELDS": str(shared_sugar.resolve("ErpLayoutExtraFields.php")),
+    "BD_ERP_REFERENCE": str(shared_sugar.resolve("erp_reference.php")),
+}
 
 
 @unittest.skipUnless(php, "requires a PHP CLI")
 class PhpSuitesTest(unittest.TestCase):
-    def assert_suite_passes(self, name: str) -> None:
-        result = run(name)
+    def assert_suite_passes(self, name: str, **env: str) -> None:
+        result = run(name, **env)
         report = result.stdout + result.stderr
         self.assertIn("checks, 0 failed", report, report)
         self.assertEqual(result.returncode, 0, report)
@@ -67,6 +83,32 @@ class PhpSuitesTest(unittest.TestCase):
         """G116: bd_governing_origin is taken off the Opportunity record view
         on install, and never put back."""
         self.assert_suite_passes("bench_governing_origin_retired_test.php")
+
+    def test_bd_adm_rules(self):
+        """G380/G381 (🔒 1724b): the Bench Dogs ADM rules (which companies are
+        ADM, the Reference and Project defaults and their exit order, the
+        pickers' options, the vardef markers) - and, in a second run with no
+        ErpQuoteFacts at all, that an older ERP-Epicor skips the defaults and
+        never fails a save."""
+        self.assert_suite_passes("bd_adm_rules_test.php", **LANDED)
+        self.assert_suite_passes("bd_adm_rules_test.php", BD_NO_QUOTE_FACTS="1")
+
+    def test_bd_erp_layout(self):
+        """rc70: the Bench fields are placed and retired by ERP-Core's REAL
+        ErpLayoutExtraFields through rc70's REAL lifecycle scripts - upgrade from
+        rc69, reinstall, ERP-Epicor reinstall, uninstall fresh and upgraded."""
+        self.assert_suite_passes("bd_erp_layout_test.php", **LANDED)
+
+    def test_bd_customer_group_move(self):
+        """G507: the one-off takes the customer-group pair out of the Account
+        HEADER (where rc69 put it on a view with no panel_body - reproduced with
+        rc69's real writer) onto the first tab, after Industry, labelled; keeps an
+        admin's placement; places nothing without a vardef; writes once. Beside
+        rc72's real scripts and ERP-Core's real sync(): rc72 alone does not move
+        them, a fresh rc72 install lands in the same slots, either install order
+        ends the same, and uninstall takes them off."""
+        self.assert_suite_passes("bd_customer_group_move_test.php", **LANDED)
+
 
 
 class PhpSuiteCoverageTest(unittest.TestCase):

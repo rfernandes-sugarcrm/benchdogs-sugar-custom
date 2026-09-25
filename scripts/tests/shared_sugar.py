@@ -80,6 +80,24 @@ SOURCES = {
         "sugar-sell/ERP-Core/scripts/BaseErpLayout.php",
     "QuotesLayout.php":
         "sugar-sell/ERP-Epicor/scripts/Modules/QuotesLayout.php",
+    # 0.9.42-rc70 (G380 / 🔒 1724b): what the slimmed Bench package now ASKS of
+    # ERP-Epicor >= 1.1.125 instead of carrying itself - the quote facts
+    # (company, product group), the marker-driven field placement, and the
+    # generic erp_reference field whose marker the Bench pickers are placed
+    # after. Pinned from the LANDED Sugar target a0f6b632, so rc70's tests run
+    # against lane D's real code, not stand-ins.
+    "ErpQuoteFacts.php":
+        "sugar-sell/ERP-Epicor/src/custom/modules/Quotes/ErpQuoteFacts.php",
+    "ErpLayoutExtraFields.php":
+        "sugar-sell/ERP-Core/src/custom/include/ErpLayoutExtraFields.php",
+    "erp_reference.php":
+        "sugar-sell/ERP-Core/src/custom/Extension/modules/Quotes/Ext/Vardefs/erp_reference.php",
+    # 0.9.42-rc71 (G450): ERP-Core's REPLACE-mode account_type_dom, a WHOLE-ARRAY
+    # assignment {Prospect, Customer}. The hostile case the Bench Suspect fragment
+    # must survive (test_g450_suspect_account_type.py). Byte-identical at a0f6b632
+    # and at the Sugar target c9b74508 (last changed f4a3036d).
+    "account_type_dom.replace.php":
+        "sugar-sell/ERP-Core/src/custom/dropdowntemplates/account_type_dom.replace.php",
 }
 
 

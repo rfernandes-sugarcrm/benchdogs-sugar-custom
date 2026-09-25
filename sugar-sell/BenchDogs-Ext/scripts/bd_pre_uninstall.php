@@ -21,15 +21,20 @@
  *      five bd_* fields whose vardefs had just been deleted.
  *   2. The two customer group fields stayed on Accounts.
  *
- * 🛑 ONLY (2) IS LEFT FOR THIS FILE (0.9.42-rc69, G280 / 🔒 1567). The Quotes
+ * 🛑 NEITHER IS THIS FILE'S ANY MORE (0.9.42-rc70, G380 / 🔒 1724b): see the note
+ * at the bottom - the marked fields are retired by ERP-Core's
+ * ErpLayoutExtraFields from post_uninstall.php. History:
+ *
+ * ONLY (2) WAS LEFT FOR THIS FILE (0.9.42-rc69, G280 / 🔒 1567). The Quotes
  * panel (K-2) and the Opportunities `bd_governing_origin` marker (K-3) were
  * one-shot retirements, and they are SPENT: the disposable one-off "Retire
  * Bench Dogs Residue" removed both from the deployed views on every QA tenant
  * (et 2026-09-22 22:22Z, stock and Ophir 2026-09-23 00:58Z, G234 CLOSED),
  * nothing re-adds either, and a deployed record.php is in no package's copy
  * list, so an uninstall cannot restore them. Their helper classes are no longer
- * shipped. What remains is the undo of the one placement this package still
- * makes: the two customer-group fields.
+ * shipped. What remains is the undo of the placements this package still
+ * makes: the two customer-group fields, and (G380 / G381, 🔒 1705b) the four
+ * ADM fields on the Quotes record view's ERP panel.
  *
  * 🛑 G276 / 🔒 1504 - NO BUTTON LOGIC HERE EITHER. Until rc64 the Quotes step here
  * also dropped this package's retired bd_* buttons and put back the ERP-Epicor
@@ -131,7 +136,7 @@
 // longer at a path Sugar runs a second time - see "WHY THIS FILE IS NOT NAMED
 // pre_uninstall.php" above. Through rc68 it appeared twice per uninstall.
 //
-// 📌 The one step below still only ->error()s its failure, one line, with no
+// 📌 The two steps below still only ->error() their failures, one line each, with no
 // aggregation - the same reporting shape G294 fixes on the install side. It is not fixed here in this change: G294 is filed against
 // post_execute.php and widening the blast radius of an uninstall script was not
 // worth the risk in one pass. Flagged, not silently carried.
@@ -139,24 +144,14 @@
 $bdVersion = isset($manifest['version']) ? (string) $manifest['version'] : 'unknown';
 $GLOBALS['log']->fatal('BenchDogs-Ext: pre_uninstall running (' . $bdVersion . ') - cleaning up deployed metadata');
 
-// The ONE step: take the two REQ-19 customer-group fields back off the
-// Accounts record view. BdAccountsLayoutExtensions::remove() sweeps every
-// panel, so an admin who moved them is cleaned up too.
-try {
-    $bdAccountsHelper = 'custom/modules/Accounts/BdAccountsLayoutExtensions.php';
-    if (file_exists($bdAccountsHelper)) {
-        if (!class_exists('BdAccountsLayoutExtensions', false)) {
-            require_once $bdAccountsHelper;
-        }
-        if (class_exists('BdAccountsLayoutExtensions')) {
-            BdAccountsLayoutExtensions::remove();
-        }
-    } else {
-        $GLOBALS['log']->error("BenchDogs-Ext: {$bdAccountsHelper} missing; Accounts record view not cleaned up");
-    }
-} catch (Throwable $e) {
-    $GLOBALS['log']->error('BenchDogs-Ext: Accounts layout cleanup failed: ' . $e->getMessage());
-}
+// NOTHING TO UNDO HERE ANY MORE (0.9.42-rc70, G380 / 🔒 1724b). The two
+// placement helpers this file used to call (BdAccountsLayoutExtensions::remove,
+// BdAdmQuoteFieldsLayout::remove) are retired with the placements: this
+// package's fields carry ERP-Epicor's `erp_layout` marker, and ERP-Core's
+// ErpLayoutExtraFields takes a marked field off every panel once its vardef is
+// GONE - which is after the files are deleted, so that call lives in
+// post_uninstall.php, not here. This file stays as the pre_uninstall installdef
+// and the proof-of-life line above, so an uninstall still says it ran.
 
 // The *_cstm columns behind the bd_* fields are left in the database. Removing
 // a vardef does not drop its column, and dropping them here would make the

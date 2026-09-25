@@ -41,6 +41,11 @@ from the retired Quotes helper to the Accounts one, the only helper left. The
 report's shape, its three channels and every guard are unchanged; only the step
 under test and STEP_COUNT moved.
 
+🔁 0.9.42-rc70 (🔒 1724b): the package ships no layout code. The steps are the
+rebuild and ERP-Core's ErpLayoutExtraFields::sync() for Accounts and Quotes, so
+the fault is injected into a fake of THAT class, failing only the Accounts call
+(the Quotes step is the control).
+
 MUTATION-VERIFIED (each applied to scripts/post_execute.php, suite re-run,
 listed failure observed - see the lane report for the recorded output):
   delete the `$bdStepReport[...] = 'FAILED: ...'` line from the Accounts catch
@@ -188,36 +193,42 @@ echo json_encode(['failure' => $failure, 'events' => $events, 'errors' => $error
                   'settings' => $GLOBALS['settings']]);
 '''
 
-# The one helper class post_execute.php reaches for (rc69). A scenario may
-# replace it; absent means the file is not written at all.
-ACCOUNTS_HELPER = "custom/modules/Accounts/BdAccountsLayoutExtensions.php"
+# The helper class post_execute.php reaches for since rc70 (🔒 1724b): ERP-Core's
+# ErpLayoutExtraFields, one file for both layout steps. A scenario may replace
+# it; absent means the file is not written at all.
+ACCOUNTS_HELPER = "custom/include/ErpLayoutExtraFields.php"
+_SYNC_OK = "return ['added' => [], 'removed' => []];"
 HELPERS = {
     ACCOUNTS_HELPER:
-        "<?php class BdAccountsLayoutExtensions { public static function writeCustomerGroupField() {} }",
+        "<?php class ErpLayoutExtraFields { public static function sync($m) { " + _SYNC_OK + " } }",
 }
 
-# 🚩 NOT a synthetic exception. `private` makes PHP itself raise
-# "Error: Call to private method BdAccountsLayoutExtensions::writeCustomerGroupField()
-# from global scope" - the same shape as rc65's real
-# "Call to private method BaseErpLayout::loadView() from scope BdQliColumnsLayout".
+# 🚩 NOT a synthetic exception. A private method reached from another class makes
+# PHP itself raise "Error: Call to private method BdPlacementProbe::place() from
+# scope ErpLayoutExtraFields" - the same shape as rc65's real "Call to private
+# method BaseErpLayout::loadView() from scope BdQliColumnsLayout". Only the
+# Accounts call fails, so the Quotes step is the control.
+_PRIVATE = ("<?php class BdPlacementProbe { private static function place() {} }"
+            " class ErpLayoutExtraFields { public static function sync($m) {"
+            " if ($m === 'Accounts') { BdPlacementProbe::place(); } " + _SYNC_OK + " } }")
 HELPER_OVERRIDES = {
-    "accounts_layout_private":
-        "<?php class BdAccountsLayoutExtensions { private static function writeCustomerGroupField() {} }",
+    "accounts_layout_private": _PRIVATE,
     "accounts_layout_throws":
-        "<?php class BdAccountsLayoutExtensions { public static function writeCustomerGroupField() {"
-        " throw new RuntimeException('DeployedMetaDataImplementation refused'); } }",
+        "<?php class ErpLayoutExtraFields { public static function sync($m) {"
+        " if ($m === 'Accounts') { throw new RuntimeException('DeployedMetaDataImplementation refused'); }"
+        " " + _SYNC_OK + " } }",
     "accounts_layout_not_loaded":
         "<?php // a file that ships but declares nothing, the class_exists off switch",
     # Top level AND a failing step. Without the failure the channel-3 block is
     # never entered at all, so a scenario that only drops $this proves nothing
     # about the guard - which is exactly what the first draft of this suite did.
-    "no_object_scope_private":
-        "<?php class BdAccountsLayoutExtensions { private static function writeCustomerGroupField() {} }",
+    "no_object_scope_private": _PRIVATE,
 }
 HELPER_ABSENT = {"accounts_layout_missing"}
 
-STEP_COUNT = 2
-STEP = "accounts_customer_group_field"
+# repair_rebuild, accounts_erp_layout, quotes_erp_layout (rc70, 🔒 1724b)
+STEP_COUNT = 3
+STEP = "accounts_erp_layout"
 
 
 @unittest.skipUnless(shutil.which("php"), "requires a PHP CLI")
@@ -352,7 +363,7 @@ class StepReportTest(unittest.TestCase):
         else and the step silently does not happen."""
         row = self.report_row(self.execute("accounts_layout_not_loaded"))
         self.assertEqual(row["steps"][STEP],
-                         "NOT-LOADED: class BdAccountsLayoutExtensions")
+                         "NOT-LOADED: class ErpLayoutExtraFields")
 
     # -- the reporter itself must not be able to kill an install -----------
 
@@ -406,7 +417,7 @@ class StepReportTest(unittest.TestCase):
         """The aggregated line is added to the per-step ones, not instead of
         them: the verbatim message is what identifies a novel failure."""
         observed = self.execute("accounts_layout_throws")
-        self.assertIn("BenchDogs-Ext: Accounts customer group field failed: "
+        self.assertIn("BenchDogs-Ext: Accounts layout sync failed: "
                       "DeployedMetaDataImplementation refused", observed["errors"])
 
 

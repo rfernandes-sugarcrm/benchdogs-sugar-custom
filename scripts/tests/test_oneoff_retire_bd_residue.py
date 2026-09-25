@@ -42,13 +42,32 @@ import subprocess
 import unittest
 import zipfile
 
+
 from bd_retirement import ONEOFF_POST_EXECUTE, PKG, built_zip, oneoff_worklist, zip_names
 from test_g280_minimal_footprint import KEPT
 
 ONEOFF = ONEOFF_POST_EXECUTE.parents[1]
 ADAPTER = "custom/modules/Quotes/ErpQuoteHooks/ResolveOrderableLines.php"
 PLANNER = "custom/modules/Quotes/BdSubmitOrderPlan.php"
-RC69_ON_TENANT = {k for k in KEPT if k.startswith("custom/")}
+#: rc69's copy list, FROZEN. The one-off (spent, 1.0.2) was written against
+#: rc69 and its "KEPT BY rc69" report names exactly these four; it is not
+#: re-cut per package build. Until G380/G381 this was read off the package's
+#: live KEPT list, which silently assumed the package would never grow again.
+RC69_ON_TENANT = {
+    "custom/Extension/modules/Accounts/Ext/Vardefs/bd_customer_group.php",
+    "custom/Extension/modules/Accounts/Ext/Language/en_us.bd_customer_group.php",
+    "custom/modules/Accounts/BdAccountsLayoutExtensions.php",
+    "custom/clients/base/api/BdBenchDogsActionsApi.php",
+}
+#: What THIS build installs on a tenant - rc69's four less the layout writer
+#: 🔒 1724b retired, plus G380/G381's.
+BUILD_ON_TENANT = {k for k in KEPT if k.startswith("custom/")}
+#: rc69 files this build no longer ships. Module Loader never deletes a file a
+#: later build stops shipping (§CW / G37), so an upgraded tenant keeps them -
+#: inert, since nothing rc70 ships requires them (test_g280_minimal_footprint
+#: routes them INERT). The one-off must not blank them while a tenant may still
+#: run rc69, whose install and uninstall call them.
+RC69_DROPPED_BY_THIS_BUILD = {"custom/modules/Accounts/BdAccountsLayoutExtensions.php"}
 
 
 def _not_ours_block() -> str:
@@ -83,11 +102,37 @@ class TheOneOffNeverTakesWhatRc69Ships(unittest.TestCase):
         self.assertEqual(kept_by_rc69_in_the_report(), RC69_ON_TENANT)
 
     def test_the_report_matches_the_built_rc69_manifest_too(self):
-        """KEPT is the source-side list; this is what Module Loader is handed."""
+        """The one-off's rc69 list is what rc69 shipped. This build keeps all of
+        it but ONE file - the Accounts layout writer 🔒 1724b retired (ERP-Core's
+        ErpLayoutExtraFields places the fields from their vardef marker now) -
+        and that one stays on an upgraded tenant, inert (Module Loader never
+        deletes a file a later build stops shipping, §CW / G37); the one-off
+        does not touch it."""
         with zipfile.ZipFile(built_zip()) as zipped:
             manifest = zipped.read("manifest.php").decode()
         copied = set(re.findall(r"'to'\s*=>\s*'([^']+)'", manifest))
-        self.assertEqual(kept_by_rc69_in_the_report(), copied)
+        self.assertEqual(kept_by_rc69_in_the_report() - copied, RC69_DROPPED_BY_THIS_BUILD)
+        self.assertEqual(copied, BUILD_ON_TENANT)
+        self.assertEqual(set(oneoff_worklist()) & RC69_DROPPED_BY_THIS_BUILD, set())
+
+
+class TheOneOffNeverTakesWhatThisBuildShips(unittest.TestCase):
+    """G380/G381 grew the package past rc69. The one-off may be re-run after
+    this build (its README asks for that on any tenant that took a Bench build
+    after its last run), so it must not remove anything this build installs."""
+
+    def test_no_worklist_names_a_file_this_build_ships(self):
+        self.assertEqual(set(oneoff_worklist()) & BUILD_ON_TENANT, set())
+
+    def test_this_build_ships_no_adapter_the_one_off_could_meet(self):
+        """The unreleased G380/G381 branch shipped a new ResolveOrderableLines.php
+        (the ADM non-part block). 🔒 1724b moved that rule into ERP-Epicor (a
+        per-company switch), so this build ships no adapter at all: the
+        one-off's md5-gated delete can never meet a body of ours."""
+        self.assertFalse((PKG / ADAPTER).exists())
+        self.assertNotIn(ADAPTER, zip_names())
+        source = ONEOFF_POST_EXECUTE.read_text(encoding="utf-8")
+        self.assertIn("$bdAdapterBenchMd5 = array(", source)   # anti-vacuity
 
     def test_the_report_no_longer_claims_an_owner_keep_for_the_repair_route(self):
         """🔒 1573: no such ruling exists; rc69 ships the file EMPTY."""
@@ -96,18 +141,23 @@ class TheOneOffNeverTakesWhatRc69Ships(unittest.TestCase):
 
 class Rc69NeitherShipsNorRestoresTheAdapter(unittest.TestCase):
     """rc69's uninstall_copy() restores only its own copy list's backups, so a
-    path it never copies is one it can never put back."""
+    path it never copies is one it can never put back.
 
-    def test_neither_half_of_the_pair_is_in_rc69(self):
+    🔁 STILL TRUE AT rc70 (🔒 1724b): the unreleased G380/G381 branch would have
+    copied ResolveOrderableLines.php again, reopening the restore-on-uninstall
+    hazard over an rc37 body; the part-number rule moved into ERP-Epicor
+    instead, so neither the planner nor the adapter ships."""
+
+    def test_the_planner_never_ships_and_neither_does_the_adapter(self):
         names = zip_names()
-        for rel in (ADAPTER, PLANNER):
-            with self.subTest(path=rel):
-                self.assertFalse((PKG / rel).exists())
-                self.assertNotIn(rel, names)
+        self.assertFalse((PKG / PLANNER).exists())
+        self.assertNotIn(PLANNER, names)
+        self.assertNotIn(ADAPTER, names)
         with zipfile.ZipFile(built_zip()) as zipped:
             manifest = zipped.read("manifest.php").decode()
-        self.assertNotIn("ResolveOrderableLines", manifest)
         self.assertNotIn("BdSubmitOrderPlan", manifest)
+        self.assertNotIn("ResolveOrderableLines", manifest)
+        self.assertIn("sugarai_benchdogs_ext", manifest)   # anti-vacuity
 
 
 class TheLogNamesTheVersionThatRan(unittest.TestCase):

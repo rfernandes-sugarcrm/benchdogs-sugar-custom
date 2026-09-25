@@ -6,14 +6,28 @@ require_once 'custom/modules/Quotes/ErpQuoteLineRollup.php';
  * The writer of partial-fulfillment Opportunity fields, through TWO
  * entry points with deliberately different ownership and different triggers.
  *
- * 1. RELEASE TIME - sales_stage. afterLinesOrdered() is called
- *    explicitly by QuotesErpActionsApi::orderLines() after a release lands,
- *    NEVER from a logic hook: a change to an opportunity's STAGE has one
- *    named cause, and the two things that write it from a quote - this class
- *    at release time and OrderStageOpportunityCascade when an order reaches a
- *    terminal state - live side by side in the core package and yield to each
- *    other by quote_stage (the cascade stands down while the quote is
- *    'Partially Fulfilled'; this half only ever acts on a release).
+ * 1. RELEASE TIME - sales_stage. afterLinesOrdered() is called through
+ *    ERP-Epicor's ErpQuoteHooks::fireAfterLinesOrdered() whenever an order
+ *    lands or completes a quote - after a release (orderLines()), after a
+ *    whole-quote Submit Order (runErpAction(), G346) and after a line delete
+ *    completes a Partially Fulfilled quote (ErpReleaseStageSettle, 🔒 1614) -
+ *    and NEVER from a logic hook of its own: a change to an opportunity's
+ *    STAGE has one named cause. This class is now the ONLY writer of it from
+ *    a quote: OrderStageOpportunityCascade, which used to close the pursuit
+ *    from order_stage, was retired by the owner (🔒 1413) and registers
+ *    nothing. A partial release writes the partial stage; a release that
+ *    leaves nothing open writes Closed Won (orderedInFullResolution(), G346).
+ *
+ * 1b. ORDER-LIFE TIME - sales_stage again, the same writer (G498 / 🔒 1761b).
+ *    ERP-Epicor's ErpOrderLiveStage moves a quote to Closed Lost when every
+ *    order linked to it is dead (Void / Removed in ERP), and back to Closed
+ *    Won / Partially Closed when a live order returns; it then calls
+ *    ErpQuoteHooks::fireAfterLiveOrdersChanged(), implemented here as
+ *    afterOrdersLost() and afterOrderRevived(). Owner: *"if an order got
+ *    caneled and no new order for it the opperutnity and quote hsoudl change
+ *    to close lost untill a new order is created for it and then both cahnge
+ *    to closed won"*. Still one named cause per write: an ORDER'S LIFE, read
+ *    from ERP_Orders.status, never a typed stage.
  *
  * 2. QUOTE-SAVE TIME - erp_ordered_amount / erp_open_amount. rollupHook() IS
  *    an after_save logic hook on Quotes, because these numbers must follow the
@@ -34,23 +48,27 @@ require_once 'custom/modules/Quotes/ErpQuoteLineRollup.php';
  *     remains the only writer. An absent/non-applicable policy falls back to
  *     the tenant's generic partial-stage configuration. Invalid or throwing
  *     policy code preserves the current stage instead of guessing.
- *   - A customer package may ALSO provide the fixed, neutral line-rollup
- *     adjudication policy at .../ErpQuoteHooks/OpportunityLineRollupPolicy.php,
- *     which can REFUSE a quote outright. Same shape, same failure rule, and
- *     see refreshLineRollup() for why the refusal has to live here rather than
- *     in the package that knows what it means.
- *   - Opportunities.erp_rollup_refusal: the refusing provider's own sentence,
- *     verbatim, beside the two figures it held - and blank whenever they are
- *     current. A refusal nobody can see is the defect it replaces wearing the
- *     other face: the same figures as before, and nothing saying they have
- *     stopped following the quote. See publishRollupRefusal().
+ *   - 🔒 1468 RETIRED the line-rollup adjudication policy provider
+ *     (.../ErpQuoteHooks/OpportunityLineRollupPolicy.php). It could REFUSE a
+ *     quote's rollup, and that refusal kept the stored figures. It is no
+ *     longer consulted, because erp_open_amount no longer comes from the
+ *     rollup it adjudicated: it is the primary's own Grand Total, which
+ *     already applies the pin (🔒 29). A tenant still shipping the file is
+ *     unaffected in every other respect. See refreshLineRollup().
+ *   - Opportunities.erp_rollup_refusal: blank whenever the two figures are
+ *     current, and after 🔒 1468 that is every save but one. The one
+ *     exception is a primary whose own total is not a number: open is then
+ *     held, and this field says so.
  *
  * WHAT IT NEVER DOES
  *   - Create, edit, re-stage or delete a Revenue Line Item. An RLI is the
  *     tenant's forecasting record; a connector that writes them has to know
  *     the tenant's forecasting model, and one that guesses corrupts the
  *     forecast silently. Keyed to the Sugar quote and nothing else.
- *   - Reopen a closed opportunity, or touch one it cannot find.
+ *   - Reopen a closed opportunity, or touch one it cannot find - with ONE
+ *     exception, G498 / 🔒 1761b: a Closed Lost opportunity whose quote lost
+ *     every order and then got a live one back (afterOrderRevived()). Closed
+ *     Won is never reopened.
  *   - Fail the order. Every caller wraps this in try/catch; a stale
  *     forecast is a lesser evil than an ERP order the CRM does not record.
  */
@@ -59,17 +77,75 @@ class ErpOpportunityValuation
     public const CONFIG_CATEGORY = 'erp_integration';
     public const PARTIAL_STAGE_KEY = 'partial_order_sales_stage';
     public const PARTIAL_PROBABILITY_KEY = 'partial_order_probability';
+
+    /**
+     * 🛑 G305 / 🔒 1519 — WHAT A PARTIAL RELEASE DOES TO THE OPPORTUNITY WHEN
+     * NOBODY HAS CONFIGURED THIS TENANT. Owner: *"thsi shoudl work the same on
+     * core and on bench"*.
+     *
+     * THE DEFECT. `erp_integration.partial_order_sales_stage` is a CONFIG ROW,
+     * and a config row is DATA - it does not arrive with a package. Its only
+     * writer in the entire estate was Bench Dogs' post_install (verified in the
+     * built artifact sugarai_benchdogs_ext-0.9.42-rc66.zip,
+     * scripts/post_install.php:110-128 - write-if-absent, value
+     * 'Partial Production Ordered'). THIS class is the only reader. So a seller
+     * released part of an order on a stock tenant and the Opportunity did not
+     * move: no error, no message, nothing on screen. A textbook 🔒 1514 - not
+     * customer-category logic, just a general capability that happened to work
+     * only where Bench Dogs was installed.
+     *
+     * 🛑 WHY THIS EXACT STRING AND NOT A STOCK STAGE NAME. The bar is the same
+     * OUTCOME on both tenants, not "core has a default too". A default holding
+     * a different value would leave stock and Bench each carrying a row and
+     * still behaving differently - a quieter divergence that LOOKS fixed. So it
+     * is byte-exact with the value Bench's post_install writes.
+     *
+     * 🛑 AND IT IS ANSWERABLE ON STOCK, which is the part that is easy to get
+     * wrong: the KEY is already this package's own. G278 / 🔒 1506 moved the
+     * stage vocabulary here from Bench Dogs ("this hsoudl happen in the core"),
+     * so _override_en_us.partial_fulfillment_sales_stage.php:41-45 ships
+     * 'Partial Production Ordered' into sales_stage_dom and 90 into
+     * sales_probability_dom on EVERY tenant that installs this package. Bench's
+     * own fragment was emptied in 0.9.42-rc65 for exactly that reason. Nothing
+     * here adds vocabulary; it supplies the row that was never data-shipped.
+     *
+     * 🛑 NOT WRITTEN INTO THE TENANT'S CONFIG FROM A post_install, AND THE
+     * REASON IS BENCH. Bench's writer is write-if-absent. This package installs
+     * BEFORE Bench Dogs (Bench depends on it), so a PF post_install would put a
+     * value in the row first, Bench's guard would find it non-empty and leave
+     * it, and Bench would quietly stop reaching its own stage on any freshly
+     * built tenant. A reader-side default writes nothing, so Bench's
+     * post_install still lands its value and Bench is untouched - which 🔒 1519
+     * makes the control for this gap.
+     *
+     * 📌 THE PROBABILITY NEEDS NO DEFAULT. configuredPartialProbability()
+     * already falls through to sales_probability_dom, where this package ships
+     * 90 for this key - the same derivation Bench's post_install comment says
+     * it relies on ("the probability is deliberately NOT written").
+     *
+     * 📌 A BEHAVIOUR CHANGE, STATED. "Never configured" used to mean "off". An
+     * administrator who wants a partial release to leave the stage alone now
+     * sets this key to an empty string, which is still honoured exactly.
+     */
+    public const DEFAULT_PARTIAL_STAGE = 'Partial Production Ordered';
+
+    /**
+     * G346 — the Opportunity stage a release that leaves nothing open writes
+     * when no customer policy decides. A stock key; see
+     * orderedInFullResolution() for why this one.
+     */
+    public const ORDERED_IN_FULL_SALES_STAGE = 'Closed Won';
+
     public const GROUP_POLICY_KEY = 'quote_group_rollup';
 
     private const RELEASE_STAGE_POLICY_FILE =
         'custom/modules/Quotes/ErpQuoteHooks/OpportunityReleaseStagePolicy.php';
 
-    private const LINE_ROLLUP_POLICY_FILE =
-        'custom/modules/Quotes/ErpQuoteHooks/OpportunityLineRollupPolicy.php';
-
-    /** Where a refusal is published so a seller can see it, and its width. */
+    /** Where the one remaining refusal is published so a seller can see it. */
     private const REFUSAL_FIELD = 'erp_rollup_refusal';
-    private const REFUSAL_LENGTH = 255;
+
+    /** 🔒 1468's only refusal: the primary's own total is not a number. */
+    public const TOTAL_NOT_A_NUMBER = 'primary_total_not_a_number';
 
 
     /**
@@ -191,6 +267,14 @@ class ErpOpportunityValuation
     private const ERP_SHIPPING_FIELD = 'erp_shipping_amount';
 
     /**
+     * G466 (🔒 1758b / 🔒 1764b): shipping counts on an ADVANCED quote only. The
+     * field and the key ERP-Core's Grand Total formula compares
+     * (erp_total_carries_erp_tax.php: equal($erp_quote_type, "advanced_quote")).
+     */
+    private const QUOTE_TYPE_FIELD = 'erp_quote_type';
+    private const ADVANCED_QUOTE = 'advanced_quote';
+
+    /**
      * An ERP-born quote is one the connector keyed. Hand-built quotes are not
      * in scope for decision 122 at all: there is no ERP statement to source
      * from, and Sugar's own `tax`/`shipping` already flow into the native
@@ -201,11 +285,141 @@ class ErpOpportunityValuation
     private const TERMINAL_SALES_STAGES = ['Closed Won', 'Closed Lost'];
 
     /**
+     * G498 / 🔒 1761b: the stage of an opportunity whose quote lost every
+     * order - a stock sales_stage_dom key, the one TERMINAL_SALES_STAGES
+     * already names.
+     */
+    public const ORDERS_LOST_SALES_STAGE = 'Closed Lost';
+
+    /**
+     * G498: on a revival only Closed Won stays terminal. Closed Lost is the
+     * stage afterOrdersLost() wrote, and a live order is the fact that undoes
+     * it.
+     */
+    private const REVIVAL_TERMINAL_SALES_STAGES = ['Closed Won'];
+
+    /** The quote stages an order puts a quote in (ErpQuoteStageRules::COMMITTED_STAGES). */
+    private const COMMITTED_QUOTE_STAGES = ['Closed Accepted', 'Partially Fulfilled'];
+
+    /**
      * @param SugarBean $quote   the quote a release was just raised from,
      *                           re-retrieved after its stage save
      * @param bool      $partial true when open lines remain on the quote
      */
     public function afterLinesOrdered(SugarBean $quote, bool $partial): string
+    {
+        return $this->valueFromOrder($quote, $partial, self::TERMINAL_SALES_STAGES);
+    }
+
+    /**
+     * G498 / 🔒 1761b — a live order came back to a quote that had lost every
+     * order (ErpOrderLiveStage moved it Closed Lost -> Closed Won / Partially
+     * Closed). The opportunity is valued exactly as an order values it - the
+     * customer policy first, then Closed Won for a final release or the
+     * configured partial stage - except that a Closed Lost opportunity is
+     * reopened. Closed Won stays terminal.
+     */
+    public function afterOrderRevived(SugarBean $quote, bool $partial): string
+    {
+        return $this->valueFromOrder($quote, $partial, self::REVIVAL_TERMINAL_SALES_STAGES);
+    }
+
+    /**
+     * G498 / 🔒 1761b — every order linked to the quote is dead and the quote
+     * moved to Closed Lost; its opportunity follows to Closed Lost.
+     *
+     * Preserved, not written, when:
+     *   * the quote has no single opportunity (opportunity_missing);
+     *   * it is already Closed Lost (unchanged);
+     *   * ANOTHER quote on the same opportunity is at a committed stage - that
+     *     quote's order still wins the deal (sibling_committed);
+     *   * this instance's sales_stage_dom does not serve Closed Lost
+     *     (stage_not_served) - an unknown stage is never written.
+     * The probability is sales_probability_dom's figure for Closed Lost, as
+     * orderedInFullResolution() reads it for Closed Won.
+     */
+    public function afterOrdersLost(SugarBean $quote): string
+    {
+        $opportunity = $this->linkedOpportunity($quote);
+        if ($opportunity === null) {
+            return 'opportunity_missing';
+        }
+
+        $stage = self::ORDERS_LOST_SALES_STAGE;
+        if (($opportunity->sales_stage ?? '') === $stage) {
+            return 'unchanged';
+        }
+
+        if ($this->anotherQuoteIsCommitted($opportunity, (string) $quote->id)) {
+            $GLOBALS['log']->info('ErpOpportunityValuation: quote ' . $quote->id . ' lost every order, but another '
+                . 'quote on opportunity ' . $opportunity->id . ' is committed - the opportunity keeps its stage (G498)');
+            return 'sibling_committed';
+        }
+
+        $appListStrings = self::currentAppListStrings();
+        $dom = $appListStrings['sales_stage_dom'] ?? array();
+        if (!is_array($dom) || !array_key_exists($stage, $dom)) {
+            $GLOBALS['log']->warn('ErpOpportunityValuation: quote ' . $quote->id . ' lost every order, but '
+                . var_export($stage, true) . ' is not a sales_stage_dom key on this instance - the '
+                . 'Opportunity keeps its current stage (G498)');
+            return 'stage_not_served';
+        }
+        $probabilities = $appListStrings['sales_probability_dom'] ?? array();
+
+        $opportunity->sales_stage = $stage;
+        // In Revenue Line Items mode a bare sales_stage save is dropped;
+        // Opportunity::save() persists it through sales_stage_cascade (see
+        // valueFromOrder()).
+        $opportunity->sales_stage_cascade = $stage;
+        if (is_array($probabilities) && isset($probabilities[$stage]) && is_numeric($probabilities[$stage])) {
+            $opportunity->probability = max(0, min(100, (int) $probabilities[$stage]));
+        }
+        $opportunity->save();
+
+        $GLOBALS['log']->info('ErpOpportunityValuation: opportunity ' . $opportunity->id . ' moved to ' . $stage
+            . ' - every order of quote ' . $quote->id . ' is dead (G498)');
+
+        return 'updated';
+    }
+
+    /**
+     * Whether a quote on this opportunity OTHER than $quoteId sits at a
+     * committed stage. A read that throws answers true: preserving the stage
+     * is the safe side of doubt.
+     */
+    private function anotherQuoteIsCommitted(SugarBean $opportunity, string $quoteId): bool
+    {
+        try {
+            if (!$opportunity->load_relationship('quotes') || !is_object($opportunity->quotes)) {
+                return false;
+            }
+            foreach ((array) $opportunity->quotes->get() as $id) {
+                $id = (string) $id;
+                if ($id === '' || $id === $quoteId) {
+                    continue;
+                }
+                $sibling = BeanFactory::retrieveBean('Quotes', $id, array('use_cache' => false));
+                if ($sibling && empty($sibling->deleted)
+                    && in_array((string) ($sibling->quote_stage ?? ''), self::COMMITTED_QUOTE_STAGES, true)) {
+                    return true;
+                }
+            }
+        } catch (\Throwable $e) {
+            $GLOBALS['log']->error('ErpOpportunityValuation: could not read the quotes of opportunity '
+                . $opportunity->id . ': ' . $e->getMessage());
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * The release-time valuation shared by afterLinesOrdered() (every order)
+     * and afterOrderRevived() (G498). Only the terminal set differs.
+     *
+     * @param string[] $terminal sales stages this call never moves an opportunity out of
+     */
+    private function valueFromOrder(SugarBean $quote, bool $partial, array $terminal): string
     {
         // Refresh the line rollup from the release explicitly rather than
         // leaning on the Quotes after_save hook to fire in the right order:
@@ -220,7 +434,7 @@ class ErpOpportunityValuation
             return 'opportunity_missing';
         }
 
-        if (in_array($opportunity->sales_stage ?? '', self::TERMINAL_SALES_STAGES, true)) {
+        if (in_array($opportunity->sales_stage ?? '', $terminal, true)) {
             $GLOBALS['log']->info('ErpOpportunityValuation: opportunity ' . $opportunity->id . ' is already '
                 . $opportunity->sales_stage . ' - not reopening it for quote ' . $quote->id);
             return 'terminal';
@@ -313,7 +527,7 @@ class ErpOpportunityValuation
         }
 
         if (!$partial) {
-            return self::preservedResolution($providerStatus);
+            return self::orderedInFullResolution($providerStatus, $quote);
         }
 
         $configured = self::configuredPartialStageResolution();
@@ -388,6 +602,87 @@ class ErpOpportunityValuation
     }
 
     /**
+     * 🛑 G346 — A RELEASE THAT LEAVES NOTHING OPEN (the quote is Closed
+     * Accepted, shown "Closed Won", ordered in full - G401 / 🔒 1701b) moves the
+     * Opportunity to Closed Won when no customer policy decided otherwise. This
+     * class reads $partial, never the quote's stage key, so G401 changes
+     * nothing here.
+     *
+     * THE DEFECT. This branch used to PRESERVE the stage on every final
+     * release, on the theory that "order lifecycle closes the pursuit" - i.e.
+     * OrderStageOpportunityCascade mapping order_stage 'Commitment Final' to
+     * 'Closed Won'. The owner retired that cascade (🔒 1413: order_stage was
+     * seller-editable, "we dont need the logic"), and nothing took its place.
+     * So a partial release moved the Opportunity to Partial Production
+     * Ordered 90% and completing the SAME quote left it where it was:
+     * measured on stock #949, Prospecting 10% after the whole quote was
+     * ordered. 🔒 1614 (owner) presumes the opposite - a line delete that
+     * completes the quote moves the Opportunity "exactly as when an order
+     * completes the quote".
+     *
+     * WHY 'Closed Won', AND WHY IT IS NOT A NEW KEY:
+     *   * it is the only won stage in ERP-Core's owned Opportunity list
+     *     (sales_stage_dom.replace.php: Prospecting, Proposal-Quoting,
+     *     Closed Won, Closed Lost) and a stock Sugar key;
+     *   * it is the partial stage's own counterpart: this package's
+     *     _override_en_us.partial_fulfillment_sales_stage.php keeps Partial
+     *     Production Ordered OPEN precisely because "the remainder of the deal
+     *     stays open pipeline" - with no remainder there is nothing open, and
+     *     90% would keep a fully-ordered deal in the pipeline (G74's complaint);
+     *   * it is the target the retired cascade already mapped a completed
+     *     order to ('Commitment Final' => 'Closed Won'), and the one
+     *     ERP-Core's OpportunityCloseAmount (decisions 140/176) values at the
+     *     ordered total when the Opportunity reaches it.
+     * NOT the 1413 cascade coming back: that read a stage a seller could type.
+     * This is reached only after an ERP order exists and nothing is left open.
+     *
+     * Probability: what sales_probability_dom says for the key (100 on stock),
+     * never the partial_order_probability setting, which is a PARTIAL figure.
+     *
+     * A CUSTOMER POLICY STILL WINS - it returned before this is reached (a
+     * valid decision) or preserved (an invalid one). This runs only when the
+     * provider is absent or returned null, the same two cases the partial
+     * fallback serves.
+     *
+     * A tenant that removed 'Closed Won' from sales_stage_dom is preserved and
+     * logged, never written an unknown key - the same refusal a mistyped
+     * partial stage gets, reported through the same two status strings so
+     * ERP-Epicor's allowlist (ErpQuoteHooks::fireAfterLinesOrdered) needs no
+     * new entry.
+     *
+     * @return array{
+     *   decision: array{sales_stage: string, probability: ?int}|null,
+     *   status: string
+     * }
+     */
+    private static function orderedInFullResolution(string $providerStatus, SugarBean $quote): array
+    {
+        $stage = self::ORDERED_IN_FULL_SALES_STAGE;
+        $appListStrings = self::currentAppListStrings();
+        $dom = $appListStrings['sales_stage_dom'] ?? array();
+        if (!is_array($dom) || !array_key_exists($stage, $dom)) {
+            $GLOBALS['log']->warn('ErpOpportunityValuation: quote ' . $quote->id . ' was ordered in full, but '
+                . var_export($stage, true) . ' is not a sales_stage_dom key on this instance - the '
+                . 'Opportunity keeps its current stage (G346)');
+            return self::preservedResolution(
+                $providerStatus === 'policy_provider_null'
+                    ? 'policy_provider_null_config_invalid'
+                    : 'policy_provider_absent_config_invalid'
+            );
+        }
+
+        $probabilities = $appListStrings['sales_probability_dom'] ?? array();
+        $probability = is_array($probabilities) && isset($probabilities[$stage]) && is_numeric($probabilities[$stage])
+            ? max(0, min(100, (int) $probabilities[$stage]))
+            : null;
+
+        return [
+            'decision' => ['sales_stage' => $stage, 'probability' => $probability],
+            'status' => 'policy_generic_ordered_in_full_applied',
+        ];
+    }
+
+    /**
      * @return array{decision: null, status: string}
      */
     private static function preservedResolution(string $status): array
@@ -415,18 +710,54 @@ class ErpOpportunityValuation
     private static function configuredPartialStageResolution(): array
     {
         $config = self::erpIntegrationConfig();
+
+        // 🛑 G305 / 🔒 1519 — ABSENT AND BLANK ARE DIFFERENT ANSWERS, AND THAT
+        // DISTINCTION IS THE WHOLE FIX.
+        //
+        // ABSENT means nobody ever configured this tenant, which until now
+        // meant "the Opportunity silently does not move". BLANK ('' or '  ')
+        // means an administrator wrote the setting and left it empty, which is
+        // them saying "do not move the stage here". Reading both through one
+        // trim() collapsed the two, and the first of them was the defect.
+        $configured = array_key_exists(self::PARTIAL_STAGE_KEY, $config);
         $stage = trim((string) ($config[self::PARTIAL_STAGE_KEY] ?? ''));
-        if ($stage === '') {
+
+        if ($configured && $stage === '') {
+            // An explicit "leave it alone". Unchanged behaviour, deliberately.
             return ['stage' => '', 'reason' => 'missing'];
+        }
+
+        $usingDefault = false;
+        if (!$configured) {
+            $stage = self::DEFAULT_PARTIAL_STAGE;
+            $usingDefault = true;
         }
 
         $appListStrings = self::currentAppListStrings();
         $dom = $appListStrings['sales_stage_dom'] ?? array();
         if (!is_array($dom) || !array_key_exists($stage, $dom)) {
+            // A DEFAULT IS NOT A LICENCE TO WRITE AN UNKNOWN STAGE. A tenant
+            // that has customised sales_stage_dom out from under this package
+            // gets the same refusal a typo gets: preserve, and say so.
             $GLOBALS['log']->warn('ErpOpportunityValuation: ' . self::CONFIG_CATEGORY . '.'
                 . self::PARTIAL_STAGE_KEY . ' is ' . var_export($stage, true)
+                . ($usingDefault ? ' (this package\'s shipped default)' : '')
                 . ' which is not a sales_stage_dom key - ignoring it');
             return ['stage' => '', 'reason' => 'invalid'];
+        }
+
+        if ($usingDefault) {
+            // 🚩 NOT SILENT. G305 was found only because two tenants behaved
+            // differently and neither of them said anything. A tenant taking
+            // the default is told which stage it took and how to change it.
+            $GLOBALS['log']->info('ErpOpportunityValuation: ' . self::CONFIG_CATEGORY . '.'
+                . self::PARTIAL_STAGE_KEY . ' is not configured on this instance - using this '
+                . 'package\'s shipped default ' . var_export($stage, true)
+                . '. Set ' . self::CONFIG_CATEGORY . '.' . self::PARTIAL_STAGE_KEY
+                . ' to another sales_stage_dom key to change it, or to an empty string to '
+                . 'preserve the Opportunity stage on a partial release.');
+
+            return ['stage' => $stage, 'reason' => 'default'];
         }
 
         return ['stage' => $stage, 'reason' => 'valid'];
@@ -582,84 +913,70 @@ class ErpOpportunityValuation
     }
 
     /**
-     * Roll this quote's LINE ITEMS up onto its opportunity as two numbers:
-     * what the customer has committed to (erp_ordered_amount, summed over
-     * lines the ERP already carries) and what is still winnable
-     * (erp_open_amount). The arithmetic - including how mutually exclusive
-     * quantity breaks collapse - lives in ErpQuoteLineRollup; this method only
-     * reads beans, converts currency and writes.
+     * Publish this primary quote onto its Opportunity as two numbers: what the
+     * customer has committed to (erp_ordered_amount, summed over the lines the
+     * ERP already carries as ordered) and what is still winnable
+     * (erp_open_amount).
+     *
+     * 🔒 1468, THE RULE, IN THE OWNER'S WORDS: "always take the total form
+     * priamry even if Epicor di dnot procide tax or shipping yet, what ever the
+     * user mark as paimry take the total from there".
+     *
+     *   erp_ordered_amount = 🔒 1632 (G336): the primary's own Grand Total
+     *                        (Quotes.total) x the ORDERED SHARE of its lines
+     *                        (ErpQuoteLineRollup's `ordered` / Quotes.new_sub),
+     *                        see splitGrandTotal(). Before 1632 it was the plain
+     *                        ordered-line sum, and Open = total - that sum put
+     *                        the whole header net (ERP tax - order discount) on
+     *                        Open: -38.13 on #376, Ordered above Likely.
+     *   erp_open_amount    = the Grand Total less that Ordered figure,
+     *                        both in the Opportunity's currency, on EVERY save.
+     * So ordered + open equals the quote's Grand Total, which is what the seller
+     * sees on the quote and what the headline `amount` falls back to - and now
+     * neither is below 0 or above it.
+     *
+     * WHAT 🔒 1468 RETIRED, AND WHY NOTHING A GUARD PROTECTED IS LOST.
+     * erp_open_amount used to be the ROLLUP's open figure (compute() under the
+     * configured `sum`, plus the ERP-stated header charge). Around it stood:
+     *   - the pin arithmetic and the `sum` policy. The Grand Total already
+     *     applies the pin: ErpGoverningTotal lets an unpinned group contribute
+     *     nothing (🔒 29), and an 'alternative' rung extends to 0.00. `sum`
+     *     did not do that. On quote 285 it counted a keyless 50 x 85.91 twin
+     *     that the Grand Total zeroes, and read 11,862.82 against a total of
+     *     8,184.54;
+     *   - decision 122's ERP-sourced charge addition, and its two refusals
+     *     (`erp_charges_unstated`, `erp_charges_not_apportionable`). The Grand
+     *     Total already carries the ERP's stated tax and freight
+     *     (erp_total_carries_erp_tax.php, 🔒 1450), and falls back to Sugar's
+     *     own until Epicor states them. 🔒 1468 accepts that fallback in
+     *     so many words ("even if Epicor did not provide tax or shipping
+     *     yet");
+     *   - the customer line-rollup policy provider and its refusal. It
+     *     adjudicated a rollup that no longer produces this figure;
+     *   - PRESERVED, NOT ZEROED on every refusal. That kept, live on Bench
+     *     (G214, 2026-09-21), quote 273's 25,100.00 on an Opportunity whose
+     *     primary had become quote 285 (8,184.54). The figure was a Closed Lost,
+     *     non-primary quote's, and was shown as open pipeline.
+     *
+     * THE ONE REFUSAL LEFT: A PRIMARY WHOSE OWN TOTAL IS NOT A NUMBER. There is
+     * nothing to take, and inventing one would be decision 59's fabricated
+     * zero. erp_open_amount is PRESERVED and erp_rollup_refusal says why. With
+     * no total there is nothing to split, so the ordered FACT (the plain
+     * ordered-line sum) is written, as before 1632.
      *
      * DELIBERATELY DOES NOT TOUCH amount OR sales_stage. The shared
-     * QuoteOpportunityAmount hook owns headline valuation from the native
-     * grand total; afterLinesOrdered and OrderStageOpportunityCascade own
-     * stage transitions.
+     * QuoteOpportunityAmount hook owns headline valuation; afterLinesOrdered
+     * owns stage transitions (OrderStageOpportunityCascade is retired, 🔒 1413).
      *
-     * TAX AND SHIPPING - DECISION 122, AND THIS SENTENCE USED TO SAY THE
-     * OPPOSITE. It read "This line rollup excludes tax and shipping", which
-     * was true, internally consistent, documented - and meant that
-     * `erp_open_amount` and the Opportunity `amount` beside it could NEVER
-     * agree on any quote carrying either, because the headline amount adds
-     * both. Two figures on one record, computed on different bases, so every
-     * row that grades "are the numbers right" could only pass on an artificial
-     * zero-tax, zero-shipping quote. Neither figure was buggy; that was the
-     * problem. The ruling: BOTH must mean what the customer owes.
+     * WHICH QUOTE DRIVES IT: only the primary, and on every one of its saves.
+     * A hand-over therefore needs no detection. The first save of the newly
+     * primary quote publishes its own figures, and a non-primary revision
+     * never writes. fetched_row is not consulted.
      *
-     * AND THE PART THAT IS NOT NEGOTIABLE - THE NUMBER COMES FROM THE ERP.
-     * This method does not compute tax. It does not read a rate, it does not
-     * multiply a base by one, it does not touch Sugar's own `tax`/`taxrate_
-     * value`/`shipping`. A locally-derived figure that happens to tie out
-     * today is still a local figure and it will drift the first time a
-     * jurisdiction, an exemption or a rounding rule differs - and the ERP is
-     * the system that will actually invoice the customer. Either the ERP has
-     * stated the charge on this quote or this method publishes nothing new.
-     * See erpHeaderCharges() for the three states and what each one does.
-     *
-     * WHICH QUOTE DRIVES IT. Only the contributing primary quote. Editing a
-     * nonprimary revision must not overwrite the current pursuit's values.
-     *
-     * AND IT CAN REFUSE - WHICH IS WHY THE REFUSAL LIVES HERE AND NOT IN THE
-     * PACKAGE THAT KNOWS WHAT IT MEANS.
-     *
-     * These two numbers are recomputed on ANY save of the quote: a rep pressing
-     * Save, a connector writing the header, a release landing. That is the
-     * point of a save-time rollup and it is not changing. But it also means
-     * that a package layered on top of this one CANNOT intercept the write -
-     * it does not own the hook, it does not own the fields, and by the time its
-     * own code runs this method has already published a number.
-     *
-     * The headline `amount` has had a refusal boundary all along: a customer
-     * contribution provider throws, the shared writer catches, and the previous
-     * value is preserved rather than replaced by a guess. These two fields had
-     * NONE. On a quote whose alternatives nobody has adjudicated, compute()
-     * falls through to the configured policy - `sum` in production - and
-     * publishes the whole ladder as still-winnable, beside a frozen `amount`
-     * that correctly refused. Two numbers on one record, disagreeing by
-     * multiples, with nothing on screen or in the log saying why.
-     *
-     * THE RULE THIS PACKAGE CANNOT LEARN, AND THE ONE IT CAN. It cannot learn
-     * "exactly one alternative per group" - that is a customer's rule, this
-     * package installs on every tenant, and tenants whose repeated part numbers
-     * are genuinely additive would have their forecasts refused for a state
-     * that is correct for them. What it CAN own, customer-agnostically, is the
-     * REFUSAL PATH ITSELF: somewhere for an adjudicating package to say "do not
-     * publish a number for this quote", and one shared, auditable response to
-     * that which PRESERVES what is stored. The predicate belongs to whoever
-     * knows the domain; the decision to write or not to write belongs to
-     * whoever owns the write, and that is this method.
-     *
-     * PRESERVED, NOT ZEROED, AND NOT PARTIALLY WRITTEN. A refusal returns
-     * before any assignment, so both fields keep their stored values and the
-     * Opportunity is not saved at all. Writing 0.00 would be worse than the
-     * defect it replaces - a fabricated zero reads as a real number and
-     * destroys the last figure anybody adjudicated (decision 59's 994 rows).
-     *
-     * THE COST, STATED RATHER THAN DISCOVERED LATER. erp_ordered_amount is
-     * written by the same call, so a refusal also holds back the ORDERED
-     * figure - a fact, not a forecast - until the quote next settles and saves.
-     * Publishing half of a rollup whose other half was refused would put a
-     * fresh number beside a stale one with nothing to mark which is which, so
-     * the whole statement waits. A tenant with no provider file is unaffected
-     * by any of this.
+     * COMPARE BEFORE WRITING. This runs under a Quotes after_save that fires
+     * on every save. The Opportunity is saved only when a figure or the reason
+     * actually changes, so an unchanged re-save adds no date_modified bump and
+     * no audit row.
      */
     public function refreshLineRollup(SugarBean $quote): void
     {
@@ -671,81 +988,65 @@ class ErpOpportunityValuation
             return;
         }
 
-        // THE ORDER OF THESE TWO STATEMENTS IS LOAD-BEARING. quoteLines() is
-        // what forces Link2 to drop the beans an earlier walk in this same
-        // request materialised (see its own comment). An adjudicating provider
-        // re-reads the quote's lines to make its decision, so consulting it
-        // BEFORE this read would hand it the rows as they were before the
-        // seller's toggle - and it would then answer "settled" for a quote that
-        // is not, or refuse one that is. Read first, ask second.
+        // Read fresh (quoteLines() makes Link2 drop the beans an earlier walk
+        // in this request materialised) so a release that has just stamped
+        // erp_ordered is seen. The lines now serve ONE purpose: the ordered
+        // fact, by the same compute() path as before.
         $lines = $this->quoteLines($quote);
+        $rollup = ErpQuoteLineRollup::compute($lines, self::configuredGroupPolicy());
 
-        // DECISION 122. Read BEFORE the branch below so that a charge the ERP
-        // has not stated refuses through the SAME path a policy refusal takes:
-        // one preserve-and-publish response, not a second one to keep in step.
-        // The customer's own adjudicator still speaks first - its refusal is
-        // about whether this quote may be valued at all, which is the prior
-        // question to what the valuation should include.
-        $charges = $this->erpHeaderCharges($quote, $lines);
-
-        $refusal = $this->lineRollupRefusal($quote);
-        if ($refusal === null) {
-            $refusal = $charges['refusal'];
-        }
-        if ($refusal !== null) {
-            $GLOBALS['log']->warn('ErpOpportunityValuation: the line rollup for quote ' . $quote->id
-                . ' was REFUSED (' . $refusal . ') - preserving erp_ordered_amount '
-                . var_export($opportunity->erp_ordered_amount ?? null, true) . ' and erp_open_amount '
-                . var_export($opportunity->erp_open_amount ?? null, true)
-                . ' rather than publishing a value nothing has adjudicated');
-            // AND SAY SO ON THE RECORD. A log line needs an administrator and
-            // a Diagnostic Tool pull to read; the person the stale number
-            // misleads is the seller looking at this Opportunity. Neither
-            // amount field is assigned on this branch - that is still the
-            // whole point - but the reason is published beside them, so the
-            // refusal is an observable event rather than an absence of one.
-            $this->publishRollupRefusal($opportunity, $refusal);
-            return;
-        }
-
-        $rollup = ErpQuoteLineRollup::compute(
-            $lines,
-            self::configuredGroupPolicy()
+        $total = $quote->total ?? null;
+        $open = null;
+        // 🔒 1697: Ordered (Won) comes from orderedFigure(), the SAME function
+        // the close contribution (ErpQuoteHooks/OpportunityCloseContribution
+        // .php) answers from, so the Opportunity closes at exactly this figure.
+        $ordered = $this->inOpportunityCurrency(
+            self::orderedFigure($total, (float) $rollup['ordered'], $quote->new_sub ?? null),
+            $quote,
+            $opportunity
         );
-
-        // THE CHARGE LANDS ON THE OPEN SIDE AND NOWHERE ELSE, and the reason
-        // is the same one that makes `ordered` a plain sum. An ordered line is
-        // a fact that has left this document: the ERP re-states tax and
-        // freight on the ORDER it created, against that order's own ship-to
-        // and its own tax point, and this quote header knows nothing about it.
-        // Moving a slice of the QUOTE's charge into erp_ordered_amount would
-        // put a quote-derived guess inside a figure whose whole value is that
-        // it contains no guesses. Where anything IS ordered the charge is not
-        // added at all - erpHeaderCharges() has already refused by then, so
-        // this addition is only ever reached on a wholly-open quote.
-        $ordered = $this->inOpportunityCurrency($rollup['ordered'], $quote, $opportunity);
-        $open = $this->inOpportunityCurrency($rollup['open'] + $charges['amount'], $quote, $opportunity);
-        if ($ordered === null || $open === null) {
+        if ($ordered === null) {
             return;
         }
+        if (self::isStatedTotal($total)) {
+            // 🔒 1632 (G336): the Grand Total is SPLIT by the ordered share of
+            // the lines it was built from, so the header net (ERP tax, freight,
+            // order-level discount) is apportioned instead of landing whole on
+            // Open. Converted once each and subtracted, so the two figures sum
+            // to the converted total to the cent.
+            $split = self::splitGrandTotal((float) $total, (float) $rollup['ordered'], $quote->new_sub ?? null);
+            $grand = $this->inOpportunityCurrency($split['ordered'] + $split['open'], $quote, $opportunity);
+            if ($grand === null) {
+                return;
+            }
+            $open = max(0.0, round($grand - $ordered, 2));
+        }
+        // else: no Grand Total to split. orderedFigure() answered with the
+        // ordered FACT (the plain line sum), exactly as before 1632, and Open
+        // is preserved below.
 
         $changed = false;
-        // CLEARED ON THE WAY THROUGH, THROUGH THE SAME $changed BLOCK. A
-        // refusal reason that outlives its refusal is worse than none: it
-        // labels a perfectly current pair of figures as held, and a seller who
-        // learns to ignore it has lost the one signal that matters. It is
-        // derived from THIS valuation, never remembered from an earlier one.
-        if ($this->refusalStorable($opportunity)
-            && (string) ($opportunity->erp_rollup_refusal ?? '') !== ''
-        ) {
-            $opportunity->erp_rollup_refusal = '';
-            $changed = true;
-        }
         if ((float) ($opportunity->erp_ordered_amount ?? 0) !== $ordered) {
             $opportunity->erp_ordered_amount = $ordered;
             $changed = true;
         }
-        if ((float) ($opportunity->erp_open_amount ?? 0) !== $open) {
+
+        // The reason this Opportunity's open figure is held, or '' when it is
+        // current. Derived from THIS save, never remembered from an earlier one.
+        $reason = $open === null ? self::TOTAL_NOT_A_NUMBER : '';
+        if ($this->refusalStorable($opportunity)
+            && (string) ($opportunity->erp_rollup_refusal ?? '') !== $reason
+        ) {
+            $opportunity->erp_rollup_refusal = $reason;
+            $changed = true;
+        }
+
+        if ($open === null) {
+            $GLOBALS['log']->warn('ErpOpportunityValuation: primary quote ' . $quote->id
+                . ' has no numeric total (' . var_export($total, true) . ') - preserving erp_open_amount '
+                . var_export($opportunity->erp_open_amount ?? null, true)
+                . ' rather than publishing a value nothing has stated');
+        } elseif ((float) ($opportunity->erp_open_amount ?? 0) !== $open) {
             $opportunity->erp_open_amount = $open;
             $changed = true;
         }
@@ -757,15 +1058,114 @@ class ErpOpportunityValuation
         $opportunity->save();
 
         $GLOBALS['log']->info('ErpOpportunityValuation: opportunity ' . $opportunity->id
-            . ' line rollup from quote ' . $quote->id . ' (policy ' . self::configuredGroupPolicy()
-            . '): ordered=' . $ordered . ' open=' . $open
-            // SAY WHICH OF THE TWO MEANINGS THIS NUMBER HAS. An open figure
-            // that includes an ERP-stated charge and one that does not are
-            // different quantities, and after decision 122 both are reachable
-            // on the same fleet depending on whether the connector has filled
-            // the fields on that tenant yet. A reader comparing two tenants'
-            // logs must not have to guess which they are looking at.
-            . ' erp_charges=' . ($charges['applicable'] ? $charges['amount'] : 'not-carried'));
+            . ' valued from primary quote ' . $quote->id . ' per decisions 1468/1632: ordered=' . $ordered
+            . ' open=' . ($open === null ? 'held' : $open) . ' (total ' . var_export($total, true)
+            . ' split by ordered lines ' . (float) $rollup['ordered'] . ' of ' . var_export($quote->new_sub ?? null, true)
+            . ')');
+    }
+
+    /**
+     * 🔒 1632 (G336) — THE GRAND TOTAL, SPLIT BY THE ORDERED SHARE OF ITS LINES.
+     *
+     * MEASURED (test lane a02e1d6d, Ophir, Opportunity e5018b80 / quote #376):
+     * total 1024.446 = lines 1062.58 + ERP tax 17.90 - order-level discount
+     * 56.034, every line ordered. The old rule, Open = total - ordered lines,
+     * put the whole header net on Open: -38.13, beside an Ordered of 1062.58
+     * that was MORE than the Opportunity's Likely. Ophir had six such.
+     *
+     * Owner, yes/no (🔒 1632): split the Grand Total across the lines by ordered
+     * share, so Ordered (Won) + Open (Likely) = Likely, neither below 0 nor
+     * above Likely. Accepted cost: Ordered no longer equals the raw ordered-line
+     * sum (on #376 it reads 1024.45, not 1062.58).
+     *
+     *   share   = ordered lines / the lines the total was built from, in [0, 1]
+     *   Ordered = max(total, 0) x share
+     *   Open    = max(total, 0) - Ordered
+     *
+     * THE DENOMINATOR IS THE QUOTE'S OWN new_sub - the line roll-up the total
+     * formula adds the header net to (erp_total_carries_erp_tax.php), so the
+     * share and the total describe the same lines, pins and alternative rungs
+     * included (🔒 1468's quote 285: the `sum` rollup counts a twin the total
+     * zeroes, so the rollup's own total is NOT a fallback). When new_sub is
+     * not stated the Grand Total itself is the denominator: the header net is
+     * then treated as nil, which is the pre-1632 split held inside [0,
+     * Likely]. A share above 1 (an ordered line the total does not
+     * count) is held at 1; with no lines worth anything, the share is 1 if
+     * anything is ordered and 0 if not. A total below zero has nothing to
+     * split: both figures are 0.00.
+     *
+     * Pure: no Sugar, so the suite executes it.
+     *
+     * @param float $grandTotal   the primary quote's Grand Total (Quotes.total)
+     * @param float $orderedLines the ordered lines' value (ErpQuoteLineRollup `ordered`)
+     * @param mixed $linesTotal   Quotes.new_sub, as the bean holds it
+     * @return array{ordered: float, open: float, share: float} in the quote's currency, unrounded
+     */
+    public static function splitGrandTotal(float $grandTotal, float $orderedLines, $linesTotal): array
+    {
+        $grand = max(0.0, $grandTotal);
+        if (is_string($linesTotal)) {
+            $linesTotal = trim($linesTotal);
+        }
+        $lines = (!is_bool($linesTotal) && is_numeric($linesTotal)) ? (float) $linesTotal : $grandTotal;
+
+        if ($lines > 0.005) {
+            $share = $orderedLines / $lines;
+        } else {
+            $share = $orderedLines > 0.005 ? 1.0 : 0.0;
+        }
+        $share = max(0.0, min(1.0, $share));
+        $ordered = $grand * $share;
+
+        return array('ordered' => $ordered, 'open' => $grand - $ordered, 'share' => $share);
+    }
+
+    /**
+     * 🔒 1697 (owner, 2026-09-23, G389) — THE ONE ORDERED FIGURE.
+     *
+     * Ordered (Won) (refreshLineRollup, above) and the Opportunity's CLOSE
+     * amount (ErpQuoteHooks/OpportunityCloseContribution.php, read by
+     * ERP-Core's OpportunityCloseAmount) both take this, so at close Likely ==
+     * Ordered (Won).
+     *
+     * MEASURED BEFORE IT (stock SMOKE-1, #1020, opp b7e1658c): a partial order
+     * (11719) and the remainder (11720) closed the Opportunity at Likely
+     * 811.89 = ordered lines 693.64 + ERP ORDER tax 118.25 (🔒 149's basis),
+     * beside Ordered (Won) 799.10 = the Grand Total with the ERP QUOTE tax
+     * 105.46. Owner: the close uses the Ordered (Won) figure; this supersedes
+     * 🔒 149's order-tax close basis.
+     *
+     *   Grand Total stated -> splitGrandTotal()'s ordered share (🔒 1632).
+     *   Not stated         -> the ordered lines as they are - the ordered
+     *                         FACT, as before 1632. Never an invented total.
+     *
+     * Pure: no Sugar, so the suite executes it.
+     *
+     * @param mixed $grandTotal   Quotes.total, as the bean holds it
+     * @param float $orderedLines the ordered lines' value (ErpQuoteLineRollup `ordered`)
+     * @param mixed $linesTotal   Quotes.new_sub, as the bean holds it
+     * @return float in the quote's currency, unrounded
+     */
+    public static function orderedFigure($grandTotal, float $orderedLines, $linesTotal): float
+    {
+        if (!self::isStatedTotal($grandTotal)) {
+            return $orderedLines;
+        }
+
+        return self::splitGrandTotal((float) $grandTotal, $orderedLines, $linesTotal)['ordered'];
+    }
+
+    /**
+     * Is this Quotes.total a number to split? A numeric STRING is - Sugar
+     * hands a decimal column back as one ('799.100000'). A bool, null, '' or
+     * any other text is not. The same test refreshLineRollup applied inline
+     * before 🔒 1697 gave it a name.
+     *
+     * @param mixed $total
+     */
+    private static function isStatedTotal($total): bool
+    {
+        return !is_bool($total) && is_numeric($total);
     }
 
     /**
@@ -776,7 +1176,11 @@ class ErpOpportunityValuation
      * the thing Epicor already states (decision 789).
      *
      * discount_price, not list price: the same field the quote's own totals
-     * are summed from elsewhere in this package.
+     * are summed from elsewhere in this package. AND the line's own discount
+     * beside it - that sentence used to end at "summed from", which was only
+     * three quarters true and is what G89 turned out to be: Sugar's totals sum
+     * discount_price AND THEN SUBTRACT the line's concession, and this mapping
+     * carried the first half only.
      *
      * erp_governing is read on EVERY line, ordered ones included. The rollup
      * needs to know that a group's chosen line is the one that was released,
@@ -788,6 +1192,8 @@ class ErpOpportunityValuation
     public static function quoteLines(SugarBean $quote): array
     {
         $lines = array();
+        // G466: read once per quote; see the 'shipping' key below.
+        $shippingCounts = self::shippingCounts($quote);
 
         $quote->load_relationship('product_bundles');
         if (!$quote->product_bundles || !is_object($quote->product_bundles)) {
@@ -857,11 +1263,20 @@ class ErpOpportunityValuation
                     'label' => self::lineLabel($product),
                     'quantity' => (float) ($product->quantity ?? 0),
                     'price' => (float) ($product->discount_price ?? 0),
+                    // THE CONCESSION THE SELLER GAVE ON THIS LINE, in document
+                    // currency. Without it the rollup sums the GROSS line and
+                    // the opportunity reads HIGHER than the Grand Total printed
+                    // on the quote - G89, measured live on quote 273 as
+                    // erp_open_amount 25,100.00 beside Quotes.total 24,100.00.
+                    // Sugar's percent/flat flag is resolved in lineDiscount();
+                    // ErpQuoteLineRollup only ever sees money.
+                    'discount' => self::lineDiscount($product),
                     'ordered' => !empty($product->erp_ordered),
-                    // WHICH ERP order took this line. Needed by the close
-                    // contribution to find the order Epicor restated tax on -
-                    // and needed as an identity, not a count: two lines on the
-                    // SAME order must not have that order's tax counted twice.
+                    // WHICH ERP order took this line, as an identity. The close
+                    // contribution used it to look up each order's own tax
+                    // until 🔒 1697 moved the close onto the Ordered (Won)
+                    // figure; no money path reads it now. Kept because it is
+                    // part of the line shape other readers receive.
                     'order_num' => trim((string) ($product->erp_ordered_order_num ?? '')),
                     // THIS LINE'S OWN ERP-STATED CHARGES. null means the ERP has
                     // not stated one for this line, which is NOT the same as a
@@ -869,7 +1284,14 @@ class ErpOpportunityValuation
                     // null rather than coalesced so the sum below can tell
                     // "nobody stated anything" from "everyone stated zero".
                     'tax' => self::statedCharge($product->erp_tax_amount ?? null),
-                    'shipping' => self::statedCharge($product->erp_shipping_amount ?? null),
+                    // G466 (🔒 1764b): shipping counts on an advanced quote
+                    // only. Elsewhere the line states NO shipping - null, not
+                    // 0.00 - so it adds nothing and does not claim the line
+                    // level over the document's own tax in
+                    // statedLineCharges() (a 0.00 would be "stated").
+                    'shipping' => $shippingCounts
+                        ? self::statedCharge($product->erp_shipping_amount ?? null)
+                        : null,
                     'governing' => !empty($product->erp_governing),
                     // Where the line came from, which decides what it can be
                     // an ALTERNATIVE to. erp_sync_key is set by the ERP quote
@@ -887,118 +1309,17 @@ class ErpOpportunityValuation
     }
 
     /**
-     * WHAT THE ERP SAYS THIS QUOTE'S TAX AND SHIPPING ARE - decision 122's
-     * whole surface in this package, and the guard that keeps it off the
-     * fleet until something actually states them.
-     *
-     * Returns, always:
-     *   applicable  bool   whether an ERP-stated charge is in play at all
-     *   amount      float  what to add to the OPEN side (0.0 when not)
-     *   refusal     ?string  a reason to publish nothing, or null
-     *
-     * THREE STATES, AND THE MIDDLE ONE IS THE ENTIRE POINT.
-     *
-     * 1. NOT CARRIED -> not applicable, add nothing, refuse nothing. The
-     *    fields are not declared on this instance, so no package has ever
-     *    offered to fill them. This is EVERY TENANT IN THE ESTATE TODAY and
-     *    it is the branch that makes this release a no-op fleet-wide: the
-     *    rollup is byte-for-byte the one 1.0.18 published. It is the same
-     *    guard, and for the same reason, as "no provider file means no
-     *    opinion" one method down, and as the decision-102 correction that
-     *    stopped POLICY_MIN becoming a fleet default - a valuation change
-     *    that reaches tenants who opted into nothing is a regression however
-     *    right it is for the tenant that asked for it.
-     *
-     *    ASKED OF field_defs, NEVER OF THE PROPERTY. An undeclared field and
-     *    a declared-but-empty one are the same `??` answer and they mean
-     *    opposite things: one is "nobody offers this number", the other is
-     *    "somebody offers it and has not got one". refusalStorable() already
-     *    draws that distinction for the refusal column; this is the same cut.
-     *
-     * 2. CARRIED BUT UNSTATED -> REFUSE. The fields exist, this quote came
-     *    from the ERP, and one of them holds nothing numeric. That is the
-     *    connector saying "I have not got Epicor's answer for this quote" -
-     *    it is NOT the ERP saying zero, and the difference is decision 59's
-     *    994 fabricated 0.00 rows. Reading an absent charge as no charge
-     *    would publish a number that looks exactly like a correct one and is
-     *    quietly short by whatever the ERP will actually invoice. So the
-     *    whole statement waits, both figures keep their stored values, and
-     *    the reason goes on the record beside them. An explicit numeric zero
-     *    IS a statement and is honoured as one: Epicor's quote tax engine is
-     *    on for every quote we have measured (XbSystCalcQuoteTax true on
-     *    130 of 130 EPIC06 quotes), so a zero from it is an evaluated zero.
-     *
-     * 3. STATED -> add tax + shipping to the open side.
-     *
-     * AND ONE REFUSAL THAT IS NOT ABOUT ABSENCE AT ALL. A quote header states
-     * ONE tax and ONE freight figure, for the whole document. erp_open_amount
-     * values a SUBSET of that document - what has not yet been released - so
-     * the moment any line is ordered the header's charge no longer describes
-     * what this figure measures. There is no ERP field that splits it: Epicor
-     * states quote tax at the header and at QuoteDtl, and QuoteQty - the rung
-     * that becomes a Sugar quote line, and the level the released/open cut is
-     * actually made at - carries no tax property at all (108 enumerated, none
-     * matching "Tax", confirmed against live rows). Apportioning it here by
-     * value or by count would be exactly the locally-derived figure the ruling
-     * forbids, dressed as arithmetic. So a partially-released quote refuses
-     * and says so, rather than publishing a plausible split nobody computed.
-     *
-     * THIS METHOD LEARNS NOTHING ABOUT ANY CUSTOMER. "Include what the ERP
-     * says the customer owes" is an accounting choice every tenant makes the
-     * same way; it carries no rule about ladders, pins, part numbers or which
-     * of several alternatives counts. Those stay where gate G2 put them - the
-     * pin in the adjudicating package, the grouping in ErpQuoteLineRollup -
-     * and nothing here reads or writes either.
-     *
-     * @param array $lines the same rows the rollup is computed from
-     *
-     * @return array{applicable: bool, amount: float, refusal: ?string}
-     */
-    private function erpHeaderCharges(SugarBean $quote, array $lines): array
-    {
-        $charges = self::statedDocumentCharges($quote, $lines);
-
-        if (empty($charges['applicable']) || $charges['refusal'] !== null) {
-            return $charges;
-        }
-
-        // The whole-document charge cannot be cut to fit a subset.
-        //
-        // THIS IS THE ONLY DIFFERENCE between the subset question and the
-        // whole-document one, and it is why they are now two methods rather
-        // than one. erp_open_amount is a SUBSET: once part of the document has
-        // been ordered there is no honest way to say how much of a single
-        // document-level charge belongs to what is left, and Epicor does not
-        // answer that question either - it RECOMPUTES tax and freight on the
-        // order it creates, against that order's own ship-to and tax point.
-        // Inventing a split here would put a guess inside a figure whose whole
-        // worth is that it contains none.
-        //
-        // The Opportunity's HEADLINE amount is not a subset - it covers the
-        // whole quote, ordered lines included - so the same charge applies to
-        // it exactly and nothing needs apportioning. That caller takes
-        // statedDocumentCharges() directly and never reaches this refusal.
-        foreach ($lines as $line) {
-            if (!empty($line['ordered'])) {
-                return array(
-                    'applicable' => true,
-                    'amount' => 0.0,
-                    'refusal' => 'erp_charges_not_apportionable',
-                );
-            }
-        }
-
-        return $charges;
-    }
-
-    /**
      * WHAT THE ERP STATES FOR THE WHOLE DOCUMENT, with no view about which
      * part of it anyone is asking about.
      *
-     * Split out of erpHeaderCharges() so the two questions stop being one.
-     * The three states below are unchanged and are the whole safeguard; the
-     * apportionment refusal that used to sit among them is a property of the
-     * SUBSET caller, not of the charge, and now lives with that caller.
+     * 🔒 1468 LEFT THIS WITH NO PRODUCTION CALLER. Its two consumers were the
+     * rollup-sourced erp_open_amount (via erpHeaderCharges(), now removed) and
+     * the headline contribution (ErpQuoteHooks/OpportunityContribution.php).
+     * Both now take the primary's Grand Total, whose own formula carries the
+     * ERP's stated charges (🔒 1450). It is KEPT, unchanged, as the one place
+     * that still states the lines-before-header rule (the user ruling below)
+     * in executable form; removing it, statedLineCharges() and statedCharge()
+     * is a follow-up, not part of this change.
      *
      * @return array{applicable: bool, amount: float, refusal: ?string}
      */
@@ -1044,7 +1365,14 @@ class ErpOpportunityValuation
         }
 
         $tax = self::statedCharge($quote->erp_tax_amount ?? null);
-        $shipping = self::statedCharge($quote->erp_shipping_amount ?? null);
+        // G466 (🔒 1764b): a quote that is not an advanced quote has no
+        // shipping by ruling - a 0.00, never "unstated" - the Grand Total's own
+        // shipping term. (Its tax term is not type-gated here, 🔒 1450's gate
+        // lives in the formula; this function has no production caller since
+        // 🔒 1468, so that is recorded rather than widened.)
+        $shipping = self::shippingCounts($quote)
+            ? self::statedCharge($quote->erp_shipping_amount ?? null)
+            : 0.0;
 
         // STATE 2. Offered and not answered.
         if ($tax === null || $shipping === null) {
@@ -1078,6 +1406,91 @@ class ErpOpportunityValuation
      * guard written as `> 0` would silently drop it; the test is `is_numeric`
      * and nothing here compares against zero.
      */
+    /**
+     * ONE QUOTE LINE'S DISCOUNT, IN DOCUMENT CURRENCY - Sugar's two spellings
+     * of one concession, resolved into the single number ErpQuoteLineRollup
+     * takes.
+     *
+     * Products stores the figure in `discount_amount` and then reads it two
+     * incompatible ways depending on `discount_select`: a PERCENT of the line
+     * when set (which is Sugar's own default for the field), flat document
+     * currency when not. The stored 5.000000 is $5 or $45 depending entirely on
+     * a boolean, so a caller that ignores the flag is not approximately right -
+     * it is an order of magnitude out, silently, in whichever direction the
+     * tenant happens to sell.
+     *
+     * 🛑 THE RULE IS THE PLATFORM'S, QUOTED. SugarEnt 26.1.0
+     * modules/Products/vardefs.php, `deal_calc` (:415-436) and `total_amount`
+     * (:184-215):
+     *
+     *   deal = discount_select ? subtotal x (discount_amount / 100)
+     *                          : (quantity > 0 ? (discount_price < 0 ? -d : d)
+     *                                          : -d)
+     *
+     * The two sign flips look like noise and are not: they are how Sugar keeps
+     * a credit line and a zero-quantity line from having their discount
+     * applied the wrong way round, and copying the rule without them would
+     * produce a figure that agrees with the quote on ordinary lines and
+     * disagrees on exactly the lines somebody is already looking at.
+     *
+     * 📌 TAKEN AGAINST THE LINE'S GROSS, NOT AGAINST Products.subtotal, AND
+     * THAT IS THE LOAD-BEARING CHOICE. ERP-Epicor overrides the `subtotal`
+     * formula so an `erp_total_role = alternative` rung extends to 0.00
+     * (.../Products/Ext/Vardefs/erp_total_role.php). `deal_calc` and
+     * `total_amount` both read `$subtotal`, so both read 0.00 on a losing rung.
+     * Reading either of them here would tell the rollup that a discounted
+     * alternative carries no discount - and this class values alternatives at
+     * their own worth ON PURPOSE, to answer "what is this rung worth IF it
+     * wins". That counterfactual has to carry the concession attached to the
+     * rung, so the percent is taken against quantity x discount_price: exactly
+     * what `subtotal` would be if the rung were the one that counted.
+     *
+     * On a `counts` line the two are the same number, so nothing diverges on
+     * the lines that decide the Grand Total. The one platform case where they
+     * differ on a counting line is a SERVICE line, whose `subtotal` is prorated
+     * by service_duration_value/catalog_service_duration_value - a divergence
+     * ErpQuoteLineRollup has always had, since its line value has always been
+     * quantity x price. Inherited knowingly, not widened.
+     *
+     * ⚠️ A FLAT discount on an ALTERNATIVE cannot legally arise: ErpLineRole
+     * refuses to stamp such a line, for the reason that same vardef states in
+     * its own words. This function still answers for that shape rather than
+     * assuming it away.
+     *
+     * ABSENT, EMPTY AND NON-NUMERIC ARE ALL 0.00, never a throw. It runs inside
+     * an after_save hook on Quotes; a malformed cell must not fail a seller's
+     * save. `statedCharge()` below draws the opposite distinction on purpose -
+     * there, absent and zero MEAN different things because the ERP is the one
+     * speaking. Here the seller is, and a line with nothing typed in its
+     * discount box has no discount.
+     *
+     * @param SugarBean|object $product one Products row
+     */
+    public static function lineDiscount($product): float
+    {
+        $raw = $product->discount_amount ?? null;
+        if (!is_numeric($raw)) {
+            return 0.0;
+        }
+
+        $discount = (float) $raw;
+        if ($discount === 0.0) {
+            return 0.0;
+        }
+
+        if (!empty($product->discount_select)) {
+            $gross = (float) ($product->quantity ?? 0) * (float) ($product->discount_price ?? 0);
+
+            return $gross * ($discount / 100.0);
+        }
+
+        if ((float) ($product->quantity ?? 0) > 0) {
+            return (float) ($product->discount_price ?? 0) < 0 ? -$discount : $discount;
+        }
+
+        return -$discount;
+    }
+
     /**
      * The lines' own charges, summed - or null when no line states one.
      *
@@ -1113,6 +1526,27 @@ class ErpOpportunityValuation
         return $anyStated ? $total : null;
     }
 
+    /**
+     * G466 (🔒 1758b / 🔒 1764b): does shipping count on this quote? Only on an
+     * advanced quote - anything that is not exactly the advanced key (null,
+     * '', an unknown key, a non-scalar) is not one, which is how
+     * equal($erp_quote_type, "advanced_quote") falls in the Grand Total.
+     *
+     * 📌 NOTHING HERE CHANGES A LIVE NUMBER, and that is recorded, not hidden:
+     * the two readers this gates (quoteLines()'s 'shipping' and
+     * statedDocumentCharges()) feed only statedLineCharges() /
+     * statedDocumentCharges(), which have had no production caller since
+     * 🔒 1468. The Opportunity's live figures (refreshLineRollup()) split the
+     * primary's Quotes.total, whose own formula carries the gate. This keeps
+     * the dormant rule consistent with it, should anything call it again.
+     */
+    private static function shippingCounts(SugarBean $quote): bool
+    {
+        $type = $quote->{self::QUOTE_TYPE_FIELD} ?? null;
+
+        return is_scalar($type) && (string) $type === self::ADVANCED_QUOTE;
+    }
+
     private static function statedCharge($value): ?float
     {
         if (is_bool($value) || !is_numeric($value)) {
@@ -1120,52 +1554,6 @@ class ErpOpportunityValuation
         }
 
         return (float) $value;
-    }
-
-    /**
-     * Publish WHY the two rollup figures did not move, beside the figures.
-     *
-     * THE HALF A REFUSAL IS WORTH NOTHING WITHOUT. Preserving a stored number
-     * instead of overwriting it with one nobody adjudicated is correct, and on
-     * its own it is indistinguishable from the number being right: the record
-     * shows the same figures it showed before, and nothing on the page says
-     * they have stopped following the quote. That is the same class of defect
-     * as the one the refusal path closed - a wrong-looking number in front of
-     * a person with no way to tell - wearing the other face.
-     *
-     * THE PROVIDER'S OWN WORDS, VERBATIM. This package does not interpret,
-     * translate or classify them. It cannot: the reasons belong to a customer
-     * package's domain, and inventing a vocabulary for them here is exactly
-     * the customer-specific knowledge decision 87(b) gate G2 keeps out of the
-     * shared layer. Truncated only to the column's width, and truncated rather
-     * than dropped because a clipped sentence still names the condition.
-     *
-     * COMPARE BEFORE WRITING. The Quotes after_save this runs under fires on
-     * EVERY save of the quote, so an unconditional write would save the
-     * Opportunity - and stamp date_modified, and add an audit row - on every
-     * one of them while nothing about the situation changed. Saving only on a
-     * real change keeps the audit trail answering "since when", which is the
-     * question the field is audited for.
-     *
-     * NOTHING IS WRITTEN WHERE NOTHING CAN STORE IT. On an instance whose
-     * vardefs have not been rebuilt, setting the property would put a value in
-     * memory that no column persists - a silent half-state, and worse than no
-     * marker at all. The rollup figures are preserved either way; only the
-     * explanation is lost, and the log line above still carries it.
-     */
-    private function publishRollupRefusal(SugarBean $opportunity, string $reason): void
-    {
-        if (!$this->refusalStorable($opportunity)) {
-            return;
-        }
-
-        $reason = mb_substr(trim($reason), 0, self::REFUSAL_LENGTH);
-        if ((string) ($opportunity->erp_rollup_refusal ?? '') === $reason) {
-            return;
-        }
-
-        $opportunity->erp_rollup_refusal = $reason;
-        $opportunity->save();
     }
 
     /**
@@ -1178,80 +1566,6 @@ class ErpOpportunityValuation
     private function refusalStorable(SugarBean $opportunity): bool
     {
         return isset($opportunity->field_defs[self::REFUSAL_FIELD]);
-    }
-
-    /**
-     * WHY this quote's line rollup must not be published, or null when nothing
-     * objects to publishing it.
-     *
-     * Provider contract - deliberately the same shape as the release-stage
-     * provider above, because a second shape for a second optional hook is a
-     * second thing to get wrong:
-     *
-     *   file:   custom/modules/Quotes/ErpQuoteHooks/OpportunityLineRollupPolicy.php
-     *   class:  ErpOpportunityLineRollupPolicy
-     *   method: refusal(SugarBean $quote): ?string
-     *
-     *   null              -> no opinion. Roll up exactly as before.
-     *   a non-blank string -> REFUSE, and the string says why, for the log.
-     *
-     * NO FILE MEANS NO OPINION, AND THAT IS THE GUARD THE WHOLE CHANGE HANGS
-     * ON. This package installs on every tenant. On an instance with no
-     * provider file this method returns null before doing anything at all, so
-     * the rollup is byte-for-byte the one that shipped before a refusal path
-     * existed. Nobody who opted into nothing gets a number that moved.
-     *
-     * EVERYTHING ELSE REFUSES, AND THE ASYMMETRY IS THE POINT. A file that
-     * does not define the class, a provider that throws, a provider that
-     * answers with anything other than null or a non-blank string: all refuse.
-     * The provider file's PRESENCE is a package saying "I adjudicate this
-     * tenant's quotes". Once that has been said, "I could not tell you" is not
-     * evidence that the number is safe to publish - it is evidence that nobody
-     * checked, and publishing anyway is precisely the fail-open this exists to
-     * close. It mirrors the release-stage rule one screen up: invalid or
-     * throwing policy code preserves, it never falls back.
-     *
-     * A blank string is not a quiet "no" - it is a refusal with no reason,
-     * which is a broken provider, and it refuses on the invalid-shape branch.
-     *
-     * The literal path/class/method calls are intentionally verbose:
-     * SugarCloud's scanner rejects dynamic dispatch in installable packages.
-     */
-    private function lineRollupRefusal(SugarBean $quote): ?string
-    {
-        if (!file_exists(self::LINE_ROLLUP_POLICY_FILE)) {
-            return null;
-        }
-
-        try {
-            require_once \Sugarcrm\Sugarcrm\Util\Files\FileLoader::validateFilePath(
-                self::LINE_ROLLUP_POLICY_FILE
-            );
-            if (!class_exists('ErpOpportunityLineRollupPolicy', false)) {
-                $GLOBALS['log']->warn('ErpOpportunityValuation: the line-rollup policy file does not define '
-                    . 'ErpOpportunityLineRollupPolicy - refusing quote ' . $quote->id
-                    . ' rather than valuing it unadjudicated');
-                return 'policy_provider_invalid';
-            }
-            $answer = (new ErpOpportunityLineRollupPolicy())->refusal($quote);
-        } catch (\Throwable $e) {
-            $GLOBALS['log']->error('ErpOpportunityValuation: the line-rollup policy failed for quote '
-                . $quote->id . ' - refusing rather than valuing it unadjudicated: ' . $e->getMessage());
-            return 'policy_provider_exception';
-        }
-
-        if ($answer === null) {
-            return null;
-        }
-
-        if (!is_string($answer) || trim($answer) === '') {
-            $GLOBALS['log']->warn('ErpOpportunityValuation: the line-rollup policy returned an invalid shape '
-                . var_export($answer, true) . ' for quote ' . $quote->id
-                . ' - refusing rather than valuing it unadjudicated');
-            return 'policy_invalid_shape';
-        }
-
-        return trim($answer);
     }
 
     /**

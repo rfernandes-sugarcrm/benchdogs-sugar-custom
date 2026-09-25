@@ -251,13 +251,20 @@ echo json_encode(['failure' => $failure, 'events' => $events, 'log' => $logLines
 # instance root. Each method named by a script records its call.
 HELPER_FILES = {
     "custom/modules/Quotes/BdQuotesLayoutExtensions.php": "BdQuotesLayoutExtensions",
-    "custom/modules/Accounts/BdAccountsLayoutExtensions.php": "BdAccountsLayoutExtensions",
     "custom/modules/Opportunities/BdOpportunitiesLayoutExtensions.php": "BdOpportunitiesLayoutExtensions",
+    # rc70 (🔒 1724b): ERP-Core's placement of marked fields, which post_execute
+    # calls once per module. Recorded WITH the module, so "each step runs once"
+    # still means one call per step.
+    "custom/include/ErpLayoutExtraFields.php": "ErpLayoutExtraFields",
 }
-HELPER_METHODS = ("write", "writeCustomerGroupField", "remove")
+HELPER_METHODS = ("write", "writeCustomerGroupField", "remove", "place")
 
 
 def helper_source(cls: str) -> str:
+    if cls == "ErpLayoutExtraFields":
+        return ("<?php class ErpLayoutExtraFields { public static function sync($m) {"
+                " bd_helper_called('ErpLayoutExtraFields::sync(' . $m . ')');"
+                " return ['added' => [], 'removed' => []]; } }")
     methods = "".join(
         f" public static function {m}($r = false) {{ bd_helper_called('{cls}::{m}'); }}"
         for m in HELPER_METHODS)
@@ -356,18 +363,18 @@ class SinglePassTest(unittest.TestCase):
         install has finished. On rc68's tree pass 2 re-ran the step, it
         succeeded, and the row was rewritten as `(unknown): N/N applied`."""
         observed = self.run_lifecycle(
-            "install", fail_on_call=("BdAccountsLayoutExtensions::writeCustomerGroupField", 1))
+            "install", fail_on_call=("ErpLayoutExtraFields::sync(Accounts)", 1))
         row = self.final_row(observed)
         self.assertEqual(row["version"], VERSION)
-        self.assertTrue(row["steps"]["accounts_customer_group_field"].startswith("FAILED: "),
+        self.assertTrue(row["steps"]["accounts_erp_layout"].startswith("FAILED: "),
                         row["steps"])
         self.assertEqual(row["applied"], row["total"] - 1)
         verdicts = self.lines(observed, "post_install step report (")
         self.assertEqual(len(verdicts), 1, verdicts)
-        self.assertIn("NOT APPLIED: accounts_customer_group_field", verdicts[0])
+        self.assertIn("NOT APPLIED: accounts_erp_layout", verdicts[0])
         errors = self.installation_errors(observed)
         self.assertEqual(len(errors), 1, errors)
-        self.assertIn("accounts_customer_group_field", errors[0])
+        self.assertIn("accounts_erp_layout", errors[0])
         self.assertIn(VERSION, errors[0])
 
     def test_a_failure_anywhere_reaches_installation_status(self):
@@ -377,7 +384,7 @@ class SinglePassTest(unittest.TestCase):
         step here fails on its SECOND call. With one pass there is no second
         call; with two, the row names a failure channel 3 never heard of."""
         observed = self.run_lifecycle(
-            "install", fail_on_call=("BdAccountsLayoutExtensions::writeCustomerGroupField", 2))
+            "install", fail_on_call=("ErpLayoutExtraFields::sync(Accounts)", 2))
         row = self.final_row(observed)
         failed = [name for name, outcome in row["steps"].items() if outcome != "ok"]
         errors = self.installation_errors(observed)
@@ -403,8 +410,11 @@ class SinglePassTest(unittest.TestCase):
         running = self.lines(observed, "BenchDogs-Ext: pre_uninstall running")
         self.assertEqual(len(running), 1, running)
         self.assertIn(VERSION, running[0])
-        self.assertTrue(observed["calls"], "the uninstall called no helper at all")
-        self.assertEqual({k: v for k, v in observed["calls"].items() if v != 1}, {})
+        # rc70 (🔒 1724b): pre_uninstall has nothing left to undo before the
+        # files go - the marked fields are retired by post_uninstall's
+        # ErpLayoutExtraFields::sync(), after their vardefs are gone. So a
+        # helper called here would be a layout writer come back.
+        self.assertFalse(observed["calls"], observed["calls"])
 
     # -- the artifact ----------------------------------------------------------
 

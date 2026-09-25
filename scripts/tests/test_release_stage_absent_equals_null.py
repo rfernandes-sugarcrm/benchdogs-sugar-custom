@@ -44,9 +44,23 @@ back `None` (preserved) while A's named a stage, i.e. dropping the file would
 stop the Opportunity stage being written — the exact failure rc65's docblock
 warned about for the EMPTY-stub shape.
 
-NOT COVERED, deliberately: the FINAL-release delta rc65 already recorded (PF's
-generic path fires only while lines remain open, `:315`), which rc66 does not
-change. `partial=False` is asserted here only to pin that both shapes preserve.
+🔁 G440 (2026-09-24): PF's G346 (Sugar target `e5af5878`, in PF 1.0.50) changed
+the FINAL release. It used to preserve; now a whole-quote order moves the
+Opportunity to `Closed Won` - when that is a `sales_stage_dom` key - for BOTH the
+null and the absent provider (`orderedInFullResolution`), and preserves with
+`policy_provider_{null,absent}_config_invalid` only on a tenant whose
+sales_stage_dom has no `Closed Won`. This file's harness carried a two-key
+sales_stage_dom, so against the new PF it read as that tenant: a FIXTURE
+artefact, not a runtime one. At runtime ERP-Core ships `Closed Won`
+(`dropdowntemplates/sales_stage_dom.replace.php`), and no Bench Dogs build
+ever reassigned or unset `sales_stage_dom` (only key-by-key additions, all
+retired), so rc69 and rc70 both reach `Closed Won`. And the status is only
+REPORTED by ERP-Epicor's AfterLinesOrdered hook, after the order exists
+(`ErpQuoteHooks.php` allowlist): it cannot fail Submit Order either way.
+
+So the runs now carry the stock `Closed Won` key, and the one place the null
+and absent runs must still differ - PF's own name for the lookup branch - is
+read on a tenant WITHOUT it (case D), where G346 surfaces that name.
 """
 
 from __future__ import annotations
@@ -112,12 +126,18 @@ $GLOBALS['app_list_strings'] = array(
     'sales_stage_dom' => array(
         'Prototype Ordered' => 'Prototype Ordered',
         'Partial Production Ordered' => 'Partial Production Ordered',
+        'Closed Won' => 'Closed Won',
     ),
     'sales_probability_dom' => array(
         'Prototype Ordered' => 80,
         'Partial Production Ordered' => 90,
+        'Closed Won' => 100,
     ),
 );
+// Case D: a tenant whose sales_stage_dom has no 'Closed Won' (G346's refusal).
+if (getenv('BD_NO_CLOSED_WON') === '1') {
+    unset($GLOBALS['app_list_strings']['sales_stage_dom']['Closed Won']);
+}
 
 require getenv('BD_VALUATION');
 
@@ -149,7 +169,7 @@ class ProviderAbsentMatchesProviderNull(unittest.TestCase):
     """PF's real decision, taken three ways over one quote."""
 
     @classmethod
-    def run_pf(cls, provider_source: str | None) -> dict:
+    def run_pf(cls, provider_source: str | None, closed_won: bool = True) -> dict:
         """Run PF's releaseStageDecision with cwd where PF looks for the file."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -172,7 +192,8 @@ class ProviderAbsentMatchesProviderNull(unittest.TestCase):
                 ["php", str(script)], cwd=root, capture_output=True, text=True,
                 env={**os.environ,
                      "BD_VALUATION": str(valuation),
-                     "BD_POLICY_REL": POLICY_REL},
+                     "BD_POLICY_REL": POLICY_REL,
+                     "BD_NO_CLOSED_WON": "" if closed_won else "1"},
             )
             if "{" not in proc.stdout:
                 raise AssertionError(
@@ -184,6 +205,8 @@ class ProviderAbsentMatchesProviderNull(unittest.TestCase):
         cls.with_null_stub = cls.run_pf(RC65_STUB.read_text())
         cls.with_no_file = cls.run_pf(None)
         cls.with_decider = cls.run_pf(DECIDING_PROVIDER)
+        cls.null_no_closed_won = cls.run_pf(RC65_STUB.read_text(), closed_won=False)
+        cls.absent_no_closed_won = cls.run_pf(None, closed_won=False)
 
     # ---- the harness reached PF at all -------------------------------------
 
@@ -193,24 +216,29 @@ class ProviderAbsentMatchesProviderNull(unittest.TestCase):
 
     def test_pf_took_the_branch_each_run_claims(self):
         """The status string is PF's own name for the LOOKUP branch it took, and
-        it is the only place the two runs are allowed to differ. It survives
-        onto the `final` answer, where PF returns the status unchanged; on the
-        `partial` answer both are overwritten with `policy_generic_config_applied`
-        — which is the point, but would also be what a probe that never reached
-        the file at all would report. This is the case that excludes that."""
-        self.assertEqual(self.with_null_stub["final"]["status"], "policy_provider_null")
-        self.assertEqual(self.with_no_file["final"]["status"], "policy_provider_absent")
-        self.assertEqual(self.with_null_stub["partial"]["status"], "policy_generic_config_applied")
-        self.assertEqual(self.with_no_file["partial"]["status"], "policy_generic_config_applied")
+        it is the only place the two runs are allowed to differ. On a normal
+        tenant both answers are overwritten with the generic status - which is
+        the point, but would also be what a probe that never reached the file
+        at all would report. Case D (no `Closed Won`, G346) is where PF names
+        the branch: that is the case that excludes a probe that never reached
+        the file."""
+        self.assertEqual(self.null_no_closed_won["final"]["status"], "policy_provider_null_config_invalid")
+        self.assertEqual(self.absent_no_closed_won["final"]["status"], "policy_provider_absent_config_invalid")
+        for run in (self.with_null_stub, self.with_no_file):
+            self.assertEqual(run["partial"]["status"], "policy_generic_config_applied")
+            self.assertEqual(run["final"]["status"], "policy_generic_ordered_in_full_applied")
 
     # ---- the removal itself -------------------------------------------------
 
     def test_absent_and_null_reach_the_same_decision(self):
         """rc66 stops shipping the stub. A tenant that took rc65 keeps the file
         (policy_provider_null); a fresh tenant has none (policy_provider_absent).
-        Both must land on the same stage, or rc66 is a regression on one of them."""
-        self.assertEqual(self.with_null_stub["partial"]["decision"],
-                         self.with_no_file["partial"]["decision"])
+        Both must land on the same stage, partial AND final, or dropping the
+        stub is a regression on one of them."""
+        for release in ("partial", "final"):
+            with self.subTest(release=release):
+                self.assertEqual(self.with_null_stub[release]["decision"],
+                                 self.with_no_file[release]["decision"])
 
     def test_that_shared_decision_is_the_configured_stage(self):
         """And it is not jointly empty: PF writes the stage post_install
@@ -219,11 +247,22 @@ class ProviderAbsentMatchesProviderNull(unittest.TestCase):
         self.assertEqual(self.with_no_file["partial"]["decision"],
                          {"sales_stage": "Partial Production Ordered", "probability": 90})
 
-    def test_a_final_release_preserves_either_way(self):
-        """PF's generic path is scoped to `$partial` (:315). rc65 recorded this
-        delta; rc66 must not move it in either direction."""
-        self.assertIsNone(self.with_null_stub["final"]["decision"])
-        self.assertIsNone(self.with_no_file["final"]["decision"])
+    def test_a_final_release_moves_to_closed_won_either_way(self):
+        """G346 (PF 1.0.50): a whole-quote order moves the Opportunity to
+        `Closed Won` at sales_probability_dom's probability - for the rc65 null
+        stub and for no file alike. This is what a tenant running Bench Dogs
+        (rc69 or rc70) gets at runtime."""
+        for run in (self.with_null_stub, self.with_no_file):
+            self.assertEqual(run["final"]["decision"], {"sales_stage": "Closed Won", "probability": 100})
+
+    def test_only_a_tenant_without_closed_won_preserves(self):
+        """D. The ONLY route to `policy_provider_*_config_invalid` on a final
+        release: sales_stage_dom without `Closed Won`. PF then preserves
+        (never writes an unknown key) - for both shapes alike."""
+        self.assertIsNone(self.null_no_closed_won["final"]["decision"])
+        self.assertIsNone(self.absent_no_closed_won["final"]["decision"])
+        self.assertEqual(self.null_no_closed_won["partial"]["decision"],
+                         {"sales_stage": "Partial Production Ordered", "probability": 90})
 
     # ---- the mutation, in the suite rather than in a comment ----------------
 

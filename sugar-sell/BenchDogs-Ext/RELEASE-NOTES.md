@@ -1,3 +1,229 @@
+# 0.9.42-rc74 — build: G450 (the "Suspect" account type) on rc73
+
+The "Unreleased (on 0.9.42-rc73)" section below ships as **0.9.42-rc74**, cut
+from `fix/g450-suspect-account-type-r2` on `release/rc73` 51e8e40 (so it carries
+rc73's G460 + G530 + G532 unchanged). rc71 stays VOID and is never reused.
+
+**Requires (unchanged from rc73):** ERP-Epicor **≥ 1.1.131**, Partial
+Fulfillment **≥ 1.0.50**. The Suspect key needs no ERP-Epicor change: it merges
+over ERP-Core's `account_type_dom` whatever the ERP-Epicor version.
+
+# Unreleased (on 0.9.42-rc73) — G450 revived: the "Suspect" account type (🔒1783b)
+
+The customer reversed 🔒1775b (Layne, relayed by the owner 2026-09-25 02:19Z):
+*"The Bench Dogs team said they want all 3 record types to sync to Sugar,
+including Suspects."* This re-applies the VOIDed rc71 change (`fix/g450-suspect-account-type`
+ae3cd4a) on rc73 unchanged in substance; only the WRITER it names has moved.
+
+**Measured read-only (2026-09-25 02:30Z, stage core's stored ADM connection +
+each tenant's stored Sugar destination, GET only):** ADM holds 1,511 customers:
+SUS 1,022 (846 active, 176 inactive), PRO 110 (97 / 13), CUS 379 (329 / 50).
+benchdogs-dev AND benchdogs-sandbox each hold all 1,511 as ADM-keyed Accounts
+(0 missing, 0 duplicate keys, 0 orphans), every SUS typed **Prospect**; both
+serve `account_type_dom` = {Customer, Prospect}; neither ADM connection sets
+`customer_type_extra`. So Suspects already sync; they only lack their own type.
+
+| Change | Why |
+|---|---|
+| **Added** `custom/Extension/application/Ext/Language/_override_en_us.bd_account_type_suspect.php`: `account_type_dom['Suspect'] = 'Suspect'`, only when absent | the value core's accounts step writes for an Epicor SUS customer once the ADM connection's `customer_type_extra` is `{"SUS": "Suspect"}` (core `connector_epicor.normalize.customer_type_extra`, live since c54). The key is byte-exact: core writes the configured value as given, and a key the dom lacks renders BLANK. Customer / Prospect are untouched; an admin's relabel in Dropdown Editor survives a reinstall |
+| The `_override` name | SugarEnt 25.2/26.1 merge `_override*` fragments after every plain one, whatever the mtime; ERP-Core's REPLACE install assigns `account_type_dom` as a whole array, which would otherwise wipe the key after an ERP-Epicor REPLACE upgrade (rc23 measured this for the lookup-type label) |
+| Tests: `scripts/tests/test_g450_suspect_account_type.py` | executes Sugar's fragment merge in PHP over a stock seed with ERP-Core's REAL template (pinned under `fixtures/shared-sugar/`; byte-identical at the pin 6ed6f1b1, at release/1.1.131 and at the Sugar target 31a7ad05), incl. the control that a plain name loses the key; the order rule is pinned against both SugarEnt trees (named in `mlp-lint.yml`) |
+
+No field, no layout, no script change. `account_type` locks only on a keyed
+CUSTOMER (ERP-Core's `account_type_readonly_formula`, G495), so a keyed Suspect
+is seller-editable: Suspect -> Customer writes `CUS` back to Epicor; Suspect ->
+Prospect over an Epicor SUS sends nothing (coordinator ruling on G450, accepted).
+
+**Rollout order (each step its own owner yes):**
+1. Install this package; verify `GET /Accounts/enum/account_type` serves
+   Customer, Prospect AND Suspect. **Not before this:** otherwise step 2 writes
+   an out-of-dom value that renders blank on ~1,022 accounts.
+2. God's View: PATCH the ADM connection with `{"customer_type_extra": {"SUS": "Suspect"}}` (byte-exact).
+3. One FULL accounts run (L300, `sync_mode: full`), not a delta: the accounts
+   delta selects only customers whose `SysRevID` moved, so it would re-type
+   almost none of the existing Suspects. Only on a core carrying G546's fix
+   (7f6ffcf45).
+
+The Bench connector's own `account_suspect` feature (ext 0.3.1+) must stay OFF
+(never named in `SUGARAI_BD_MLP_FIELDS`): core is now the only writer of the
+type, and naming it would make two writers of one field.
+
+# 0.9.42-rc73 — build: G460 + G530 + G532 on rc72
+
+The two "Unreleased (on 0.9.42-rc72)" sections below ship together as
+**0.9.42-rc73**, cut from `fix/g460-marketing-campaign-event` bfc81ea2 (which
+carries G530/G532 from 8acec196). Lane E release cut, branch `release/rc73`.
+
+**Requires (the manifest refuses otherwise):** ERP-Epicor **≥ 1.1.131** (was
+1.1.125) and Partial Fulfillment **≥ 1.0.50** (unchanged). 1.1.131 is the
+release carrying G530's limit on the field, `Quotes.erp_reference`
+`erp_max_length` (10), read through `ErpQuoteFacts::referenceMaxLength()`,
+which this package's Reference default is shortened to. Install ERP-Epicor
+1.1.131 first; rc73 uploaded onto 1.1.130 is refused before any file copies.
+
+# Unreleased (on 0.9.42-rc72) — G460 Marketing Campaign + Marketing Event
+
+Version NOT bumped on this branch (as G530/G532 below): the landing picks the
+next unspent rc. Built on `fix/g530-g532-bench-reference-labels` (8acec19), so
+it carries G530/G532 too.
+
+**Measured on benchdogs-dev (install session smokes, 2026-09-24):** once G380's
+columns were accepted, ADM refused Send to Estimation with *"A valid Marketing
+Campaign is required / A valid Marketing Event is required"* and Submit Order
+with *"You must select an active Marketing Campaign."* Sugar had no field for
+either, so no seller could fix it: every Bench Dogs ERP write was refused.
+Read-only on ADM (2026-09-25): the order carrier is `OrderDtl` (69 of 69 lines
+on the last 11 real orders carry the pair; `OrderHed` has no such column);
+ADM defines no default event.
+
+| Change | Why |
+|---|---|
+| `bd_adm_required_fields.php`: `bd_marketing_campaign`, `bd_marketing_event` (enum, function options, `erp_layout` after `bd_project_id`, not `required`) | the seller's pair; placed by ERP-Core's `ErpLayoutExtraFields` on install and upgrade (an rc72 tenant: after Project, nothing placed moves; `bd_erp_layout_test.php` T6) |
+| `en_us.bd_adm_required_fields.php`: "Marketing Campaign" / "Marketing Event" | ADM's own words |
+| `en_us.bd_adm_lists.php`: `BdMarketingCampaigns` / `BdMarketingEvents` labels | the two lookup types the Bench connector extension (0.3.3+) publishes |
+| `BdAdmRules::marketingOptions()` + `BdAdmLookupOptions.php`'s two functions | ACTIVE PAIRS only (a campaign with an active event; an event of an active campaign); events keyed `<campaign>/<seq>`, ordered by campaign then seq as a number (sorted by a composed key and `ksort()`: `usort()` is on ModuleScanner's blacklist, MLP002) |
+| no default, no before_save change | ADM names no default; the customer decides any default later |
+
+**Needs, in this order:** (1) this package on the tenant (its pickers are empty
+until step 3); (2) the Bench connector extension **0.3.3** (publishes the lists,
+sends the pair on the quote and on every order line, refuses a blank or
+mismatched pair by name), explicitly approved per tenant; (3) one Run Now of its
+`benchdogs_marketing_adm` pipeline, read back as 211 campaigns / 811 events
+(42 / 68 active today). This package goes FIRST so the lookup types are
+labelled before any row is published.
+
+**Tests:** `bd_adm_rules_test.php` K1–K8 (the pairing, the key, the order, no
+default), G2/M1/M3/M4/M5/M5b (five types, five fields, markers, labels);
+`bd_erp_layout_test.php` T1b/T1c/T1e/T3 (five pickers) and T6 (upgrade from
+rc72's real vardef, `fixtures/rc72/`).
+
+# Unreleased (on 0.9.42-rc72) — G530 Reference default fits; G532 Customer Group labels
+
+Version NOT bumped on this branch: the landing picks the next unspent rc.
+
+**G530 (benchdogs-sandbox r7, quote #36, 2026-09-24 21:08:21Z):** the ADM
+default Reference "HARRISBURG PA" (13) was refused by the ERP, *"The maximum
+number of characters allowed for Reference is 10"*, and no ERP quote was
+created. Measured: 10 is Epicor's shipped width (EPIC06 data dictionary,
+`QuoteHed.Reference` DefaultFormat `x(10)`), so it is ERP-Epicor's number, on
+the field (`erp_reference.erp_max_length`); this package only SHORTENS its own
+default to it.
+
+| Change | Why |
+|---|---|
+| `BdAdmRules::defaultReference($city, $state, $max)`: state kept, city cut to fit; no state / no room: first `$max` characters; `$max` 0 = unchanged | the documented rule (README "Reference"); `HARRISBURG PA` → `HARRISB PA` |
+| `BdAdmRules::referenceMaxLength($bean)`: asks `ErpQuoteFacts::referenceMaxLength()` behind `method_exists` | an ERP-Epicor older than G530 is tolerated: no cut, no error (the ERP answers as before), and the reason is logged |
+| `en_us.bd_customer_group.php`: "Cust. Group" / "Group Code" (G532) | both labels were cut to "Customer Gro…" on the Business Card; about 12 characters show, each is now ≤ 11. Keys unchanged, so an upgraded tenant gets the text |
+| `fixtures/shared-sugar/` re-pinned from `erp-integration-sugar` `fix/g530-g531-reference-length-catalog-search` (6ed6f1b1 = target 65413736 + G531 + G530) | the tests run against ERP-Epicor's REAL `ErpQuoteFacts::referenceMaxLength()` and ERP-Core's REAL `erp_reference` vardef. Six other pins were already stale against the target (a0f6b632 → 65413736); refreshed with them, suites green |
+
+**Full G530 needs the ERP-Epicor build carrying 6ed6f1b1** (the field's limit,
+the save-time check, Send to Estimation's up-front refusal). This package alone
+on an older ERP-Epicor changes nothing about Reference.
+
+**Tests:** `bd_adm_rules_test.php` B5–B13 (the rule) and H13–H17 (end to end
+through the real `ErpQuoteFacts` and the real vardef; the older-ERP-Epicor
+case in a child process, which must also LOG why the default was not cut) — mutants 9/9 killed. `test_g280_minimal_footprint.py`
+pins the two labels and the 11-character bound (2/2 killed).
+
+# 0.9.42-rc72 — G507: the customer group leaves the header for the Overview tab
+
+Owner, on Ophir (ADDISON WB I85L06), 2026-09-24 17:43Z: *"can we move this fields
+into the overview?"* — "Distribution" and "DIST" sat beside the account name,
+unlabelled, where sellers read them as buttons.
+
+**Measured before building** (Ophir, SugarEnt 26.1.0, served Accounts record
+view, read-only): `panel_header` carried `bd_customer_group` and
+`bd_customer_group_code` (each with a baked `type: text`). That view has **no
+`panel_body`**: its tabs are `panel_overview` ("Overview"), Sugar Predict, Record
+Information and ERP. rc69's writer placed the pair on `panel_body`, else on *the
+first panel that holds fields* — which there is the header. rc70/rc71's vardef
+comment ("rc69 put them on panel_body on every live tenant") was wrong for
+Ophir; its marker would also have resolved `panel_body` to the ERP tab there.
+
+| Change | Why |
+|---|---|
+| `bd_customer_group.php` vardef: `erp_layout` panel `panel_body` → **`panel_overview`, after `industry`** (the code after the name) | the first tab of the measured Bench tenant, beside Type / Industry. A FIRST-EVER placement (fresh install) lands there; `sync()` never moves a placed field |
+| same vardef: **`'readonly' => true`** on both | `sync()` writes only name + label, so read-only has to come from the vardef: Sidecar's `isFieldAlwaysReadOnly()` falls back to it (26.1.0 `utils.js`), so the pair renders in detail mode even in Edit. Client-side only on Accounts: `populateFromApi()` checks field ACLs, not `readonly`, and ERP-Core's `SugarACLErpOwnedFields` is registered on ERP_* modules only — the connector's REST writes are unaffected |
+| **NEW one-off** `sugar-sell/ONEOFF-MoveBdCustomerGroup` 1.0.0 (separate package, id `oneoff_move_bd_customer_group`) | rc72 ALONE DOES NOT MOVE THEM on an upgraded tenant: a header entry is "on the view", and `sync()` leaves placed fields alone. 🔒 1724b forbids layout code in this package (`test_no_shipped_file_touches_a_record_view`), so the one-time move is a disposable one-off, like ONEOFF-RetireBdResidue. It evicts the pair from HEADER panels only, recreates them labelled on the first tab after Industry, keeps an admin's placement elsewhere, places nothing without a vardef, writes once |
+| No script change | `post_execute.php` comments corrected (the marker panel, and whose job the header is) |
+
+**Built on rc70, not rc71.** rc71 (G450, the Bench-only "Suspect" account type) is VOID (🔒 1775b: the customer does not need it; Customer Type is left alone) and was never shipped; rc72 does NOT carry `_override_en_us.bd_account_type_suspect.php`, and rc71's number is never reused.
+
+**Close path on Ophir: rc72 + the one-off, either order** (pinned both ways in
+`scripts/tests/bd_customer_group_move_test.php` L2/L5). **Known limit:** on a view
+with `panel_body` and no `panel_overview` (stock 26.1.0 GA), a first-ever placement
+by the marker falls back to the ERP tab (ERP-Core's order: named → ERP panel →
+`panel_body`); pinned in `bd_erp_layout_test.php` T3. The one-off itself uses the
+first tab on either shape. benchdogs-dev / sandbox layouts were NOT read (not
+signed in).
+
+**Tests:** NEW `bd_customer_group_move_test.php` (29 checks: rc69's REAL writer
+reproduces the header placement on the Ophir-shaped view; the one-off's unit cases;
+the tenant's life with rc72's real scripts and ERP-Core's real `sync()`; the vardef).
+`bd_erp_layout_test.php` T3/T5a re-pinned for the GA-shape fallback and its rc69
+stand-in replaced by the real rc69 file (`fixtures/rc69/`); `bd_adm_rules_test.php`
+M6 re-pinned. Mutants 17/17 killed.
+
+# 0.9.42-rc70 — G380 / G381 slim (🔒 1724b): ADM config + ADM rules only
+
+Owner ruling 🔒 1724b: *Bench keeps ONLY ADM config + ADM rules; the generic
+parts move out.* This build is the Sugar half of that split.
+
+**`bd_reference` (and the other fields of the unreleased G380/G381 branch) was
+never installed on any tenant.** rc69 - the build on every tenant - was cut from
+`main` (`9496b7e`, 2026-09-23 03:18Z) and carries no Quotes field at all; the
+G380/G381 branch began 19 hours later (`a74bf19`, 22:04Z), was never merged,
+never took a version of its own (it kept rc69's, which Module Loader declines
+as an upgrade), and the decision register records no install of it. That
+matters because ERP-Core's `ErpLayoutExtraFields::sync()` only ever retires a
+field it has seen MARKED: an unmarked `bd_reference` on a Quotes panel would
+never be taken off by it (pinned in `bd_erp_layout_test.php` T4e). Evidence is
+documentary; a read-only check of a tenant is one metadata read (Quotes fields,
+look for `bd_reference`).
+
+**Verified against the LANDED ERP-Epicor code** (Sugar target `a0f6b632`, lane D),
+not stand-ins - pinned under `scripts/tests/fixtures/shared-sugar/`:
+
+- `ErpQuoteFacts` (real) answers the company and each line's group for the
+  defaults hook. Its `companyCode` has NO `erp_sync_key`-prefix fallback, so an
+  ADM-keyed account with no company relate is not ADM - the same answer the
+  payload gives (`bd_adm_rules_test.php` A8). `partNumber` (untrimmed) is not
+  used here at all.
+- `ErpLayoutExtraFields::sync()` (real) runs through rc70's real
+  `post_execute.php` / `bd_pre_uninstall.php` / `post_uninstall.php`
+  (`bd_erp_layout_test.php`): upgrade from rc69 (the two Account fields rc69
+  placed unmarked stay put and become RECORDED, so an uninstall can retire
+  them), reinstall, ERP-Epicor reinstall, and uninstall both fresh and over a
+  restored rc69 backup.
+- Uninstall ORDER (lane D rule 3): `post_uninstall.php` rebuilds the extensions
+  and only then calls `sync()`. Sugar's own `ModuleInstaller::uninstall()` also
+  runs `uninstall_extensions()` (which rebuilds) before `post_uninstall`
+  (SugarEnt 26.1.0), and the test's extension compiler is deliberately
+  stricter - it changes only on rebuild - so removing the rebuild from
+  `post_uninstall.php` fails the test (mutant S19).
+- ERP-Core ships INSIDE the ERP-Epicor package (`buildPackages.sh` merges it),
+  so the ERP-Epicor floor also covers `ErpLayoutExtraFields` and `erp_reference`.
+
+**Requires (the manifest refuses otherwise):** ERP-Epicor **≥ 1.1.125** (G380
+(d)–(g): `Quotes.erp_reference`, `ERP_Companies.erp_order_requires_part_number`,
+ERP-Core's `ErpLayoutExtraFields`, `ErpQuoteFacts`) and Partial Fulfillment
+**≥ 1.0.50**.
+
+| Change | Why |
+|---|---|
+| **Removed** `bd_reference` (and its label) | Reference is ERP-Epicor's generic `erp_reference`; this package only DEFAULTS it (ship-to "CITY ST") on an ADM quote |
+| **Removed** `BdAccountsLayoutExtensions.php`, and the unreleased `BdAdmQuoteFieldsLayout.php` | no layout code: the fields carry ERP-Epicor's `erp_layout` marker and ERP-Core's `ErpLayoutExtraFields::sync()` places / retires them. The Account fields stay on `panel_body`, where rc69 put them. An upgraded tenant KEEPS the old `BdAccountsLayoutExtensions.php` (Module Loader never deletes a file a later build stops shipping, §CW / G37) - inert, nothing requires it |
+| **Removed** the unreleased `ErpQuoteHooks/ResolveOrderableLines.php` + `OrderSelectedLinesPolicy.php` | the part-number refusal is ERP-Epicor's per-company switch |
+| **Removed** `bd_adm_companies_list` | "ADM" from one source: a quote is ADM when its company has published `BdLeadSources` rows (core, from the ADM connection's `lookup_code_lists`) |
+| `BdAdmRules` asks ERP-Epicor's `ErpQuoteFacts` for the company and each line's group | its private copies had already drifted from what ERP-Epicor sends (footprint SB8) |
+| The before_save hook exits cheapest-first | it runs on every Quote save; a quote it cannot touch loads no record |
+| post_execute: `repair_rebuild` → `accounts_erp_layout` → `quotes_erp_layout`; post_uninstall retires the marked fields | same G294 step report |
+| pack.php no longer has the scripts copy loop | it copied nothing (footprint S7) |
+| Repo: `ONEOFF-DropBdQuoteMirrorTables` moved to `archive/`; empty `sugar-predict/` placeholder removed | a data-deleting one-off does not sit beside shippable packages (S11); S14 |
+
+Kept, deliberately: the empty `BdBenchDogsActionsApi.php` stub (S3) until every
+tenant has taken rc69+.
+
 # 0.9.42-rc66 — G280 / 🔒 1508: only the customer-category code is left
 
 Owner, 2026-09-22 ~17:5xZ, verbatim: *"from all the non vustomer category code we

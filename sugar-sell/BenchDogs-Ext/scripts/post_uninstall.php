@@ -21,7 +21,7 @@
  * installdef key.
  *
  * Deliberately self-contained - it names no class this package shipped, because
- * by now there are none. Everything is in its own try/catch: a cache rebuild
+ * by now there are none (ErpLayoutExtraFields, used below, is ERP-Core's). Everything is in its own try/catch: a cache rebuild
  * that fails must not fail the uninstall, since the admin can always clear the
  * cache by hand, whereas an uninstall that reports failure after having already
  * removed the files leaves nobody knowing what state the instance is in.
@@ -31,11 +31,13 @@
 $GLOBALS['log']->fatal('BenchDogs-Ext: post_uninstall running - rebuilding caches');
 
 // The stock modules this package extends. Since 0.9.42-rc69 (G280 / 🔒 1567)
-// that is Accounts alone - two vardefs, two labels and one record-view
-// placement - and the package installs no module of its own, so there is no
-// bean of ours for the uninstaller to drop and nothing else to repair.
+// that was Accounts alone - two vardefs, two labels and one record-view
+// placement; G380/G381 (🔒 1705b, 🔒 1724b) adds Quotes - three vardefs, their
+// labels, one before_save hook and one marked record-view placement. The package installs no
+// module of its own, so there is no bean of ours for the uninstaller to drop.
 $bdModules = array(
     'Accounts',
+    'Quotes',
 );
 
 try {
@@ -47,6 +49,31 @@ try {
     $bdRepair->rebuildExtensions($bdModules);
 } catch (Throwable $e) {
     $GLOBALS['log']->error('BenchDogs-Ext: post-uninstall repair failed: ' . $e->getMessage());
+}
+
+// G380 (f) / 🔒 1724b: take this package's marked fields back off the record
+// views, now that their vardefs are gone. ERP-Core's ErpLayoutExtraFields
+// retires only fields it recorded as marked and that have no vardef any more,
+// so nothing else on either view is touched. AFTER the rebuild above: it reads
+// the merged vardefs, which must no longer carry this package's fragments. The
+// class is ERP-Core's, not this package's, so it is still on disk here.
+$bdLayoutHelper = 'custom/include/ErpLayoutExtraFields.php';
+foreach (array('Accounts', 'Quotes') as $bdModule) {
+    try {
+        if (!class_exists('ErpLayoutExtraFields', false) && file_exists($bdLayoutHelper)) {
+            require_once $bdLayoutHelper;
+        }
+        if (class_exists('ErpLayoutExtraFields', false)) {
+            $bdSynced = ErpLayoutExtraFields::sync($bdModule);
+            $GLOBALS['log']->fatal('BenchDogs-Ext: ' . $bdModule . ' retired fields taken off the view: '
+                . implode(', ', (array) ($bdSynced['removed'] ?? array())));
+        } else {
+            $GLOBALS['log']->error("BenchDogs-Ext: {$bdLayoutHelper} missing; {$bdModule} record view"
+                . ' not cleaned up (remove bd_* fields from it by hand)');
+        }
+    } catch (Throwable $e) {
+        $GLOBALS['log']->error('BenchDogs-Ext: ' . $bdModule . ' layout cleanup failed: ' . $e->getMessage());
+    }
 }
 
 // No TableDictionary or relationship rebuild any more (0.9.42-rc69). It existed

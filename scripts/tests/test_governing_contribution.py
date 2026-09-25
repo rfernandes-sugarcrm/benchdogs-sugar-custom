@@ -418,8 +418,10 @@ class TheBuiltPackageNoLongerShipsIt(unittest.TestCase):
         # Loader a path to DELETE on a Bench Dogs uninstall, taking PF's body
         # with it (G282's uninstall hazard).
         self.assertNotIn(SHIPPED_PATH, manifest)
+        # >= 1.0.43 (the G282 preserve gate); 1.0.50 since rc70 (🔒 1724b pairs
+        # it with ERP-Epicor 1.1.125).
         self.assertRegex(manifest, r"'id_name'\s*=>\s*'sugarai_erp_epicor_partialfulfillment',\s*"
-                                   r"'version'\s*=>\s*'1\.0\.4[3-9]'")
+                                   r"'version'\s*=>\s*'1\.0\.(4[3-9]|[5-9]\d)'")
 
 
 REPO_ROOT = WORKSPACE / REPO

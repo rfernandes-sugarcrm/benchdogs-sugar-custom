@@ -181,11 +181,15 @@ class TheInstallRemovesRatherThanPlacesTest(unittest.TestCase):
 
     def test_the_uninstall_cleanup_as_a_whole_was_not_emptied(self):
         """ANTI-VACUITY for the case above. rc69's pre_uninstall no longer
-        removes the marker (spent), but it must still undo the one placement
-        the package still makes."""
+        removes the marker (spent), but the uninstall must still undo the
+        placements the package still makes. Since rc70 (🔒 1724b) that is
+        post_uninstall's ErpLayoutExtraFields::sync() for both modules, which
+        retires the marked fields once their vardefs are gone."""
         pre = code(PRE_UNINSTALL)
         self.assertNotIn("BdOpportunitiesLayoutExtensions", pre)
-        self.assertIn("BdAccountsLayoutExtensions::remove()", pre)
+        post = code(PRE_UNINSTALL.with_name("post_uninstall.php"))
+        self.assertIn("ErpLayoutExtraFields::sync($bdModule)", post)
+        self.assertIn("array('Accounts', 'Quotes')", post)
 
 
 if __name__ == "__main__":

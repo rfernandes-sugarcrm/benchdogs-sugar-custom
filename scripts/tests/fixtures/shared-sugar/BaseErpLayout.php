@@ -6,6 +6,32 @@ abstract class BaseErpLayout
 {
     const ERP_PANEL_NAME = 'LBL_RECORDVIEW_PANEL_ERP';
 
+    /**
+     * G452 — the field names this package has placed in a panel it OWNS that do
+     * not carry its erp_ prefix, in ANY version, current or retired. With
+     * isErpField() and the panel's current definition, they are what a rebuild
+     * of an owned panel treats as the package's own (never carried over as a
+     * customer's field) - see carryCustomerFields().
+     *
+     * 🛑 ONLY EVER GROWS. A name stays here after a later version drops it from
+     * a panel: that is what stops a retired package field being carried over
+     * forever as if a customer had placed it. Seeded 2026-09-24 from every
+     * revision in git of the installers that build owned panels (Accounts,
+     * Quotes, Currencies, Contacts, Users, ProductTemplates, ProductTypes,
+     * ProductCategories: 133 revisions); a suite fails if a current owned panel
+     * places a non-erp_ field that is not listed.
+     */
+    const PACKAGE_PANEL_FIELDS_WITHOUT_ERP_PREFIX = [
+        'epicor_deeplink_url',        // Accounts / Quotes / ProductTemplates ERP panels
+        'is_primary_quote',           // Quotes ERP panel (renamed erp_is_primary_quote)
+        'quotes_erp_orders_name',     // Quotes ERP panel (retired)
+        'quotes_erp_quotes_name',     // Quotes ERP panel (retired)
+        'update_erp_comment_button',  // Quotes ERP Comments panel (retired, 🔒 1702b)
+        'syspro_company_c',           // Contacts ERP panel (earliest ERP-Core)
+        'syspro_sync_message_c',
+        'syspro_telephone_ext_c',
+    ];
+
     protected bool $replace;
 
     public function __construct(bool $replace = false)
@@ -45,7 +71,9 @@ abstract class BaseErpLayout
         }
 
         if ($existingIndex !== false) {
+            $existing = $panels[$existingIndex];
             array_splice($panels, $existingIndex, 1);
+            $panel = $this->carryCustomerFields($module, $existing, $panel, $panels);
         }
 
         $panels[] = $panel;
@@ -68,7 +96,9 @@ abstract class BaseErpLayout
         }
 
         if ($existingIndex !== false) {
+            $existing = $panels[$existingIndex];
             array_splice($panels, $existingIndex, 1);
+            $panel = $this->carryCustomerFields($module, $existing, $panel, $panels);
         }
 
         $insertIndex = array_search($beforePanel, array_column($panels, 'name'));
@@ -80,6 +110,76 @@ abstract class BaseErpLayout
         }
 
         $this->deployView($module, 'record', $viewdefs);
+    }
+
+    /**
+     * G452 — A REBUILT OWNED PANEL KEEPS THE FIELDS A CUSTOMER PUT IN IT.
+     *
+     * Measured by lane E on a local 26.1 stack (validation/G452-LAYOUT-SURVIVAL-
+     * 2026-09-24.md): a Studio-placed field in a STOCK panel survives an
+     * ERP-Epicor upgrade (stock panels are merged), but one placed INSIDE a
+     * panel this package owns (the ERP panel; on Quotes also ERP Comments and
+     * ERP Discount; on Accounts also Billing/Credit Detail and Sync Status)
+     * was silently dropped from the view (field and data kept): with replace =
+     * true the two callers above splice the deployed panel out and insert the
+     * package's definition. Both post_execute variants build Accounts and
+     * Quotes that way.
+     *
+     * Ruling (coordinator, owner away): the rebuilt panel is the package's
+     * definition - its fields, order and properties - FOLLOWED BY every field
+     * of the deployed panel the package does not own, in their deployed order
+     * and exactly as deployed. The package owns: the definition's own fields,
+     * every erp_ field (isErpField, its naming rule), and
+     * PACKAGE_PANEL_FIELDS_WITHOUT_ERP_PREFIX (every other name it has ever
+     * placed in an owned panel), so a field a later version retires is NOT
+     * carried. Never duplicated: a name already in the new panel or anywhere
+     * else on the view is skipped, and so are Studio's unnamed padding cells.
+     * Idempotent: the next install finds the same fields at the end and keeps
+     * them there. Logged, so an install says what it kept.
+     *
+     * @param array $existing   the deployed panel being replaced
+     * @param array $panel      the package's definition
+     * @param array $otherPanels the view's other panels (after the splice)
+     * @return array the panel to deploy
+     */
+    private function carryCustomerFields(string $module, array $existing, array $panel, array $otherPanels): array
+    {
+        $taken = $this->collectFieldNames($panel['fields'] ?? []);
+        foreach ($otherPanels as $other) {
+            $taken = array_merge($taken, $this->collectFieldNames(is_array($other) ? ($other['fields'] ?? []) : []));
+        }
+
+        $carried = [];
+        foreach ((array) ($existing['fields'] ?? []) as $field) {
+            $name = is_array($field) ? (string) ($field['name'] ?? '') : (is_string($field) ? $field : '');
+            if ($name === '' || $name[0] === '(' || in_array($name, $taken, true)
+                || $this->isErpField($name)
+                || in_array($name, self::PACKAGE_PANEL_FIELDS_WITHOUT_ERP_PREFIX, true)) {
+                continue;
+            }
+            $carried[] = $field;
+            $taken[] = $name;
+        }
+        if ($carried === []) {
+            return $panel;
+        }
+
+        $panel['fields'] = array_merge($panel['fields'] ?? [], $carried);
+        // fatal, like every other install-step line this package writes: it is
+        // the level sugarcrm.log keeps by default, so the install record says
+        // what was kept. Guarded: a missing logger must never fail an install.
+        if (!isset($GLOBALS['log']) || !is_object($GLOBALS['log'])) {
+            return $panel;
+        }
+        $GLOBALS['log']->fatal(sprintf(
+            'ERP layout: kept %d field(s) placed outside this package in %s panel %s: %s (G452)',
+            count($carried),
+            $module,
+            (string) ($panel['name'] ?? '?'),
+            implode(', ', $this->collectFieldNames($carried))
+        ));
+
+        return $panel;
     }
 
     protected function addFieldsToRecordView(string $module, array $fieldsToAdd, array $targetPanelProperties = ['name' => 'panel_body'], ?string $afterName = null, ?array $createPanelWhenMissing = null): void
