@@ -91,10 +91,14 @@ jobs:
     container:
       image: php:8.2-cli
     steps:
+      # nodejs (G574): test_g574_g578_bench_quote_pickers's premise test reads
+      # this package's option list the way the BROWSER does (JSON.parse, where
+      # integer-like keys come first). Without node it would skip here, silently
+      # spending the skip ceiling's one slack.
       - name: Install the zip extension and python
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends libzip-dev zip unzip python3 python3-pytest
+          apt-get install -y --no-install-recommends libzip-dev zip unzip python3 python3-pytest nodejs
           docker-php-ext-install zip
           rm -rf /var/lib/apt/lists/*
 
@@ -185,15 +189,15 @@ jobs:
       # MLP_LINT_SUGAR_ROOT unset); at 0.9.42-rc68 that reproduces run
       # 35804953494's progress line character for character.
       #
-      # Of those 14, 7 are NOT COLLECTED here, 2 more since rc69 and 1 more
-      # since rc74, so 10 in all. Each reads SugarCRM's own
+      # Of those 14, 7 are NOT COLLECTED here, 2 more since rc69, 1 more
+      # since rc74 and 1 more with G574, so 11 in all. Each reads SugarCRM's own
       # source (licensed under the Master Subscription Agreement, no public
       # copy), so CI can never run them, and pinning excerpts would make them
       # fixtures that test their own belief. They declare
       # `requires_sugarent_tree = True`; scripts/tests/conftest.py turns that
       # into the `sugarent_tree` marker; the two pytest runs here pass
       # `-m "not sugarent_tree"`; and the step after this one fails if the set
-      # left out is not exactly these 10:
+      # left out is not exactly these 11:
       #   test_post_install_step_report SugarPlatformContractTest (6) - G294's
       #     platform facts (setInstallationError is public, post_execute
       #     require_once's inside its method, a throw force-uninstalls, the log
@@ -211,6 +215,11 @@ jobs:
       #     en_us filename filter) that makes the `_override` Suspect fragment
       #     merge after ERP-Core's whole-array account_type_dom, read from
       #     SugarEnt-Full 25.2.0 and 26.1.0. Its merge cases run here.
+      #   test_g574_g578_bench_quote_pickers SugarsOwnEnumFieldOnTheCreateForm
+      #     (1) - G574: SugarCRM's own EnumField (_checkForDefaultValue) run on
+      #     the shipped Project def with the browser's key order, 25.2.0 and
+      #     26.1.0: no pre-pick, and the control without defaultToBlank
+      #     reproduces the measured "17879". Its PHP/JS premise runs here.
       #   test_g268_retired_stage_names test_merge_function_matches_sugar (1) -
       #     the transcribed getExtensionFileContents against 26.1.0's
       #     ModuleInstaller. It already skipped at rc65, when this comment named
@@ -278,11 +287,12 @@ jobs:
           scripts/tests/test_g294_single_pass.py::PlatformReservedScriptContractTest::test_sugar_includes_the_reserved_paths_after_the_installer
           scripts/tests/test_g294_single_pass.py::PlatformReservedScriptContractTest::test_the_installer_requires_the_installdef_inside_its_own_method
           scripts/tests/test_g450_suspect_account_type.py::TheOrderRuleIsSugars::test_the_order_rule_is_sugars
+          scripts/tests/test_g574_g578_bench_quote_pickers.py::SugarsOwnEnumFieldOnTheCreateForm::test_the_shipped_project_def_is_left_blank_and_the_control_reproduces_17879
           EOF
           echo "left out of CI ($(wc -l < /tmp/left-out.txt)):"
           cat /tmp/left-out.txt
           if ! diff -u /tmp/named.txt /tmp/left-out.txt; then
-            echo "::error::the tests CI does not collect are not the 10 named in mlp-lint.yml."
+            echo "::error::the tests CI does not collect are not the 11 named in mlp-lint.yml."
             echo "::error::A test left out of CI is not a guard; name it at the ceiling or run it."
             exit 1
           fi

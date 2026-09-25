@@ -639,8 +639,23 @@ namespace {
             }
         }
         $check('M5 every field has its label, and no orphan label is left', [[], 5], [$missing, count($mod_strings)]);
-        $check('M5b G460 the labels are ADM\'s own words', ['Marketing Campaign', 'Marketing Event'],
+        // G578: "Marketing Campaign" was cut to "Marketing Ca..." on the Quotes ERP
+        // panel (benchdogs-dev, 2026-09-25) while "Marketing Event" showed in full.
+        $check('M5b G460/G578 the labels are ADM\'s words, the campaign one short enough to show',
+            ['Mktg Campaign', 'Marketing Event'],
             [$mod_strings['LBL_BD_MARKETING_CAMPAIGN'] ?? null, $mod_strings['LBL_BD_MARKETING_EVENT'] ?? null]);
+        $tooLong = array_filter($mod_strings, fn($text) => mb_strlen((string) $text, 'UTF-8') > mb_strlen('Marketing Event', 'UTF-8'));
+        $check('M5c G578 no Bench quote label is longer than "Marketing Event", the longest measured to show in full',
+            [], $tooLong);
+        // G574: the stock EnumField pre-picks the FIRST option on create unless
+        // the def says defaultToBlank (clients/base/fields/enum/enum.js,
+        // _checkForDefaultValue, SugarEnt 26.1.0), and a JS object lists integer-
+        // like project codes before the blank: Project read "17879 - LGH EXPANSION"
+        // on a new quote with no account. None of the five may be browser-defaulted.
+        $check('M7 G574 every picker is left blank by the browser (defaultToBlank), none names a default',
+            ['bd_lead_source' => [true, false], 'bd_lead_type' => [true, false], 'bd_project_id' => [true, false],
+             'bd_marketing_campaign' => [true, false], 'bd_marketing_event' => [true, false]],
+            array_map(fn($f) => [($f['defaultToBlank'] ?? null) === true, array_key_exists('default', $f)], $fields));
         $dictionary = [];
         include 'custom/Extension/modules/Accounts/Ext/Vardefs/bd_customer_group.php';
         // rc72 (G507): panel_overview after Industry - the first tab of the measured

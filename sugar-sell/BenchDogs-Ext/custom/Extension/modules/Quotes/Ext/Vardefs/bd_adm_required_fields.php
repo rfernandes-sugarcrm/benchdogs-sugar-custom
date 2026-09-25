@@ -38,6 +38,26 @@
  * "Required" is enforced where it can name the company: the connector
  * extension's write-back hook refuses the send (adm_rules).
  *
+ * G574: 'defaultToBlank' => true ON ALL FIVE - THE BROWSER NEVER PICKS ONE.
+ * Measured on benchdogs-dev (SALES ORDER smoke 2026-09-25, #Quotes/create): a
+ * new quote showed Project "17879 - LGH EXPANSION" before any account was
+ * chosen - another customer's project. The cause is the stock EnumField
+ * (clients/base/fields/enum/enum.js, SugarEnt 26.1.0, identical in 25.2.0):
+ * _checkForDefaultValue() sets an enum with no value to its FIRST option on
+ * create/edit unless the def says defaultToBlank; and the first option is not
+ * the blank one here, because a JavaScript object lists integer-like keys
+ * ("17879", "18126") BEFORE every other key, so the '' that
+ * BdAdmRules::optionsFromRows() puts first comes last once the REST answer is
+ * parsed. The field def a sidecar field reads is the vardef extended by the
+ * viewdef (sidecar view/field.js: def = _.extend({}, fieldDefs, options.def)),
+ * so the flag works from here, with no layout code; stock DataArchiver's
+ * process_type sets it the same way. Side effect, intended: the pre-pick also
+ * made bd_project_id non-empty, so the before_save CMI -> 20065 default
+ * (🔒 1712b), which only fills an EMPTY Project, could never apply on a quote
+ * created in the browser. Only Project has integer-like codes today; the flag is
+ * on all five because none of them may ever be defaulted by the browser (no
+ * ADM default exists, 🔒 362), whatever codes ADM adds later.
+ *
  * PLACEMENT (G380 (f)): each field carries ERP-Epicor's `erp_layout` marker, and
  * ErpLayoutExtraFields::sync('Quotes') (ERP-Core, custom/include/) puts it on
  * the ERP panel ERP-Epicor's QuotesLayout owns - after Reference, in this order -
@@ -58,6 +78,8 @@ $dictionary['Quote']['fields']['bd_lead_source'] = array(
     'reportable' => true,
     'audited' => true,
     'massupdate' => false,
+    // G574: never pre-picked by the browser (see the docblock).
+    'defaultToBlank' => true,
     'erp_layout' => array(
         'view' => 'record',
         'panel' => 'LBL_RECORDVIEW_PANEL_ERP',
@@ -78,6 +100,8 @@ $dictionary['Quote']['fields']['bd_lead_type'] = array(
     'reportable' => true,
     'audited' => true,
     'massupdate' => false,
+    // G574: never pre-picked by the browser (see the docblock).
+    'defaultToBlank' => true,
     'erp_layout' => array(
         'view' => 'record',
         'panel' => 'LBL_RECORDVIEW_PANEL_ERP',
@@ -98,6 +122,8 @@ $dictionary['Quote']['fields']['bd_project_id'] = array(
     'reportable' => true,
     'audited' => true,
     'massupdate' => false,
+    // G574: never pre-picked by the browser (see the docblock).
+    'defaultToBlank' => true,
     'erp_layout' => array(
         'view' => 'record',
         'panel' => 'LBL_RECORDVIEW_PANEL_ERP',
@@ -118,6 +144,8 @@ $dictionary['Quote']['fields']['bd_marketing_campaign'] = array(
     'reportable' => true,
     'audited' => true,
     'massupdate' => false,
+    // G574: never pre-picked by the browser (see the docblock).
+    'defaultToBlank' => true,
     'erp_layout' => array(
         'view' => 'record',
         'panel' => 'LBL_RECORDVIEW_PANEL_ERP',
@@ -138,6 +166,8 @@ $dictionary['Quote']['fields']['bd_marketing_event'] = array(
     'reportable' => true,
     'audited' => true,
     'massupdate' => false,
+    // G574: never pre-picked by the browser (see the docblock).
+    'defaultToBlank' => true,
     'erp_layout' => array(
         'view' => 'record',
         'panel' => 'LBL_RECORDVIEW_PANEL_ERP',

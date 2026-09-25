@@ -1,3 +1,39 @@
+# Unreleased (on 0.9.42-rc74) — G574: no pre-picked Project; G578: the campaign label
+
+Version not bumped (branch convention): the landing picks the rc. No new file,
+no field, no layout, no script change; two vardef/language edits.
+
+**G574 — a new quote started with ANOTHER customer's Project.** Measured on
+benchdogs-dev (SALES ORDER smoke 2026-09-25, `#Quotes/create`): Project read
+"17879 - LGH EXPANSION" before any account was chosen. Cause, read from
+SugarEnt-Full 26.1.0 (and 25.2.0, identical): the stock EnumField's
+`_checkForDefaultValue()` sets an empty enum to its FIRST option on a create or
+edit form unless the def says `defaultToBlank`, and the first option is not the
+blank one because a JavaScript object lists integer-like keys ("17879",
+"18126") before every other key once the REST answer is `JSON.parse`d.
+
+| Change | Why |
+|---|---|
+| `'defaultToBlank' => true` on all five Bench quote pickers (`bd_adm_required_fields.php`) | sidecar builds a field's def as the vardef extended by the viewdef (`sidecar/src/view/field.js`), so the flag works from the vardef with no layout code (stock DataArchiver's `process_type` does the same). Only Project has integer-like codes today; none of the five may be defaulted by the browser (ADM names no default). Side effect, intended: the pre-pick made Project non-empty, so the before_save CMI -> 20065 default (🔒 1712b), which fills only an EMPTY Project, could never apply to a quote created in the browser |
+| Tests: `bd_adm_rules_test.php` M7; `scripts/tests/test_g574_g578_bench_quote_pickers.py` + `g574_stock_enum_default.cjs` | M7 pins the flag on all five (CI). The new file runs the premise in CI (PHP's `optionsFromRows()` order vs the browser's `JSON.parse` order; the build container now installs `nodejs` for it) and, where a SugarEnt tree exists, drives Sugar's OWN EnumField on the create form: the shipped def sets no default, and the control (the same def without the flag) reproduces "17879". Named in `mlp-lint.yml`'s left-out list (now 11) |
+
+**G578 (the Bench half) — "Marketing Ca…".** On the Quotes ERP panel the
+18-character "Marketing Campaign" was cut while "Marketing Event" showed in full.
+`LBL_BD_MARKETING_CAMPAIGN` is now **"Mktg Campaign"**: narrower than "Marketing
+Event" (13 px Helvetica/Arial 91.0 vs 93.9 px; the old text 119.9), key unchanged,
+so an upgraded tenant gets it through the language extension.
+`bd_adm_rules_test.php` M5b pins the text, M5c that no Bench quote label is
+longer than "Marketing Event". **Not here:** G578's "No data" status cell in edit
+mode is ERP-Epicor's `erp-comment-log-status` field, and the sticky success toast
+is ERP-Epicor's too (lane D).
+
+**Not here, on purpose (coordinator ruling 2026-09-25):** G571 (Event picker
+filtered to the chosen Campaign) and G570 (Project required at save on an ADM
+quote). Both need client code, which under 🔒 1520 / 🔒 1567 / 🔒 1514 belongs in
+a GENERIC ERP-Epicor field mechanism (lane D), after which this package only
+declares vardef keys. Until then the connector extension still refuses a
+mismatched pair or a missing Project by name at send, before any ERP call.
+
 # 0.9.42-rc74 — build: G450 (the "Suspect" account type) on rc73
 
 The "Unreleased (on 0.9.42-rc73)" section below ships as **0.9.42-rc74**, cut
