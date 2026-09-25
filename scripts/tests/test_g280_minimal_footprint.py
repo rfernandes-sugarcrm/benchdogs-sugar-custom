@@ -364,7 +364,9 @@ class TheLifecycleDoesOnlyTheKeptWork(unittest.TestCase):
         # 1.1.131 since rc73: the release carrying G530's limit on the field
         # (erp_reference.erp_max_length, ErpQuoteFacts::referenceMaxLength()),
         # which the Reference default is shortened to.
-        self.assertEqual(epicor.group(1), "1.1.131")
+        # 1.1.134 (G571 / G570): the release carrying ERP-Core's
+        # erp-dependent-enum and ErpLayoutExtraFields's erp_layout 'type'.
+        self.assertEqual(epicor.group(1), "1.1.134")
 
 
 if __name__ == "__main__":

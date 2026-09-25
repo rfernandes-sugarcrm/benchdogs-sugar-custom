@@ -38,6 +38,29 @@
  * "Required" is enforced where it can name the company: the connector
  * extension's write-back hook refuses the send (adm_rules).
  *
+ * G571 / G570 (ERP-Epicor 1.1.134+, ERP-Core's `erp-dependent-enum` field
+ * type; this package only declares keys, the client code is ERP-Core's,
+ * 🔒 1520 / 1567 / 1514). The marker's 'type' => 'erp-dependent-enum' puts
+ * that type on the record-view entry (ErpLayoutExtraFields, also on a tenant
+ * where the field is already placed); the vardef stays a plain enum, never a
+ * `custom_type` (Sugar would skip the column on save).
+ *  - bd_marketing_event: 'erp_lookup_parent' => 'bd_marketing_campaign' - the
+ *    picker offers only the chosen campaign's events (the key split at the
+ *    LAST '/', BdAdmRules::EVENT_KEY_SEPARATOR, exactly the campaign: 26DISC
+ *    never gets 26DISCNV's), and a seller's campaign change clears an event
+ *    that no longer belongs. Measured 2026-09-25: all 68 events were listed,
+ *    and quote #4 saved 26DISCNV with 26BRECLN/1. A pair saved before this
+ *    stays shown until the seller next changes the campaign (never cleared on
+ *    open, edit or Cancel).
+ *  - bd_project_id: 'erp_required_when_options' => true - required in the
+ *    browser only while the tenant HAS ADM projects to pick, so Bench blocks
+ *    an empty Project at save (it was found only at Submit Order) and Ophir,
+ *    with an empty list, stays optional. The ext's refusal at send stays the
+ *    server-side guard. Side effect: on a quote saved in the browser the
+ *    seller now picks the Project, so the before_save CMI -> 20065 default
+ *    (🔒 1712b, fills only an EMPTY Project) applies only to quotes created
+ *    without the form (API / the Account button).
+ *
  * G574: 'defaultToBlank' => true ON ALL FIVE - THE BROWSER NEVER PICKS ONE.
  * Measured on benchdogs-dev (SALES ORDER smoke 2026-09-25, #Quotes/create): a
  * new quote showed Project "17879 - LGH EXPANSION" before any account was
@@ -124,10 +147,13 @@ $dictionary['Quote']['fields']['bd_project_id'] = array(
     'massupdate' => false,
     // G574: never pre-picked by the browser (see the docblock).
     'defaultToBlank' => true,
+    // G570: required in the browser while ADM projects exist (see the docblock).
+    'erp_required_when_options' => true,
     'erp_layout' => array(
         'view' => 'record',
         'panel' => 'LBL_RECORDVIEW_PANEL_ERP',
         'after' => 'bd_lead_type',
+        'type' => 'erp-dependent-enum',
     ),
 );
 
@@ -168,9 +194,15 @@ $dictionary['Quote']['fields']['bd_marketing_event'] = array(
     'massupdate' => false,
     // G574: never pre-picked by the browser (see the docblock).
     'defaultToBlank' => true,
+    // G571: only the chosen campaign's events; cleared when the seller changes
+    // the campaign (see the docblock). '/' is BdAdmRules::EVENT_KEY_SEPARATOR.
+    'erp_lookup_parent' => 'bd_marketing_campaign',
+    'erp_lookup_parent_separator' => '/',
+    'erp_lookup_parent_empty_label' => 'LBL_BD_MARKETING_EVENT_PICK_CAMPAIGN',
     'erp_layout' => array(
         'view' => 'record',
         'panel' => 'LBL_RECORDVIEW_PANEL_ERP',
         'after' => 'bd_marketing_campaign',
+        'type' => 'erp-dependent-enum',
     ),
 );

@@ -101,8 +101,18 @@ $manifest = array(
             // (no cut, logged), so "HARRISBURG PA" (13) would again reach ADM
             // and be refused at Send to Estimation. The floor keeps that pair
             // from being installed apart.
+            //
+            // 1.1.134 (G571 / G570): ERP-Core's `erp-dependent-enum` field type
+            // and ErpLayoutExtraFields's erp_layout 'type' (written onto entries
+            // already placed, too) first ship there. Below it the markers' type
+            // is ignored and the new vardef keys are inert: the pickers stay
+            // plain enums (safe, but the Event list is unfiltered and Project
+            // not required, so the gap would not close). 1.1.134 is the next
+            // ERP-Epicor cut: 1.1.133 was built 2026-09-25 (4584d74f) WITHOUT
+            // lane D19's branch; if the release carrying it gets another number,
+            // use that.
             'id_name' => 'sugarai_erp_epicor',
-            'version' => '1.1.131',
+            'version' => '1.1.134',
         ),
         array(
             'id_name' => 'sugarai_erp_epicor_partialfulfillment',

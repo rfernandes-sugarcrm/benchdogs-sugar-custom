@@ -1,7 +1,8 @@
-# Unreleased (on 0.9.42-rc74) — G574: no pre-picked Project; G578: the campaign label
+# Unreleased (on 0.9.42-rc74) — G574: no pre-picked Project; G578: the campaign label; G571 + G570: picker keys
 
 Version not bumped (branch convention): the landing picks the rc. No new file,
-no field, no layout, no script change; two vardef/language edits.
+no field, no layout, no script change; vardef/language edits and the ERP-Epicor
+floor.
 
 **G574 — a new quote started with ANOTHER customer's Project.** Measured on
 benchdogs-dev (SALES ORDER smoke 2026-09-25, `#Quotes/create`): Project read
@@ -27,12 +28,25 @@ longer than "Marketing Event". **Not here:** G578's "No data" status cell in edi
 mode is ERP-Epicor's `erp-comment-log-status` field, and the sticky success toast
 is ERP-Epicor's too (lane D).
 
-**Not here, on purpose (coordinator ruling 2026-09-25):** G571 (Event picker
-filtered to the chosen Campaign) and G570 (Project required at save on an ADM
-quote). Both need client code, which under 🔒 1520 / 🔒 1567 / 🔒 1514 belongs in
-a GENERIC ERP-Epicor field mechanism (lane D), after which this package only
-declares vardef keys. Until then the connector extension still refuses a
-mismatched pair or a missing Project by name at send, before any ERP call.
+**G571 + G570 — keys only; the client code is ERP-Core's (coordinator ruling
+2026-09-25, 🔒 1520 / 🔒 1567 / 🔒 1514; lane D19 `fix/g571-erp-dependent-enum`).**
+Measured 2026-09-25: the Marketing Event picker listed all 68 events with
+26DISCNV chosen, quote #4 saved 26DISCNV with 26BRECLN/1, and an empty Project
+was found only at Submit Order. ERP-Core now ships the `erp-dependent-enum`
+field type, and ErpLayoutExtraFields writes an `erp_layout['type']` onto the
+record-view entry (also on a tenant where the field is already placed). This
+package only declares:
+
+| Change | Why |
+|---|---|
+| `bd_marketing_event`: `erp_lookup_parent` = `bd_marketing_campaign`, separator `/`, `erp_lookup_parent_empty_label` = `LBL_BD_MARKETING_EVENT_PICK_CAMPAIGN` ("Pick a campaign first"), marker `type` = `erp-dependent-enum` | only the chosen campaign's events (the key split at the LAST `/`, exactly the campaign: 26DISC never gets 26DISCNV's); a seller's campaign change clears an event that no longer belongs. A pair saved before this stays shown until the campaign next changes; opening, editing or cancelling a quote clears nothing |
+| `bd_project_id`: `erp_required_when_options` = true, marker `type` = `erp-dependent-enum` | required in the browser while the tenant has ADM projects (Bench); an empty list (Ophir) stays optional. The ext's refusal at send stays the server guard. Side effect: a browser-saved quote now always carries the seller's Project, so the before_save CMI -> 20065 default (🔒 1712b, fills only an EMPTY Project) applies only to quotes created without the form |
+| ERP-Epicor floor 1.1.131 -> **1.1.134** (`pack.php`) | the first release with the field type and the marker `type`; below it the keys are inert (plain enums, the gap stays open). 1.1.133 was built without it (4584d74f); adjust if the carrying release is numbered otherwise |
+| Tests: `bd_adm_rules_test.php` M4 (the marker types), M5/M5c (the hint label is counted, the width rule applies to field labels), M8 (the keys, and no `custom_type`); `bd_erp_layout_test.php` T6f (an rc72 tenant upgraded: the already-placed Project entry and the new Event entry carry the type, red on the 1.1.132 placer); `test_g280_minimal_footprint.py` (the floor); the `ErpLayoutExtraFields.php` pin refreshed from lane D19's branch | |
+
+The filter, clear, required and placeholder behaviour is tested in the Sugar
+repo (`scripts/tests/test_erp_dependent_enum.cjs`, on SugarCRM's own 26.1.0 and
+25.2.0 EnumField).
 
 # 0.9.42-rc74 — build: G450 (the "Suspect" account type) on rc73
 

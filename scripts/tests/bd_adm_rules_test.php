@@ -25,7 +25,8 @@
  *   K. G460 the marketing pickers: only ACTIVE PAIRS are offered (a campaign
  *      with an active event, an event of an active campaign), events keyed
  *      "<campaign>/<seq>" and ordered by campaign then seq as a number
- *   M. the vardefs: five fields, no 'required', the erp_layout markers
+ *   M. the vardefs: five fields, no 'required', the erp_layout markers, and
+ *      (G571/G570) the erp-dependent-enum keys on the Event and the Project
  *   N. the before_save registration points at a real class and method
  *   O. (BD_NO_QUOTE_FACTS=1) an ERP-Epicor without ErpQuoteFacts: defaults
  *      skipped and logged, the save never fails
@@ -626,26 +627,34 @@ namespace {
         $check('M4 each carries ERP-Epicor\'s marker: record view, ERP panel, after Reference in order', [
                 'bd_lead_source' => ['view' => 'record', 'panel' => 'LBL_RECORDVIEW_PANEL_ERP', 'after' => 'erp_reference'],
                 'bd_lead_type' => ['view' => 'record', 'panel' => 'LBL_RECORDVIEW_PANEL_ERP', 'after' => 'bd_lead_source'],
-                'bd_project_id' => ['view' => 'record', 'panel' => 'LBL_RECORDVIEW_PANEL_ERP', 'after' => 'bd_lead_type'],
+                'bd_project_id' => ['view' => 'record', 'panel' => 'LBL_RECORDVIEW_PANEL_ERP', 'after' => 'bd_lead_type',
+                    'type' => 'erp-dependent-enum'],
                 'bd_marketing_campaign' => ['view' => 'record', 'panel' => 'LBL_RECORDVIEW_PANEL_ERP', 'after' => 'bd_project_id'],
-                'bd_marketing_event' => ['view' => 'record', 'panel' => 'LBL_RECORDVIEW_PANEL_ERP', 'after' => 'bd_marketing_campaign'],
+                'bd_marketing_event' => ['view' => 'record', 'panel' => 'LBL_RECORDVIEW_PANEL_ERP', 'after' => 'bd_marketing_campaign',
+                    'type' => 'erp-dependent-enum'],
             ], array_map(fn($f) => $f['erp_layout'] ?? null, $fields));
         $mod_strings = [];
         include 'custom/Extension/modules/Quotes/Ext/Language/en_us.bd_adm_required_fields.php';
         $missing = [];
+        $fieldLabels = [];
         foreach ($fields as $f) {
             if (!isset($mod_strings[$f['vname']])) {
                 $missing[] = $f['vname'];
             }
+            $fieldLabels[$f['vname']] = $mod_strings[$f['vname']] ?? null;
         }
-        $check('M5 every field has its label, and no orphan label is left', [[], 5], [$missing, count($mod_strings)]);
+        // G571: the one label that is not a field's - the Event picker's
+        // placeholder while no campaign is chosen.
+        $hint = $fields['bd_marketing_event']['erp_lookup_parent_empty_label'] ?? '';
+        $check('M5 every field has its label, the Event hint has its text, and no orphan label is left',
+            [[], true, 6], [$missing, isset($mod_strings[$hint]), count($mod_strings)]);
         // G578: "Marketing Campaign" was cut to "Marketing Ca..." on the Quotes ERP
         // panel (benchdogs-dev, 2026-09-25) while "Marketing Event" showed in full.
         $check('M5b G460/G578 the labels are ADM\'s words, the campaign one short enough to show',
             ['Mktg Campaign', 'Marketing Event'],
             [$mod_strings['LBL_BD_MARKETING_CAMPAIGN'] ?? null, $mod_strings['LBL_BD_MARKETING_EVENT'] ?? null]);
-        $tooLong = array_filter($mod_strings, fn($text) => mb_strlen((string) $text, 'UTF-8') > mb_strlen('Marketing Event', 'UTF-8'));
-        $check('M5c G578 no Bench quote label is longer than "Marketing Event", the longest measured to show in full',
+        $tooLong = array_filter($fieldLabels, fn($text) => mb_strlen((string) $text, 'UTF-8') > mb_strlen('Marketing Event', 'UTF-8'));
+        $check('M5c G578 no Bench quote FIELD label is longer than "Marketing Event", the longest measured to show in full',
             [], $tooLong);
         // G574: the stock EnumField pre-picks the FIRST option on create unless
         // the def says defaultToBlank (clients/base/fields/enum/enum.js,
@@ -656,6 +665,20 @@ namespace {
             ['bd_lead_source' => [true, false], 'bd_lead_type' => [true, false], 'bd_project_id' => [true, false],
              'bd_marketing_campaign' => [true, false], 'bd_marketing_event' => [true, false]],
             array_map(fn($f) => [($f['defaultToBlank'] ?? null) === true, array_key_exists('default', $f)], $fields));
+        // G571 / G570: ERP-Core's erp-dependent-enum reads these keys; the
+        // client code is ERP-Core's (lane D19), this package only declares them.
+        $depKeys = ['erp_lookup_parent', 'erp_lookup_parent_separator', 'erp_lookup_parent_empty_label',
+            'erp_required_when_options'];
+        $check('M8 G571 the Event follows the Campaign, split at the ext\'s separator; G570 Project is required '
+            . 'when ADM projects exist; no other picker carries a key, and none a custom_type',
+            ['bd_lead_source' => [], 'bd_lead_type' => [], 'bd_project_id' => ['erp_required_when_options' => true],
+             'bd_marketing_campaign' => [],
+             'bd_marketing_event' => ['erp_lookup_parent' => 'bd_marketing_campaign',
+                 'erp_lookup_parent_separator' => BdAdmRules::EVENT_KEY_SEPARATOR,
+                 'erp_lookup_parent_empty_label' => 'LBL_BD_MARKETING_EVENT_PICK_CAMPAIGN'],
+             'custom_type' => []],
+            array_map(fn($f) => array_intersect_key($f, array_flip($depKeys)), $fields)
+                + ['custom_type' => array_keys(array_filter($fields, fn($f) => isset($f['custom_type'])))]);
         $dictionary = [];
         include 'custom/Extension/modules/Accounts/Ext/Vardefs/bd_customer_group.php';
         // rc72 (G507): panel_overview after Industry - the first tab of the measured

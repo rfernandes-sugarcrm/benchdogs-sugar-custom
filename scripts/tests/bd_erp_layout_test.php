@@ -401,6 +401,19 @@ namespace {
     $check('T6e no layout error was logged by the upgrade', [],
         array_values(array_filter($GLOBALS['log']->lines,
             fn($l) => str_contains($l[1], '[ErpLayoutExtraFields]') || str_contains($l[1], 'layout sync failed'))));
+    // G571 / G570: the marker's type reaches the view - on the Project entry rc72
+    // placed WITHOUT one (an upgraded tenant: add-if-absent alone never would)
+    // and on the newly placed Event; the other three keep the vardef's enum.
+    $types = [];
+    foreach (ViewdefManager::$views['Quotes']['panels'][2]['fields'] as $e) {
+        if (str_starts_with($e['name'], 'bd_')) {
+            $types[$e['name']] = $e['type'] ?? null;
+        }
+    }
+    $check('T6f G571/G570 the Event and the (already placed) Project entries carry erp-dependent-enum; nothing else does',
+        ['bd_lead_type' => null, 'bd_lead_source' => null, 'bd_project_id' => 'erp-dependent-enum',
+         'bd_marketing_campaign' => null, 'bd_marketing_event' => 'erp-dependent-enum'],
+        $types);
 
     // ── report ──────────────────────────────────────────────────────────────
     foreach (array_merge(glob("$root/custom/Extension/modules/*/Ext/Vardefs/*.php") ?: [],
