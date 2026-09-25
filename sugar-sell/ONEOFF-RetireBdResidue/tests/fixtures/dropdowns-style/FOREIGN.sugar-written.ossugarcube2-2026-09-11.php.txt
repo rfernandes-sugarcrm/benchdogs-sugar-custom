@@ -1,0 +1,98 @@
+<?php
+ // created: 2026-09-11 22:22:54
+
+$app_dropdowns_style['sales_stage_dom_style']=array (
+  'Prospecting' => 
+  array (
+    'backgroundColor' => '#FBCFE8',
+    'text' => 
+    array (
+      'isBold' => true,
+      'isItalic' => false,
+      'isUnderline' => false,
+      'isLineThrough' => false,
+      'color' => '#9D174D',
+    ),
+    'icon' => 
+    array (
+      'class' => 'binoculars',
+      'color' => '#9D174D',
+    ),
+  ),
+  'Qualification' => 
+  array (
+    'backgroundColor' => '#67e8f9',
+  ),
+  'Needs Analysis' => 
+  array (
+    'backgroundColor' => '#fca6a6',
+  ),
+  'Value Proposition' => 
+  array (
+    'backgroundColor' => '#6ee7b7',
+  ),
+  'Id. Decision Makers' => 
+  array (
+    'backgroundColor' => '#f0abfc',
+  ),
+  'Perception Analysis' => 
+  array (
+    'backgroundColor' => '#7ed4fc',
+  ),
+  'Proposal/Price Quote' => 
+  array (
+    'backgroundColor' => '#FEF08A',
+    'text' => 
+    array (
+      'isBold' => true,
+      'isItalic' => false,
+      'isUnderline' => false,
+      'isLineThrough' => false,
+      'color' => '#854D0E',
+    ),
+    'icon' => 
+    array (
+      'class' => 'quotes',
+      'color' => '#854D0E',
+    ),
+  ),
+  'Negotiation/Review' => 
+  array (
+    'backgroundColor' => '#fdba72',
+  ),
+  'Closed Won' => 
+  array (
+    'backgroundColor' => '#A7F3D0',
+    'text' => 
+    array (
+      'isBold' => true,
+      'isItalic' => false,
+      'isUnderline' => true,
+      'isLineThrough' => false,
+      'color' => '#065F46',
+    ),
+    'icon' => 
+    array (
+      'class' => 'check-circle',
+      'color' => '#065F46',
+    ),
+  ),
+  'Closed Lost' => 
+  array (
+    'backgroundColor' => '#FECACA',
+    'text' => 
+    array (
+      'isBold' => true,
+      'isItalic' => false,
+      'isUnderline' => false,
+      'isLineThrough' => false,
+      'color' => '#991B1B',
+    ),
+    'icon' => 
+    array (
+      'class' => 'ban',
+      'color' => '#991B1B',
+    ),
+  ),
+  'applyFormatting' => true,
+);

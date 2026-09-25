@@ -1,4 +1,46 @@
-# ONEOFF-RetireBdResidue 1.0.3
+# ONEOFF-RetireBdResidue 1.0.4
+
+> **What changed in 1.0.4** (G599)
+>
+> **It no longer deletes the tenant's own sales-stage style.** Through 1.0.3 step 1 deleted
+> `custom/Extension/application/Ext/DropdownsStyle/sales_stage_dom_style.php` **by path**, like the
+> other 86 Extension fragments. That name is not Bench Dogs' to choose: it is `<dropdown>_style.php`,
+> the file **SugarCRM 26.1 itself writes** for `sales_stage_dom`:
+>
+> * `DropdownsManager::buildDropdownStyle()` → `saveContents()` (`src/Dropdowns/DropdownsManager.php:111-199`,
+>   `:364-379`) writes it, with a `// created: <timestamp>` header, whenever the served style's entries
+>   differ from the dropdown's keys;
+> * `synchronizeDropdownsStyle()` (`:30-50`) runs that for every dropdown at the end of **every** Module
+>   Loader install (`ModuleInstaller.php:385`), uninstall (`:2085`) and extension rebuild / **Quick Repair**
+>   (`rebuild_dropdowns_style`, `:3910-3914`); the Admin **Dropdown Editor**
+>   (`DropdownEditorApi::saveDropdownStyle`, `:878-897`) and **Studio** (`parser.dropdown.php:66`) write it too.
+>
+> On every tenant with ERP-Core, whose REPLACE-mode `sales_stage_dom` has six keys against core's ten
+> styled ones, that condition always holds, so the file is Sugar's by default and it is where a customer's
+> own stage colours live. Running Sugar's real `DropdownsManager` over ERP-Core + Partial Fulfillment with
+> no Bench Dogs: file absent → Sugar **writes** it; a Bench Dogs body present → Sugar **overwrites** it.
+> That is why et (no Bench Dogs package installed after 1.0.2 ran on 2026-09-24) had it back for 1.0.3 on
+> 2026-09-25, and why 1.0.3 then deleted a Sugar-written file on et and Ophir.
+>
+> * **Only a body Bench Dogs shipped is deleted**: the four distinct bodies BenchDogs-Ext put at that path
+>   (rc11 zip-only `4f3312f2…`, rc12–rc38 `4be4aa51…`, rc39–rc64 `1c851a6b…`, rc65–rc68 emptied stub
+>   `b3a90dcc…`), found by reading every BenchDogs-Ext zip on the build machine and the repo's whole
+>   history, and pinned under `tests/fixtures/dropdowns-style/`. The REMOVED line names the md5.
+> * **Any other body is LEFT**, reported under **SKIPPED** as *"not a Bench body, md5 …"*. A Sugar-written
+>   body carries its write time, so it can never match by accident. The control in the harness is the body
+>   Sugar wrote on the stock tenant (never Bench Dogs), exported with the Admin Diagnostic Tool on 2026-09-11.
+> * **Deleting a Bench body blanks nothing** (L-0004): core's `include/DropdownsStyle` plus Partial
+>   Fulfillment's own `partial_fulfillment_sales_stage_style.php` style every key of the ERP-Core dropdown
+>   (measured: none unstyled), and Sugar writes its own file back when its style sync next finds it missing.
+> * **Every other by-path entry is Bench-named** (`bd_*`, `bd01_*`, `Bd*`), so no platform writer can
+>   have produced it; `scripts/tests/test_oneoff_retire_bd_residue.py` fails if a new entry is not, until
+>   it is added to the guard (`$bdGuardedExtensionBodies`).
+>
+> On a tenant 1.0.3 already ran on (et and Ophir, 2026-09-25 10:26Z), the file it deleted was Sugar's own,
+> not a package's: no package lost a file and no reinstall is needed. Sugar writes the file back when its
+> style sync next finds it missing (measured from an absent file), taking the values from the styles it
+> serves at that moment, so colours an admin had chosen in the deleted body are not guaranteed to survive.
+> 1.0.3 logged no md5 for Extension fragments, so what those bodies held is unknown. Everything else is 1.0.3.
 
 > **What changed in 1.0.3** (G594)
 >

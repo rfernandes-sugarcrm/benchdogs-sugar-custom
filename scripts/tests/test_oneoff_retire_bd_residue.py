@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""ONEOFF-RetireBdResidue 1.0.3 - it never takes what rc69 ships, and it takes
+"""ONEOFF-RetireBdResidue 1.0.4 - it never takes what rc69 ships, it takes
 Bench Dogs' orphaned order adapter (1.0.2) and orphaned release-stage policy
-(1.0.3, G594) off the tenant.
+(1.0.3, G594) off the tenant, and it leaves the tenant's own sales-stage style
+alone (1.0.4, G599).
 
-THREE THINGS ARE PINNED HERE, AND ALL ARE ABOUT THE TENANT, NOT THE REPO.
+FOUR THINGS ARE PINNED HERE, AND ALL ARE ABOUT THE TENANT, NOT THE REPO.
 
 1. THE ONE-OFF NEVER REMOVES WHAT BenchDogs-Ext 0.9.42-rc69 SHIPS. rc69 (G280 /
    🔒 1567) installs exactly four files. The one-off is re-run after rc69 on every
@@ -37,6 +38,21 @@ THREE THINGS ARE PINNED HERE, AND ALL ARE ABOUT THE TENANT, NOT THE REPO.
    Partial Fulfillment then decides is proven in
    test_release_stage_absent_equals_null.py (case E), not here.
 
+4. THE STAGE STYLE IS NOT ONLY BENCH DOGS' (G599). 1.0.3 deleted
+   custom/Extension/application/Ext/DropdownsStyle/sales_stage_dom_style.php by
+   path on et and Ophir (2026-09-25 10:26Z). On et, where no Bench Dogs package
+   was installed after 1.0.2 deleted it on 09-24, it had come back: SugarCRM 26.1
+   ITSELF writes "<dropdown>_style.php" (DropdownsManager::buildDropdownStyle ->
+   saveContents, from synchronizeDropdownsStyle at the end of every install,
+   uninstall and Quick Repair, and from the Dropdown Editor / Studio). 1.0.4
+   deletes it only when its md5 is one of the four bodies BenchDogs-Ext shipped
+   there (rc11 .. rc68, every distinct body in the built zips, pinned under the
+   one-off's tests/fixtures/dropdowns-style/), and reports any other body under
+   SKIPPED. The control is the body Sugar wrote on the stock tenant, which Bench
+   Dogs was never installed on. Every OTHER by-path entry has a Bench-chosen name
+   (bd_*, bd01_*, Bd*), which no platform writer produces; a test below holds
+   that, so a future entry with a platform-derived name must be guarded too.
+
 MUTATION-VERIFIED (each applied, this file re-run, the named case observed red):
   1.0.1's post_execute.php (ef5963b) in place of 1.0.2's
       -> test_the_harness_passes (7 adapter checks red, incl. the Ophir state)
@@ -58,6 +74,14 @@ MUTATION-VERIFIED (each applied, this file re-run, the named case observed red):
   drop the rc65 null-stub entry              -> its own body's check red
   add an allowlist entry with no pinned body
       -> test_the_allowlist_is_exactly_the_pinned_bodies
+  1.0.4 (G599) - see the lane E5 report for each run:
+  1.0.3's post_execute.php (e6485d4) in place of 1.0.4's - RED-BEFORE
+      -> 6 harness checks red, incl. the Sugar-written CONTROL (deleted by 1.0.3)
+  drop the guard (delete the style by path again) -> the same CONTROL checks red
+  add a foreign md5 (the stock Sugar body's) to the style allowlist
+      -> test_the_style_allowlist_is_exactly_the_pinned_bench_bodies
+         and test_the_sugar_written_control_is_not_on_the_allowlist
+  drop one pinned Bench body's md5 from the allowlist -> its own body's check red
 """
 from __future__ import annotations
 
@@ -76,6 +100,11 @@ ONEOFF = ONEOFF_POST_EXECUTE.parents[1]
 ADAPTER = "custom/modules/Quotes/ErpQuoteHooks/ResolveOrderableLines.php"
 RELEASE_POLICY = "custom/modules/Quotes/ErpQuoteHooks/OpportunityReleaseStagePolicy.php"
 RELEASE_POLICY_BODIES = ONEOFF / "tests/fixtures/release-stage-policy"
+STAGE_STYLE = "custom/Extension/application/Ext/DropdownsStyle/sales_stage_dom_style.php"
+STAGE_STYLE_BODIES = ONEOFF / "tests/fixtures/dropdowns-style"
+#: The body SugarCRM itself wrote at STAGE_STYLE on the stock tenant (ossugarcube2,
+#: Admin Diagnostic Tool export 2026-09-11; Bench Dogs was never installed there).
+SUGAR_WRITTEN_STYLE = STAGE_STYLE_BODIES / "FOREIGN.sugar-written.ossugarcube2-2026-09-11.php.txt"
 PLANNER = "custom/modules/Quotes/BdSubmitOrderPlan.php"
 #: rc69's copy list, FROZEN. The one-off (spent, 1.0.2) was written against
 #: rc69 and its "KEPT BY rc69" report names exactly these four; it is not
@@ -239,8 +268,76 @@ class TheReleaseStagePolicyStep(unittest.TestCase):
         self.assertNotIn(RELEASE_POLICY, _not_ours_block())
         self.assertNotIn(RELEASE_POLICY, oneoff_worklist())   # deleted by 4c, not blanked by 4
 
-    def test_the_one_off_is_1_0_3(self):
-        self.assertEqual((ONEOFF / "version").read_text().strip(), "1.0.3")
+    def test_the_one_off_is_1_0_4(self):
+        self.assertEqual((ONEOFF / "version").read_text().strip(), "1.0.4")
+
+
+class TheStageStyleIsDeletedOnlyWhenItIsABenchBody(unittest.TestCase):
+    """G599 / 1.0.4. The deletion and the SKIPPED report are proven by the harness
+    (Sugar's uninstallExt() verbatim, one synthetic tenant per body, plus the
+    Sugar-written control); these pin what the harness cannot see."""
+
+    @staticmethod
+    def guarded() -> dict[str, set[str]]:
+        source = ONEOFF_POST_EXECUTE.read_text(encoding="utf-8")
+        start = source.index("$bdGuardedExtensionBodies = array(")
+        block = source[start:source.index("\n);", start)]
+        out: dict[str, set[str]] = {}
+        for path, inner in re.findall(r"'(custom/[^']+\.php)'\s*=>\s*array\((.*?)\n    \)", block, re.S):
+            out[path] = set(re.findall(r"^\s*'([0-9a-f]{32})',\s*$", inner, re.M))
+        return out
+
+    @staticmethod
+    def pinned() -> dict[str, str]:
+        return {hashlib.md5(p.read_bytes()).hexdigest(): p.name
+                for p in sorted(STAGE_STYLE_BODIES.glob("sales_stage_dom_style.rc*.php.txt"))}
+
+    def test_the_only_guarded_path_is_the_stage_style(self):
+        self.assertEqual(set(self.guarded()), {STAGE_STYLE})
+
+    def test_the_style_allowlist_is_exactly_the_pinned_bench_bodies(self):
+        """Every md5 the one-off deletes has a body the harness deletes, and every
+        body BenchDogs-Ext shipped at the path (rc11, rc12-38, rc39-64, rc65-68) is
+        on the list."""
+        self.assertEqual(len(self.pinned()), 4, self.pinned())
+        self.assertEqual(self.guarded()[STAGE_STYLE], set(self.pinned()))
+
+    def test_each_pinned_body_is_a_bench_stage_style(self):
+        """Anti-vacuity: the fixtures are Bench Dogs' stage-style fragment, not
+        arbitrary files that happen to hash."""
+        for path in STAGE_STYLE_BODIES.glob("sales_stage_dom_style.rc*.php.txt"):
+            with self.subTest(body=path.name):
+                text = path.read_text(encoding="utf-8")
+                self.assertIn("sales_stage_dom_style", text)
+                self.assertIn("Bench", text)
+
+    def test_the_sugar_written_control_is_not_on_the_allowlist(self):
+        """The control really is Sugar's (DropdownsManager::getExtensionContents()
+        writes a "// created:" header and assigns the WHOLE array), and the one-off
+        would leave it."""
+        body = SUGAR_WRITTEN_STYLE.read_text(encoding="utf-8")
+        self.assertRegex(body, r"^<\?php\n // created: \d{4}-\d\d-\d\d \d\d:\d\d:\d\d\n")
+        self.assertIn("$app_dropdowns_style['sales_stage_dom_style']=array (", body)
+        self.assertNotIn(hashlib.md5(SUGAR_WRITTEN_STYLE.read_bytes()).hexdigest(),
+                         self.guarded()[STAGE_STYLE])
+
+    def test_the_style_is_still_on_the_worklist(self):
+        """The guard narrows the delete; it does not drop the path. A tenant that
+        still holds a Bench body keeps a route off it (test_stage_dropdown_style)."""
+        self.assertEqual(oneoff_worklist().get(STAGE_STYLE), "deleted")
+
+    def test_every_unguarded_by_path_entry_has_a_bench_chosen_name(self):
+        """Why only one path needs the guard: every other name was chosen by Bench
+        Dogs (bd_*, bd01_*, Bd*), so no platform writer (Studio's sugarfield_* /
+        en_us.sugar_*, DropdownsManager's <dropdown>_style) can have produced it.
+        A new entry whose name is not Bench's fails here until it is guarded."""
+        guarded = set(self.guarded())
+        for path in oneoff_worklist():
+            if path in guarded:
+                continue
+            name = path.rsplit("/", 1)[1]
+            with self.subTest(path=path):
+                self.assertRegex(name, r"bd_|bd01_|^Bd[A-Z]")
 
 
 @unittest.skipUnless(shutil.which("php"), "requires php")
@@ -258,6 +355,10 @@ class TheHarness(unittest.TestCase):
         self.assertIn("PASS  benchdogs-dev state (rc45-rc64 body): the release-stage policy is DELETED, "
                       "not blanked", out.stdout)
         self.assertIn("PASS  CONTROL: a foreign release-stage policy is LEFT in place", out.stdout)
+        # G599: the Sugar-written stage style, by name.
+        self.assertIn("PASS  CONTROL: a Sugar-written stage style (not a Bench body) is LEFT in place, "
+                      "unmodified", out.stdout)
+        self.assertIn("PASS  run 1 reported the stage style under REMOVED, with the rc39-rc64 md5", out.stdout)
 
 
 if __name__ == "__main__":

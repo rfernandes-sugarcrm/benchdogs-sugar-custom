@@ -442,6 +442,14 @@ $releasePolicyFixtures = $pkgDir . '/tests/fixtures/release-stage-policy';
 $releasePolicyDevBody = $releasePolicyFixtures . '/OpportunityReleaseStagePolicy.rc45-rc64.php.txt';
 copy($releasePolicyDevBody, $tenant . '/' . $releasePolicyRel);
 
+// 1.0.4 (G599): the STAGE STYLE gets the rc39-rc64 body, the last styling body
+// Bench Dogs shipped, for the same reason again: SugarCRM itself writes this path,
+// so the package deletes only a body Bench Dogs shipped there.
+$styleRel = 'custom/Extension/application/Ext/DropdownsStyle/sales_stage_dom_style.php';
+$styleFixtures = $pkgDir . '/tests/fixtures/dropdowns-style';
+$styleBenchBody = $styleFixtures . '/sales_stage_dom_style.rc39-rc64.php.txt';
+copy($styleBenchBody, $tenant . '/' . $styleRel);
+
 $before = count($paths) + 1;
 
 // ---------------------------------------------------------------------------
@@ -726,6 +734,73 @@ check('CONTROL: and it is reported under SKIPPED with its md5 and the Closed Won
     strpos($foreignPolicy['out'], 'SKIPPED (') !== false
         && strpos($foreignPolicy['out'], 'is not a release-stage policy Bench Dogs shipped') !== false
         && strpos($foreignPolicy['out'], 'never reaches Closed Won') !== false);
+
+// --- 1.0.4: the stage style, a path SugarCRM itself writes (G599) -------------
+// Sugar's DropdownsManager writes custom/Extension/application/Ext/DropdownsStyle/
+// <dropdown>_style.php at the end of every install and every Quick Repair, so on a
+// tenant this path usually holds the tenant's own styling. 1.0.3 deleted it by
+// path on et and Ophir (2026-09-25 10:26Z). 1.0.4 deletes only a Bench Dogs body.
+check('the full sweep DELETED the Bench Dogs stage style (rc39-rc64 body)', !file_exists($tenant . '/' . $styleRel));
+check('run 1 reported the stage style under REMOVED, with the rc39-rc64 md5',
+    strpos($out1, $styleRel . ' (a body Bench Dogs shipped, md5 1c851a6bed5179086ee7cabe3bce6613)') !== false);
+check('run 2 reported the stage style as already gone',
+    strpos($out2, '. ' . $styleRel . "\n") !== false);
+
+// One tenant per body: only the style file on disk. Returns what is left.
+function runStyleScenario(string $name, string $pkgDir, string $body): array
+{
+    $root = sys_get_temp_dir() . '/bd-residue-style-' . $name . '-' . getmypid();
+    if (is_dir($root)) {
+        rmdir_recursive($root);
+    }
+    $rel = 'custom/Extension/application/Ext/DropdownsStyle/sales_stage_dom_style.php';
+    @mkdir(dirname($root . '/' . $rel), 0775, true);
+    file_put_contents($root . '/' . $rel, $body);
+    [$out, $fatals] = runOnce($root, $pkgDir);
+    $after = file_exists($root . '/' . $rel) ? (string) file_get_contents($root . '/' . $rel) : null;
+    [$again] = runOnce($root, $pkgDir);
+    return [
+        'style' => $after !== null,
+        'intact' => $after === $body,
+        'out' => $out,
+        'again' => $again,
+        'fatal' => implode(' ', $fatals),
+        'root' => $root,
+    ];
+}
+
+// EVERY body Bench Dogs ever shipped at the path is deleted - one tenant each, so
+// an allowlist entry that goes missing leaves exactly its own body behind.
+$styleBodies = glob($styleFixtures . '/sales_stage_dom_style.rc*.php.txt');
+sort($styleBodies);
+check('four pinned Bench Dogs stage-style bodies (rc11 .. rc68)', count($styleBodies) === 4,
+    (string) count($styleBodies));
+foreach ($styleBodies as $styleBody) {
+    $label = basename($styleBody, '.php.txt');
+    $run = runStyleScenario(md5_file($styleBody), $pkgDir, (string) file_get_contents($styleBody));
+    check('Bench Dogs body ' . $label . ' (md5 ' . md5_file($styleBody) . ') is DELETED, and nothing is SKIPPED',
+        !$run['style'] && strpos($run['out'], 'SKIPPED (') === false, $run['root']);
+}
+
+// CONTROL (THE G599 CASE): the body SugarCRM itself wrote on the stock tenant, which
+// Bench Dogs was never installed on (Diagnostic Tool export, 2026-09-11) - LEFT
+// byte-for-byte, and reported under SKIPPED with its md5 on every run.
+$sugarBody = (string) file_get_contents($styleFixtures . '/FOREIGN.sugar-written.ossugarcube2-2026-09-11.php.txt');
+$sugar = runStyleScenario('sugar-written', $pkgDir, $sugarBody);
+check('CONTROL: a Sugar-written stage style (not a Bench body) is LEFT in place, unmodified',
+    $sugar['style'] && $sugar['intact'], $sugar['root']);
+check('CONTROL: and it is reported under SKIPPED as "not a Bench body" with its md5, on both runs',
+    strpos($sugar['out'], 'SKIPPED (') !== false
+        && strpos($sugar['out'], $styleRel . ' - LEFT: not a Bench body, md5 eec013d3da5d999b08567a8d490b363f') !== false
+        && strpos($sugar['again'], 'not a Bench body, md5 eec013d3da5d999b08567a8d490b363f') !== false);
+check('CONTROL: the fatal() summary carries the SKIPPED line too',
+    strpos($sugar['fatal'], 'not a Bench body, md5 eec013d3da5d999b08567a8d490b363f') !== false);
+check('CONTROL: and it is NOT counted as removed', strpos($sugar['out'], 'REMOVED (0)') !== false);
+
+// A one-byte edit of a Bench body is not a Bench body: an admin who re-saved it in
+// Studio owns it now.
+$edited = runStyleScenario('edited', $pkgDir, (string) file_get_contents($styleBenchBody) . "\n");
+check('CONTROL: a Bench body with one byte changed is LEFT', $edited['style'] && $edited['intact'], $edited['root']);
 
 echo "\nTenant tree left at: {$tenant}\n";
 echo $fail === 0 ? "ALL CHECKS PASSED\n" : "{$fail} CHECK(S) FAILED\n";
