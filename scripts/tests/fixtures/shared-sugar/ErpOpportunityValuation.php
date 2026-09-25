@@ -1505,25 +1505,21 @@ class ErpOpportunityValuation
      * to one side of the rollup; they are held apart on the LINE, where a
      * seller reads them, and only joined here.
      *
+     * G405 step 3: THE RULE NOW LIVES IN ERP-Core's ErpStatedCharges::statedSum(),
+     * which the quote's own tax (ErpQuoteTaxFromLines: the quote tax is the sum
+     * of the tax its lines state) reads too - one rule, not two copies. Loaded
+     * HERE, on first use, and not at the top of this file: this function has
+     * no production caller (🔒 1468, see statedDocumentCharges()), so an
+     * ERP-Epicor older than the one that ships ErpStatedCharges.php can never
+     * reach this require from a live save.
+     *
      * @param array $lines rows from quoteLines()
      */
     private static function statedLineCharges(array $lines): ?float
     {
-        $total = 0.0;
-        $anyStated = false;
+        require_once 'custom/modules/Quotes/ErpStatedCharges.php';
 
-        foreach ($lines as $line) {
-            foreach (array('tax', 'shipping') as $key) {
-                $value = $line[$key] ?? null;
-                if ($value === null) {
-                    continue;
-                }
-                $anyStated = true;
-                $total += (float) $value;
-            }
-        }
-
-        return $anyStated ? $total : null;
+        return ErpStatedCharges::statedSum($lines, array('tax', 'shipping'));
     }
 
     /**

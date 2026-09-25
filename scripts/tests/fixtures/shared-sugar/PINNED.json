@@ -1,5 +1,5 @@
 {
-  "upstream_commit": "6ed6f1b193ff1a15d0da09639e9a19a1b6bebeae",
+  "upstream_commit": "f5c5eecd3540c41083a288d5522a4777308335fe",
   "files": {
     "QuoteOpportunityAmount.php": {
       "source": "sugar-sell/ERP-Core/src/custom/modules/Quotes/QuoteOpportunityAmount.php",
@@ -8,8 +8,8 @@
     },
     "ErpOpportunityValuation.php": {
       "source": "sugar-sell/ERP-Epicor-PartialFulfillment/custom/modules/Quotes/ErpOpportunityValuation.php",
-      "sha256": "6f87c735af78fa4e01316c5afe89c09053e58371081ff892c51183186b4bcb75",
-      "bytes": 81844
+      "sha256": "36283f0c2596bcb2632e2c1261d55404138d4cfd8c3c528738cb809b04135c30",
+      "bytes": 82097
     },
     "ErpQuoteLineRollup.php": {
       "source": "sugar-sell/ERP-Epicor-PartialFulfillment/custom/modules/Quotes/ErpQuoteLineRollup.php",
@@ -28,8 +28,8 @@
     },
     "AccountsErpActionsApi.php": {
       "source": "sugar-sell/ERP-Epicor/src/custom/clients/base/api/AccountsErpActionsApi.php",
-      "sha256": "d7f8534bf537bb268bea60e2d4adf7132a3138a09e0dbfa8147976182626553c",
-      "bytes": 47836
+      "sha256": "4fe5ace88d6aa5aeca6ae77248995a673d2381622eb1a3c977e28d8351e3964c",
+      "bytes": 49160
     },
     "en_us.erp_create_opp_quote.php": {
       "source": "sugar-sell/ERP-Epicor/src/custom/Extension/modules/Accounts/Ext/Language/en_us.erp_create_opp_quote.php",
@@ -43,8 +43,8 @@
     },
     "QuotesLayout.php": {
       "source": "sugar-sell/ERP-Epicor/scripts/Modules/QuotesLayout.php",
-      "sha256": "fd029e7e8969813182d82cd5cf8850b060c3c3f2c0ebbf87bf2aac3c5ed24b92",
-      "bytes": 110960
+      "sha256": "d34a9262e599d06e6af3fd3e6ac6ffa6a5dc882cdd216462e47cb8da5971e487",
+      "bytes": 116759
     },
     "ErpQuoteFacts.php": {
       "source": "sugar-sell/ERP-Epicor/src/custom/modules/Quotes/ErpQuoteFacts.php",
@@ -53,8 +53,8 @@
     },
     "ErpLayoutExtraFields.php": {
       "source": "sugar-sell/ERP-Core/src/custom/include/ErpLayoutExtraFields.php",
-      "sha256": "567ba0013cd2507be365ff7995b9073fbbdce4bc6e64ae0f5700218c268a499c",
-      "bytes": 13134
+      "sha256": "835200d806d9b88360faa88a7cb68da368ea9484bc811b43ef15aac94b743f43",
+      "bytes": 17427
     },
     "erp_reference.php": {
       "source": "sugar-sell/ERP-Core/src/custom/Extension/modules/Quotes/Ext/Vardefs/erp_reference.php",

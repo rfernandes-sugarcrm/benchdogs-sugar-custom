@@ -296,6 +296,32 @@ class QuotesLayout extends BaseErpLayout
             null,
             $this->hiddenPanelDefinition()
         );
+        // G585 - and bring their definitions up to date where they already sit
+        // (the add above is add-if-absent): both are READ-ONLY - the ERP link
+        // and the estimating stamp are written by the integration, never typed.
+        $this->reconcileFieldsInRecordViewPanel('Quotes', ['name' => 'panel_hidden'], $this->hiddenRecordViewFields());
+        // G585 (owner, 2026-09-25): "a quote field is either POPULATED FROM THE
+        // ERP (shown, read-only) or NOT SHOWN." Measured 2026-09-25 (REST
+        // counts): nothing fills Original P.O. Date, Actual Close Date or Date
+        // Shipped - 0 of 276 quotes on Ophir, 0 of 371 on stock, including the
+        // 82 / 72 CLOSED ones - and Payment Terms is superseded by the ERP's
+        // Billing Terms (a value set here reaches nothing). Removed from the
+        // record view (create and edit included - they are built from it);
+        // the data is untouched and REST still returns it. Shipping Provider
+        // STAYS: the owner keeps it as the seller's own pick.
+        $this->removeFieldsFromRecordView('Quotes', self::QUOTE_FIELDS_NOTHING_FILLS);
+        // G586 (owner): tax comes from the ERP, so Sugar's stock Tax Rate is
+        // not shown; nor are the Currency Rate / Lock Conversion Rates pair.
+        // Removing the rows removes no input a formula reads: base_rate is
+        // still fetched by currency_id's own related_fields, and all four
+        // values ride erp_quote_type's fetch-only list (FETCH_ONLY_RECORD_VIEW_FIELDS).
+        $this->removeFieldsFromRecordView('Quotes', self::QUOTE_STOCK_RATE_FIELDS);
+        // G585: the ERP link and the estimating stamp show only once set - a
+        // Draft never sent shows neither, and no "+ Epicor Link" invites a
+        // seller to type a URL. ITS OWN RULE, never targets appended to
+        // erpPanelEmptyFieldDependencies() (G78: add/remove match a dependency
+        // by its exact serialized shape).
+        $this->addDependenciesToRecordView('Quotes', $this->erpStampedFieldsVisibilityDependency());
         // Must run after addPanelToRecordViewBefore(), which unsets 'buttons' on every deploy.
         // Inserted before 'main_dropdown' so they sit next to the Edit button.
         $this->addButtonsToRecordView('Quotes', $this->erpActionButtons(), 'main_dropdown');
@@ -558,6 +584,12 @@ class QuotesLayout extends BaseErpLayout
             ['erp_comment_queue', self::COMMENT_LOG_STATUS_FIELD['name']]
         );
         $this->removeDependenciesFromRecordView('Quotes', $this->erpPanelEmptyFieldDependencies());
+        // G585 / G586: the rule this package added, and the stock rows it took
+        // off the view, put back (add-if-absent, stock definitions).
+        $this->removeDependenciesFromRecordView('Quotes', $this->erpStampedFieldsVisibilityDependency());
+        foreach (self::STOCK_QUOTE_ROWS as $panelName => $rows) {
+            $this->addFieldsToRecordView('Quotes', $rows, ['name' => $panelName]);
+        }
         $this->removeDependenciesFromRecordView('Quotes', $this->sendToEstimationRatchetDependency());
         $this->removeDependenciesFromRecordView('Quotes', $this->legacyErpEstimateVisibilityDependencies());
         $this->removeDependenciesFromRecordView('Quotes', $this->legacyErpEstimateVisibilityDependenciesFourTarget());
@@ -916,6 +948,56 @@ class QuotesLayout extends BaseErpLayout
      * BaseErpLayout::reconcileFieldsInRecordViewPanel() for exactly that, and
      * OrderStageOffTheQuoteTest asserts all three parts.
      */
+    /**
+     * G585 - stock quote fields nothing fills (see install()). Removed from
+     * the record view; put back by uninstall() with the stock definitions
+     * measured on ossugarcube2 (2026-09-25), since a change this package
+     * makes is a change it reverts.
+     */
+    const QUOTE_FIELDS_NOTHING_FILLS = [
+        'original_po_date',
+        'date_quote_closed',
+        'date_order_shipped',
+        'payment_terms',
+    ];
+
+    /** G586 - the stock tax-rate and conversion-rate rows (Quote Settings). */
+    const QUOTE_STOCK_RATE_FIELDS = [
+        'taxrate_name',
+        'conversion_rate_lock',
+    ];
+
+    /** Where uninstall() puts the G585 / G586 rows back: panel => stock defs. */
+    const STOCK_QUOTE_ROWS = [
+        'panel_hidden' => [
+            ['name' => 'original_po_date', 'type' => 'date', 'label' => 'LBL_ORIGINAL_PO_DATE'],
+            ['name' => 'date_quote_closed', 'type' => 'date', 'label' => 'LBL_DATE_QUOTE_CLOSED'],
+            ['name' => 'date_order_shipped', 'type' => 'date', 'label' => 'LBL_LIST_DATE_QUOTE_CLOSED'],
+            ['name' => 'payment_terms', 'type' => 'enum', 'label' => 'LBL_PAYMENT_TERMS'],
+        ],
+        'panel_setting_body' => [
+            [
+                'name' => 'taxrate_name',
+                'type' => 'taxrate',
+                'initial_filter' => 'active_taxrates',
+                'filter_populate' => ['module' => ['TaxRates']],
+                'populate_list' => ['id' => 'taxrate_id', 'value' => 'taxrate_value'],
+                'label' => 'LBL_TAXRATE',
+            ],
+            [
+                'name' => 'conversion_rate_lock',
+                'type' => 'fieldset',
+                'label' => 'LBL_CONVERSION_RATE_LOCK_FIELDSET',
+                'dismiss_label' => true,
+                'show_child_labels' => true,
+                'fields' => [
+                    ['name' => 'base_rate', 'type' => 'textarea', 'label' => 'LBL_CURRENCY_RATE'],
+                    ['name' => 'lock_conversion_rates', 'type' => 'bool', 'label' => 'LBL_LOCK_CONVERSION_RATES'],
+                ],
+            ],
+        ],
+    ];
+
     const FETCH_ONLY_RECORD_VIEW_FIELDS = [
         'order_stage',
         // 🔒 921 / G121 — "Create Opportunity from Quote" is now HIDDEN rather
@@ -937,6 +1019,14 @@ class QuotesLayout extends BaseErpLayout
         // reconcileFieldsInRecordViewPanel() call in install(), like the two
         // above. sync-with-erp-menu.test.js pins it.
         'erp_sync_key',
+        // G586 - the stock rate rows are off the view (install()), so their
+        // values are fetched here instead: nothing that reads them off the
+        // model (the currency fields, the stock quote controller) loses its
+        // input with the row.
+        'taxrate_id',
+        'taxrate_value',
+        'base_rate',
+        'lock_conversion_rates',
     ];
 
     private function listViewFields(): array
@@ -974,7 +1064,9 @@ class QuotesLayout extends BaseErpLayout
     private function hiddenRecordViewFields(): array
     {
         return [
-            ['name' => 'epicor_deeplink_url', 'label' => 'LBL_EPICOR_DEEPLINK_URL'],
+            // G585: read-only (the integration writes it) and shown only once
+            // set (erpStampedFieldsVisibilityDependency()).
+            ['name' => 'epicor_deeplink_url', 'label' => 'LBL_EPICOR_DEEPLINK_URL', 'readonly' => true],
             // 🔒 1393 / G79: the Send-to-Estimation ratchet reads this stamp, so
             // it must REACH THE CLIENT MODEL. Sidecar's record view populates
             // the model only with fields present somewhere in its own metadata
@@ -987,8 +1079,21 @@ class QuotesLayout extends BaseErpLayout
             // SHOW the button forever -- or, written the other way, hide it on
             // quotes never sent at all. panel_hidden fetches the value without
             // rendering a row a seller has no use for.
-            ['name' => 'erp_sent_to_estimating_at', 'label' => 'LBL_ERP_SENT_TO_ESTIMATING_AT'],
+            // G585: read-only, and shown only once the quote has been sent.
+            ['name' => 'erp_sent_to_estimating_at', 'label' => 'LBL_ERP_SENT_TO_ESTIMATING_AT', 'readonly' => true],
         ];
+    }
+
+    /**
+     * G585 - "Epicor Link" and "Sent to estimation" are shown only once the
+     * integration has set them. Owner: a Draft never estimated showed an empty
+     * "+ Epicor Link" a seller could fill, and "Sent to estimation" as a label
+     * with no value. Measured 2026-09-25: set on 47 / 46 of 276 Ophir quotes and
+     * 82 / 83 of 371 stock quotes - the quotes that went to the ERP.
+     */
+    private function erpStampedFieldsVisibilityDependency(): array
+    {
+        return $this->visibleWhenNotEmptyDependency(['epicor_deeplink_url', 'erp_sent_to_estimating_at']);
     }
 
     private function baseListViewFields(): array

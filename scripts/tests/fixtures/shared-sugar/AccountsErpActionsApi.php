@@ -836,8 +836,37 @@ class AccountsErpActionsApi extends BaseErpActionsApi
 
         return trim(strtr($template, array(
             '{account}' => (string) ($account->name ?? ''),
-            '{date}' => date('M j, Y'),
+            '{date}' => self::sellersDate(),
         )));
+    }
+
+    /**
+     * G542 — THE {date} IN A DEFAULT NAME IS THE SELLER'S DATE, NOT THE SERVER'S.
+     *
+     * MEASURED (benchdogs-sandbox SALES ORDER smoke, 2026-09-24): at 17:00 PT on
+     * Sep 24 the Account button named the Opportunity and its Quote
+     * "BIMBO BAKERIES - Sep 25, 2026" - date() reads the server's clock, which
+     * is UTC, so for seven hours every Pacific evening the name contradicted the
+     * seller's own calendar (the same button named dev's 16:04 PT run "Sep 24").
+     *
+     * TimeDate::getNow(true) is Sugar's "now" in the current user's timezone
+     * preference (TimeDate::_getUserTZ). A clock that cannot be read that way
+     * falls back to the server date, said out loud: a name a few hours off is a
+     * smaller fault than a button that fails.
+     */
+    private static function sellersDate(): string
+    {
+        try {
+            $now = TimeDate::getInstance()->getNow(true);
+            if ($now instanceof \DateTimeInterface) {
+                return $now->format('M j, Y');
+            }
+        } catch (\Throwable $e) {
+            $GLOBALS['log']->warn('AccountsErpActionsApi: the seller\'s local date could not be read, so the '
+                . 'default name uses the server\'s date (G542): ' . $e->getMessage());
+        }
+
+        return date('M j, Y');
     }
 
     /**

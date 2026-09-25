@@ -19,6 +19,7 @@ use Sugarcrm\Sugarcrm\MetaData\ViewdefManager;
  *         'view'  => 'record',                    // only 'record' is supported
  *         'panel' => 'LBL_RECORDVIEW_PANEL_ERP',  // a panel ERP-Epicor owns
  *         'after' => '',                          // field to follow; '' = append
+ *         'type'  => 'erp-dependent-enum',        // optional: the view's field type
  *     );
  *
  * and calls sync() after its vardefs are merged (post_execute) and after they
@@ -26,14 +27,29 @@ use Sugarcrm\Sugarcrm\MetaData\ViewdefManager;
  * own Quotes and Accounts layout installs, so reinstalling ERP-Epicor keeps
  * every package's marked fields.
  *
- * sync($module) does exactly two things, idempotently:
+ * sync($module) does exactly three things, idempotently:
  *   1. PLACE - every field of $module whose vardef carries `erp_layout` and
  *      that is on NO panel of the deployed record view (fieldsets included)
  *      is added to the named panel, after `after` when that field is in the
  *      panel, else at the end. Panel absent -> the module's ERP panel ->
  *      panel_body -> the first non-header panel with fields. A field an admin
  *      placed anywhere is left exactly where it is.
- *   2. RETIRE - a field this mechanism has seen marked (recorded per module in
+ *   2. TYPE (G571) - when the marker names a `type`, every entry of that field
+ *      on the view (placed by this class or by an admin, fieldset members
+ *      included) carries it; the field does not move. This is how a field gets
+ *      a client-side type (e.g. ERP-Core's erp-dependent-enum) while its vardef
+ *      stays a plain `enum`: sidecar takes a field's widget type from the
+ *      viewdef entry first (view/field.js: viewDefs.type || def.type). It
+ *      runs on entries ALREADY placed too, because an upgraded tenant's view
+ *      holds the name + label entry an earlier sync wrote, and add-if-absent
+ *      would never reach it. A marker without `type` leaves every entry's type
+ *      as it is. Install order does not matter: whichever of ERP-Epicor's
+ *      layout install or the marking package's post_execute runs last applies
+ *      it.
+ *      NEVER the vardef `custom_type` key for this: SugarEnt 26.1.0 DBManager
+ *      skips a field with a custom_type on insert and update, so values
+ *      entered in it would silently not be saved.
+ *   3. RETIRE - a field this mechanism has seen marked (recorded per module in
  *      config erp_layout.extra_fields_<Module>) that now has NO vardef is taken
  *      off every panel. Nothing else is ever removed.
  *
@@ -100,7 +116,7 @@ class ErpLayoutExtraFields
                 }
             }
 
-            // 2. RETIRE first, so a name that went away frees its slot before
+            // 3. RETIRE first, so a name that went away frees its slot before
             // anything is placed.
             $orphans = array();
             foreach ($recorded as $name) {
@@ -123,6 +139,14 @@ class ErpLayoutExtraFields
                         $kept[] = $entry;
                     }
                     $defs['panels'][$i]['fields'] = $kept;
+                }
+            }
+
+            // The field type each marker asks for ('' = none), read once.
+            $types = array();
+            foreach ($marked as $name => $def) {
+                if ((string) ($def['erp_layout']['view'] ?? self::VIEW) === self::VIEW) {
+                    $types[$name] = self::markerType($module, $name, $def['erp_layout']);
                 }
             }
 
@@ -160,7 +184,23 @@ class ErpLayoutExtraFields
                 $result['added'][] = $name;
             }
 
-            if ($result['added'] !== array() || $result['removed'] !== array()) {
+            // 2. TYPE, on every entry of a marked field - the ones just placed too.
+            $typed = false;
+            foreach ($types as $name => $type) {
+                if ($type === '') {
+                    continue;
+                }
+                foreach ($defs['panels'] as $i => $panel) {
+                    if (empty($panel['fields']) || !is_array($panel['fields'])) {
+                        continue;
+                    }
+                    if (self::applyType($defs['panels'][$i]['fields'], $name, $type)) {
+                        $typed = true;
+                    }
+                }
+            }
+
+            if ($result['added'] !== array() || $result['removed'] !== array() || $typed) {
                 $manager->saveViewdef($defs, $module, 'base', self::VIEW);
                 self::clearCaches($module);
             }
@@ -264,6 +304,62 @@ class ErpLayoutExtraFields
         }
 
         return is_array($entry) ? (string) ($entry['name'] ?? '') : '';
+    }
+
+    /**
+     * The marker's `type`, or '' when it names none or names something that is
+     * not a field type (lower-case letters, digits and dashes, as every
+     * clients/base/fields directory is named).
+     */
+    private static function markerType(string $module, string $name, array $spec): string
+    {
+        if (!isset($spec['type'])) {
+            return '';
+        }
+        $type = is_string($spec['type']) ? $spec['type'] : '';
+        if (preg_match('/^[a-z][a-z0-9-]{0,63}$/', $type) !== 1) {
+            self::log('error', "sync($module): $name asks for type '" . substr((string) json_encode($spec['type']), 0, 80)
+                . "', which is not a field type name; its entries are left as they are");
+            return '';
+        }
+
+        return $type;
+    }
+
+    /**
+     * Give every entry named $name (fieldset members included) the type $type.
+     * A bare-string entry becomes array('name' => ..., 'type' => ...).
+     *
+     * @return bool whether anything changed
+     */
+    private static function applyType(array &$entries, string $name, string $type): bool
+    {
+        $changed = false;
+        foreach ($entries as $k => $entry) {
+            if (is_string($entry)) {
+                if ($entry === $name) {
+                    $entries[$k] = array('name' => $name, 'type' => $type);
+                    $changed = true;
+                }
+                continue;
+            }
+            if (!is_array($entry)) {
+                continue;
+            }
+            // A container (fieldset) is never retyped, even if it shares the
+            // name: sidecar's metadata patcher reads its members, not its type.
+            if (!isset($entry['fields']) && (string) ($entry['name'] ?? '') === $name
+                && ($entry['type'] ?? null) !== $type) {
+                $entries[$k]['type'] = $type;
+                $changed = true;
+            }
+            if (isset($entry['fields']) && is_array($entry['fields'])
+                && self::applyType($entries[$k]['fields'], $name, $type)) {
+                $changed = true;
+            }
+        }
+
+        return $changed;
     }
 
     /**
