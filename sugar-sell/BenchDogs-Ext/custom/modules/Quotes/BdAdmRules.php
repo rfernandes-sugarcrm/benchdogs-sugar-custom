@@ -22,6 +22,11 @@
  *  - the seller's pick lists for Lead Source, Lead Type and Project: active
  *    ERP_LookupValues rows of types BdLeadSources / BdLeadTypes / BdProjects,
  *    which core publishes from the ADM connection's own code-list config.
+ *  - G460: the pick lists for Marketing Campaign and Marketing Event: active
+ *    rows of types BdMarketingCampaigns / BdMarketingEvents, which the Bench
+ *    connector extension publishes from ADM's own masters (ADM connection
+ *    only). NEVER defaulted: ADM names no default event (DefMktgEvntSeq 0,
+ *    isDefault false, measured), so the seller picks both.
  *
  * WHICH QUOTES ARE ADM, WITH NO COMPANY LIST OF ITS OWN (🔒 1724b: "ADM" from
  * one source). A quote is an ADM quote when its ERP company has published
@@ -51,6 +56,18 @@ class BdAdmRules
     public const TYPE_LEAD_SOURCES = 'BdLeadSources';
     public const TYPE_LEAD_TYPES = 'BdLeadTypes';
     public const TYPE_PROJECTS = 'BdProjects';
+
+    /** G460: published by the Bench connector extension, a contract with it. */
+    public const TYPE_MARKETING_CAMPAIGNS = 'BdMarketingCampaigns';
+    public const TYPE_MARKETING_EVENTS = 'BdMarketingEvents';
+
+    /**
+     * G460: an event's picker key is "<campaign>/<seq>" (26DISCNV/2), split at
+     * the LAST separator - the contract with the connector extension
+     * (adm_rules.EVENT_KEY_SEPARATOR), which splits the seller's pick the same
+     * way and refuses a pair whose event is not the campaign's.
+     */
+    public const EVENT_KEY_SEPARATOR = '/';
 
     /** Tenant data (app_list_strings), editable in Admin > Dropdown Editor. */
     public const LIST_PROJECT_BY_GROUP = 'bd_adm_project_by_group_list';
@@ -387,6 +404,120 @@ class BdAdmRules
         }
 
         return $options;
+    }
+
+    // ── G460: the marketing pickers ─────────────────────────────────────────
+
+    /**
+     * Options for the Marketing Campaign or the Marketing Event picker: '' first,
+     * then the ACTIVE rows of that type that can form an ACTIVE PAIR - a
+     * campaign is offered only when at least one active event of it is, and an
+     * event only when its campaign is. Two queries (one per type), across teams.
+     *
+     * WHY THE PAIRING. ADM refuses a quote without a valid campaign AND event
+     * (G460). Of ADM's 42 active campaigns, 25 have NO active event (measured
+     * 2026-09-25): offering one of those would let the seller pick a campaign no
+     * event can complete. Sugar ships no dependent-picker code (🔒 1724b), so the
+     * event list is every usable event, keyed and labelled with its campaign,
+     * and the connector extension refuses a pair that does not match.
+     */
+    public static function marketingOptions(string $type): array
+    {
+        return self::marketingOptionsFromRows(
+            $type,
+            self::activeRows(self::TYPE_MARKETING_CAMPAIGNS),
+            self::activeRows(self::TYPE_MARKETING_EVENTS)
+        );
+    }
+
+    /**
+     * [campaign, seq] of an event picker key, or null when it is not one (no
+     * separator, no campaign, a seq that is not a positive whole number).
+     */
+    public static function eventCampaign(string $key): ?array
+    {
+        $key = trim($key);
+        $at = strrpos($key, self::EVENT_KEY_SEPARATOR);
+        if ($at === false) {
+            return null;
+        }
+        $campaign = trim(substr($key, 0, $at));
+        $seq = trim(substr($key, $at + strlen(self::EVENT_KEY_SEPARATOR)));
+        if ($campaign === '' || $seq === '' || !ctype_digit($seq) || (int) $seq < 1) {
+            return null;
+        }
+
+        return array($campaign, (int) $seq);
+    }
+
+    /**
+     * The pure half of marketingOptions(), so it can be tested without a
+     * database. Campaigns in code order; events by campaign, then seq as a
+     * NUMBER (ADM reuses the same descriptions under every campaign, so a name
+     * order would interleave them). Labels are "KEY - Name".
+     */
+    public static function marketingOptionsFromRows(string $type, array $campaignRows, array $eventRows): array
+    {
+        $campaigns = array();
+        foreach ($campaignRows as $row) {
+            $code = trim((string) ($row['erp_display_sync_key'] ?? ''));
+            if ($code !== '') {
+                $campaigns[$code] = trim((string) ($row['name'] ?? ''));
+            }
+        }
+        // Sorted by a composed string key and ksort(): usort() and its kin are
+        // on ModuleScanner's blacklist (MLP002 - one call rejects the upload).
+        // "<campaign>\0<seq, zero-padded>" orders by campaign exactly as
+        // strcmp() does (NUL sorts before any code character), then by seq as
+        // a number.
+        $events = array();
+        foreach ($eventRows as $row) {
+            $key = trim((string) ($row['erp_display_sync_key'] ?? ''));
+            $pair = self::eventCampaign($key);
+            if ($pair === null || !array_key_exists($pair[0], $campaigns)) {
+                continue;
+            }
+            $events[$pair[0] . "\0" . sprintf('%010d', $pair[1])] =
+                array($pair[0], $pair[1], $key, trim((string) ($row['name'] ?? '')));
+        }
+        ksort($events, SORT_STRING);
+
+        $options = array('' => '');
+        if ($type === self::TYPE_MARKETING_EVENTS) {
+            foreach ($events as $event) {
+                $options[$event[2]] = self::label($event[2], $event[3]);
+            }
+        } elseif ($type === self::TYPE_MARKETING_CAMPAIGNS) {
+            $usable = array();
+            foreach ($events as $event) {
+                $usable[$event[0]] = true;
+            }
+            ksort($campaigns, SORT_STRING);
+            foreach ($campaigns as $code => $name) {
+                if (isset($usable[$code])) {
+                    $options[$code] = self::label((string) $code, $name);
+                }
+            }
+        }
+
+        return $options;
+    }
+
+    /** "CODE - Name", or the code alone when there is no other name. */
+    private static function label(string $code, string $name): string
+    {
+        return ($name === '' || $name === $code) ? $code : $code . ' - ' . $name;
+    }
+
+    /** The active rows of one type (display key + name), across teams. */
+    private static function activeRows(string $type): array
+    {
+        $query = new SugarQuery();
+        $query->from(BeanFactory::newBean('ERP_LookupValues'), array('team_security' => false));
+        $query->select(array('erp_display_sync_key', 'name'));
+        $query->where()->equals('type', $type)->equals('is_active', 1);
+
+        return $query->execute();
     }
 
     private static function appList(string $name): array

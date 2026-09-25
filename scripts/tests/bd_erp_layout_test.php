@@ -32,6 +32,11 @@
  *   T4  uninstall rc70 on a FRESH-installed tenant (no rc69 backup to restore)
  *   T5  uninstall rc70 on the UPGRADED tenant (Module Loader restores rc69's
  *       backed-up Account vardef, so those two fields are NOT orphans)
+ *   T6  G460: an rc72 tenant (its three pickers placed) upgraded to this build:
+ *       the two marketing pickers land after Project, nothing placed moves
+ *
+ * "rc70" in the names below is THIS BUILD's files (rc70's shape: marked vardefs,
+ * no layout code); since G460 its Quote vardef carries five pickers.
  */
 
 namespace Sugarcrm\Sugarcrm\MetaData {
@@ -186,6 +191,9 @@ namespace {
     // the rc69 cut (fixtures/rc69/PROVENANCE.md), no longer derived from rc70's by
     // regex - rc72's vardef also carries 'readonly', which rc69's did not.
     $rc69Accounts = file_get_contents(__DIR__ . '/fixtures/rc69/bd_customer_group.php.txt');
+    // G460: rc72's Quote vardef (three pickers), a byte copy (fixtures/rc72/PROVENANCE.md).
+    $rc72Quotes = file_get_contents(__DIR__ . '/fixtures/rc72/bd_adm_required_fields.php.txt');
+    $PICKERS = ['bd_lead_source', 'bd_lead_type', 'bd_project_id', 'bd_marketing_campaign', 'bd_marketing_event'];
 
     // A throwaway tenant docroot: ERP-Core's class at its fixed path, and the
     // Extension files the compiler reads.
@@ -274,8 +282,8 @@ namespace {
     $check('T1a every post_install step applied',
         ['repair_rebuild' => 'ok', 'accounts_erp_layout' => 'ok', 'quotes_erp_layout' => 'ok'],
         $report()['steps'] ?? null);
-    $check('T1b the three pickers land on the ERP panel, after Reference, in order',
-        ['erp_quote_type', 'erp_quotes_ship_via_name', 'erp_reference', 'bd_lead_source', 'bd_lead_type', 'bd_project_id'],
+    $check('T1b the five pickers land on the ERP panel, after Reference, in order',
+        array_merge(['erp_quote_type', 'erp_quotes_ship_via_name', 'erp_reference'], $PICKERS),
         $panel('Quotes', 'LBL_RECORDVIEW_PANEL_ERP'));
     $labels = [];
     foreach (ViewdefManager::$views['Quotes']['panels'][2]['fields'] as $e) {
@@ -284,13 +292,15 @@ namespace {
         }
     }
     $check('T1c each with its own label',
-        ['bd_lead_source' => 'LBL_BD_LEAD_SOURCE', 'bd_lead_type' => 'LBL_BD_LEAD_TYPE', 'bd_project_id' => 'LBL_BD_PROJECT_ID'],
+        ['bd_lead_source' => 'LBL_BD_LEAD_SOURCE', 'bd_lead_type' => 'LBL_BD_LEAD_TYPE', 'bd_project_id' => 'LBL_BD_PROJECT_ID',
+         'bd_marketing_campaign' => 'LBL_BD_MARKETING_CAMPAIGN', 'bd_marketing_event' => 'LBL_BD_MARKETING_EVENT'],
         $labels);
     $check('T1d the Account fields rc69 placed stay exactly where they were (no Accounts write)',
         [['website', 'bd_customer_group', 'bd_customer_group_code'], ['Quotes']],
         [$panel('Accounts', 'panel_body'), ViewdefManager::$saves]);
     $check('T1e and are RECORDED now, so an uninstall can retire them',
-        [['bd_customer_group', 'bd_customer_group_code'], ['bd_lead_source', 'bd_lead_type', 'bd_project_id', 'erp_reference']],
+        [['bd_customer_group', 'bd_customer_group_code'],
+         ['bd_lead_source', 'bd_lead_type', 'bd_marketing_campaign', 'bd_marketing_event', 'bd_project_id', 'erp_reference']],
         [$recorded('Accounts'), $recorded('Quotes')]);
 
     // ── T2: reinstall rc70 ─────────────────────────────────────────────────
@@ -313,7 +323,7 @@ namespace {
     // bd_customer_group_move_test.php's.
     $erpEpicorLayouts();
     $check('T3 ERP-Epicor\'s own sync() puts every Bench field back; on a GA-shaped view (no panel_overview) the Account pair falls back to the ERP tab',
-        [['erp_quote_type', 'erp_quotes_ship_via_name', 'erp_reference', 'bd_lead_source', 'bd_lead_type', 'bd_project_id'],
+        [array_merge(['erp_quote_type', 'erp_quotes_ship_via_name', 'erp_reference'], $PICKERS),
          ['website'], ['erp_credit_hold_badge', 'bd_customer_group', 'bd_customer_group_code']],
         [$panel('Quotes', 'LBL_RECORDVIEW_PANEL_ERP'), $panel('Accounts', 'panel_body'),
          $panel('Accounts', 'LBL_RECORDVIEW_PANEL_ERP')]);
@@ -356,6 +366,39 @@ namespace {
         [$panel('Quotes', 'LBL_RECORDVIEW_PANEL_ERP'), $panel('Accounts', 'panel_body'),
          $panel('Accounts', 'LBL_RECORDVIEW_PANEL_ERP')]);
     $check('T5b no layout error was logged across the whole life', [],
+        array_values(array_filter($GLOBALS['log']->lines,
+            fn($l) => str_contains($l[1], '[ErpLayoutExtraFields]') || str_contains($l[1], 'layout sync failed'))));
+
+    // ── T6: G460, an rc72 tenant upgraded to this build ────────────────────
+    // After T5 the Quotes ERP panel holds only ERP-Epicor's own fields. rc72
+    // installs and places its three pickers; then THIS build installs over it.
+    $installFiles([$QV . 'bd_adm_required_fields.php' => $rc72Quotes, $AV . 'bd_customer_group.php' => $rc70Accounts]);
+    $lifecycle('post_execute.php');
+    $check('T6a rc72 placed its three pickers after Reference (the starting point)',
+        ['erp_quote_type', 'erp_quotes_ship_via_name', 'erp_reference', 'bd_lead_source', 'bd_lead_type', 'bd_project_id'],
+        $panel('Quotes', 'LBL_RECORDVIEW_PANEL_ERP'));
+    // An admin moved Lead Type before Reference on this tenant: placed fields are
+    // the admin's and must not move.
+    $erpPanel = &ViewdefManager::$views['Quotes']['panels'][2]['fields'];
+    $moved = array_values(array_filter($erpPanel, fn($e) => $e['name'] === 'bd_lead_type'));
+    $erpPanel = array_values(array_filter($erpPanel, fn($e) => $e['name'] !== 'bd_lead_type'));
+    array_splice($erpPanel, 2, 0, $moved);
+    unset($erpPanel);
+    ViewdefManager::$saves = [];
+    $installFiles([$QV . 'bd_adm_required_fields.php' => $rc70Quotes]);
+    $lifecycle('post_execute.php');
+    $check('T6b the two marketing pickers land after Project, in order; the admin\'s placement stays',
+        ['erp_quote_type', 'erp_quotes_ship_via_name', 'bd_lead_type', 'erp_reference', 'bd_lead_source', 'bd_project_id',
+         'bd_marketing_campaign', 'bd_marketing_event'],
+        $panel('Quotes', 'LBL_RECORDVIEW_PANEL_ERP'));
+    $check('T6c one Quotes write, and both are recorded so an uninstall retires them',
+        [['Quotes'], true, true],
+        [ViewdefManager::$saves, in_array('bd_marketing_campaign', $recorded('Quotes'), true),
+         in_array('bd_marketing_event', $recorded('Quotes'), true)]);
+    ViewdefManager::$saves = [];
+    $lifecycle('post_execute.php');
+    $check('T6d a second install of this build writes no view', [], ViewdefManager::$saves);
+    $check('T6e no layout error was logged by the upgrade', [],
         array_values(array_filter($GLOBALS['log']->lines,
             fn($l) => str_contains($l[1], '[ErpLayoutExtraFields]') || str_contains($l[1], 'layout sync failed'))));
 

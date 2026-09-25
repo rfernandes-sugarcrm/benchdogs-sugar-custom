@@ -1,3 +1,37 @@
+# Unreleased (on 0.9.42-rc72) — G460 Marketing Campaign + Marketing Event
+
+Version NOT bumped on this branch (as G530/G532 below): the landing picks the
+next unspent rc. Built on `fix/g530-g532-bench-reference-labels` (8acec19), so
+it carries G530/G532 too.
+
+**Measured on benchdogs-dev (install session smokes, 2026-09-24):** once G380's
+columns were accepted, ADM refused Send to Estimation with *"A valid Marketing
+Campaign is required / A valid Marketing Event is required"* and Submit Order
+with *"You must select an active Marketing Campaign."* Sugar had no field for
+either, so no seller could fix it: every Bench Dogs ERP write was refused.
+Read-only on ADM (2026-09-25): the order carrier is `OrderDtl` (69 of 69 lines
+on the last 11 real orders carry the pair; `OrderHed` has no such column);
+ADM defines no default event.
+
+| Change | Why |
+|---|---|
+| `bd_adm_required_fields.php`: `bd_marketing_campaign`, `bd_marketing_event` (enum, function options, `erp_layout` after `bd_project_id`, not `required`) | the seller's pair; placed by ERP-Core's `ErpLayoutExtraFields` on install and upgrade (an rc72 tenant: after Project, nothing placed moves; `bd_erp_layout_test.php` T6) |
+| `en_us.bd_adm_required_fields.php`: "Marketing Campaign" / "Marketing Event" | ADM's own words |
+| `en_us.bd_adm_lists.php`: `BdMarketingCampaigns` / `BdMarketingEvents` labels | the two lookup types the Bench connector extension (0.3.3+) publishes |
+| `BdAdmRules::marketingOptions()` + `BdAdmLookupOptions.php`'s two functions | ACTIVE PAIRS only (a campaign with an active event; an event of an active campaign); events keyed `<campaign>/<seq>`, ordered by campaign then seq as a number (sorted by a composed key and `ksort()`: `usort()` is on ModuleScanner's blacklist, MLP002) |
+| no default, no before_save change | ADM names no default; the customer decides any default later |
+
+**Needs:** the Bench connector extension **0.3.3** (publishes the lists, sends
+the pair on the quote and on every order line, refuses a blank or mismatched
+pair by name) and one run of its `benchdogs_marketing_adm` pipeline. Until the
+lists are published both pickers offer nothing; until this package is on the
+tenant, 0.3.3 refuses every ADM send by name (ADM refuses it anyway).
+
+**Tests:** `bd_adm_rules_test.php` K1–K8 (the pairing, the key, the order, no
+default), G2/M1/M3/M4/M5/M5b (five types, five fields, markers, labels);
+`bd_erp_layout_test.php` T1b/T1c/T1e/T3 (five pickers) and T6 (upgrade from
+rc72's real vardef, `fixtures/rc72/`).
+
 # Unreleased (on 0.9.42-rc72) — G530 Reference default fits; G532 Customer Group labels
 
 Version NOT bumped on this branch: the landing picks the next unspent rc.

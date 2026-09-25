@@ -21,8 +21,11 @@
  *      quotes, nothing else - and exits in cost order, loading nothing for a
  *      quote it cannot touch
  *   I. the pickers' options: active rows of one type, "CODE - Name", '' first
- *   J. the three option functions answer the same list whatever Sugar passes
- *   M. the vardefs: three fields, no 'required', the erp_layout markers
+ *   J. the five option functions answer the same list whatever Sugar passes
+ *   K. G460 the marketing pickers: only ACTIVE PAIRS are offered (a campaign
+ *      with an active event, an event of an active campaign), events keyed
+ *      "<campaign>/<seq>" and ordered by campaign then seq as a number
+ *   M. the vardefs: five fields, no 'required', the erp_layout markers
  *   N. the before_save registration points at a real class and method
  *   O. (BD_NO_QUOTE_FACTS=1) an ERP-Epicor without ErpQuoteFacts: defaults
  *      skipped and logged, the save never fails
@@ -388,8 +391,9 @@ namespace {
         $types = $GLOBALS['app_list_strings']['erp_lookup_type_list'];
         $check('G1 core\'s types survive', ['Country', 'Reason'],
             array_values(array_intersect(['Country', 'Reason'], array_keys($types))));
-        $check('G2 the three Bench types are added', ['BdLeadSources', 'BdLeadTypes', 'BdProjects'],
-            array_values(array_intersect(['BdLeadSources', 'BdLeadTypes', 'BdProjects'], array_keys($types))));
+        $bdTypes = ['BdLeadSources', 'BdLeadTypes', 'BdProjects', 'BdMarketingCampaigns', 'BdMarketingEvents'];
+        $check('G2 the five Bench types are added (G460: the two marketing lists)', $bdTypes,
+            array_values(array_intersect($bdTypes, array_keys($types))));
         $check('G3 the shipped project default is in place', ['CMI' => '20065'],
             $GLOBALS['app_list_strings']['bd_adm_project_by_group_list']);
         $check('G4 there is NO company list any more (🔒 1724b: one source for "ADM")', false,
@@ -545,12 +549,67 @@ namespace {
         $check('J3 lead type reads its own type', BdAdmRules::lookupOptions('BdLeadTypes'), bd_adm_lead_type_options('BdProjects'));
         $check('J4 project reads its own type', BdAdmRules::lookupOptions('BdProjects'), bd_adm_project_options());
 
+        // ── K. G460 the marketing pickers ───────────────────────────────────
+        // ADM's shapes (read-only 2026-09-25): 26DISCNV active with active
+        // events 1, 2, 10 (10 is invented here to prove the NUMBER order); 25DIRCNV
+        // active but every event retired (25 of ADM's 42 active campaigns look
+        // like this); 16BLDHW retired; ADM reuses one description everywhere.
+        $K_CAMPS = [
+            ['type' => 'BdMarketingCampaigns', 'is_active' => 1, 'erp_display_sync_key' => '26DISCNV', 'name' => '2026 DISP-GROCERY/CONV'],
+            ['type' => 'BdMarketingCampaigns', 'is_active' => 1, 'erp_display_sync_key' => '26BREHC', 'name' => '26BREHC'],
+            ['type' => 'BdMarketingCampaigns', 'is_active' => 1, 'erp_display_sync_key' => '25DIRCNV', 'name' => '2025 DIRECT CONV'],
+            ['type' => 'BdMarketingCampaigns', 'is_active' => 0, 'erp_display_sync_key' => '16BLDHW', 'name' => '2016 BUILDING'],
+        ];
+        $K_EVENTS = [
+            ['type' => 'BdMarketingEvents', 'is_active' => 1, 'erp_display_sync_key' => '26DISCNV/10', 'name' => 'EXISTING CUST - NEW PROJECT'],
+            ['type' => 'BdMarketingEvents', 'is_active' => 1, 'erp_display_sync_key' => '26DISCNV/2', 'name' => 'EXISTING CUST - RECURRING'],
+            ['type' => 'BdMarketingEvents', 'is_active' => 1, 'erp_display_sync_key' => '26BREHC/4', 'name' => 'NEW CUST-BRAND ENV-HEALTH CLB'],
+            ['type' => 'BdMarketingEvents', 'is_active' => 1, 'erp_display_sync_key' => '26DISCNV/1', 'name' => 'EXISTING CUST - NEW PROJECT'],
+            ['type' => 'BdMarketingEvents', 'is_active' => 0, 'erp_display_sync_key' => '25DIRCNV/1', 'name' => 'EXISTING CUST - NEW PROJECT'],
+            ['type' => 'BdMarketingEvents', 'is_active' => 1, 'erp_display_sync_key' => '16BLDHW/1', 'name' => 'EXISTING CUST - NEW PROJECT'],
+            ['type' => 'BdMarketingEvents', 'is_active' => 1, 'erp_display_sync_key' => 'NOSEQ', 'name' => 'not a key'],
+        ];
+        SugarQuery::$rows = array_merge($K_CAMPS, $K_EVENTS);
+        SugarQuery::$constructed = 0;
+        $check('K1 campaigns: only those with an active event, in code order, "CODE - Name"',
+            ['' => '', '26BREHC' => '26BREHC', '26DISCNV' => '26DISCNV - 2026 DISP-GROCERY/CONV'],
+            BdAdmRules::marketingOptions('BdMarketingCampaigns'));
+        $check('K2 events: active events of active campaigns, by campaign then seq AS A NUMBER, keyed "<campaign>/<seq>"',
+            ['' => '', '26BREHC/4' => '26BREHC/4 - NEW CUST-BRAND ENV-HEALTH CLB',
+             '26DISCNV/1' => '26DISCNV/1 - EXISTING CUST - NEW PROJECT',
+             '26DISCNV/2' => '26DISCNV/2 - EXISTING CUST - RECURRING',
+             '26DISCNV/10' => '26DISCNV/10 - EXISTING CUST - NEW PROJECT'],
+            BdAdmRules::marketingOptions('BdMarketingEvents'));
+        $check('K3 two queries per list, active rows of one type each, across teams',
+            [4, ['type' => 'BdMarketingEvents', 'is_active' => 1], ['team_security' => false]],
+            [SugarQuery::$constructed, SugarQuery::$last->whereObj->equals, SugarQuery::$last->fromOptions]);
+        $check('K4 the event key splits at the LAST separator; a non-key is null',
+            [['26DISCNV', 2], ['A/B', 3], null, null, null, null, null],
+            [BdAdmRules::eventCampaign('26DISCNV/2'), BdAdmRules::eventCampaign(' A/B/3 '),
+             BdAdmRules::eventCampaign('26DISCNV'), BdAdmRules::eventCampaign('26DISCNV/0'),
+             BdAdmRules::eventCampaign('/2'), BdAdmRules::eventCampaign('26DISCNV/x'),
+             BdAdmRules::eventCampaign("26DISCNV/\u{00B2}")]);
+        $check('K5 no rows published yet (a tenant before the connector publishes): only the blank',
+            [['' => ''], ['' => '']],
+            [BdAdmRules::marketingOptionsFromRows('BdMarketingCampaigns', [], []),
+             BdAdmRules::marketingOptionsFromRows('BdMarketingEvents', $K_CAMPS, [])]);
+        $check('K6 another type answers only the blank (never a mixed list)', ['' => ''],
+            BdAdmRules::marketingOptionsFromRows('BdLeadSources', $K_CAMPS, $K_EVENTS));
+        $check('K7 the two option functions read their own list, whatever Sugar passes',
+            [BdAdmRules::marketingOptions('BdMarketingCampaigns'), BdAdmRules::marketingOptions('BdMarketingEvents')],
+            [bd_adm_marketing_campaign_options(...$legacy), bd_adm_marketing_event_options('BdMarketingCampaigns')]);
+        $check('K8 NO default: the before_save hook never names either field',
+            [false, false],
+            [str_contains(file_get_contents('custom/modules/Quotes/BdAdmRules.php'), '$bean->bd_marketing_'),
+             str_contains(file_get_contents('custom/Extension/modules/Quotes/Ext/LogicHooks/bd_adm_quote_defaults.php'), 'marketing')]);
+
         // ── M. the vardefs ──────────────────────────────────────────────────
         $dictionary = [];
         include 'custom/Extension/modules/Quotes/Ext/Vardefs/bd_adm_required_fields.php';
         $fields = $dictionary['Quote']['fields'] ?? [];
-        $check('M1 exactly the three fields, in placement order (Reference is ERP-Epicor\'s erp_reference)',
-            ['bd_lead_source', 'bd_lead_type', 'bd_project_id'], array_keys($fields));
+        $check('M1 exactly the five fields, in placement order (Reference is ERP-Epicor\'s erp_reference)',
+            ['bd_lead_source', 'bd_lead_type', 'bd_project_id', 'bd_marketing_campaign', 'bd_marketing_event'],
+            array_keys($fields));
         $check('M2 none is required (Ophir/EPIC06 would be unable to save a quote)', [],
             array_keys(array_filter($fields, fn($f) => !empty($f['required']))));
         $fnOk = [];
@@ -559,11 +618,14 @@ namespace {
             $fnOk[$f] = is_file($fn['include'] ?? '') && function_exists($fn['name'] ?? '') && empty($fields[$f]['options']);
         }
         $check('M3 each picker names a function that exists, in a file that ships',
-            ['bd_lead_source' => true, 'bd_lead_type' => true, 'bd_project_id' => true], $fnOk);
+            ['bd_lead_source' => true, 'bd_lead_type' => true, 'bd_project_id' => true,
+             'bd_marketing_campaign' => true, 'bd_marketing_event' => true], $fnOk);
         $check('M4 each carries ERP-Epicor\'s marker: record view, ERP panel, after Reference in order', [
                 'bd_lead_source' => ['view' => 'record', 'panel' => 'LBL_RECORDVIEW_PANEL_ERP', 'after' => 'erp_reference'],
                 'bd_lead_type' => ['view' => 'record', 'panel' => 'LBL_RECORDVIEW_PANEL_ERP', 'after' => 'bd_lead_source'],
                 'bd_project_id' => ['view' => 'record', 'panel' => 'LBL_RECORDVIEW_PANEL_ERP', 'after' => 'bd_lead_type'],
+                'bd_marketing_campaign' => ['view' => 'record', 'panel' => 'LBL_RECORDVIEW_PANEL_ERP', 'after' => 'bd_project_id'],
+                'bd_marketing_event' => ['view' => 'record', 'panel' => 'LBL_RECORDVIEW_PANEL_ERP', 'after' => 'bd_marketing_campaign'],
             ], array_map(fn($f) => $f['erp_layout'] ?? null, $fields));
         $mod_strings = [];
         include 'custom/Extension/modules/Quotes/Ext/Language/en_us.bd_adm_required_fields.php';
@@ -573,7 +635,9 @@ namespace {
                 $missing[] = $f['vname'];
             }
         }
-        $check('M5 every field has its label, and no orphan label is left', [[], 3], [$missing, count($mod_strings)]);
+        $check('M5 every field has its label, and no orphan label is left', [[], 5], [$missing, count($mod_strings)]);
+        $check('M5b G460 the labels are ADM\'s own words', ['Marketing Campaign', 'Marketing Event'],
+            [$mod_strings['LBL_BD_MARKETING_CAMPAIGN'] ?? null, $mod_strings['LBL_BD_MARKETING_EVENT'] ?? null]);
         $dictionary = [];
         include 'custom/Extension/modules/Accounts/Ext/Vardefs/bd_customer_group.php';
         // rc72 (G507): panel_overview after Industry - the first tab of the measured

@@ -83,14 +83,18 @@ KEPT = {
     # authorised by 🔒 1704b, cut to ADM's own by 🔒 1724b. Every one is a rule
     # or value of ONE customer's ERP company (ADM) that ERP-Epicor must not
     # carry (gate G2), and each is gated on the quote's company.
+    # G460 adds two fields to these same files (no new file): the coordinator's
+    # decided design per the owner pattern (GAPS G460, 2026-09-25 00:48Z): ADM
+    # refuses every quote and order without a Marketing Campaign / Event.
     "custom/Extension/modules/Quotes/Ext/Vardefs/bd_adm_required_fields.php":
-        "G380/G381: bd_lead_source, bd_lead_type, bd_project_id on Quote (erp_layout-marked)",
+        "G380/G381: bd_lead_source, bd_lead_type, bd_project_id; G460: bd_marketing_campaign, "
+        "bd_marketing_event - on Quote (erp_layout-marked)",
     "custom/Extension/modules/Quotes/Ext/Language/en_us.bd_adm_required_fields.php":
-        "their three labels, in ADM's own words",
+        "their five labels, in ADM's own words",
     "custom/Extension/modules/Quotes/Ext/LogicHooks/bd_adm_quote_defaults.php":
         "G380/G381: before_save fills an EMPTY Reference / Project on an unsent ADM quote",
     "custom/Extension/application/Ext/Language/en_us.bd_adm_lists.php":
-        "the three lookup-type labels + the one tenant list (group->project)",
+        "the five lookup-type labels + the one tenant list (group->project)",
     "custom/modules/Quotes/BdAdmRules.php":
         "the ADM rules themselves: which companies are ADM, the two defaults, options",
     "custom/modules/Quotes/BdAdmLookupOptions.php":

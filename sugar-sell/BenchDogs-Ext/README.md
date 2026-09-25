@@ -43,9 +43,9 @@ and the package ships no module of its own.
 >
 > | Path | What it is | Why it is here and not in core |
 > |---|---|---|
-> | `custom/Extension/modules/Quotes/Ext/Vardefs/bd_adm_required_fields.php` + `.../Language/en_us.bd_adm_required_fields.php` | Quote pickers `bd_lead_source`, `bd_lead_type`, `bd_project_id` (each `erp_layout`-marked for the ERP panel, after Reference), and their labels | ADM's own UD columns (`LeadSrc_c`, `LeadType_c`) and ADM's one-project-per-quote rule; no other company asks for them |
+> | `custom/Extension/modules/Quotes/Ext/Vardefs/bd_adm_required_fields.php` + `.../Language/en_us.bd_adm_required_fields.php` | Quote pickers `bd_lead_source`, `bd_lead_type`, `bd_project_id`, and (G460) `bd_marketing_campaign`, `bd_marketing_event` (each `erp_layout`-marked for the ERP panel, after Reference), and their labels | ADM's own UD columns (`LeadSrc_c`, `LeadType_c`), ADM's one-project-per-quote rule, and ADM's required marketing pair; no other company asks for them |
 > | `custom/Extension/modules/Quotes/Ext/LogicHooks/bd_adm_quote_defaults.php` | before_save: fills an EMPTY `erp_reference` (ship-to city + state, shortened to the ERP's limit, G530) and an EMPTY Project (product-group default) on an unsent ADM quote; exits before loading anything for a quote it cannot touch | ADM-only defaults; creates nothing (🔒 1499 still holds, `test_g243…` pins it) |
-> | `custom/Extension/application/Ext/Language/en_us.bd_adm_lists.php` | labels for the three `ERP_LookupValues` types, and ONE tenant list: `bd_adm_project_by_group_list` | Bench data, edited in Dropdown Editor |
+> | `custom/Extension/application/Ext/Language/en_us.bd_adm_lists.php` | labels for the five `ERP_LookupValues` types, and ONE tenant list: `bd_adm_project_by_group_list` | Bench data, edited in Dropdown Editor |
 > | `custom/modules/Quotes/BdAdmRules.php`, `BdAdmLookupOptions.php` | the rules (which companies are ADM, the two defaults) and the pickers' option functions | — |
 
 ## G380 / G381 — what Bench Dogs' ADM company requires (🔒 1705b, 🔒 1724b)
@@ -65,6 +65,7 @@ Group is required. Project ID is required."* EPIC06 enforces none of it.
 | Part | core's own part-number resolution; a part-less line is refused per company | core; ERP-Epicor (`ERP_Companies.erp_order_requires_part_number`, set on ADM) |
 | Group | the catalog part's product group | core |
 | Project ID | `bd_project_id`, one per quote | **this package** (field + default); the Bench connector extension (sends it) |
+| Marketing Campaign / Marketing Event (G460; quote header AND every order line) | the seller's picks, `bd_marketing_campaign` / `bd_marketing_event` | **this package** (fields, no default); the Bench connector extension (publishes the lists, sends `MktgCampaignID` / `MktgEvntSeq`) |
 
 **What this package does (Sugar side):**
 
@@ -88,6 +89,21 @@ Group is required. Project ID is required."* EPIC06 enforces none of it.
 - **Project** is a picker of ADM's active projects (`BdProjects`), pre-filled
   when every line's product group maps to the same project in
   `bd_adm_project_by_group_list`.
+- **Marketing Campaign / Marketing Event (G460)** are pickers the SELLER fills,
+  NEVER defaulted (ADM defines no default event: `DefMktgEvntSeq` 0 and
+  `isDefault` false everywhere, measured 2026-09-25). Their rows are ADM's own
+  `MktgCamps` / `MktgEvnts`, published by the Bench connector extension (types
+  `BdMarketingCampaigns` / `BdMarketingEvents`, ADM connection only). Only
+  ACTIVE PAIRS are offered: a campaign with at least one active event (25 of
+  ADM's 42 active campaigns have none today) and an event of an active
+  campaign. The event is stored as `<campaign>/<seq>` (`26DISCNV/2`) because
+  ADM reuses seq 1..4 and the same descriptions under every campaign; the
+  event list is ordered by campaign, then seq. There is no dependent-picker
+  code (🔒 1724b): an event of another campaign is refused by name at Send to
+  Estimation / Submit Order, before anything reaches the ERP. Without the
+  pair ADM refuses both ("A valid Marketing Campaign is required / A valid
+  Marketing Event is required"; "You must select an active Marketing
+  Campaign.", an ORDER LINE rule).
 
 **Which quotes are ADM — no company list of its own.** A quote is ADM when its
 ERP company (ERP-Epicor's `ErpQuoteFacts::companyCode`) has published

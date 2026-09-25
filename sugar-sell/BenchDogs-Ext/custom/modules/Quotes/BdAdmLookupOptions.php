@@ -3,7 +3,7 @@
 // phpcs:disable PSR1.Files.SideEffects.FoundWithSymbols
 
 /**
- * G380 / G381: the option sources behind the three Bench Dogs quote pickers
+ * G380 / G381 / G460: the option sources behind the five Bench Dogs quote pickers
  * (vardef 'function' => array('name' => ..., 'include' => this file)).
  *
  * PLAIN FUNCTIONS, AND THEY IGNORE THEIR ARGUMENTS, ON PURPOSE. Sugar calls a
@@ -15,7 +15,8 @@
  * on its arguments would answer differently per path. One list per function,
  * named, keeps every path on the same answer.
  *
- * The whole list logic is BdAdmRules::lookupOptions(); these are one line each.
+ * The whole list logic is BdAdmRules's (lookupOptions(), marketingOptions());
+ * these are one line each.
  */
 
 if (!class_exists('BdAdmRules', false)) {
@@ -43,5 +44,21 @@ if (!function_exists('bd_adm_project_options')) {
     function bd_adm_project_options(...$ignored): array
     {
         return BdAdmRules::lookupOptions(BdAdmRules::TYPE_PROJECTS);
+    }
+}
+
+if (!function_exists('bd_adm_marketing_campaign_options')) {
+    /** G460: ADM's active campaigns that have an active event. */
+    function bd_adm_marketing_campaign_options(...$ignored): array
+    {
+        return BdAdmRules::marketingOptions(BdAdmRules::TYPE_MARKETING_CAMPAIGNS);
+    }
+}
+
+if (!function_exists('bd_adm_marketing_event_options')) {
+    /** G460: ADM's active events of active campaigns, keyed "<campaign>/<seq>". */
+    function bd_adm_marketing_event_options(...$ignored): array
+    {
+        return BdAdmRules::marketingOptions(BdAdmRules::TYPE_MARKETING_EVENTS);
     }
 }

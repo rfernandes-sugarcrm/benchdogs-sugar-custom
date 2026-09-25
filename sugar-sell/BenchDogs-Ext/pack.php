@@ -23,7 +23,8 @@
  *
  * G380 / G381 (owner rulings 🔒 1705b, 🔒 1724b: ADM config + ADM rules ONLY)
  * add ADM's own quote values: three Quote pickers (Lead Source, Lead Type,
- * Project) + labels, one before_save defaults hook (Reference and Project),
+ * Project) + labels, and G460 two more in the same files (Marketing Campaign,
+ * Marketing Event), one before_save defaults hook (Reference and Project),
  * the lookup-type labels and one tenant list, and the BdAdm* classes. Reference
  * is ERP-Epicor's generic erp_reference; the part-number refusal is
  * ERP-Epicor's per-company switch; this package no longer fills ERP-Epicor's
