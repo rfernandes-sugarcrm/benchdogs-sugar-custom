@@ -1,3 +1,22 @@
+# 0.9.42-rc75 — build: G574 + G578 + G571/G570 keys on rc74
+
+The "Unreleased (on 0.9.42-rc74)" section below ships as **0.9.42-rc75**, cut
+on `main` 27997c0 (rc74 c978f39 + G574/G578 b7828e6 + the G437 one-off merge,
+which touches no file of this package) plus two commits on `release/rc75`: the
+shared test fixtures re-pinned from the Sugar target f5c5eecd (test-only, not
+packed; the `ErpLayoutExtraFields.php` pin is byte-identical to the one lane
+D19's patch carried), and lane D19's G571 / G570 vardef keys + floor.
+
+**Requires:** ERP-Epicor **≥ 1.1.134** (was 1.1.131: the first release with
+ERP-Core's `erp-dependent-enum` and the marker `type`), Partial Fulfillment
+**≥ 1.0.50** (unchanged). Install ERP-Epicor 1.1.134 first; Module Loader
+refuses this package on an older ERP-Epicor (ERR_UW_NO_DEPENDENCY).
+
+Shipped files changed since rc74 (zip diff = git diff c978f39..this build on
+`custom/` + `scripts/`): `custom/Extension/modules/Quotes/Ext/Vardefs/bd_adm_required_fields.php`
+and `custom/Extension/modules/Quotes/Ext/Language/en_us.bd_adm_required_fields.php`;
+the manifest's ERP-Epicor floor. No script, no layout code, no new file.
+
 # Unreleased (on 0.9.42-rc74) — G574: no pre-picked Project; G578: the campaign label; G571 + G570: picker keys
 
 Version not bumped (branch convention): the landing picks the rc. No new file,
