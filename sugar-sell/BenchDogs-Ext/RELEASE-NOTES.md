@@ -1,3 +1,13 @@
+# 0.9.42-rc74 — build: G450 (the "Suspect" account type) on rc73
+
+The "Unreleased (on 0.9.42-rc73)" section below ships as **0.9.42-rc74**, cut
+from `fix/g450-suspect-account-type-r2` on `release/rc73` 51e8e40 (so it carries
+rc73's G460 + G530 + G532 unchanged). rc71 stays VOID and is never reused.
+
+**Requires (unchanged from rc73):** ERP-Epicor **≥ 1.1.131**, Partial
+Fulfillment **≥ 1.0.50**. The Suspect key needs no ERP-Epicor change: it merges
+over ERP-Core's `account_type_dom` whatever the ERP-Epicor version.
+
 # Unreleased (on 0.9.42-rc73) — G450 revived: the "Suspect" account type (🔒1783b)
 
 The customer reversed 🔒1775b (Layne, relayed by the owner 2026-09-25 02:19Z):
