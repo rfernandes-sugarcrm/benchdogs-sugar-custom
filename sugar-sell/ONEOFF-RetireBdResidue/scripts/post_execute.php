@@ -62,7 +62,10 @@
  * WHAT IT DOES, IN ORDER, AND WHY THE ORDER IS THAT.
  *   1. Extension fragments (K-1, K-4's registration, K-5's source, D-3) are
  *      DELETED first, so that nothing is still registered against a class that
- *      step 4 is about to blank.
+ *      step 4 is about to blank. (1.0.4, G599) One of them,
+ *      DropdownsStyle/sales_stage_dom_style.php, is a path SugarCRM itself writes:
+ *      it is deleted only when its body is one Bench Dogs shipped, and any other
+ *      body is LEFT and reported under SKIPPED with its md5.
  *   2. Bench-only client-field directories are DELETED.
  *   3. The deployed-METADATA retirements run (K-2, K-3, K-5) - the only three
  *      items no installdef can reach, because they live in rows this package
@@ -234,6 +237,8 @@ $bdExtensionGroups = array(
         array('to_module' => 'bd01_ERP_Quote_Line', 'name' => 'bd_quote_line_refresh'),
         array('to_module' => 'bd01_ERP_Quote_Line', 'name' => 'bd_rli_refresh'),
     ),
+    // 1.0.4 (G599): md5-GUARDED - SugarCRM itself writes this path too. See
+    // $bdGuardedExtensionBodies below; a body Bench Dogs never shipped is LEFT.
     'DropdownsStyle' => array(
         array('to_module' => 'application', 'name' => 'sales_stage_dom_style'),
     ),
@@ -269,6 +274,61 @@ $bdExtensionGroups = array(
  * otherwise custom/Extension/modules/<to_module>/Ext.
  */
 
+/**
+ * 1.0.4 (G599) - EXTENSION PATHS ANOTHER WRITER SHARES ARE DELETED ONLY WHEN THE
+ * BODY IS ONE BENCH DOGS SHIPPED.
+ *
+ * Through 1.0.3 every entry above was deleted BY PATH. For 86 of them that is
+ * right: each name was chosen by Bench Dogs (bd_*, bd01_*, zzz_bd_*, en_us.bd_*,
+ * or a _overridesubpanel-for-<retired bd01 relationship>), so nothing else can
+ * have written it. ONE name is not Bench Dogs' to choose:
+ *
+ *     custom/Extension/application/Ext/DropdownsStyle/sales_stage_dom_style.php
+ *
+ * is "<dropdown>_style.php", the file SugarCRM 26.1 ITSELF writes for
+ * sales_stage_dom. DropdownsManager::buildDropdownStyle() -> saveContents()
+ * (src/Dropdowns/DropdownsManager.php:111-199, :364-379) writes it with a
+ * "// created: <timestamp>" header whenever the served style's entries differ from
+ * the dropdown's keys, and synchronizeDropdownsStyle() (:30-50) runs that for every
+ * dropdown at the end of every Module Loader install (ModuleInstaller.php:385), every
+ * uninstall (:2085) and every extension rebuild / Quick Repair
+ * (rebuild_dropdowns_style, :3910-3914). The Admin Dropdown Editor
+ * (DropdownEditorApi::saveDropdownStyle, :878-897) and Studio
+ * (parser.dropdown.php:66) write the same path. On every tenant with ERP-Core,
+ * whose REPLACE-mode sales_stage_dom has six keys against core's ten styled ones,
+ * that condition always holds - so the file is Sugar's by default, and it is where
+ * a customer's own sales-stage colours live. OBSERVED: on et, where no Bench Dogs
+ * package was installed between the two runs, 1.0.2 deleted it on 2026-09-24 and
+ * 1.0.3 found it back and deleted it again on 2026-09-25. The stock tenant's own
+ * copy (a tenant Bench Dogs was never installed on) is pinned as the control in
+ * tests/fixtures/dropdowns-style/.
+ *
+ * So a path listed here is deleted only when its md5 is one of the bodies Bench
+ * Dogs shipped there (every distinct body in the BenchDogs-Ext zips on the build
+ * machine, rc11 .. rc68; each pinned under tests/fixtures/dropdowns-style/ and
+ * deleted by the harness). Any other body is LEFT, and reported under SKIPPED
+ * with its md5. A Sugar-written body carries its write time, so its md5 can never
+ * match this list by accident.
+ *
+ * DELETING A BENCH BODY BLANKS NOTHING: core's include/DropdownsStyle plus Partial
+ * Fulfillment's own partial_fulfillment_sales_stage_style.php style every key of
+ * the ERP-Core dropdown (measured: 0 unstyled), and Sugar writes its own file back
+ * when its style sync next finds it missing.
+ */
+$bdGuardedExtensionBodies = array(
+    'custom/Extension/application/Ext/DropdownsStyle/sales_stage_dom_style.php' => array(
+        // BenchDogs-Ext 0.9.42-rc11 (zip only; unguarded '... Closed' pair)
+        '4f3312f2ea33e251f7e568f624bc4eb9',
+        // rc12-rc38 (blob b43dbd42): the '... Closed' pair, append-only
+        '4be4aa516991c01d838f4c98ba333fd9',
+        // rc39-rc64 (blob bd5753be): the '... Ordered' pair, append-only
+        '1c851a6bed5179086ee7cabe3bce6613',
+        // rc65-rc68 (blob c4944ae7): the emptied stub
+        'b3a90dcc1702b3191bef89b63a245ee0',
+    ),
+);
+$bdGuardedFoundMd5 = array();
+
 $bdInstaller = new ModuleInstaller();
 $bdInstaller->silent = true;
 
@@ -285,11 +345,22 @@ foreach ($bdExtensionGroups as $bdSubdir => $bdItems) {
             $bdPath = 'custom/Extension/modules/' . $bdItem['to_module'] . '/Ext/' . $bdSubdir
                 . '/' . $bdItem['name'] . '.php';
         }
-        if (file_exists($bdPath)) {
-            $bdPresent[] = $bdItem;
-        } else {
+        if (!file_exists($bdPath)) {
             $bdAlreadyGone[] = $bdPath;
+            continue;
         }
+        if (isset($bdGuardedExtensionBodies[$bdPath])) {
+            $bdGuardMd5 = md5_file($bdPath);
+            if (!in_array($bdGuardMd5, $bdGuardedExtensionBodies[$bdPath], true)) {
+                $bdSkipped[] = $bdPath . ' - LEFT: not a Bench body, md5 ' . $bdGuardMd5 . '. SugarCRM'
+                    . ' itself writes this path (the Dropdown Editor, Studio, and the dropdown-style sync'
+                    . ' at the end of every Module Loader install and every Quick Repair), so it holds'
+                    . ' this tenant\'s own sales-stage styling and is not this package\'s to delete (G599).';
+                continue;
+            }
+            $bdGuardedFoundMd5[$bdPath] = $bdGuardMd5;
+        }
+        $bdPresent[] = $bdItem;
     }
 
     if (!$bdPresent) {
@@ -318,6 +389,8 @@ foreach ($bdExtensionGroups as $bdSubdir => $bdItems) {
         }
         if (file_exists($bdPath)) {
             $bdFailed[] = $bdPath . ' (still present after uninstallExt)';
+        } elseif (isset($bdGuardedFoundMd5[$bdPath])) {
+            $bdRemoved[] = $bdPath . ' (a body Bench Dogs shipped, md5 ' . $bdGuardedFoundMd5[$bdPath] . ')';
         } else {
             $bdRemoved[] = $bdPath;
         }
