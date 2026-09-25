@@ -1,0 +1,160 @@
+<?php
+
+/**
+ * Bench Dogs release-stage policy for the shared Partial Fulfillment writer.
+ *
+ * This class returns plain data and never saves an Opportunity. The shared
+ * package validates the stage/probability and remains the sole writer.
+ *
+ * DECISION 87(b): CLASSIFICATION IS DERIVED FROM NATIVE ROWS, NOT LOOKED UP IN
+ * A MIRROR.
+ *
+ * Up to rc28 this opened `bd01_erp_quote_quotes`, resolved exactly one mirror
+ * header, walked `bd01_erp_quote_lines`, built a line_num -> prototype|production
+ * map, and then joined each ordered native Product back onto it through
+ * `bd_erp_line_num`. Five reads, four of which could go ambiguous, and one of
+ * which - the join key - is populated on 4 of 473 rows.
+ *
+ * None of that is needed. `_is_prototype()` is a PURE FUNCTION of two inputs
+ * that both survive natively and are both written by core's own lane:
+ *
+ *     benchdogs-erp-custom/connector_ext_benchdogs/transformers/quotes.py:119-124
+ *       _PROTOTYPE_PART = re.compile(r"(^|[-_])PROTO", re.IGNORECASE)
+ *       def _is_prototype(part_num, line_desc):
+ *           return bool(_PROTOTYPE_PART.search(part_num)
+ *                       or "prototype" in line_desc.lower())
+ *
+ * part_num is `Products.mft_part_num` and line_desc is `Products.description`.
+ * The regex below is that one, ported character for character: same alternation,
+ * same anchor set, same case-insensitivity, same substring fallback on the
+ * description. It is applied to the SAME strings the connector applied it to, so
+ * this is a re-derivation rather than a re-implementation. Measured on Bench:
+ * 11 of 473 rungs classify as prototype, on 11 quotes, ALL ELEVEN matched by the
+ * part number and none by the description alone.
+ *
+ * WHY IT IS NOT A STORED FIELD. A stored copy would freeze a classification a
+ * person can later contradict by editing the part number, and the connector
+ * would be its only writer - so a hand-built release would carry no
+ * classification at all. Deriving costs one preg_match per ordered line.
+ *
+ * WHY VALUATION DOES NOT NEED THIS AT ALL. Under 87(b)'s per-GROUP rule the
+ * prototype is its own mft_part_num group and carries its own pin, so
+ * ErpQuoteOpportunityContribution sums it like any other pinned rung and never
+ * asks what kind of line it is. THE ONLY CONSUMER OF "is this a prototype" IS
+ * STAGE CLASSIFICATION, which is this file.
+ *
+ * WHAT THAT REMOVES, stated because removing a refusal is a behaviour change:
+ * the "Ambiguous ERP quote revision", "ERP quote line identity is ambiguous" and
+ * "Ordered Quote line has no unambiguous ERP quote-line identity" throws are
+ * gone. Every one of them guarded a JOIN that no longer happens. The one
+ * remaining refusal is the one that is about the release itself - no committed
+ * line is visible - and it is unchanged.
+ *
+ * ALSO GONE: the "Multiple prototype lines make release stage ambiguous" throw.
+ * On the mirror, two prototype lines meant a shape nobody could read. Under
+ * per-group grouping, two prototype rungs are simply two groups, and neither the
+ * valuation nor this classification is ambiguous about them: production still
+ * outranks prototype, exactly as before.
+ *
+ * WHAT IS UNCHANGED: production outranks prototype; the two stage/probability
+ * pairs; the snapshot discipline below (Order Selected Lines loads `products`
+ * before it stamps the ordered line, so each Product is re-read outside
+ * BeanFactory's request cache); and the fact that this class writes nothing.
+ */
+class ErpOpportunityReleaseStagePolicy
+{
+    /**
+     * The connector's own prototype part-number pattern, ported verbatim from
+     * `_PROTOTYPE_PART` (Python `re.IGNORECASE` -> PHP `i`). Do not "tidy" the
+     * alternation: `(^|[-_])` is what stops `NOPROTOTYPING-1` matching, and it
+     * is the difference between a rung that closes on its own and one that does
+     * not.
+     */
+    private const PROTOTYPE_PART = '/(^|[-_])PROTO/i';
+
+    /**
+     * @return array{sales_stage: string, probability: int}|null
+     */
+    public function resolve(SugarBean $quote): ?array
+    {
+        // The same applicability gate ErpQuoteOpportunityContribution opens
+        // with, and for the same reason: a Sugar-authored quote is not a Bench
+        // Dogs release and this policy has nothing to say about it. Null means
+        // "not applicable" and leaves the shared writer's own stage handling
+        // alone; it is not a refusal.
+        if (trim((string) ($quote->erp_sync_key ?? '')) === '') {
+            return null;
+        }
+
+        if (!$quote->load_relationship('products')
+            || !$quote->products
+            || !is_object($quote->products)
+        ) {
+            throw new UnexpectedValueException('Quote line items unavailable for release stage');
+        }
+
+        // Order Selected Lines loads this relationship before it stamps the
+        // selected Product. SugarBean::retrieve() refreshes the Quote fields,
+        // but it does not discard an already-loaded Link2 bean snapshot. A
+        // getBeans() here therefore observed erp_ordered=false after the order
+        // had actually succeeded on QA. Resolve relationship IDs, then read
+        // each Product outside BeanFactory's cache so release policy observes
+        // the committed row rather than the action's pre-order snapshot.
+        $productIds = $quote->products->get();
+        if (!is_array($productIds)) {
+            throw new UnexpectedValueException('Quote line-item identities unavailable for release stage');
+        }
+
+        $hasPrototype = false;
+        $hasProduction = false;
+        foreach ($productIds as $productId) {
+            $product = BeanFactory::retrieveBean(
+                'Products',
+                (string) $productId,
+                ['use_cache' => false]
+            );
+            if (!$product || empty($product->id)) {
+                throw new UnexpectedValueException('Quote line item unavailable for release stage');
+            }
+            if (!empty($product->deleted) || empty($product->erp_ordered)) {
+                continue;
+            }
+            if (self::isPrototype($product)) {
+                $hasPrototype = true;
+            } else {
+                $hasProduction = true;
+            }
+        }
+
+        if ($hasProduction) {
+            return [
+                'sales_stage' => 'Partial Production Ordered',
+                'probability' => 90,
+            ];
+        }
+        if ($hasPrototype) {
+            return [
+                'sales_stage' => 'Prototype Ordered',
+                'probability' => 80,
+            ];
+        }
+
+        throw new UnexpectedValueException(
+            'No committed Quote line is visible for Bench release-stage policy'
+        );
+    }
+
+    /**
+     * `_is_prototype(part_num, line_desc)`, ported. Public so a caller that
+     * needs the same classification reads it from here rather than re-typing
+     * the regex - there must be exactly one copy of this rule in the package.
+     */
+    public static function isPrototype(SugarBean $line): bool
+    {
+        $part = (string) ($line->mft_part_num ?? '');
+        $description = (string) ($line->description ?? '');
+
+        return preg_match(self::PROTOTYPE_PART, $part) === 1
+            || strpos(strtolower($description), 'prototype') !== false;
+    }
+}

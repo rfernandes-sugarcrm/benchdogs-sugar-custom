@@ -73,6 +73,10 @@
  *   4b. (1.0.2) Bench Dogs' orphaned ORDER ADAPTER is DELETED once its planner
  *      is blank or absent - step 4 blanks that planner, and a blank planner
  *      makes the adapter refuse every Submit Order. See that step.
+ *   4c. (1.0.3, G594) Bench Dogs' orphaned RELEASE-STAGE POLICY is DELETED
+ *      when its body is one Bench Dogs shipped - the rc45-rc64 body keeps a
+ *      fully ordered quote's Opportunity at Partial Production Ordered / 90
+ *      instead of Closed Won. See that step.
  *   5. The paths it deliberately did NOT touch are reported by name.
  *
  * HOW AN OPERATOR READS THE RESULT, WITHOUT A SHELL AND WITHOUT sugarcrm.log.
@@ -572,9 +576,10 @@ try {
  *   🔒 1508 and G280 both forbid, and deleting it drops ERP-Core to
  *   (float) $quote->total - the fabricated zero 🔒 1511 forbids. Blanking ANY
  *   file at a hook path is wrong for the same reason: the hook still finds the
- *   file, the class is gone, and the hook fails closed. ResolveOrderableLines.php
- *   is the one of the five that has to go, and it is DELETED by the next step,
- *   not blanked. The other three are reported, untouched.
+ *   file, the class is gone, and the hook fails closed. Two of the five have to
+ *   go, and both are DELETED, never blanked: ResolveOrderableLines.php by step 4b
+ *   and OpportunityReleaseStagePolicy.php by step 4c (1.0.3, G594). The other
+ *   three are reported, untouched.
  */
 $bdOrphanClasses = array(
     'custom/dropdowntemplates/bd_stage_doms.append.php',
@@ -744,6 +749,108 @@ if (!file_exists($bdAdapter)) {
 }
 
 /**
+ * 4c. THE ORPHANED RELEASE-STAGE POLICY - NEW IN 1.0.3 (G594).
+ *
+ *     custom/modules/Quotes/ErpQuoteHooks/OpportunityReleaseStagePolicy.php
+ *
+ * MEASURED ON benchdogs-dev (quote #8 ab7ca13c, 2026-09-25 08:52Z, ADM orders
+ * 27599 + 27600): the order that completed the quote left its Opportunity at
+ * Partial Production Ordered / 90 instead of Closed Won / 100, and the audit shows
+ * only erp_ordered_amount / erp_open_amount moving. Stock, which never had Bench
+ * Dogs, moves the same step to Closed Won / 100 (G346).
+ *
+ * WHY. Partial Fulfillment's ErpOpportunityValuation::releaseStageDecision()
+ * (erp-integration-sugar f5c5eecd, :500-560) finds this file by a HARDCODED PATH,
+ * and a provider that answers a valid stage WINS (:523-524) - so PF's own
+ * "nothing left open -> Closed Won" (orderedInFullResolution(), G346, :529-530)
+ * is never reached. BenchDogs-Ext 0.9.42-rc45..rc64 shipped a provider that answers
+ * 'Partial Production Ordered' / 90 whenever ANY line is ordered and never asks
+ * whether anything is still open, so it answers that on the final release too.
+ * rc65 overwrote it with a provider that returns null; rc66 stopped shipping the
+ * path. Module Loader never deletes a file a later build stops shipping (§CW /
+ * G37), so a tenant that went from rc64-or-earlier straight to rc66+ keeps the
+ * deciding body for good. benchdogs-dev did exactly that: rc60 -> rc68 (the
+ * 2026-09-23 dev-instance kit) -> rc69 -> rc72 -> rc74, never rc65. Through 1.0.2
+ * this package left the file alone as "reads no class this package blanks" -
+ * true about blanking, and beside the point: the body itself DECIDES.
+ *
+ * WHAT PF DOES WITH NO FILE, read from its source rather than assumed:
+ * policy_provider_absent takes the generic path - a partial release writes the
+ * configured partial stage (Partial Production Ordered / 90, :533-559) and a final
+ * release writes Closed Won at sales_probability_dom's 100 (:529-530, :658-683).
+ * rc65's null stub reaches the identical decision.
+ * scripts/tests/test_release_stage_absent_equals_null.py runs PF's real resolver
+ * all three ways: null stub, no file, and this rc45-rc64 body (case E).
+ *
+ * DELETED, NEVER BLANKED. A file at this path that defines no class makes PF
+ * return policy_provider_invalid, which PRESERVES the stage on EVERY release,
+ * partial ones included (:511-515) - strictly worse than the defect. Same
+ * mechanism as step 4b: copy_path() in uninstall mode with a source that does not
+ * exist unlinks the destination (26.1.0 ModuleInstaller.php:2685-2688), platform
+ * code the scanner's deny-list does not reach. The source is checked ABSENT first.
+ *
+ * ONLY A BODY BENCH DOGS SHIPPED. The allowlist is every distinct body found at
+ * this path in the BenchDogs-Ext zips on the build machine (102 zips), not only
+ * in git: rc39/rc40 were built from a tree git never recorded. Each body is
+ * pinned under tests/fixtures/release-stage-policy/ and the harness deletes each
+ * one. rc65's null stub is included: deleting it changes no decision, and
+ * afterwards no Bench Dogs body is left at a provider path. Any other body is
+ * somebody else's provider - LEFT, and reported under SKIPPED with its md5,
+ * because it may be exactly why an Opportunity never reaches Closed Won.
+ *
+ * Idempotent: a second run finds no file and says so.
+ */
+$bdReleasePolicy = 'custom/modules/Quotes/ErpQuoteHooks/OpportunityReleaseStagePolicy.php';
+$bdReleasePolicyBenchMd5 = array(
+    // rc4 (blob 434b0658): reads the bd01 quote mirror, answers '... Closed'
+    'faf17dd27859c430cbd26fa4b07b6029',
+    // rc5-rc6 (blob b786a4a0)
+    '8333e547ebad159117fae54c50d2d4c0',
+    // rc7-rc28 (blob 625a75e7)
+    '43eecd851e272aa42aed84ded3b83e0d',
+    // rc29-rc38 (blob d2844953)
+    'cf0969c0c3f76dc50307aed4c4e903f0',
+    // rc39-rc40 (zip only: the rc29 body with both stages renamed '... Ordered')
+    'b442f750afbf9e96a1f434809ac5bd0a',
+    // rc42-rc44 (blob 4dc71dfc): the mirror lookup, answers '... Ordered'
+    'da037878d13206aee9124a397de986a4',
+    // rc45-rc64 (blob fbb81c48): native lines, ALWAYS 'Partial Production Ordered'
+    // once any line is ordered - THE G594 BODY (benchdogs-dev, from rc60)
+    'e5e6e3fff432a5dcd6624accf6bb8598',
+    // rc65 (blob f83bf852): the null stub
+    '32fd2941e268cc8c9153e0f865c0ffc7',
+);
+$bdReleaseNoBackup = $bdPackageDir . '/no-backup/' . $bdReleasePolicy;
+
+if (!file_exists($bdReleasePolicy)) {
+    $bdAlreadyGone[] = $bdReleasePolicy . ' (the Bench Dogs release-stage policy)';
+} else {
+    $bdReleasePolicyMd5 = md5_file($bdReleasePolicy);
+    if (!in_array($bdReleasePolicyMd5, $bdReleasePolicyBenchMd5, true)) {
+        $bdSkipped[] = $bdReleasePolicy . ' - LEFT: its body (md5 ' . $bdReleasePolicyMd5 . ') is not a'
+            . ' release-stage policy Bench Dogs shipped, so it is not this package\'s to delete. If an'
+            . ' Opportunity never reaches Closed Won after the order that completes its quote, this file'
+            . ' is the cause: Partial Fulfillment obeys whatever stage it answers (G594).';
+    } elseif (file_exists($bdReleaseNoBackup)) {
+        $bdSkipped[] = $bdReleasePolicy . ' - NOT DELETED: the no-backup source ' . $bdReleaseNoBackup
+            . ' exists, and copy_path would copy it over the policy instead of deleting it.';
+    } else {
+        try {
+            $bdInstaller->copy_path($bdReleaseNoBackup, $bdReleasePolicy, $bdReleaseNoBackup, true);
+            if (file_exists($bdReleasePolicy)) {
+                $bdFailed[] = $bdReleasePolicy . ' (still present after copy_path)';
+            } else {
+                $bdRemoved[] = $bdReleasePolicy . ' (Bench Dogs\' release-stage policy, md5 '
+                    . $bdReleasePolicyMd5 . ', deleted: Partial Fulfillment now decides the Opportunity'
+                    . ' stage itself - Closed Won once an order leaves nothing open, G594)';
+            }
+        } catch (Throwable $e) {
+            $bdFailed[] = $bdReleasePolicy . ' (' . $e->getMessage() . ')';
+        }
+    }
+}
+
+/**
  * WHAT THIS PACKAGE DELIBERATELY DID NOT TOUCH.
  *
  * Reported by name on every run, present or not, because "I left it alone" is a
@@ -777,8 +884,6 @@ $bdNotOurs = array(
         . ' the PF-reinstall sequence, never by an empty stub (G280 / 🔒 1508 / 🔒 1511).',
     'custom/modules/Quotes/ErpQuoteHooks/OpportunityLineRollupPolicy.php'
         . ' - hook path; Partial Fulfillment no longer consults it (🔒 1468).',
-    'custom/modules/Quotes/ErpQuoteHooks/OpportunityReleaseStagePolicy.php'
-        . ' - hook path; reads no class this package blanks.',
     'custom/modules/Quotes/ErpQuoteHooks/OrderSelectedLinesPolicy.php'
         . ' - hook path; with the selector blank it answers "no objection", so it cannot block an order.',
     'custom/modules/ProductBundles/clients/base/views/quote-data-group-list/quote-data-group-list.js'

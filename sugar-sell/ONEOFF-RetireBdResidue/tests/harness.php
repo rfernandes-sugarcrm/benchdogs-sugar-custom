@@ -434,6 +434,14 @@ $plannerRel = 'custom/modules/Quotes/BdSubmitOrderPlan.php';
 $adapterFixture = $pkgDir . '/tests/fixtures/ResolveOrderableLines.bench-rc37.php.txt';
 copy($adapterFixture, $tenant . '/' . $adapterRel);
 
+// 1.0.3 (G594): the RELEASE-STAGE POLICY gets the rc45-rc64 body - the one
+// benchdogs-dev still holds from rc60 - for the same reason: the package deletes
+// only a body Bench Dogs shipped, and the census's generic body is not one.
+$releasePolicyRel = 'custom/modules/Quotes/ErpQuoteHooks/OpportunityReleaseStagePolicy.php';
+$releasePolicyFixtures = $pkgDir . '/tests/fixtures/release-stage-policy';
+$releasePolicyDevBody = $releasePolicyFixtures . '/OpportunityReleaseStagePolicy.rc45-rc64.php.txt';
+copy($releasePolicyDevBody, $tenant . '/' . $releasePolicyRel);
+
 $before = count($paths) + 1;
 
 // ---------------------------------------------------------------------------
@@ -502,7 +510,6 @@ foreach ([
     // the shared / contract paths: another package's body may be in these
     'custom/modules/Quotes/ErpQuoteHooks/OpportunityContribution.php',
     'custom/modules/Quotes/ErpQuoteHooks/OpportunityLineRollupPolicy.php',
-    'custom/modules/Quotes/ErpQuoteHooks/OpportunityReleaseStagePolicy.php',
     'custom/modules/Quotes/ErpQuoteHooks/OrderSelectedLinesPolicy.php',
     'custom/modules/ProductBundles/clients/base/views/quote-data-group-list/quote-data-group-list.js',
     'custom/modules/Products/clients/base/views/quote-data-group-list/quote-data-group-list.php',
@@ -540,12 +547,11 @@ $expectedLeftovers = [
     'custom/modules/Quotes/BdQuotesLayoutExtensions.php',
     'custom/modules/Quotes/ErpQuoteHooks/OpportunityContribution.php',
     'custom/modules/Quotes/ErpQuoteHooks/OpportunityLineRollupPolicy.php',
-    'custom/modules/Quotes/ErpQuoteHooks/OpportunityReleaseStagePolicy.php',
     'custom/modules/Quotes/ErpQuoteHooks/OrderSelectedLinesPolicy.php',
 ];
 sort($expectedLeftovers);
 check(
-    'exactly the 12 intended survivors are left with their original body',
+    'exactly the 11 intended survivors are left with their original body',
     $leftovers === $expectedLeftovers,
     "got " . count($leftovers) . ": " . implode(', ', array_diff($leftovers, $expectedLeftovers))
         . ' / missing: ' . implode(', ', array_diff($expectedLeftovers, $leftovers))
@@ -653,6 +659,73 @@ $foreign = runAdapterScenario('foreign', $pkgDir, "<?php\nclass ErpQuoteResolveO
 check('CONTROL: a foreign adapter body is LEFT in place', $foreign['adapter']);
 check('CONTROL: and it is reported under SKIPPED, naming its md5',
     strpos($foreign['out'], 'SKIPPED (') !== false && strpos($foreign['out'], 'is not the adapter Bench Dogs shipped') !== false);
+
+// --- 1.0.3: the orphaned release-stage policy (G594, benchdogs-dev quote #8) --
+// Partial Fulfillment finds this file by a hardcoded path and obeys it. The
+// rc45-rc64 body answers Partial Production Ordered / 90 on EVERY release, the
+// final one included, so the Opportunity never reaches Closed Won.
+check('the full sweep DELETED the Bench Dogs release-stage policy', !file_exists($tenant . '/' . $releasePolicyRel));
+check('run 1 reported the release-stage policy under REMOVED, with the rc45-rc64 md5',
+    strpos($out1, $releasePolicyRel . " (Bench Dogs' release-stage policy, md5 e5e6e3fff432a5dcd6624accf6bb8598, deleted") !== false);
+check('run 2 reported the release-stage policy as already gone',
+    strpos($out2, '. ' . $releasePolicyRel . ' (the Bench Dogs release-stage policy)') !== false);
+check('the release-stage policy is no longer reported as NOT TOUCHED',
+    strpos($out1, '= ' . $releasePolicyRel) === false);
+
+// One tenant per body: only the policy on disk. Returns what is left.
+function runReleasePolicyScenario(string $name, string $pkgDir, string $body): array
+{
+    $root = sys_get_temp_dir() . '/bd-residue-release-policy-' . $name . '-' . getmypid();
+    if (is_dir($root)) {
+        rmdir_recursive($root);
+    }
+    $rel = 'custom/modules/Quotes/ErpQuoteHooks/OpportunityReleaseStagePolicy.php';
+    @mkdir($root . '/custom/modules/Quotes/ErpQuoteHooks', 0775, true);
+    file_put_contents($root . '/' . $rel, $body);
+    [$out] = runOnce($root, $pkgDir);
+    [$again] = runOnce($root, $pkgDir);
+    return [
+        'policy' => file_exists($root . '/' . $rel),
+        'out' => $out,
+        'again' => $again,
+        'root' => $root,
+    ];
+}
+
+// THE benchdogs-dev STATE: rc60's body is the only residue at the path.
+$dev = runReleasePolicyScenario('dev', $pkgDir, (string) file_get_contents($releasePolicyDevBody));
+check('benchdogs-dev state (rc45-rc64 body): the release-stage policy is DELETED, not blanked',
+    !$dev['policy'], $dev['root']);
+check('benchdogs-dev state: reported under REMOVED, nothing FAILED or SKIPPED',
+    strpos($dev['out'], "Bench Dogs' release-stage policy, md5 e5e6e3fff432a5dcd6624accf6bb8598, deleted") !== false
+        && strpos($dev['out'], 'FAILED (') === false && strpos($dev['out'], 'SKIPPED (') === false);
+check('benchdogs-dev state: a second run finds it already gone',
+    strpos($dev['again'], '. custom/modules/Quotes/ErpQuoteHooks/OpportunityReleaseStagePolicy.php'
+        . ' (the Bench Dogs release-stage policy)') !== false);
+
+// EVERY body Bench Dogs ever shipped at the path is deleted - one tenant each, so
+// an allowlist entry that goes missing leaves exactly its own body behind.
+$releaseBodies = glob($releasePolicyFixtures . '/OpportunityReleaseStagePolicy.*.php.txt');
+sort($releaseBodies);
+check('eight pinned Bench Dogs release-stage bodies (rc4 .. rc65)', count($releaseBodies) === 8,
+    (string) count($releaseBodies));
+foreach ($releaseBodies as $releaseBody) {
+    $label = basename($releaseBody, '.php.txt');
+    $run = runReleasePolicyScenario(md5_file($releaseBody), $pkgDir, (string) file_get_contents($releaseBody));
+    check('Bench Dogs body ' . $label . ' (md5 ' . md5_file($releaseBody) . ') is DELETED', !$run['policy'],
+        $run['root']);
+}
+
+// CONTROL: a body Bench Dogs never shipped is somebody else's provider - LEFT,
+// and reported loudly, because it may be exactly why Closed Won is never reached.
+$foreignPolicy = runReleasePolicyScenario('foreign', $pkgDir,
+    "<?php\nclass ErpOpportunityReleaseStagePolicy\n{\n    public function resolve(\$quote)\n    {\n"
+    . "        return array('sales_stage' => 'Negotiation', 'probability' => 80);\n    }\n}\n");
+check('CONTROL: a foreign release-stage policy is LEFT in place', $foreignPolicy['policy']);
+check('CONTROL: and it is reported under SKIPPED with its md5 and the Closed Won hint',
+    strpos($foreignPolicy['out'], 'SKIPPED (') !== false
+        && strpos($foreignPolicy['out'], 'is not a release-stage policy Bench Dogs shipped') !== false
+        && strpos($foreignPolicy['out'], 'never reaches Closed Won') !== false);
 
 echo "\nTenant tree left at: {$tenant}\n";
 echo $fail === 0 ? "ALL CHECKS PASSED\n" : "{$fail} CHECK(S) FAILED\n";
