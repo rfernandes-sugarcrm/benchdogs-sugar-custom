@@ -21,11 +21,13 @@ ADM defines no default event.
 | `BdAdmRules::marketingOptions()` + `BdAdmLookupOptions.php`'s two functions | ACTIVE PAIRS only (a campaign with an active event; an event of an active campaign); events keyed `<campaign>/<seq>`, ordered by campaign then seq as a number (sorted by a composed key and `ksort()`: `usort()` is on ModuleScanner's blacklist, MLP002) |
 | no default, no before_save change | ADM names no default; the customer decides any default later |
 
-**Needs:** the Bench connector extension **0.3.3** (publishes the lists, sends
-the pair on the quote and on every order line, refuses a blank or mismatched
-pair by name) and one run of its `benchdogs_marketing_adm` pipeline. Until the
-lists are published both pickers offer nothing; until this package is on the
-tenant, 0.3.3 refuses every ADM send by name (ADM refuses it anyway).
+**Needs, in this order:** (1) this package on the tenant (its pickers are empty
+until step 3); (2) the Bench connector extension **0.3.3** (publishes the lists,
+sends the pair on the quote and on every order line, refuses a blank or
+mismatched pair by name), explicitly approved per tenant; (3) one Run Now of its
+`benchdogs_marketing_adm` pipeline, read back as 211 campaigns / 811 events
+(42 / 68 active today). This package goes FIRST so the lookup types are
+labelled before any row is published.
 
 **Tests:** `bd_adm_rules_test.php` K1–K8 (the pairing, the key, the order, no
 default), G2/M1/M3/M4/M5/M5b (five types, five fields, markers, labels);
