@@ -583,12 +583,15 @@ namespace {
         $check('K3 two queries per list, active rows of one type each, across teams',
             [4, ['type' => 'BdMarketingEvents', 'is_active' => 1], ['team_security' => false]],
             [SugarQuery::$constructed, SugarQuery::$last->whereObj->equals, SugarQuery::$last->fromOptions]);
+        // Numeric-looking seqs a whole-number check must refuse (is_numeric()
+        // would take "2.5" as 2 and "1e1" as 10: a different event than picked).
         $check('K4 the event key splits at the LAST separator; a non-key is null',
-            [['26DISCNV', 2], ['A/B', 3], null, null, null, null, null],
+            [['26DISCNV', 2], ['A/B', 3], null, null, null, null, null, null, null, null],
             [BdAdmRules::eventCampaign('26DISCNV/2'), BdAdmRules::eventCampaign(' A/B/3 '),
              BdAdmRules::eventCampaign('26DISCNV'), BdAdmRules::eventCampaign('26DISCNV/0'),
              BdAdmRules::eventCampaign('/2'), BdAdmRules::eventCampaign('26DISCNV/x'),
-             BdAdmRules::eventCampaign("26DISCNV/\u{00B2}")]);
+             BdAdmRules::eventCampaign("26DISCNV/\u{00B2}"), BdAdmRules::eventCampaign('26DISCNV/2.5'),
+             BdAdmRules::eventCampaign('26DISCNV/1e1'), BdAdmRules::eventCampaign('26DISCNV/+3')]);
         $check('K5 no rows published yet (a tenant before the connector publishes): only the blank',
             [['' => ''], ['' => '']],
             [BdAdmRules::marketingOptionsFromRows('BdMarketingCampaigns', [], []),
