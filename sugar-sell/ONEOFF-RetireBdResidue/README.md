@@ -29,8 +29,12 @@
 >   was on the tenant's disk.
 >
 > **Run it on every tenant that ever had a Bench Dogs build from before rc65 and skipped rc65**:
-> benchdogs-dev and benchdogs-sandbox (both took the 2026-09-23 kit). It is idempotent, so a tenant
-> it has nothing to do on reports the path as already gone. The Opportunities of quotes already
+> benchdogs-dev and benchdogs-sandbox (both took the 2026-09-23 kit), **and et** (etsugarcube). et
+> ran rc62, whose body at this path is the same rc45–rc64 one, and rc62 was later **uninstalled**.
+> Per §1 below, that uninstall puts back the rc60-era body from rc62's `-restore` backup, and
+> neither 1.0.2 nor the et-only RetireBdActionsApi touches this path. So et, the "clean" control
+> tenant, probably holds the G594 body too. That is a prediction; nobody has measured it. It is
+> idempotent, so a tenant it has nothing to do on reports the path as already gone. The Opportunities of quotes already
 > completed are NOT corrected (this package writes no record); grade on a fresh quote.
 
 > **What changed in 1.0.2** (1.0.0 ran on et; 1.0.1 on stock and Ophir; both are spent)
