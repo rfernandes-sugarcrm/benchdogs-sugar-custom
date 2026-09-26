@@ -1,0 +1,105 @@
+name: workflow lint
+
+# 🛑 WHY THIS EXISTS — a workflow that cannot be parsed reports the SAME
+# "failure" as a workflow whose tests failed, and it creates NO JOBS AT ALL.
+# erp-integration-core learned it on 2026-09-19 (G41): one mis-indented line
+# in a `run: |` block and all nine of its CI jobs silently stopped running,
+# while the PR's check list still showed green from the one workflow that
+# was fine. This is that repository's guard, carried here the way the linter
+# is (a gate that lives in someone else's repository does not run on this
+# one's pull requests), with one rule added — every action is pinned to a
+# commit. On a private repository with no branch protection (see
+# main-watchdog.yml) the workflows ARE the gate, so they get a guard of
+# their own.
+#
+# Deliberately SEPARATE and tiny: a broken mlp-lint.yml cannot lint itself,
+# and a guard that dies with the thing it guards is not a guard.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  parse:
+    name: Every workflow parses, keeps its jobs, and pins its actions
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install a YAML parser
+        run: python3 -m pip install --quiet pyyaml
+
+      # Part one: it must PARSE, and declare jobs.
+      - name: Every workflow file is valid YAML with jobs
+        run: |
+          python3 - <<'PY'
+          import pathlib, sys, yaml
+          bad = []
+          for p in sorted(pathlib.Path(".github/workflows").glob("*.y*ml")):
+              try:
+                  d = yaml.safe_load(p.read_text())
+              except yaml.YAMLError as e:
+                  m = getattr(e, "problem_mark", None)
+                  where = f" at line {m.line + 1}, column {m.column + 1}" if m else ""
+                  bad.append(f"{p}: {e.problem}{where}")
+                  continue
+              if not isinstance(d, dict) or "jobs" not in d:
+                  bad.append(f"{p}: parsed but declares no jobs")
+                  continue
+              print(f"  OK  {p.name}  ({len(d['jobs'])} jobs)")
+          if bad:
+              for b in bad:
+                  print(f"::error::{b}")
+              sys.exit(1)
+          PY
+
+      # Part two: a job-count FLOOR. A workflow can parse perfectly while a
+      # job quietly disappears from it, and that reads in the checks list
+      # exactly like a job that passed. Assert the population, never just the
+      # verdict. Raise a number IN THE SAME COMMIT that adds a job.
+      #
+      # mlp-lint.yml: 2 = rules, build (2026-09-26).
+      - name: No workflow quietly loses a job
+        run: |
+          python3 - <<'PY'
+          import pathlib, sys, yaml
+          FLOOR = {"mlp-lint.yml": 2, "main-watchdog.yml": 1}
+          failed = False
+          for name, expected in FLOOR.items():
+              p = pathlib.Path(".github/workflows") / name
+              if not p.is_file():
+                  print(f"::error::{name} is GONE")
+                  failed = True
+                  continue
+              n = len(yaml.safe_load(p.read_text())["jobs"])
+              print(f"  {name}: {n} jobs (floor {expected})")
+              if n < expected:
+                  print(f"::error::{name} has {n} jobs; the floor is {expected}. A job vanished.")
+                  failed = True
+          sys.exit(1 if failed else 0)
+          PY
+
+      # Part three: every `uses:` names a full commit SHA. A floating tag
+      # (`@v4`) is whatever the action's author pushes next; the packages this
+      # repository builds go straight onto live instances, so what runs in
+      # the gate must be what was reviewed.
+      - name: Every action is pinned to a commit
+        run: |
+          python3 - <<'PY'
+          import pathlib, re, sys, yaml
+          bad = []
+          for p in sorted(pathlib.Path(".github/workflows").glob("*.y*ml")):
+              for jn, job in yaml.safe_load(p.read_text())["jobs"].items():
+                  for st in job.get("steps", []):
+                      u = st.get("uses")
+                      if u and not re.search(r"@[0-9a-f]{40}$", u):
+                          bad.append(f"{p.name}/{jn}: {u}")
+          for b in bad:
+              print(f"::error::unpinned action {b}")
+          sys.exit(1 if bad else 0)
+          PY

@@ -25,6 +25,7 @@ which is the same hole in miniature.
 """
 
 import os
+import re
 import shutil
 import subprocess
 import unittest
@@ -66,6 +67,27 @@ LANDED = {
 }
 
 
+#: The fewest checks each suite may report and still count as having run.
+#: `0 checks, 0 failed` satisfied the old assertion — a suite that stopped
+#: running checks looked exactly like a passing one (the hole G21 names, in
+#: miniature). Measured 2026-09-26 at 3dbe4d4: 24 / 19 / 83 (+3 in the
+#: no-ErpQuoteFacts run) / 21 / 29; floors sit ~15% under, so a deleted
+#: check trips them and a re-count does not. Raise a floor when a suite
+#: grows; lowering one is a decision to name in the pull request.
+MIN_CHECKS = {
+    "bench_panel_retired_test.php": 20,
+    "bench_governing_origin_retired_test.php": 15,
+    "bd_adm_rules_test.php": 70,
+    "bd_erp_layout_test.php": 18,
+    "bd_customer_group_move_test.php": 25,
+}
+#: bd_adm_rules_test.php's second run has no ErpQuoteFacts and is meant to be
+#: tiny: an older ERP-Epicor skips the defaults and never fails a save.
+MIN_CHECKS_NO_QUOTE_FACTS = 3
+
+_CHECKS = re.compile(r"(\d+) checks, (\d+) failed")
+
+
 @unittest.skipUnless(php, "requires a PHP CLI")
 class PhpSuitesTest(unittest.TestCase):
     def assert_suite_passes(self, name: str, **env: str) -> None:
@@ -74,6 +96,15 @@ class PhpSuitesTest(unittest.TestCase):
         self.assertIn("checks, 0 failed", report, report)
         self.assertEqual(result.returncode, 0, report)
         self.assertEqual(result.stderr, "", result.stderr)
+        counts = _CHECKS.findall(report)
+        self.assertTrue(counts, f"{name} reported no 'N checks, M failed' line:\n{report}")
+        checks = int(counts[-1][0])
+        floor = (MIN_CHECKS_NO_QUOTE_FACTS if env.get("BD_NO_QUOTE_FACTS")
+                 else MIN_CHECKS[name])
+        self.assertGreaterEqual(
+            checks, floor,
+            f"{name} ran {checks} checks; the floor is {floor}. A suite that "
+            f"stopped running checks is documentation, not a guard.")
 
     def test_bench_panel_retired(self):
         """The Bench Dogs panel is removed from the Quotes record view."""
@@ -113,6 +144,11 @@ class PhpSuitesTest(unittest.TestCase):
 
 class PhpSuiteCoverageTest(unittest.TestCase):
     """This one needs no PHP: it is about what is WIRED, not what passes."""
+
+    def test_every_named_suite_has_a_check_floor(self):
+        self.assertEqual(sorted(MIN_CHECKS), sorted(SUITES),
+                         "MIN_CHECKS and SUITES disagree; a suite without a "
+                         "floor can go quiet")
 
     def test_every_php_suite_in_this_directory_is_named_above(self):
         found = sorted(p.name for p in HERE.glob("*_test.php"))
