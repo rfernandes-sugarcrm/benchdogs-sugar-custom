@@ -29,8 +29,12 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
+import subprocess
 import zipfile
+from functools import cache
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 ROOT = Path(__file__).resolve().parents[2]
 PKG = Path(os.environ.get("BD_PKG", ROOT / "sugar-sell/BenchDogs-Ext"))
@@ -69,12 +73,47 @@ def oneoff_worklist() -> dict[str, str]:
     return out
 
 
+@cache
+def _private_build(package: Path) -> tuple[TemporaryDirectory[str], Path]:
+    """Keep one real build per source tree alive for this test process.
+
+    Other packaging tests delete/rebuild the checkout's release ZIP. Copy only
+    source, never a previous release, so readers cannot race those writers or
+    silently accept an old ZIP when the current builder is broken. Retaining
+    the TemporaryDirectory with the cached path owns its lifetime and cleanup.
+    """
+    # A with block would delete the build before its callers can read it.
+    # pylint: disable-next=consider-using-with
+    scratch = TemporaryDirectory(prefix="bd-retirement-")
+    try:
+        source = Path(scratch.name) / "package"
+        shutil.copytree(
+            package, source, ignore=shutil.ignore_patterns("releases")
+        )
+        subprocess.run(
+            ["php", "pack.php"],
+            cwd=source,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        version = (source / "version").read_text().strip()
+        archive = source / "releases" / f"sugarai_benchdogs_ext-{version}.zip"
+        if not archive.is_file():
+            raise AssertionError("the package builder did not produce a ZIP")
+        return scratch, archive
+    except BaseException:
+        scratch.cleanup()
+        raise
+
+
 def built_zip() -> Path:
-    version = (PKG / "version").read_text().strip()
-    return PKG / "releases" / f"sugarai_benchdogs_ext-{version}.zip"
+    """Return the retirement readers' private, process-owned package ZIP."""
+    return _private_build(PKG.resolve())[1]
 
 
 def zip_names() -> set[str]:
+    """Read the members from the private build."""
     with zipfile.ZipFile(built_zip()) as zipped:
         return set(zipped.namelist())
 
