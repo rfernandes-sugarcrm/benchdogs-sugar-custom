@@ -56,8 +56,9 @@ jobs:
   rules:
     name: Package rules (source)
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       # G318. The linter below is upstream's, byte for byte, at the commit
       # scripts/mlp_lint.PINNED.json names, and has all 19 rules. A hand edit,
@@ -87,6 +88,7 @@ jobs:
   build:
     name: Build and audit the artifact
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     # pack.php needs ZipArchive, which php:8.2-cli does not ship.
     container:
       image: php:8.2-cli
@@ -102,7 +104,7 @@ jobs:
           docker-php-ext-install zip
           rm -rf /var/lib/apt/lists/*
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       # Built the way a release is built. A failure here is a packaging
       # failure: pack.php no longer runs, or an installdef points at a file
@@ -113,6 +115,31 @@ jobs:
       # a live instance, and a builder that nothing exercises is a builder that
       # breaks quietly and is discovered at the worst moment - halfway through
       # fixing a broken instance.
+      # Every shipped .php file parses under the PHP the instances run. A
+      # parse error in a logic hook is a white screen for every seller on the
+      # next install, and nothing here looked for it: pack.php zips bytes, the
+      # linter reads the ASTs its rules target, the PHP suites load the files
+      # they name (8 of the 21 shipped files are loaded by none). 27 files
+      # today, 0 failures, ~2s. archive/ is included: its one-off is excluded
+      # from build and lint on purpose, never from parsing. The count of
+      # "No syntax errors" lines is asserted against the file count — the
+      # population, not the exit code — so a wrong search reads as an error.
+      - name: Every shipped PHP file parses (php -l)
+        run: |
+          find sugar-sell archive -name '*.php' -not -path '*/releases/*' -print0 | sort -z > php-files.zlist
+          total=$(tr -cd '\0' < php-files.zlist | wc -c | tr -d ' ')
+          xargs -0 -n 1 sh -c 'php -l "$0" 2>&1 || true' < php-files.zlist > php-l.out
+          ok=$(grep -c '^No syntax errors detected' php-l.out || true)
+          echo "php files: $total, parsed clean: $ok"
+          if [ "$total" -lt 20 ]; then
+            echo "::error::only $total .php files found under sugar-sell/archive; the search is wrong"
+            exit 1
+          fi
+          if [ "$ok" -ne "$total" ]; then
+            grep -E '^(PHP )?(Parse|Fatal) error|^Errors parsing' php-l.out | sort -u | sed 's/^/::error::/'
+            exit 1
+          fi
+
       - name: Build every package
         run: |
           set -e
@@ -160,7 +187,7 @@ jobs:
       # `-rs` names every skip that remains, so a new one shows up by name in
       # this log instead of as one more `s` in a row of dots.
       - name: The whole test suite
-        run: python3 -m pytest scripts/tests -q -rs -m "not sugarent_tree"
+        run: python3 -m pytest scripts/tests -q -rs -m "not sugarent_tree" | tee pytest.out
 
       # A collected-count floor. Asserting the exit code alone cannot see a
       # runner that silently stops collecting - exactly how the 652-of-892 hole
@@ -169,8 +196,13 @@ jobs:
         run: |
           COUNT=$(python3 -m pytest scripts/tests --collect-only -q 2>/dev/null | tail -1 | grep -oE '^[0-9]+' || echo 0)
           echo "collected: $COUNT"
-          if [ "${COUNT:-0}" -lt 160 ]; then
-            echo "::error::only $COUNT tests collected; expected >= 160. A collector that "
+          # 160 was 44% of the population when this was re-measured on
+          # 2026-09-26 (361 collected, run 36214583533): a collector that
+          # silently dropped the 105 vendored linter tests AND 90 more would
+          # still have passed. A floor that far below the count guards
+          # nothing; 330 leaves room for a deletion, not for a hole.
+          if [ "${COUNT:-0}" -lt 330 ]; then
+            echo "::error::only $COUNT tests collected; expected >= 330. A collector that "
             echo "::error::silently declines to collect is indistinguishable from a passing suite."
             exit 1
           fi
@@ -258,8 +290,12 @@ jobs:
       # Raise this number only with a reason written beside it.
       - name: The suite did not go quiet
         run: |
-          SKIPPED=$(python3 -m pytest scripts/tests -q --color=no -m "not sugarent_tree" 2>/dev/null \
-            | tail -1 | grep -oE '[0-9]+ skipped' | grep -oE '^[0-9]+' || echo 0)
+          # Read off the run above (tee'd to pytest.out; pipefail is GitHub's
+          # default for `run`, so tee hides no red) rather than re-running the
+          # whole suite — which doubled the job's time and was fail-OPEN: a
+          # pytest crash in the re-run yielded SKIPPED=0 and passed.
+          [ -s pytest.out ] || { echo "::error::pytest.out is missing or empty; the suite step did not run"; exit 1; }
+          SKIPPED=$(tail -1 pytest.out | grep -oE '[0-9]+ skipped' | grep -oE '^[0-9]+' || echo 0)
           echo "skipped: $SKIPPED"
           if [ "${SKIPPED:-0}" -gt 8 ]; then
             echo "::error::$SKIPPED tests skipped; ceiling is 8. A test that is"
@@ -309,7 +345,7 @@ jobs:
       # exactly what CI audited rather than rebuilding it locally.
       - name: Upload the package
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: mlp-package
           path: sugar-sell/*/releases/*.zip

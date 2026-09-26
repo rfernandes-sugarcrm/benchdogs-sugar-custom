@@ -1,0 +1,65 @@
+name: main watchdog
+
+# On a private repository on GitHub's free plan there is NO branch
+# protection — the API answers HTTP 403 "Upgrade to GitHub Pro or make this
+# repository public" — so nothing can BLOCK a red main; measured 2026-09-26,
+# most of main's first-parent commits arrived as direct pushes. What can be
+# done is to make a red main LOUD where people look: whenever the gate
+# finishes on main red, this opens (or comments on) an issue labelled
+# `main-red`; the first green run on main closes it. The same mechanism
+# erp-integration-core uses for its nightly (`nightly-red`).
+#
+# workflow_run fires from the DEFAULT branch's copy of this file, for the
+# named workflow's runs on main only (`branches: [main]`).
+on:
+  workflow_run:
+    workflows: ["MLP pre-flight"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  watch:
+    name: main red → issue
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Open, update or close the main-red issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          WF: ${{ github.event.workflow_run.name }}
+          LABEL: main-red
+        run: |
+          set -euo pipefail
+          existing="$(gh issue list -R "$REPO" --label "$LABEL" --state open --json number --jq '.[0].number // empty')"
+          stamp="$(date -u +%Y-%m-%dT%H:%MZ)"
+          short="${SHA:0:9}"
+          if [ "$CONCLUSION" = "failure" ]; then
+            gh label create "$LABEL" -R "$REPO" --color B60205 --force \
+              --description "The gate is red on main; closed by the first green run" >/dev/null
+            line="**$stamp** $WF is RED on main at $short — $RUN_URL"
+            if [ -n "$existing" ]; then
+              gh issue comment "$existing" -R "$REPO" --body "$line"
+              echo "::error::main is RED ($WF at $short); updated issue #$existing"
+            else
+              body="$(printf '%s\n\n%s\n\n%s' \
+                "The gate ($WF) failed on main. This repository has no branch protection (private, free plan), so nothing blocked the push; this issue is the tripwire. It is opened by the main-watchdog workflow and closed automatically by the first green run on main." \
+                "$line" \
+                "Open the run, read the failing job's log, fix forward with a plain push (never force-push).")"
+              gh issue create -R "$REPO" --label "$LABEL" --title "main is RED (since $stamp)" --body "$body"
+              echo "::error::main is RED ($WF at $short); opened a new $LABEL issue"
+            fi
+          elif [ "$CONCLUSION" = "success" ] && [ -n "$existing" ]; then
+            gh issue comment "$existing" -R "$REPO" --body "**$stamp** $WF green again on main at $short — $RUN_URL. Closing."
+            gh issue close "$existing" -R "$REPO" --reason completed
+            echo "::notice::main is green; closed issue #$existing"
+          else
+            echo "::notice::$WF on main: $CONCLUSION; no open $LABEL issue"
+          fi
