@@ -22,7 +22,8 @@
  * defaulted (no before_save touches them): the seller picks both.
  *
  * NOT HERE (🔒 1724b): Reference is ERP-Epicor's generic Quotes.erp_reference
- * (this package only DEFAULTS it on an ADM quote, BdAdmRules); Expected Close is
+ * (this package DEFAULTS it on an ADM quote, BdAdmRules, and claims its layout
+ * placement in _override_bd_erp_reference.php, G606); Expected Close is
  * the Opportunity's close date, sent by core; ProdCode is the catalog part's
  * group, sent by core. The bd_reference field of the unreleased G380 branch is
  * gone with that (that branch was never merged or released).

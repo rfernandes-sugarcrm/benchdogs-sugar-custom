@@ -12,8 +12,16 @@
 // Reference <- Quotes.erp_reference, trimmed, only when non-empty).
 //
 // SELLER-OWNED. Not required - no company but ADM has been shown to need it,
-// and a company that does refuses through its own write-back hook. Editable,
-// on the Quotes record view's ERP panel (see 'erp_layout' below).
+// and a company that does refuses through its own write-back hook. Editable.
+//
+// G606 (G608 absorbed, owner 2026-09-25): NOT ON CORE'S QUOTE LAYOUT. The field,
+// its column, G530's width and the connector's sync are unchanged (core still
+// sends QuoteHed.Reference only when it is non-empty); what left is core's
+// PLACEMENT. The company that needs the input places it: a customer package
+// marks this field with `erp_layout` in its OWN Ext vardef file, named to load
+// after this one (ErpLayoutExtraFields::sync() then places it), and
+// QuotesLayout keeps it on the view for a customer package that still anchors
+// its own fields on it (placementClaimed()).
 //
 // G530 — EPICOR TAKES AT MOST 10 CHARACTERS, MEASURED. `len` 50 was the
 // G380 contract's assumption; it is now only STORAGE, and `erp_max_length`
@@ -62,15 +70,4 @@ $dictionary['Quote']['fields']['erp_reference'] = array(
     'audited'         => true,
     'importable'      => 'true',
     'massupdate'      => false,
-    // Placed on the Quotes record view's ERP panel by the G380 (f) marker
-    // (custom/include/ErpLayoutExtraFields.php, run at the end of
-    // QuotesLayout::install()): on an upgraded tenant it is added after Ship
-    // Via when it is on NO panel, and a tenant where an admin moved it keeps it
-    // where the admin put it. A fresh install gets it from
-    // QuotesLayout::erpPanel().
-    'erp_layout'      => array(
-        'view'  => 'record',
-        'panel' => 'LBL_RECORDVIEW_PANEL_ERP',
-        'after' => 'erp_quotes_ship_via_name',
-    ),
 );

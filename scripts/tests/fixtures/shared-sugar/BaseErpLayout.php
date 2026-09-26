@@ -849,6 +849,245 @@ abstract class BaseErpLayout
     }
 
     /**
+     * G606 / G608 — is $fieldName on ANY panel of the deployed record view
+     * (fieldset members included)? addFieldsToRecordView()'s add-if-absent
+     * looks at one panel only; this is the whole-view question.
+     */
+    protected function recordViewHasField(string $module, string $fieldName): bool
+    {
+        $viewdefs = $this->loadView($module, 'record');
+        if ($viewdefs === null) {
+            return false;
+        }
+        foreach ((array) ($viewdefs['base']['view']['record']['panels'] ?? []) as $panel) {
+            foreach ((array) (is_array($panel) ? ($panel['fields'] ?? []) : []) as $entry) {
+                $name = is_array($entry) ? (string) ($entry['name'] ?? '') : (string) $entry;
+                if ($name === $fieldName) {
+                    return true;
+                }
+                if (is_array($entry) && isset($entry['fields']) && is_array($entry['fields'])
+                    && in_array($fieldName, $this->collectFieldNames($entry['fields']), true)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * 🔒 1795b — set (a value) or drop (null) keys on EVERY entry of one field on
+     * the record view, whichever panel holds it (fieldset members included).
+     *
+     * For a STOCK field (the helpers above are add-if-absent and cannot reach a
+     * field that is already there): its panel is not ours to assume, and an
+     * admin may have moved it. Nothing is created: a field on no panel is left
+     * off. Only the named keys change; the entry's other keys, its place and
+     * every other field stay as deployed. A bare-string entry becomes
+     * ['name' => ...] plus the keys. Idempotent: deploys only on a change.
+     *
+     * @param array<string, mixed> $properties key => value, or key => null to drop the key
+     */
+    protected function setFieldPropertiesInRecordView(string $module, string $fieldName, array $properties): void
+    {
+        $viewdefs = $this->loadView($module, 'record');
+        if ($viewdefs === null) {
+            return;
+        }
+        $panels =& $viewdefs['base']['view']['record']['panels'];
+        $changed = false;
+        foreach ($panels as $i => $panel) {
+            if (!is_array($panel) || !isset($panel['fields']) || !is_array($panel['fields'])) {
+                continue;
+            }
+            $fields = self::applyFieldProperties($panel['fields'], $fieldName, $properties);
+            if ($fields !== $panel['fields']) {
+                $panels[$i]['fields'] = $fields;
+                $changed = true;
+            }
+        }
+        if ($changed) {
+            $this->deployView($module, 'record', $viewdefs);
+        }
+    }
+
+    /**
+     * The pure half of setFieldPropertiesInRecordView(), over one panel's fields.
+     *
+     * @param array<string, mixed> $properties
+     */
+    public static function applyFieldProperties(array $fields, string $fieldName, array $properties): array
+    {
+        foreach ($fields as $k => $entry) {
+            if (is_array($entry) && isset($entry['fields']) && is_array($entry['fields'])) {
+                $fields[$k]['fields'] = self::applyFieldProperties($entry['fields'], $fieldName, $properties);
+                continue;
+            }
+            $name = is_array($entry) ? (string) ($entry['name'] ?? '') : (string) $entry;
+            if ($name !== $fieldName) {
+                continue;
+            }
+            $normalised = is_array($entry) ? $entry : ['name' => $fieldName];
+            foreach ($properties as $key => $value) {
+                if ($value === null) {
+                    unset($normalised[$key]);
+                } else {
+                    $normalised[$key] = $value;
+                }
+            }
+            $fields[$k] = $normalised;
+        }
+
+        return $fields;
+    }
+
+    /**
+     * G606 — move EXISTING record-view panels to sit right before another one,
+     * setting (a value) or dropping (null) the given keys on each moved panel.
+     *
+     * A record view's tabs are its panels with newTab: every panel after a tab
+     * belongs to it until the next one, so moving a panel before a tab moves it
+     * onto the PREVIOUS tab. Nothing is created: a named panel that is absent is
+     * skipped, and when the anchor is absent the view is left exactly as it is
+     * (a guess at where "before nothing" is would be a layout nobody asked for).
+     * The moved panels keep the caller's order and every key they carry but the
+     * ones named. Idempotent: a second call finds them in place and deploys
+     * nothing.
+     *
+     * @param string[] $panelNames
+     * @param array<string, mixed> $properties key => value, or key => null to drop the key
+     */
+    protected function movePanelsBefore(string $module, array $panelNames, string $beforePanel, array $properties = []): void
+    {
+        $viewdefs = $this->loadView($module, 'record');
+        if ($viewdefs === null) {
+            return;
+        }
+        $panels =& $viewdefs['base']['view']['record']['panels'];
+        $updated = self::reorderPanelsBefore($panels, $panelNames, $beforePanel, $properties);
+        if ($updated === $panels) {
+            return;
+        }
+        $panels = $updated;
+        $this->deployView($module, 'record', $viewdefs);
+    }
+
+    /**
+     * The pure half of movePanelsBefore(), static so a test can run it over a
+     * served view.
+     *
+     * @param string[] $panelNames
+     * @param array<string, mixed> $properties
+     */
+    public static function reorderPanelsBefore(array $panels, array $panelNames, string $beforePanel, array $properties = []): array
+    {
+        $moving = [];
+        $rest = [];
+        foreach ($panels as $panel) {
+            $name = is_array($panel) ? (string) ($panel['name'] ?? '') : '';
+            if ($name !== '' && $name !== $beforePanel && in_array($name, $panelNames, true)) {
+                foreach ($properties as $key => $value) {
+                    if ($value === null) {
+                        unset($panel[$key]);
+                    } else {
+                        $panel[$key] = $value;
+                    }
+                }
+                $moving[$name] = $panel;
+                continue;
+            }
+            $rest[] = $panel;
+        }
+        if ($moving === []) {
+            return $panels;
+        }
+        $ordered = [];
+        foreach ($panelNames as $name) {
+            if (isset($moving[$name])) {
+                $ordered[] = $moving[$name];
+            }
+        }
+        $out = [];
+        $placed = false;
+        foreach ($rest as $panel) {
+            if (!$placed && is_array($panel) && ($panel['name'] ?? '') === $beforePanel) {
+                foreach ($ordered as $moved) {
+                    $out[] = $moved;
+                }
+                $placed = true;
+            }
+            $out[] = $panel;
+        }
+
+        return $placed ? $out : $panels;
+    }
+
+    /**
+     * G606 — move ONE field's entry (its whole definition, unchanged) from one
+     * record-view panel to another, after $afterName there (else at the end).
+     *
+     * Only an entry this call can see in $fromPanel moves; a field already in
+     * $toPanel is not added twice (the $fromPanel copy is still taken out, so a
+     * rebuilt source panel that put it back does not leave it shown twice); a
+     * field in neither is never created. Idempotent.
+     */
+    protected function moveFieldToPanel(string $module, string $fieldName, string $fromPanel, string $toPanel, ?string $afterName = null): void
+    {
+        $viewdefs = $this->loadView($module, 'record');
+        if ($viewdefs === null) {
+            return;
+        }
+        $panels =& $viewdefs['base']['view']['record']['panels'];
+        $from = null;
+        $to = null;
+        foreach ($panels as $i => $panel) {
+            $name = is_array($panel) ? (string) ($panel['name'] ?? '') : '';
+            if ($name === $fromPanel) {
+                $from = $i;
+            }
+            if ($name === $toPanel) {
+                $to = $i;
+            }
+        }
+        if ($from === null || $to === null || $from === $to) {
+            return;
+        }
+        $entry = null;
+        $kept = [];
+        foreach ((array) ($panels[$from]['fields'] ?? []) as $field) {
+            $name = is_array($field) ? (string) ($field['name'] ?? '') : (string) $field;
+            if ($name === $fieldName && $entry === null) {
+                $entry = $field;
+                continue;
+            }
+            $kept[] = $field;
+        }
+        if ($entry === null) {
+            return;
+        }
+        $panels[$from]['fields'] = $kept;
+        $target = array_values((array) ($panels[$to]['fields'] ?? []));
+        if (!in_array($fieldName, $this->collectFieldNames($target), true)) {
+            // The index in $target itself: collectFieldNames() skips Studio's
+            // unnamed padding cells, so its positions are not the panel's.
+            $at = null;
+            foreach ($target as $i => $field) {
+                $name = is_array($field) ? (string) ($field['name'] ?? '') : (string) $field;
+                if ($afterName !== null && $name === $afterName) {
+                    $at = $i;
+                }
+            }
+            if ($at === null) {
+                $target[] = $entry;
+            } else {
+                array_splice($target, $at + 1, 0, [$entry]);
+            }
+        }
+        $panels[$to]['fields'] = array_values($target);
+        $this->deployView($module, 'record', $viewdefs);
+    }
+
+    /**
      * Merge a managed field list into an existing one, in place.
      *
      * Shared by the list view, the selection list and subpanels, which had three
@@ -1280,6 +1519,63 @@ abstract class BaseErpLayout
         }
         $fields = $updated;
         $this->deployView($module, 'quote-data-group-list', $viewdefs);
+    }
+
+    /**
+     * G605 — set (a value) or drop (null) keys on ONE EXISTING grid column.
+     *
+     * The grid helpers above are add-if-absent, which cannot reach a column
+     * that is already there - and the one this exists for is Sugar's own
+     * `line_num`, on every tenant's grid. MERGES, NEVER REPLACES (decision 803):
+     * only the named keys of the named column change; every other key and
+     * every other column is left exactly as deployed, and a column that is not
+     * on the grid is SKIPPED, never created. Idempotent: a second call finds
+     * nothing to change and deploys nothing.
+     *
+     * @param array<string, mixed> $properties key => value, or key => null to drop the key
+     */
+    protected function setDataGroupListColumnProperties(string $module, string $fieldName, array $properties): void
+    {
+        $viewdefs = $this->loadView($module, 'quote-data-group-list');
+        if ($viewdefs === null) {
+            return;
+        }
+        $fields =& $viewdefs['base']['view']['quote-data-group-list']['panels'][0]['fields'];
+        $updated = self::applyGridColumnProperties($fields, $fieldName, $properties);
+        if ($updated === $fields) {
+            return;
+        }
+        $fields = $updated;
+        $this->deployView($module, 'quote-data-group-list', $viewdefs);
+    }
+
+    /**
+     * The pure half of setDataGroupListColumnProperties(), static so a test can
+     * run it over the grid a tenant actually serves.
+     *
+     * @param array $fields the grid's field entries (strings or arrays)
+     * @param array<string, mixed> $properties key => value, or key => null to drop the key
+     * @return array the new field list
+     */
+    public static function applyGridColumnProperties(array $fields, string $fieldName, array $properties): array
+    {
+        $out = [];
+        foreach ($fields as $entry) {
+            if (self::gridColumnName($entry) !== $fieldName) {
+                $out[] = $entry;
+                continue;
+            }
+            $normalised = is_array($entry) ? $entry : ['name' => $fieldName];
+            foreach ($properties as $key => $value) {
+                if ($value === null) {
+                    unset($normalised[$key]);
+                } else {
+                    $normalised[$key] = $value;
+                }
+            }
+            $out[] = $normalised;
+        }
+        return $out;
     }
 
     /**

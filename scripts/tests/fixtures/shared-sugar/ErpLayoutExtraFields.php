@@ -221,6 +221,54 @@ class ErpLayoutExtraFields
     }
 
     /**
+     * G606 / G608 — does any package claim a place for $field on $module's record
+     * view? True when the merged vardefs mark $field itself with `erp_layout`
+     * (a package asks for it to be placed), or when any marked field names it as
+     * its `after` anchor (a package lays its own fields out beside it - the shape
+     * a customer package shipped BEFORE it marked the field itself).
+     *
+     * Fails SAFE: vardefs that look unread (no id/name) or any error answer TRUE,
+     * so an input a customer may need is kept on screen rather than taken off on
+     * a guess. Never throws.
+     */
+    public static function placementClaimed(string $module, string $field): bool
+    {
+        try {
+            $fields = self::vardefs($module);
+            if (!isset($fields['id'], $fields['name'])) {
+                return true;
+            }
+            if (isset($fields[$field]['erp_layout']) && is_array($fields[$field]['erp_layout'])) {
+                return true;
+            }
+            foreach ($fields as $def) {
+                if (is_array($def) && isset($def['erp_layout']) && is_array($def['erp_layout'])
+                    && (string) ($def['erp_layout']['after'] ?? '') === $field) {
+                    return true;
+                }
+            }
+
+            return false;
+        } catch (Throwable $e) {
+            self::log('error', "placementClaimed($module, $field): " . $e->getMessage() . '; treated as claimed');
+
+            return true;
+        }
+    }
+
+    /** G606 / G608: is $field itself marked with `erp_layout` in $module's merged vardefs? */
+    public static function isMarked(string $module, string $field): bool
+    {
+        try {
+            $fields = self::vardefs($module);
+
+            return isset($fields[$field]['erp_layout']) && is_array($fields[$field]['erp_layout']);
+        } catch (Throwable $e) {
+            return false;
+        }
+    }
+
+    /**
      * The module's merged field definitions, re-read from disk so a package's
      * post_uninstall (its Ext vardef already gone) sees the fields as they
      * are now, not as this request first loaded them.

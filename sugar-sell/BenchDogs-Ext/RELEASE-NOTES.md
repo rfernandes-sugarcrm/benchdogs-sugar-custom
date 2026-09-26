@@ -1,3 +1,24 @@
+# Unreleased — G606: Bench claims Reference placement
+
+`_override_bd_erp_reference.php` marks core's existing `Quotes.erp_reference`
+for the record view's ERP panel, after Ship Via. The field definition, storage,
+validation and sync remain core's. Version unchanged; the coordinator cuts the release.
+
+On an existing Bench installation meeting the current dependency floors, either
+upgrade order is safe: this Bench build then ERP-Epicor with Sugar commit
+`a1fa64a9`, or that ERP-Epicor build then this Bench build. In the latter order,
+core keeps Reference because the existing Lead Source marker anchors after it.
+The `_override` fragment then wins regardless of file modification times.
+For a fresh installation, install the required ERP-Epicor and Partial Fulfillment
+dependencies first, then Bench; Bench's post-install sync places Reference.
+
+The four shared test fixtures `BaseErpLayout.php`, `QuotesLayout.php`,
+`ErpLayoutExtraFields.php` and `erp_reference.php` are re-pinned byte-for-byte
+from held Sugar commit `a1fa64a92d55d54bf95323b2ec18dc6fe9fb2160`, using
+`refresh_shared_fixtures.py` over those four files. `PINNED.json` records their
+per-file commit; the other pins retain the top-level commit. A normal full
+refresh after core lands will also pick up unrelated upstream changes.
+
 # 0.9.42-rc75 — build: G574 + G578 + G571/G570 keys on rc74
 
 The "Unreleased (on 0.9.42-rc74)" section below ships as **0.9.42-rc75**, cut

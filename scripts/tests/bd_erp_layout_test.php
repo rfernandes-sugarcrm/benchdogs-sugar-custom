@@ -12,7 +12,7 @@
  * Exit: 0 all passed, 1 one or more failed.
  *
  * WHAT IS REAL: ErpLayoutExtraFields (lane D, landed), the erp_reference vardef
- * whose marker the Bench pickers are placed after, rc70's vardef files, and rc70's
+ * whose placement Bench now claims (G606), this build's vardef files, and rc70's
  * scripts/post_execute.php, bd_pre_uninstall.php and post_uninstall.php, run the
  * way Module Loader runs them. WHAT IS FAKED: the deployed viewdefs, the config
  * table, and the extension compiler - and the compiler is faked CONSERVATIVELY:
@@ -141,7 +141,12 @@ namespace {
         {
             foreach ((array) $modules as $m) {
                 $out = [];
-                foreach (glob("custom/Extension/modules/{$m}/Ext/Vardefs/*.php") ?: [] as $f) {
+                $files = glob("custom/Extension/modules/{$m}/Ext/Vardefs/*.php") ?: [];
+                // Sugar compiles _override fragments after ordinary vardefs.
+                usort($files, fn($a, $b) =>
+                    (int) str_starts_with(basename($a), '_override') <=>
+                    (int) str_starts_with(basename($b), '_override'));
+                foreach ($files as $f) {
                     $out[] = file_get_contents($f);
                 }
                 $GLOBALS['bd_compiled'][$m] = $out;
@@ -185,6 +190,7 @@ namespace {
 
     $pkg = realpath(__DIR__ . '/../../sugar-sell/BenchDogs-Ext');
     $rc70Quotes = file_get_contents("$pkg/custom/Extension/modules/Quotes/Ext/Vardefs/bd_adm_required_fields.php");
+    $referenceClaim = file_get_contents("$pkg/custom/Extension/modules/Quotes/Ext/Vardefs/_override_bd_erp_reference.php");
     $rc70Accounts = file_get_contents("$pkg/custom/Extension/modules/Accounts/Ext/Vardefs/bd_customer_group.php");
     // rc69's Account vardef: the same two fields, with NO marker (rc69 placed them
     // with its own layout writer). rc72 (G507): the REAL rc69 file, a byte copy of
@@ -271,12 +277,14 @@ namespace {
     // rc69's own writer appended its two fields to panel_body (unmarked).
     ViewdefManager::$views['Accounts']['panels'][1]['fields'][] = ['name' => 'bd_customer_group', 'label' => 'LBL_BD_CUSTOMER_GROUP'];
     ViewdefManager::$views['Accounts']['panels'][1]['fields'][] = ['name' => 'bd_customer_group_code', 'label' => 'LBL_BD_CUSTOMER_GROUP_CODE'];
-    $check('T0 ERP-Epicor placed and recorded its own erp_reference; nothing Bench is recorded',
-        [['erp_quote_type', 'erp_quotes_ship_via_name', 'erp_reference'], ['erp_reference'], []],
-        [$panel('Quotes', 'LBL_RECORDVIEW_PANEL_ERP'), $recorded('Quotes'), $recorded('Accounts')]);
+    // Seed the historical pre-G606 placement/record. The pinned core vardef
+    // no longer marks Reference; this is the already-installed tenant's state.
+    ViewdefManager::$views['Quotes']['panels'][2]['fields'][] = ['name' => 'erp_reference'];
+    $GLOBALS['bd_config']['erp_layout']['extra_fields_Quotes'] = '["erp_reference"]';
 
     // ── T1: upgrade to rc70 ────────────────────────────────────────────────
-    $installFiles([$QV . 'bd_adm_required_fields.php' => $rc70Quotes, $AV . 'bd_customer_group.php' => $rc70Accounts]);
+    $installFiles([$QV . 'bd_adm_required_fields.php' => $rc70Quotes,
+        $QV . '_override_bd_erp_reference.php' => $referenceClaim, $AV . 'bd_customer_group.php' => $rc70Accounts]);
     ViewdefManager::$saves = [];
     $lifecycle('post_execute.php');
     $check('T1a every post_install step applied',
@@ -338,6 +346,7 @@ namespace {
     $lifecycle('bd_pre_uninstall.php');
     $check('T4a pre_uninstall writes no view (nothing is undone before the files go)', [], ViewdefManager::$saves);
     unlink($QV . 'bd_adm_required_fields.php');       // uninstall_copy
+    unlink($QV . '_override_bd_erp_reference.php');
     unlink($AV . 'bd_customer_group.php');
     $lifecycle('post_uninstall.php');
     $check('T4b every Bench picker is off the Quotes view; ERP-Epicor\'s own fields stay',
@@ -346,16 +355,19 @@ namespace {
     $check('T4c the two Account fields are off the view; the vardef-less ERP badge stays',
         [['website'], ['erp_credit_hold_badge']],
         [$panel('Accounts', 'panel_body'), $panel('Accounts', 'LBL_RECORDVIEW_PANEL_ERP')]);
-    $check('T4d the record forgets them', [[], ['erp_reference']], [$recorded('Accounts'), $recorded('Quotes')]);
+    $check('T4d the record forgets the removed Bench claims, including Reference', [[], []],
+        [$recorded('Accounts'), $recorded('Quotes')]);
     $check('T4e an UNMARKED stray (the unreleased bd_reference) is never touched by sync()', true,
         in_array('bd_reference', $panel('Quotes', 'LBL_RECORDVIEW_PANEL_ERP'), true));
 
     // ── T5: uninstall rc70 on the UPGRADED tenant ──────────────────────────
-    $installFiles([$QV . 'bd_adm_required_fields.php' => $rc70Quotes, $AV . 'bd_customer_group.php' => $rc70Accounts]);
+    $installFiles([$QV . 'bd_adm_required_fields.php' => $rc70Quotes,
+        $QV . '_override_bd_erp_reference.php' => $referenceClaim, $AV . 'bd_customer_group.php' => $rc70Accounts]);
     ViewdefManager::$views['Quotes']['panels'][2]['fields'] = array_values(array_filter(
         ViewdefManager::$views['Quotes']['panels'][2]['fields'], fn($e) => $e['name'] !== 'bd_reference'));
     $lifecycle('post_execute.php');
     unlink($QV . 'bd_adm_required_fields.php');       // uninstall_copy ...
+    unlink($QV . '_override_bd_erp_reference.php');
     file_put_contents($AV . 'bd_customer_group.php', $rc69Accounts);   // ... restores rc69's backup
     $lifecycle('post_uninstall.php');
     // T4 took the pair off; this post_execute is a first-ever placement again on
@@ -385,7 +397,8 @@ namespace {
     array_splice($erpPanel, 2, 0, $moved);
     unset($erpPanel);
     ViewdefManager::$saves = [];
-    $installFiles([$QV . 'bd_adm_required_fields.php' => $rc70Quotes]);
+    $installFiles([$QV . 'bd_adm_required_fields.php' => $rc70Quotes,
+        $QV . '_override_bd_erp_reference.php' => $referenceClaim]);
     $lifecycle('post_execute.php');
     $check('T6b the two marketing pickers land after Project, in order; the admin\'s placement stays',
         ['erp_quote_type', 'erp_quotes_ship_via_name', 'bd_lead_type', 'erp_reference', 'bd_lead_source', 'bd_project_id',

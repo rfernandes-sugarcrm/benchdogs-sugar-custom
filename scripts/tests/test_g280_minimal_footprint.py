@@ -67,6 +67,8 @@ from bd_retirement import PKG, built_zip, oneoff_worklist, zip_names
 #: The whole package. A new entry here is a new override on a customer tenant,
 #: and under 🔒 1520 it needs the owner's item-by-item consent first.
 KEPT = {
+    "custom/Extension/modules/Quotes/Ext/Vardefs/_override_bd_erp_reference.php":
+        "G606 (1796b/1797b): claims placement of core's existing Reference field",
     "custom/Extension/modules/Accounts/Ext/Vardefs/bd_customer_group.php":
         "the customer category (REQ-19): the two Account fields",
     "custom/Extension/modules/Accounts/Ext/Language/en_us.bd_customer_group.php":

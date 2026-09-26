@@ -322,6 +322,19 @@ class QuotesLayout extends BaseErpLayout
         // erpPanelEmptyFieldDependencies() (G78: add/remove match a dependency
         // by its exact serialized shape).
         $this->addDependenciesToRecordView('Quotes', $this->erpStampedFieldsVisibilityDependency());
+        // 🔒 1795b (owner, 2026-09-25): the customer's Purchase Order number is
+        // ERP-OWNED. Core no longer sends PONum (erp-integration-core,
+        // denormalize_order / denormalize_quote); it only READS it back from
+        // Epicor onto this stock field. So on the record, edit and create views
+        // (create and edit are built from the record view) it is READ-ONLY, and
+        // HIDDEN while empty: a quote shows a PO number only once Epicor has
+        // one. BOTH install variants (this installer runs in both zips). The
+        // stock field keeps its place and every other key; the data is
+        // untouched and REST still returns and accepts it (the connector's
+        // read-back writes it). Its own rule, never a target appended to another
+        // one (G78: rules match by their exact serialized shape).
+        $this->setFieldPropertiesInRecordView('Quotes', 'purchase_order_num', ['readonly' => true]);
+        $this->addDependenciesToRecordView('Quotes', $this->purchaseOrderNumVisibilityDependency());
         // Must run after addPanelToRecordViewBefore(), which unsets 'buttons' on every deploy.
         // Inserted before 'main_dropdown' so they sit next to the Edit button.
         $this->addButtonsToRecordView('Quotes', $this->erpActionButtons(), 'main_dropdown');
@@ -525,10 +538,73 @@ class QuotesLayout extends BaseErpLayout
             self::TOTALS_HEADER_VIEW
         );
 
-        // G380 (f) — LAST: every package's `erp_layout`-marked Quotes field
-        // (erp_reference, and a customer package's own) is placed on the view
-        // this install just wrote, so reinstalling ERP-Epicor never drops them.
+        // G606 / G608 — Reference leaves core's layout, unless a customer package
+        // claims it. BEFORE the sync below, so a customer field anchored on it
+        // finds it placed.
+        $this->placeReferenceOnlyWhereClaimed();
+        // G380 (f) — LAST: every package's `erp_layout`-marked Quotes field (a
+        // customer package's own, and ERP-Core's) is placed on the view this
+        // install just wrote, so reinstalling ERP-Epicor never drops them.
         self::syncExtraFields('Quotes');
+    }
+
+    /**
+     * G606 (G608 absorbed; owner, 2026-09-25): REFERENCE IS NOT CORE'S TO PLACE.
+     *
+     * QuoteHed.Reference is required by one customer company's Epicor, not by
+     * Epicor, so the input belongs on that customer's layout. The field (ERP-Core
+     * Quotes.erp_reference, G530's 10-character limit) and the connector's sync
+     * are unchanged; only core's placement goes. Three cases, read off the
+     * merged vardefs (ErpLayoutExtraFields::placementClaimed()):
+     *
+     *   1. a package MARKS erp_reference with `erp_layout` -> nothing here: the
+     *      sync below places it where that package asks (or keeps it wherever it
+     *      already is);
+     *   2. a package lays its OWN fields out after it (an `after` anchor), but
+     *      does not mark it - a customer package built before this change ->
+     *      KEPT where core always put it (the ERP panel, after Ship Via), so a
+     *      tenant upgrading ERP-Epicor before that package never loses an input
+     *      its Epicor refuses a quote without;
+     *   3. nobody claims it -> taken off THIS package's ERP panel (the only
+     *      place core put it). A placement an admin made on another panel is
+     *      theirs to keep (L-0009).
+     *
+     * Case 2 is what makes the rollout order free: the customer package's
+     * placement may land before, with, or after this build, and no order hides
+     * the field on a tenant that needs it.
+     */
+    private function placeReferenceOnlyWhereClaimed(): void
+    {
+        if (!class_exists('ErpLayoutExtraFields', false)) {
+            @include_once 'custom/include/ErpLayoutExtraFields.php';
+        }
+        if (!class_exists('ErpLayoutExtraFields', false)) {
+            // Cannot tell who needs it: keep core's old placement (fail safe).
+            $claimed = true;
+            $marked = false;
+        } else {
+            $claimed = ErpLayoutExtraFields::placementClaimed('Quotes', self::ERP_REFERENCE_FIELD['name']);
+            $marked = ErpLayoutExtraFields::isMarked('Quotes', self::ERP_REFERENCE_FIELD['name']);
+        }
+        if ($marked) {
+            return;
+        }
+        if ($claimed) {
+            if (!$this->recordViewHasField('Quotes', self::ERP_REFERENCE_FIELD['name'])) {
+                $this->addFieldsToRecordView(
+                    'Quotes',
+                    [self::ERP_REFERENCE_FIELD],
+                    ['name' => self::ERP_PANEL_NAME],
+                    'erp_quotes_ship_via_name'
+                );
+            }
+            return;
+        }
+        $this->removeFieldsFromRecordViewPanel(
+            'Quotes',
+            ['name' => self::ERP_PANEL_NAME],
+            [self::ERP_REFERENCE_FIELD['name']]
+        );
     }
 
     /**
@@ -553,8 +629,62 @@ class QuotesLayout extends BaseErpLayout
         }
     }
 
+    /**
+     * G606 (🔒 1800b, 🔒 1799b) — ONE BUSINESS CARD PAGE, REPLACE-LAYOUTS ONLY.
+     *
+     * Owner, 2026-09-25: the Quote Settings TAB STAYS and holds only Currency and
+     * Display Line Numbers; everything else that tab carried moves onto the
+     * Business Card page as COLLAPSED sections - "Show More" (Description,
+     * Shipping Provider, Geocode Status, Teams, Assigned to, Date Created /
+     * Modified, Tags) and "Discount" (the whole-order discount, unchanged) - and
+     * "Primary Quote" moves out of the ERP panel into the TOP Business Card
+     * section (Quote Number, Purchase Order Num, Valid Until, Opportunity, Stage).
+     *
+     * HOW, MEASURED FIRST (stock's served Quotes record view, 2026-09-25): the
+     * view has two tabs, panel_body ("Business Card", newTab) and
+     * panel_setting_body ("Quote Settings", newTab); a panel belongs to the tab
+     * before it, so panel_hidden ("Show More") and this package's Discount panel
+     * - which sit AFTER panel_setting_body - were on the Quote Settings tab. They
+     * move to just before it (the Business Card tab's last sections), newTab
+     * false, panelDefault collapsed. Their fields and definitions are not
+     * touched: every one stays where it was within its panel, editable as before,
+     * and the Discount panel's erp-discount field (and so its Apply) is the same
+     * definition. Currency does NOT move. Primary Quote keeps its definition and
+     * behaviour (the Opportunity's amount still follows the primary quote); only
+     * its place changes.
+     *
+     * REPLACE-LAYOUTS ONLY: post_execute_replace.php calls this after install();
+     * the append-only post_execute.php does not, so an append-only tenant keeps
+     * today's tabs. Run after install() on purpose: install() rebuilds the ERP
+     * panel (replace mode) and re-appends the Discount panel at the end, and this
+     * then moves both again - idempotent, so every install lands the same view.
+     * A field an admin or a customer package placed anywhere keeps its place.
+     */
+    public function installBusinessCardLayout(): void
+    {
+        $this->movePanelsBefore(
+            'Quotes',
+            ['panel_hidden', self::DISCOUNT_PANEL_NAME],
+            'panel_setting_body',
+            ['newTab' => false, 'panelDefault' => 'collapsed']
+        );
+        $this->moveFieldToPanel(
+            'Quotes',
+            'erp_is_primary_quote',
+            self::ERP_PANEL_NAME,
+            'panel_body',
+            'date_quote_expected_closed'
+        );
+    }
+
     public function uninstall(): void
     {
+        // G606: Primary Quote leaves the top section with the package (the ERP
+        // panel it came from is removed just below), and Quote Settings goes
+        // back in front of Show More, where Sugar puts it. A no-op on a tenant
+        // installBusinessCardLayout() never ran on.
+        $this->removeFieldsFromRecordViewPanel('Quotes', ['name' => 'panel_body'], ['erp_is_primary_quote']);
+        $this->movePanelsBefore('Quotes', ['panel_setting_body'], 'panel_hidden');
         $this->removePanelFromRecordView('Quotes');
         $this->removeErpFieldsFromListView('Quotes');
         $this->removeButtonsFromRecordView('Quotes', ['create_erp_order_button', 'advanced_quote_button', 'refresh_price_availability_button', 'erp_discount_button']);
@@ -587,6 +717,9 @@ class QuotesLayout extends BaseErpLayout
         // G585 / G586: the rule this package added, and the stock rows it took
         // off the view, put back (add-if-absent, stock definitions).
         $this->removeDependenciesFromRecordView('Quotes', $this->erpStampedFieldsVisibilityDependency());
+        // 🔒 1795b: Purchase Order Num editable and always shown again, as stock.
+        $this->removeDependenciesFromRecordView('Quotes', $this->purchaseOrderNumVisibilityDependency());
+        $this->setFieldPropertiesInRecordView('Quotes', 'purchase_order_num', ['readonly' => null]);
         foreach (self::STOCK_QUOTE_ROWS as $panelName => $rows) {
             $this->addFieldsToRecordView('Quotes', $rows, ['name' => $panelName]);
         }
@@ -803,9 +936,8 @@ class QuotesLayout extends BaseErpLayout
                 ['name' => 'erp_quotes_billing_terms_name', 'label' => 'LBL_ERP_QUOTES_BILLING_TERMS_FROM_ERP_LOOKUPVALUES_TITLE'],
                 ['name' => 'erp_quotes_fob_name', 'label' => 'LBL_ERP_QUOTES_FOB_FROM_ERP_LOOKUPVALUES_TITLE'],
                 ['name' => 'erp_quotes_ship_via_name', 'label' => 'LBL_ERP_QUOTES_SHIP_VIA_FROM_ERP_LOOKUPVALUES_TITLE'],
-                // G380 (d): the seller's Reference, beside the other values the
-                // ERP document carries. Placed on upgraded tenants by install().
-                self::ERP_REFERENCE_FIELD,
+                // G606 / G608: the seller's Reference is NOT core's to place any
+                // more (see placeReferenceOnlyWhereClaimed()).
                 // 🛑 erp_quoted_value IS REMOVED FROM THIS PANEL (🔒 640). It is a
                 // DUPLICATE THAT DISAGREES, and the owner named both halves:
                 // "WE ALREADY SHOW TOTAL ON THE QUOTE" and "WHY DO WE EVEN HAVE
@@ -1082,6 +1214,15 @@ class QuotesLayout extends BaseErpLayout
             // G585: read-only, and shown only once the quote has been sent.
             ['name' => 'erp_sent_to_estimating_at', 'label' => 'LBL_ERP_SENT_TO_ESTIMATING_AT', 'readonly' => true],
         ];
+    }
+
+    /**
+     * 🔒 1795b - Purchase Order Num is shown only once Epicor has stated one
+     * (the connector's read-back of PONum is its only writer now).
+     */
+    private function purchaseOrderNumVisibilityDependency(): array
+    {
+        return $this->visibleWhenNotEmptyDependency(['purchase_order_num']);
     }
 
     /**
