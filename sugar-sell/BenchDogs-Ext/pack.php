@@ -14,7 +14,10 @@
  *       erp_customers step cannot deliver them without the vardef.
  *       Placed on the Accounts record view by ERP-Core's ErpLayoutExtraFields
  *       from their `erp_layout` vardef marker (G380 (f), 🔒 1724b); this
- *       package ships no layout code.
+ *       package ships no layout code. G817: the code carries ERP-Core's
+ *       erp_customer_create_required_formula (the ADM gate), so the quote's
+ *       "Create <account> in the ERP now?" prompt names a missing Cust. Group
+ *       instead of offering a Create the ERP refuses.
  *   custom/Extension/application/Ext/Language/_override_en_us.bd_account_type_suspect.php
  *       G450: ONE guarded key, account_type_dom['Suspect'], the value core's
  *       per-connection customer_type_extra map writes for an Epicor SUS
@@ -62,7 +65,7 @@
 
 $packageID      = 'sugarai_benchdogs_ext';
 $packageLabel   = 'SugarAI: Bench Dogs Extensions';
-$description    = 'Bench Dogs extensions for Sugar Sell: the two customer-group fields (a Cust. Group picker before the account is in the ERP, required for an ADM Customer) and the Suspect account type on Accounts, and the ADM company\'s own quote values (Lead Source, Lead Type, Project, Marketing Campaign and Marketing Event pickers, required until the quote is in the ERP and defaulted from the account\'s last quote; Reference and Project defaults; the Reference placement and requirement).';
+$description    = 'Bench Dogs extensions for Sugar Sell: the two customer-group fields (a Cust. Group picker before the account is in the ERP, required for an ADM Customer and asked for before the quote offers to create an ADM account in the ERP) and the Suspect account type on Accounts, and the ADM company\'s own quote values (Lead Source, Lead Type, Project, Marketing Campaign and Marketing Event pickers, required until the quote is in the ERP and defaulted from the account\'s last quote; Reference and Project defaults; the Reference placement and requirement).';
 $supportedVersionRegex = '(26|25|14)\\..*$';
 $acceptableSugarFlavors = array('ENT', 'ULT', 'PRO');
 

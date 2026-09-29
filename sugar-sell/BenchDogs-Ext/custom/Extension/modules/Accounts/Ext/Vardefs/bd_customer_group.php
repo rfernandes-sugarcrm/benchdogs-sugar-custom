@@ -132,6 +132,20 @@ $dictionary['Account']['fields']['bd_customer_group_code'] = array(
     'readonly' => true,
     // G804: read-only once the account is in the ERP (either key set).
     'readonly_formula' => 'not(and(equal($erp_display_sync_key,""),equal($erp_sync_key,"")))',
+    // G817 (owner, 2026-09-29: "why did it offer to create an account with no
+    // group then in the message????"): the quote's "Create <account> in the
+    // ERP now?" prompt (ERP-Core, G805) asks ERP-Core's read-only
+    // GET Accounts/{id}/erp-customer-create-requirements first, which
+    // evaluates this key: on an ADM account (🔒2086b) with no group, the
+    // seller is told "To create <account> in the ERP, set: Cust. Group." and
+    // is offered no Create. Read ONLY by that prompt - never served as
+    // `required` / `required_formula` (the connector's schema check would
+    // dead-letter Account writes, G809) and never by ERP-Epicor's G496 order
+    // check. The prompt only runs for an account with no ERP key, and types it
+    // Customer on Create, so the ADM clause is the whole rule here. On an
+    // older ERP-Epicor (no route) the key is inert and the extension's refusal
+    // stays the backstop.
+    'erp_customer_create_required_formula' => 'equal(related($erp_companies_accounts,"erp_sync_key"),"ADM")',
     'erp_layout' => array(
         'view' => 'record',
         'panel' => 'panel_overview',

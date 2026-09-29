@@ -1,3 +1,34 @@
+# 0.9.42-rc80 — G817: the quote's create prompt asks for Cust. Group instead of offering a Create the ERP refuses
+
+Built on rc79 (#35, main fe97ab2). **Requires** ERP-Epicor ≥ 1.1.134 and
+Partial Fulfillment ≥ 1.0.50 (unchanged). The behaviour needs **ERP-Epicor
+1.1.174** (ERP-Core's G817 route and prompt, erp-integration-sugar #125). On
+an older ERP-Epicor the key is inert: the prompt offers Create as on rc79, and
+the Bench connector extension's refusal names the field (the backstop).
+
+**G817** (owner, benchdogs-sandbox, account SAIQA-G805-Bench-2 with no Cust.
+Group, 2026-09-29T21:25:27Z: "did not create an account why did it offer to
+create an account with no group then in the message????"):
+`bd_customer_group_code` carries ERP-Core's `erp_customer_create_required_formula`
+= `equal(related($erp_companies_accounts,"erp_sync_key"),"ADM")` - the 🔒2086b
+ADM gate, verbatim from rc79's view rule. Before the G805 prompt ("Create
+<account> in the ERP now to get customer pricing?") offers Create, ERP-Core
+evaluates it; on an ADM account with no group the seller reads "To create
+<account> in the ERP, set: Cust. Group." with the link to the account, and no
+Create is offered. EPIC06 accounts (Ophir, stock) are never asked.
+
+- Only the create prompt reads the key: the field is still served neither
+  `required` nor with a `required_formula` (the connector's schema check, G809),
+  and ERP-Epicor's G496 order check never reads it.
+- The type is not part of it: the prompt only runs for an account with no ERP
+  key, and types it Customer on Create, so an ADM Prospect is asked too.
+- A vardef key on an existing field: no new field or setting (🔒 1810b).
+- Tests (`test_g809_connector_schema_safe.py`): the served key is exactly the
+  view rule's ADM clause and nothing is served required (runs in CI); the
+  formula in SugarCRM's own SugarLogic Parser - ADM Customer and ADM Prospect
+  asked, EPIC06 and no company not (a SugarEnt-tree test, named in CI's list,
+  now 15). Red on main fe97ab2: 2 fail. Mutants 6/6.
+
 # 0.9.42-rc79 — 🔒2085b: Cust. Group required for an ADM Customer not yet in the ERP; the rc78 Account-button text corrected
 
 Built on rc78 (#33, main 75b982f) plus #34's text fix (f79913a). **Requires**

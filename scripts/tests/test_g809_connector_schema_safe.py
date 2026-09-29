@@ -40,6 +40,14 @@ Ext/Dependencies (never served `required` or `required_formula`):
       an Account write without a group is refused by the connector;
   GroupFormulaInSugarsOwnParser  FAIL - the formula blocks a Prospect/Suspect,
       an ERP account or an Ophir/EPIC06 customer, or misses the ADM Customer.
+
+G817 adds the create prompt's own requirement on the same field (ERP-Core's
+`erp_customer_create_required_formula`, read only by the G805 prompt's route):
+  test_g817_the_create_requirement_is_the_2086b_adm_gate...  FAIL - the key is
+      gone, is not the view rule's ADM clause, sits on another field, or the
+      field became served-required;
+  GroupCreateRequirementInSugarsOwnParser  FAIL - an ADM account without a
+      group is not asked for one, or an EPIC06 / company-less account is.
 """
 from __future__ import annotations
 
@@ -59,6 +67,11 @@ ACCOUNT_TWO = ["bd_customer_group", "bd_customer_group_code"]
 DEPENDENCY = PKG / "custom/Extension/modules/Quotes/Ext/Dependencies/bd_adm_reference_required.php"
 #: 🔒 2085b: the Accounts twin - Cust. Group required on an ADM Customer not yet in the ERP.
 GROUP_DEPENDENCY = PKG / "custom/Extension/modules/Accounts/Ext/Dependencies/bd_adm_customer_group_required.php"
+#: G817: the create prompt's own requirement on Cust. Group (ERP-Core's
+#: erp_customer_create_required_formula, read only by the G805 prompt's route).
+GROUP_VARDEF = PKG / "custom/Extension/modules/Accounts/Ext/Vardefs/bd_customer_group.php"
+CREATE_KEY = "erp_customer_create_required_formula"
+CREATE_FORMULA = 'equal(related($erp_companies_accounts,"erp_sync_key"),"ADM")'
 
 MERGE = r"""<?php
 $plan = json_decode(file_get_contents('php://stdin'), true);
@@ -109,6 +122,19 @@ class ServedQuoteFieldsAreNotRequired(unittest.TestCase):
             # and the G805 price-step create read any served
             # 'equal($account_type,"Customer")' formula, with no ADM gate.
             self.assertNotIn("required_formula", served["Account"][name], name)
+
+    def test_g817_the_create_requirement_is_the_2086b_adm_gate_and_is_not_served_required(self):
+        """G817: Cust. Group carries the create prompt's key, with exactly the
+        ADM clause of the 🔒2085b/🔒2086b view rule - and nothing that makes it
+        served-required (the key is not `required` / `required_formula`)."""
+        served = served_fields()["Account"]["bd_customer_group_code"]
+        self.assertEqual(served.get(CREATE_KEY), CREATE_FORMULA)
+        self.assertIn(CREATE_FORMULA, code_only(GROUP_DEPENDENCY), "the ADM gate is the view rule's, verbatim")
+        self.assertFalse(served.get("required"))
+        self.assertNotIn("required_formula", served)
+        # Only Cust. Group: no other Bench Accounts field asks the create prompt for anything.
+        others = [n for n, d in served_fields()["Account"].items() if n != "bd_customer_group_code" and d and CREATE_KEY in d]
+        self.assertEqual(others, [])
 
     def test_the_reference_rule_is_a_view_dependency_that_never_runs_on_save(self):
         text = code_only(DEPENDENCY)
@@ -335,6 +361,44 @@ class GroupFormulaInSugarsOwnParser(unittest.TestCase):
             self.assertEqual(out.returncode, 0, out.stdout[-1500:] + out.stderr[-1500:])
             got = json.loads(out.stdout.strip().splitlines()[-1])
             self.assertEqual(got, {k: v[1] for k, v in GROUP_CASES.items()}, tree.name)
+
+
+EVALUATE_CREATE = EVALUATE_GROUP.replace(
+    "$dependencies = [];\ninclude $argv[2];\n"
+    "$formula = $dependencies['Accounts']['bd_adm_customer_group_required']['actions'][0]['params']['value'];",
+    "$dictionary = [];\ninclude $argv[2];\n"
+    "$formula = $dictionary['Account']['fields']['bd_customer_group_code']['erp_customer_create_required_formula'];",
+)
+assert "erp_customer_create_required_formula" in EVALUATE_CREATE
+
+#: The create prompt runs only for an account with no ERP key, and types it
+#: Customer on Create - so the type does not matter here, only the company.
+CREATE_CASES = {
+    "an ADM Customer, not in the ERP": ({"account_type": "Customer", "company": "ADM"}, True),
+    "an ADM Prospect (Create would make it a Customer)": ({"account_type": "Prospect", "company": "ADM"}, True),
+    "Ophir/stock: an EPIC06 account (no groups to pick)": ({"account_type": "Prospect", "company": "EPIC06"}, False),
+    "an account with no ERP company yet": ({"account_type": "Prospect"}, False),
+}
+
+
+class GroupCreateRequirementInSugarsOwnParser(unittest.TestCase):
+    """G817: the create prompt's requirement on Cust. Group, evaluated by
+    SugarCRM's own SugarLogic Parser (what ERP-Core's
+    ErpCustomerCreateRequirementsApi::formulaHolds calls)."""
+
+    requires_sugarent_tree = True
+
+    def test_the_create_requirement_in_sugars_own_parser(self):
+        self.assertTrue(PARSER_TREES, "no SugarEnt tree with a built SugarLogic function map")
+        php = shutil.which("php")
+        for tree in PARSER_TREES:
+            out = subprocess.run([php, "-d", "error_reporting=E_ALL & ~E_DEPRECATED", "-r",
+                                  EVALUATE_CREATE.replace("<?php", "", 1), "--", str(tree), str(GROUP_VARDEF),
+                                  json.dumps({k: v[0] for k, v in CREATE_CASES.items()})],
+                                 capture_output=True, text=True)
+            self.assertEqual(out.returncode, 0, out.stdout[-1500:] + out.stderr[-1500:])
+            got = json.loads(out.stdout.strip().splitlines()[-1])
+            self.assertEqual(got, {k: v[1] for k, v in CREATE_CASES.items()}, tree.name)
 
 
 class ReferenceFormulaInSugarsOwnParser(unittest.TestCase):
