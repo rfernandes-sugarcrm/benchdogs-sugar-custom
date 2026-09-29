@@ -32,8 +32,9 @@ $GLOBALS['log']->fatal('BenchDogs-Ext: post_uninstall running - rebuilding cache
 
 // The stock modules this package extends. Since 0.9.42-rc69 (G280 / 🔒 1567)
 // that was Accounts alone - two vardefs, two labels and one record-view
-// placement; G380/G381 (🔒 1705b, 🔒 1724b) adds Quotes - three vardefs, their
-// labels, one before_save hook and one marked record-view placement. The package installs no
+// placement; G380/G381/G460 (🔒 1705b, 🔒 1724b) add Quotes - five vardefs,
+// their labels, one before_save hook and their marked placements (G606 adds
+// the Reference marker). The package installs no
 // module of its own, so there is no bean of ours for the uninstaller to drop.
 $bdModules = array(
     'Accounts',

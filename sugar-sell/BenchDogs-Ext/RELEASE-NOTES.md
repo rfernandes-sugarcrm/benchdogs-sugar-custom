@@ -1,3 +1,36 @@
+# 0.9.42-rc78 — G809: the five ADM quote values are required until the quote is in the ERP, and defaulted; G804: Cust. Group is pickable before the account is in the ERP
+
+Built on rc77 (PR #32, text only). **Requires** ERP-Epicor ≥ 1.1.134 and
+Partial Fulfillment ≥ 1.0.50 (unchanged). The browser half of G809 (required
+until synced, prefill on the create form) is ERP-Core's `erp-dependent-enum`
+keys `erp_required_until_synced` / `erp_prefill_from_account_latest`
+(erp-integration-sugar `fix/g809-required-until-synced`, rides ERP-Epicor
+1.1.173). On an older ERP-Epicor both keys are ignored: the four pickers stay
+optional and unfilled in the browser, as on rc77. Nothing else depends on the
+order.
+
+**G809** (owner, benchdogs-sandbox quote 8972, 2026-09-29: "if these are
+required fields it should not let me save the quote and maybe we should put
+defaults"):
+
+| Change | Why |
+|---|---|
+| Lead Source, Lead Type, Mktg Campaign, Marketing Event: `erp_required_until_synced` and the `erp-dependent-enum` view type on all four (Project and Event had it) | Save refuses while the quote has no ERP key and the picker has ADM options; a quote the ERP holds is never blocked (all 1,246 on benchdogs-sandbox hold these EMPTY today). Ophir/EPIC06 (empty lists) stays optional |
+| Lead Source, Lead Type, Event: `erp_prefill_from_account_latest` (billing_account_id) | the create form fills them from the account's newest quote holding them (the Event fills the Campaign + Event pair from ONE quote), only into empty fields, only with a value the picker still offers |
+| `BdAdmRules::applyDefaults()`: the same account-history rule on a NEW quote in before_save | a quote created without the form whose create save carries billing_account_id (an API create). Not the Account page's quote button: it saves the quote before linking the account, so that save has no account to read. Pilot ADM: consecutive quotes of one customer repeat Lead Source 93 %, Lead Type 95 %, Campaign 74 % |
+| `Ext/Dependencies/bd_adm_reference_required.php`: Reference required in the edit views when not in the ERP, a Lead Source is picked (ADM), and the ship-to has neither city nor state | only then can the existing CITY ST default (G380/G530) not fill it. A view dependency, NOT vardef `required`: the connector's schema check refuses a Quote create without a SERVED-required field |
+
+Every one of the five stays SERVED `required: false` (pinned by
+`test_g809_connector_schema_safe.py`, with the connector's real
+`describe_module` + `check_payload` where that code is present).
+
+**G804** (🔒 2081b): `bd_customer_group_code` becomes an `enum` over ADM's
+customer groups (ERP_LookupValues `BdCustomerGroups`, published by the Bench
+connector extension), read-only once the account has an ERP key
+(`readonly_formula`), and the new Accounts before_save sets
+`bd_customer_group` to the group's name when the picked code changes. Same
+column; no new field.
+
 # Unreleased — G606: Bench claims Reference placement
 
 `_override_bd_erp_reference.php` marks core's existing `Quotes.erp_reference`

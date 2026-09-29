@@ -15,6 +15,21 @@
  *       Placed on the Accounts record view by ERP-Core's ErpLayoutExtraFields
  *       from their `erp_layout` vardef marker (G380 (f), 🔒 1724b); this
  *       package ships no layout code.
+ *   custom/Extension/application/Ext/Language/_override_en_us.bd_account_type_suspect.php
+ *       G450: ONE guarded key, account_type_dom['Suspect'], the value core's
+ *       per-connection customer_type_extra map writes for an Epicor SUS
+ *       customer. Core cannot add a dom key, so the key ships here.
+ *   custom/Extension/modules/Quotes/Ext/Vardefs/_override_bd_erp_reference.php
+ *       G606: Bench claims the PLACEMENT of ERP-Core's generic erp_reference
+ *       (its `erp_layout` marker); ERP-Core owns the field, storage and sync.
+ *   custom/Extension/modules/Quotes/Ext/Dependencies/bd_adm_reference_required.php
+ *       G809: Reference required in the edit views on an unsent ADM quote whose
+ *       ship-to cannot default it. A VIEW dependency: never served as a
+ *       required field (the connector's schema check reads that flag) and never
+ *       run on a server save.
+ *   custom/Extension/modules/Accounts/Ext/LogicHooks/bd_customer_group_name.php
+ *       G804 (🔒 2081b): on an Account not in the ERP, the Cust. Group name
+ *       follows the Group Code the seller picked from ADM's customer groups.
  *   custom/clients/base/api/BdBenchDogsActionsApi.php
  *       EMPTY, and the one retirement stub left: it unregisters rc68's
  *       bd-tools/repair-ui route on upgraded tenants (see the file).
@@ -22,9 +37,9 @@
  *       the lifecycle of the above.
  *
  * G380 / G381 (owner rulings 🔒 1705b, 🔒 1724b: ADM config + ADM rules ONLY)
- * add ADM's own quote values: three Quote pickers (Lead Source, Lead Type,
- * Project) + labels, and G460 two more in the same files (Marketing Campaign,
- * Marketing Event), one before_save defaults hook (Reference and Project),
+ * add ADM's own quote values: five Quote pickers (Lead Source, Lead Type,
+ * Project, and G460's Marketing Campaign and Marketing Event) + labels, one
+ * before_save defaults hook (Reference and Project),
  * the lookup-type labels and one tenant list, and the BdAdm* classes. Reference
  * is ERP-Epicor's generic erp_reference; the part-number refusal is
  * ERP-Epicor's per-company switch; this package no longer fills ERP-Epicor's
@@ -43,7 +58,7 @@
 
 $packageID      = 'sugarai_benchdogs_ext';
 $packageLabel   = 'SugarAI: Bench Dogs Extensions';
-$description    = 'Bench Dogs extensions for Sugar Sell: the two customer-group fields on Accounts, and the ADM company\'s own quote values (Lead Source, Lead Type and Project pickers; Reference and Project defaults).';
+$description    = 'Bench Dogs extensions for Sugar Sell: the two customer-group fields (a Cust. Group picker before the account is in the ERP) and the Suspect account type on Accounts, and the ADM company\'s own quote values (Lead Source, Lead Type, Project, Marketing Campaign and Marketing Event pickers, required until the quote is in the ERP and defaulted from the account\'s last quote; Reference and Project defaults; the Reference placement and requirement).';
 $supportedVersionRegex = '(26|25|14)\\..*$';
 $acceptableSugarFlavors = array('ENT', 'ULT', 'PRO');
 

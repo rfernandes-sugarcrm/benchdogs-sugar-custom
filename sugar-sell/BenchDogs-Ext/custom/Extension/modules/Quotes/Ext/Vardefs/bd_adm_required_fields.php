@@ -18,8 +18,25 @@
  * G460 (measured on benchdogs-dev 2026-09-24): without the pair ADM refuses
  * Send to Estimation ("A valid Marketing Campaign is required / A valid
  * Marketing Event is required") and Submit Order ("You must select an active
- * Marketing Campaign."). ADM defines NO default event, so neither field is ever
- * defaulted (no before_save touches them): the seller picks both.
+ * Marketing Campaign."). ADM defines NO default event, so nothing is ever
+ * INVENTED for either field.
+ *
+ * G809 (owner, benchdogs-sandbox quote 8972, 2026-09-29: "if these are required
+ * fields it should not let me save the quote and maybe we should put
+ * defaults"): Lead Source, Lead Type and the Campaign + Event pair are now
+ * DEFAULTED FROM THE SAME ACCOUNT'S NEWEST QUOTE that holds them - the
+ * customer's own last choice, not an invented code - and only into an empty
+ * field, only with a value the picker still offers. Measured on the pilot ADM
+ * company (760 quotes since 2025-09-01): consecutive quotes of one customer
+ * repeat Lead Source 93 %, Lead Type 95 %, Campaign 74 %. Two writers, one
+ * rule: ERP-Core's 'erp_prefill_from_account_latest' on the create form, and
+ * BdAdmRules::applyDefaults() in before_save for a quote created without the
+ * form whose create save carries its billing account (an API create with
+ * billing_account_id). NOT the Account page's quote button: ERP-Epicor's
+ * AccountsErpActionsApi saves the quote first and links the account after,
+ * so that first save has no account to read (the same is true of the older
+ * Reference / Project defaults below). Assumption recorded by the
+ * coordinator: the owner may overrule the "newest quote" choice.
  *
  * NOT HERE (🔒 1724b): Reference is ERP-Epicor's generic Quotes.erp_reference
  * (this package DEFAULTS it on an ADM quote, BdAdmRules, and claims its layout
@@ -36,15 +53,35 @@
  * 🛑 NOT 'required' => true, deliberately. This package also installs on Ophir
  * (EPIC06), where these lists are empty by design (only the ADM connection
  * publishes them): a required picker there would make every quote unsavable.
- * "Required" is enforced where it can name the company: the connector
- * extension's write-back hook refuses the send (adm_rules).
+ * The server-side guard stays the connector extension's write-back hook, which
+ * refuses the send by name (adm_rules).
+ *
+ * G809: REQUIRED IN THE BROWSER, ONLY UNTIL THE QUOTE IS IN THE ERP. ERP-Core's
+ * 'erp_required_until_synced' (erp-dependent-enum) makes Lead Source, Lead
+ * Type, Campaign and Event required on the create and record views while the
+ * picker has something to offer (so Ophir/EPIC06, with empty lists, stays
+ * optional: ADM from ONE source, 🔒 1724b) AND the quote has no ERP key. A
+ * quote the ERP holds is never blocked: its values are the ERP's, and all
+ * 1,246 ERP quotes on benchdogs-sandbox hold these four EMPTY today (measured
+ * 2026-09-29). Both quote types: Submit Order needs the pair too (G460).
+ * Browser-only, by construction: Sugar's REST save path does not enforce
+ * `required` (SugarBeanApiHelper::populateFromApi() validates only submitted
+ * fields; a SugarLogic SetRequired only flips field_defs server-side), so the
+ * connector's quote writes (the ERP quote sync, the key stamp after Send to
+ * Estimation) are unaffected. Project keeps G570's 'erp_required_when_options'
+ * (every quote: Submit Order needs it on an ERP quote too). An ERP-Epicor
+ * whose ERP-Core predates G809 ignores both new keys: the four stay optional
+ * and unfilled in the browser, exactly as before (no floor bump needed).
  *
  * G571 / G570 (ERP-Epicor 1.1.134+, ERP-Core's `erp-dependent-enum` field
  * type; this package only declares keys, the client code is ERP-Core's,
  * 🔒 1520 / 1567 / 1514). The marker's 'type' => 'erp-dependent-enum' puts
  * that type on the record-view entry (ErpLayoutExtraFields, also on a tenant
  * where the field is already placed); the vardef stays a plain enum, never a
- * `custom_type` (Sugar would skip the column on save).
+ * `custom_type` (Sugar would skip the column on save). G809 gives all five
+ * pickers that type (Lead Source, Lead Type and Campaign were plain enums):
+ * the TYPE step of sync() rewrites entries already placed, so an upgraded
+ * tenant gets it too (bd_erp_layout_test.php T6f).
  *  - bd_marketing_event: 'erp_lookup_parent' => 'bd_marketing_campaign' - the
  *    picker offers only the chosen campaign's events (the key split at the
  *    LAST '/', BdAdmRules::EVENT_KEY_SEPARATOR, exactly the campaign: 26DISC
@@ -104,10 +141,15 @@ $dictionary['Quote']['fields']['bd_lead_source'] = array(
     'massupdate' => false,
     // G574: never pre-picked by the browser (see the docblock).
     'defaultToBlank' => true,
+    // G809: required until the quote is in the ERP; the create form fills it
+    // from the account's newest quote (see the docblock).
+    'erp_required_until_synced' => true,
+    'erp_prefill_from_account_latest' => 'billing_account_id',
     'erp_layout' => array(
         'view' => 'record',
         'panel' => 'LBL_RECORDVIEW_PANEL_ERP',
         'after' => 'erp_reference',
+        'type' => 'erp-dependent-enum',
     ),
 );
 
@@ -126,10 +168,14 @@ $dictionary['Quote']['fields']['bd_lead_type'] = array(
     'massupdate' => false,
     // G574: never pre-picked by the browser (see the docblock).
     'defaultToBlank' => true,
+    // G809: required until the quote is in the ERP; prefilled on create.
+    'erp_required_until_synced' => true,
+    'erp_prefill_from_account_latest' => 'billing_account_id',
     'erp_layout' => array(
         'view' => 'record',
         'panel' => 'LBL_RECORDVIEW_PANEL_ERP',
         'after' => 'bd_lead_source',
+        'type' => 'erp-dependent-enum',
     ),
 );
 
@@ -173,10 +219,14 @@ $dictionary['Quote']['fields']['bd_marketing_campaign'] = array(
     'massupdate' => false,
     // G574: never pre-picked by the browser (see the docblock).
     'defaultToBlank' => true,
+    // G809: required until the quote is in the ERP. NOT prefilled on its own:
+    // the Event's prefill fills the pair from one quote (ERP-Core's rule).
+    'erp_required_until_synced' => true,
     'erp_layout' => array(
         'view' => 'record',
         'panel' => 'LBL_RECORDVIEW_PANEL_ERP',
         'after' => 'bd_project_id',
+        'type' => 'erp-dependent-enum',
     ),
 );
 
@@ -200,6 +250,10 @@ $dictionary['Quote']['fields']['bd_marketing_event'] = array(
     'erp_lookup_parent' => 'bd_marketing_campaign',
     'erp_lookup_parent_separator' => '/',
     'erp_lookup_parent_empty_label' => 'LBL_BD_MARKETING_EVENT_PICK_CAMPAIGN',
+    // G809: required until the quote is in the ERP; the create form fills the
+    // Campaign + Event PAIR from the account's newest quote holding both.
+    'erp_required_until_synced' => true,
+    'erp_prefill_from_account_latest' => 'billing_account_id',
     'erp_layout' => array(
         'view' => 'record',
         'panel' => 'LBL_RECORDVIEW_PANEL_ERP',

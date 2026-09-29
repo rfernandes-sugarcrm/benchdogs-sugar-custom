@@ -33,8 +33,8 @@
  * nothing re-adds either, and a deployed record.php is in no package's copy
  * list, so an uninstall cannot restore them. Their helper classes are no longer
  * shipped. What remains is the undo of the placements this package still
- * makes: the two customer-group fields, and (G380 / G381, 🔒 1705b) the four
- * ADM fields on the Quotes record view's ERP panel.
+ * makes: the two customer-group fields, and (G380 / G381 / G460, 🔒 1705b) the
+ * five ADM fields on the Quotes record view's ERP panel.
  *
  * 🛑 G276 / 🔒 1504 - NO BUTTON LOGIC HERE EITHER. Until rc64 the Quotes step here
  * also dropped this package's retired bd_* buttons and put back the ERP-Epicor
@@ -127,10 +127,9 @@
 // carrying it. Two runs minutes apart interleave, and reading by timestamp is
 // exactly what produced the trap above. Absent from package_install.log while
 // that run's other lines are present is the case that means treat the wiring as
-// broken - follow the manual runbook
-// (docs/runbooks/remove-benchdogs-sugar-package.md in the connector extension
-// repo). Logged at fatal so it survives whatever log level the instance is set
-// to outside an uninstall window (inside one MlpLogger has already forced
+// broken - re-run the one-off sugar-sell/ONEOFF-RetireBdResidue (see its
+// README) after the uninstall. Logged at fatal so it survives whatever log
+// level the instance is set to outside an uninstall window (inside one MlpLogger has already forced
 // debug, so the level argument is moot there). It is emitted once per uninstall
 // request (and once per non-emergency force-uninstall), because this file is no
 // longer at a path Sugar runs a second time - see "WHY THIS FILE IS NOT NAMED

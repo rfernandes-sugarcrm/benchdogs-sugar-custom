@@ -208,9 +208,14 @@ echo json_encode(array('total' => $total, 'events' => $events));
 class TheRegistrationRegistersNothing(unittest.TestCase):
     """The first half of the retirement, EXECUTED."""
 
-    #: The ONE hook this package may register (G380/G381, 🔒 1705b): it fills an
-    #: EMPTY Reference / Project on an unsent ADM quote and creates nothing.
-    ALLOWED = [["before_save", "custom/modules/Quotes/BdAdmRules.php", "BdAdmRules", "beforeSave"]]
+    #: The hooks this package may register, both BdAdmRules methods that set
+    #: fields on the bean they are handed and create nothing:
+    #:  - G380/G381 (🔒 1705b), G809: fills EMPTY ADM values on an unsent quote;
+    #:  - G804 (🔒 2081b): on an Account not in the ERP, the Cust. Group name
+    #:    follows the picked Group Code.
+    #: In the order the harness sees them (Accounts' fragment first).
+    ALLOWED = [["before_save", "custom/modules/Quotes/BdAdmRules.php", "BdAdmRules", "accountBeforeSave"],
+               ["before_save", "custom/modules/Quotes/BdAdmRules.php", "BdAdmRules", "beforeSave"]]
 
     def test_no_shipped_fragment_registers_a_hook(self):
         """Every Extension fragment this package ships, INCLUDED into a harness
@@ -219,10 +224,11 @@ class TheRegistrationRegistersNothing(unittest.TestCase):
         which executed only bd_kinetic_opportunity.php: a re-registration under
         any other filename is caught too.
 
-        🔁 G380/G381 (🔒 1705b): exactly ONE registration is allowed, named in
-        full (event, file, class, method), and its target is held below to
-        creating and saving nothing - the property 🔒 1499 is about. Any other
-        registration, under any file name, still fails here."""
+        🔁 G380/G381 (🔒 1705b): exactly the ALLOWED registrations (G804 added
+        the second, 🔒 2081b), each named in full (event, file, class, method),
+        and their one class is held below to creating and saving nothing - the
+        property 🔒 1499 is about. Any other registration, under any file name,
+        still fails here."""
         fragments = sorted(PACKAGE.glob("custom/Extension/**/*.php"))
         self.assertTrue(fragments, "no Extension fragment found - PACKAGE points at nothing")
         harness_body = (
@@ -243,7 +249,7 @@ class TheRegistrationRegistersNothing(unittest.TestCase):
         result = json.loads(done.stdout[done.stdout.find("{"):])
         self.assertEqual(
             self.ALLOWED, result["entries"],
-            f"this package registers {result['entries']}. Only the ADM defaults hook is "
+            f"this package registers {result['entries']}. Only the two BdAdmRules hooks are "
             "allowed. 🔒 1499: the sync must NEVER create an Opportunity.")
 
     def test_the_one_allowed_hook_creates_and_saves_nothing(self):

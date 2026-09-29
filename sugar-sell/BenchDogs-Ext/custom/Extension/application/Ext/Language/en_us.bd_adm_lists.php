@@ -1,8 +1,8 @@
 <?php
 
 /**
- * G380 / G381 (🔒 1705b, 🔒 1724b) and G460: the lookup-type labels for ADM's
- * five pick lists, and the one piece of TENANT DATA the Bench Dogs ADM rules read.
+ * G380 / G381 (🔒 1705b, 🔒 1724b), G460 and G804: the lookup-type labels for
+ * ADM's six pick lists, and the one piece of TENANT DATA the Bench Dogs ADM rules read.
  *
  * 🛑 NEVER A WHOLE-ARRAY ASSIGNMENT HERE. Sugar merges Ext language fragments
  * in mtime order (ModuleInstaller's extension order map), so every reinstall
@@ -30,6 +30,9 @@ $app_list_strings['erp_lookup_type_list']['BdProjects'] = 'Project (ADM)';
 // erp_adm_marketing_events, ADM connection only), not by core's code lists.
 $app_list_strings['erp_lookup_type_list']['BdMarketingCampaigns'] = 'Marketing Campaign (ADM)';
 $app_list_strings['erp_lookup_type_list']['BdMarketingEvents'] = 'Marketing Event (ADM)';
+// G804 (🔒 2081b): ADM's customer groups (Epicor CustGrup: GroupCode -> GroupDesc),
+// published by the Bench connector extension; the Account's Cust. Group picker.
+$app_list_strings['erp_lookup_type_list']['BdCustomerGroups'] = 'Customer Group (ADM)';
 
 // NO company list (🔒 1724b: "ADM" from one source). A quote is an ADM quote
 // when its ERP company has published BdLeadSources rows - which only the ADM

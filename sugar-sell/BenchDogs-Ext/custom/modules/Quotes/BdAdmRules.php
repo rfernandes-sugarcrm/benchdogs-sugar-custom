@@ -25,8 +25,19 @@
  *  - G460: the pick lists for Marketing Campaign and Marketing Event: active
  *    rows of types BdMarketingCampaigns / BdMarketingEvents, which the Bench
  *    connector extension publishes from ADM's own masters (ADM connection
- *    only). NEVER defaulted: ADM names no default event (DefMktgEvntSeq 0,
- *    isDefault false, measured), so the seller picks both.
+ *    only). ADM names no default event (DefMktgEvntSeq 0, isDefault false,
+ *    measured), so nothing is ever INVENTED for them.
+ *  - G809 (owner, quote 8972: "maybe we should put defaults"): on a NEW ADM
+ *    quote, an EMPTY Lead Source, Lead Type and Campaign + Event pair are
+ *    copied from the SAME ACCOUNT's newest quote that holds them - the
+ *    customer's own last choice (pilot ADM: consecutive quotes of one customer
+ *    repeat Lead Source 93 %, Lead Type 95 %, Campaign 74 %) - and only a value
+ *    the picker still offers. The pair comes from ONE quote. This is the
+ *    server half, for a quote created without the form whose create save
+ *    carries billing_account_id (an API create) - not the Account page's quote
+ *    button, which links the account after its first save; the create form's
+ *    half is ERP-Core's erp_prefill_from_account_latest, the same rule in the
+ *    browser.
  *
  * WHICH QUOTES ARE ADM, WITH NO COMPANY LIST OF ITS OWN (🔒 1724b: "ADM" from
  * one source). A quote is an ADM quote when its ERP company has published
@@ -62,6 +73,14 @@ class BdAdmRules
     public const TYPE_MARKETING_EVENTS = 'BdMarketingEvents';
 
     /**
+     * G804 (🔒 2081b): ADM's customer groups, published by the Bench connector
+     * extension (display key = Epicor GroupCode, name = GroupDesc).
+     */
+    public const TYPE_CUSTOMER_GROUPS = 'BdCustomerGroups';
+    public const FIELD_GROUP_CODE = 'bd_customer_group_code';
+    public const FIELD_GROUP_NAME = 'bd_customer_group';
+
+    /**
      * G460: an event's picker key is "<campaign>/<seq>" (26DISCNV/2), split at
      * the LAST separator - the contract with the connector extension
      * (adm_rules.EVENT_KEY_SEPARATOR), which splits the seller's pick the same
@@ -77,6 +96,18 @@ class BdAdmRules
 
     /** A quote with more lines than this is not scanned for a project default. */
     public const MAX_LINES_SCANNED = 500;
+
+    /**
+     * G809: the single pickers defaulted from the account's newest quote,
+     * field => the lookup type whose ACTIVE rows it may take a value from.
+     * (The Campaign + Event pair is defaulted as a pair, not from here.)
+     */
+    public const ACCOUNT_HISTORY_FIELDS = array(
+        'bd_lead_source' => self::TYPE_LEAD_SOURCES,
+        'bd_lead_type' => self::TYPE_LEAD_TYPES,
+    );
+    public const FIELD_CAMPAIGN = 'bd_marketing_campaign';
+    public const FIELD_EVENT = 'bd_marketing_event';
 
     /** Upper bound on the BdLeadSources rows read to learn the ADM companies. */
     public const MAX_LEAD_SOURCE_ROWS = 5000;
@@ -285,7 +316,12 @@ class BdAdmRules
     public function beforeSave($bean, $event, $arguments): void
     {
         try {
-            self::applyDefaults($bean);
+            // G809: the account-history defaults are for a NEW quote only
+            // (Sugar passes isUpdate to before_save; absent means unknown, and
+            // unknown is treated as an update: never fill on a guess).
+            $isCreate = is_array($arguments) && array_key_exists('isUpdate', $arguments)
+                && empty($arguments['isUpdate']);
+            self::applyDefaults($bean, $isCreate);
         } catch (\Throwable $e) {
             $GLOBALS['log']->error('BenchDogs-Ext: ADM quote defaults failed for quote '
                 . (string) ($bean->id ?? '') . ': ' . $e->getMessage());
@@ -294,12 +330,14 @@ class BdAdmRules
 
     /**
      * Fill an EMPTY erp_reference and an EMPTY bd_project_id on an ADM quote
-     * that has not reached the ERP yet. Returns the names of the fields set.
+     * that has not reached the ERP yet, and (G809, $isCreate only) an EMPTY
+     * Lead Source, Lead Type and Campaign + Event pair from the account's
+     * newest quote that holds them. Returns the names of the fields set.
      *
      * The exits are ordered cheapest first, so a quote this cannot touch
      * loads no record:
      *   1. the quote already has an ERP number (its values are the ERP's);
-     *   2. both values are already set (nothing to default);
+     *   2. every value it could fill is already set (nothing to default);
      *   3. no company has published BdLeadSources at all - every non-Bench
      *      tenant, and a Bench tenant before its code lists land (one query per
      *      request, cached);
@@ -307,7 +345,7 @@ class BdAdmRules
      *   5. the quote's company is not an ADM company (this reads the account).
      * Never overwrites what a seller typed; never touches another company's quote.
      */
-    public static function applyDefaults($bean): array
+    public static function applyDefaults($bean, bool $isCreate = false): array
     {
         $set = array();
         if (trim((string) ($bean->erp_display_sync_key ?? '')) !== '') {
@@ -315,7 +353,8 @@ class BdAdmRules
         }
         $needsReference = trim((string) ($bean->erp_reference ?? '')) === '';
         $needsProject = trim((string) ($bean->bd_project_id ?? '')) === '';
-        if (!$needsReference && !$needsProject) {
+        $needsHistory = $isCreate && self::historyWanted($bean);
+        if (!$needsReference && !$needsProject && !$needsHistory) {
             return $set;
         }
         if (self::admCompanies() === array()) {
@@ -348,8 +387,142 @@ class BdAdmRules
                 $set[] = 'bd_project_id';
             }
         }
+        if ($needsHistory) {
+            $set = array_merge($set, self::applyAccountHistory($bean));
+        }
 
         return $set;
+    }
+
+    // ── G809: defaults from the account's newest quote ─────────────────────
+
+    /** True when this quote has an account and an EMPTY field the history can fill. */
+    private static function historyWanted($bean): bool
+    {
+        if (trim((string) ($bean->billing_account_id ?? '')) === '') {
+            return false;
+        }
+        foreach (array_keys(self::ACCOUNT_HISTORY_FIELDS) as $field) {
+            if (self::text($bean, $field) === '') {
+                return true;
+            }
+        }
+
+        return self::text($bean, self::FIELD_EVENT) === '';
+    }
+
+    /**
+     * Fill the EMPTY history fields of a new quote. Each single picker from the
+     * newest quote of the account that holds it; the Campaign + Event pair from
+     * the newest quote that holds BOTH, only when that event is that campaign's,
+     * and: both when both are empty, the event alone when the campaign already
+     * is that quote's campaign, nothing when the seller chose another campaign
+     * (or only an event - one is never derived from the other). A value the
+     * picker no longer offers (an inactive code) is not copied.
+     *
+     * @return string[] the fields set
+     */
+    public static function applyAccountHistory($bean): array
+    {
+        $set = array();
+        $account = trim((string) ($bean->billing_account_id ?? ''));
+        if ($account === '') {
+            return $set;
+        }
+        $self = (string) ($bean->id ?? '');
+        foreach (self::ACCOUNT_HISTORY_FIELDS as $field => $type) {
+            if (self::text($bean, $field) !== '') {
+                continue;
+            }
+            $row = self::newestQuoteHolding($account, array($field), $self);
+            $value = trim((string) ($row[$field] ?? ''));
+            if ($value !== '' && self::offered($value, self::lookupOptions($type))) {
+                $bean->$field = $value;
+                $set[] = $field;
+            }
+        }
+        if (self::text($bean, self::FIELD_EVENT) !== '') {
+            return $set;
+        }
+        $row = self::newestQuoteHolding($account, array(self::FIELD_CAMPAIGN, self::FIELD_EVENT), $self);
+        $pair = self::pairToCopy(
+            self::text($bean, self::FIELD_CAMPAIGN),
+            trim((string) ($row[self::FIELD_CAMPAIGN] ?? '')),
+            trim((string) ($row[self::FIELD_EVENT] ?? ''))
+        );
+        if ($pair === array()) {
+            return $set;
+        }
+        if (!self::offered($pair[0], self::marketingOptions(self::TYPE_MARKETING_CAMPAIGNS))
+            || !self::offered($pair[1], self::marketingOptions(self::TYPE_MARKETING_EVENTS))) {
+            return $set;
+        }
+        if (self::text($bean, self::FIELD_CAMPAIGN) === '') {
+            $bean->{self::FIELD_CAMPAIGN} = $pair[0];
+            $set[] = self::FIELD_CAMPAIGN;
+        }
+        $bean->{self::FIELD_EVENT} = $pair[1];
+        $set[] = self::FIELD_EVENT;
+
+        return $set;
+    }
+
+    /**
+     * The pure half of the pair rule: [campaign, event] to copy from the
+     * account's quote, or [] when nothing may be copied. The event must be
+     * the campaign's (split at the LAST separator, eventCampaign()); a quote
+     * whose campaign the seller did not choose is never mixed in.
+     *
+     * @return string[]
+     */
+    public static function pairToCopy(string $current, string $campaign, string $event): array
+    {
+        $parsed = self::eventCampaign($event);
+        if ($campaign === '' || $parsed === null || $parsed[0] !== $campaign) {
+            return array();
+        }
+        if (trim($current) !== '' && trim($current) !== $campaign) {
+            return array();
+        }
+
+        return array($campaign, trim($event));
+    }
+
+    /**
+     * The newest quote (date_entered) of this billing account, other than
+     * $exceptId, whose $fields are all non-empty, as a row of those fields, or
+     * null. One query. Team security applies: it copies only from a quote the
+     * saving user may see, as the browser's read does.
+     */
+    public static function newestQuoteHolding(string $accountId, array $fields, string $exceptId): ?array
+    {
+        $query = new SugarQuery();
+        $query->from(BeanFactory::newBean('Quotes'));
+        $query->select(array_merge(array('id'), $fields));
+        $where = $query->where()->equals('billing_account_id', $accountId);
+        foreach ($fields as $field) {
+            $where->isNotEmpty($field);
+        }
+        if ($exceptId !== '') {
+            $where->notEquals('id', $exceptId);
+        }
+        $query->orderBy('date_entered', 'DESC');
+        $query->limit(1);
+        $rows = $query->execute();
+
+        return is_array($rows) && isset($rows[0]) && is_array($rows[0]) ? $rows[0] : null;
+    }
+
+    /** Does this picker list offer $value (a real, non-blank option)? */
+    private static function offered(string $value, array $options): bool
+    {
+        return $value !== '' && array_key_exists($value, $options);
+    }
+
+    /** A bean field as trimmed text ('' when unset). */
+    private static function text($bean, string $field): string
+    {
+        return trim((string) ($bean->$field ?? ''));
     }
 
     /** The product group of every live line on the quote, in line order. */
@@ -371,6 +544,66 @@ class BdAdmRules
         }
 
         return $groups;
+    }
+
+    // ── G804: the Account's Cust. Group ──────────────────────────────────────
+
+    /**
+     * Logic hook entry point (before_save on Accounts). On an Account NOT in
+     * the ERP whose Group Code the seller picked (bd_customer_group_code, the
+     * code the connector extension sends as Customer.GroupCode, G804), keep the
+     * readable Cust. Group (bd_customer_group) in step: the group's name from
+     * ADM's own list, else the code itself (the extension's rule for the same
+     * field: never a fabricated name). A cleared pick clears the name.
+     *
+     * An Account the ERP holds is left alone: the extension's erp_customers
+     * sweep writes both fields from Epicor, and the picker is read-only there.
+     * Only a CHANGED code is acted on (a create that sets one, or an update
+     * that changes it), so a save that does not touch the group reads nothing.
+     * Fails open and logs, like the quote defaults: a save never fails for it.
+     */
+    public function accountBeforeSave($bean, $event, $arguments): void
+    {
+        try {
+            self::applyCustomerGroupName($bean, is_array($arguments) && !empty($arguments['isUpdate']));
+        } catch (\Throwable $e) {
+            $GLOBALS['log']->error('BenchDogs-Ext: Cust. Group name failed for account '
+                . (string) ($bean->id ?? '') . ': ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * The body of accountBeforeSave(). Returns true when it set the name.
+     */
+    public static function applyCustomerGroupName($bean, bool $isUpdate): bool
+    {
+        if (trim((string) ($bean->erp_sync_key ?? '')) !== ''
+            || trim((string) ($bean->erp_display_sync_key ?? '')) !== '') {
+            return false;
+        }
+        $code = trim((string) ($bean->{self::FIELD_GROUP_CODE} ?? ''));
+        $fetched = is_array($bean->fetched_row ?? null) ? $bean->fetched_row : array();
+        $before = trim((string) ($fetched[self::FIELD_GROUP_CODE] ?? ''));
+        if ($isUpdate ? $code === $before : $code === '') {
+            return false;
+        }
+        $bean->{self::FIELD_GROUP_NAME} = $code === '' ? '' : self::customerGroupName($code);
+
+        return true;
+    }
+
+    /** The name of ADM's customer group $code, or the code itself when unknown. */
+    public static function customerGroupName(string $code): string
+    {
+        $query = new SugarQuery();
+        $query->from(BeanFactory::newBean('ERP_LookupValues'), array('team_security' => false));
+        $query->select(array('name'));
+        $query->where()->equals('type', self::TYPE_CUSTOMER_GROUPS)->equals('erp_display_sync_key', $code);
+        $query->limit(1);
+        $rows = $query->execute();
+        $name = is_array($rows) && isset($rows[0]['name']) ? trim((string) $rows[0]['name']) : '';
+
+        return $name !== '' ? $name : $code;
     }
 
     // ── the pickers' options ─────────────────────────────────────────────────
@@ -417,9 +650,10 @@ class BdAdmRules
      * WHY THE PAIRING. ADM refuses a quote without a valid campaign AND event
      * (G460). Of ADM's 42 active campaigns, 25 have NO active event (measured
      * 2026-09-25): offering one of those would let the seller pick a campaign no
-     * event can complete. Sugar ships no dependent-picker code (🔒 1724b), so the
-     * event list is every usable event, keyed and labelled with its campaign,
-     * and the connector extension refuses a pair that does not match.
+     * event can complete. The list is every usable event, keyed and labelled
+     * with its campaign; since G571 ERP-Core's erp-dependent-enum shows only the
+     * chosen campaign's events in the browser (the vardef's erp_lookup_parent),
+     * and the connector extension still refuses a pair that does not match.
      */
     public static function marketingOptions(string $type): array
     {

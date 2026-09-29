@@ -77,7 +77,9 @@ LANDED = {
 MIN_CHECKS = {
     "bench_panel_retired_test.php": 20,
     "bench_governing_origin_retired_test.php": 15,
-    "bd_adm_rules_test.php": 70,
+    # rc78 (G809 + G804): 113 checks (+30: sections Q, R, S, M9, M10); floor
+    # ~15% under, as above.
+    "bd_adm_rules_test.php": 96,
     "bd_erp_layout_test.php": 18,
     "bd_customer_group_move_test.php": 25,
 }

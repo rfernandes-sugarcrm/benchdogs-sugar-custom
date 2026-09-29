@@ -222,7 +222,7 @@ jobs:
       # 35804953494's progress line character for character.
       #
       # Of those 14, 7 are NOT COLLECTED here, 2 more since rc69, 1 more
-      # since rc74 and 1 more with G574, so 11 in all. Each reads SugarCRM's own
+      # since rc74, 1 more with G574 and 2 more with G809, so 13 in all. Each reads SugarCRM's own
       # source (licensed under the Master Subscription Agreement, no public
       # copy), so CI can never run them, and pinning excerpts would make them
       # fixtures that test their own belief. They declare
@@ -256,8 +256,14 @@ jobs:
       #     the transcribed getExtensionFileContents against 26.1.0's
       #     ModuleInstaller. It already skipped at rc65, when this comment named
       #     2 and CI counted 3, and was the one the rc65 slack absorbed.
+      #   test_g809_connector_schema_safe ReferenceFormulaInSugarsOwnParser (2)
+      #     - rc78, G809: the Reference dependency's formula evaluated by
+      #     SugarCRM's own SugarLogic Parser (26.1.0), and the platform facts
+      #     that make it browser-only (SetRequiredAction::fire only flips
+      #     field_defs, a module dependency fires on save only with an
+      #     'all'/'save' hook, populateFromApi has no `required` check).
       #
-      # The other 7 are collected and skipped, and each one is named:
+      # The other 8 are collected and skipped, and each one is named:
       #   test_shared_fixture_drift (1) - by construction; it compares the
       #     pinned copies against the real erp-integration-sugar files and can
       #     only run where that checkout exists.
@@ -271,6 +277,11 @@ jobs:
       #     skips them in its CI for the same reason. Where a tree exists they
       #     run over every PHP file here: at rc67 MLP002 and the real scanner
       #     agreed on all 61.
+      #   test_g809_connector_schema_safe TheConnectorsOwnSchemaCheck (1) -
+      #     rc78, G809: runs erp-integration-core's REAL describe_module and
+      #     check_payload (another org's private repo, not checked out here) on
+      #     the served Quotes fields, so needs the connector's Python. Its CI
+      #     half, test_served_quote_fields_are_not_required, runs here.
       # Five are new with G318: the four TestAgainstTheRealScanner tests,
       # which arrived with upstream's re-vendored suite (105 tests where the
       # stale copy had 61) and are pinned byte for byte, so cannot be edited
@@ -282,7 +293,8 @@ jobs:
       # collides with the retired Bench button (G15's root cause) and core's
       # button add-if-absent with the Quotes layout that drives it (G276). Those
       # four used to skip HERE, which is exactly where a control about core
-      # matters most. The ceiling is 8, one above the named 7, so one more may
+      # matters most. The ceiling is 9, one above the named 8 (rc78 raised it
+      # from 8 for the G809 connector check named above), so one more may
       # appear before it has to be argued for - the same slack rc65 kept.
       #
       # Everything else that used to need that private repo now runs here
@@ -297,8 +309,8 @@ jobs:
           [ -s pytest.out ] || { echo "::error::pytest.out is missing or empty; the suite step did not run"; exit 1; }
           SKIPPED=$(tail -1 pytest.out | grep -oE '[0-9]+ skipped' | grep -oE '^[0-9]+' || echo 0)
           echo "skipped: $SKIPPED"
-          if [ "${SKIPPED:-0}" -gt 8 ]; then
-            echo "::error::$SKIPPED tests skipped; ceiling is 8. A test that is"
+          if [ "${SKIPPED:-0}" -gt 9 ]; then
+            echo "::error::$SKIPPED tests skipped; ceiling is 9. A test that is"
             echo "::error::collected and then skipped is documentation, not a guard."
             exit 1
           fi
@@ -324,11 +336,13 @@ jobs:
           scripts/tests/test_g294_single_pass.py::PlatformReservedScriptContractTest::test_the_installer_requires_the_installdef_inside_its_own_method
           scripts/tests/test_g450_suspect_account_type.py::TheOrderRuleIsSugars::test_the_order_rule_is_sugars
           scripts/tests/test_g574_g578_bench_quote_pickers.py::SugarsOwnEnumFieldOnTheCreateForm::test_the_shipped_project_def_is_left_blank_and_the_control_reproduces_17879
+          scripts/tests/test_g809_connector_schema_safe.py::ReferenceFormulaInSugarsOwnParser::test_sugar_never_refuses_a_save_for_it
+          scripts/tests/test_g809_connector_schema_safe.py::ReferenceFormulaInSugarsOwnParser::test_the_formula_in_sugars_own_parser
           EOF
           echo "left out of CI ($(wc -l < /tmp/left-out.txt)):"
           cat /tmp/left-out.txt
           if ! diff -u /tmp/named.txt /tmp/left-out.txt; then
-            echo "::error::the tests CI does not collect are not the 11 named in mlp-lint.yml."
+            echo "::error::the tests CI does not collect are not the 13 named in mlp-lint.yml."
             echo "::error::A test left out of CI is not a guard; name it at the ceiling or run it."
             exit 1
           fi

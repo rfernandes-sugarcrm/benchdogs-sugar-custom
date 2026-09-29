@@ -21,8 +21,10 @@
  *       panel_body (Ophir) - is left where it is: taking them out of the header
  *       is the one-off ONEOFF-MoveBdCustomerGroup's job, not this package's
  *       (🔒 1724b: no layout code here).
- *   quotes_erp_layout  ErpLayoutExtraFields::sync('Quotes') places Lead Source,
- *       Lead Type and Project on ERP-Epicor's ERP panel, after Reference.
+ *   quotes_erp_layout  ErpLayoutExtraFields::sync('Quotes') places Reference
+ *       (G606, marked by this package) and the five ADM pickers (Lead Source,
+ *       Lead Type, Project, Marketing Campaign, Marketing Event) on
+ *       ERP-Epicor's ERP panel, after Ship Via.
  *
  * ERP-Epicor also calls sync() at the end of its own Quotes and Accounts layout
  * installs, so reinstalling ERP-Epicor keeps these fields. The file is ERP-Core's
@@ -244,7 +246,7 @@ $GLOBALS['log']->fatal('BenchDogs-Ext: post_install running (' . $bdVersion . ')
 //               shape pointed the other way, and it is a silent off switch.
 $bdStepReport = array();
 
-// Accounts (the customer group) and Quotes (the three ADM pickers, their
+// Accounts (the customer group) and Quotes (the five ADM pickers, their
 // labels, the defaults hook) are the only modules this package extends, so they
 // are the only ones rebuilt. FIRST: the two layout steps below read the merged
 // vardefs, and the markers they place by are in this package's Ext fragments.
@@ -292,8 +294,8 @@ try {
     $bdStepReport['accounts_erp_layout'] = 'FAILED: ' . get_class($e) . ': ' . $e->getMessage();
 }
 
-// G380 / G381: Lead Source, Lead Type and Project on ERP-Epicor's ERP panel,
-// after Reference (their markers).
+// G380 / G381 / G460 / G606: Reference and the five ADM pickers on
+// ERP-Epicor's ERP panel (their markers).
 try {
     if (!class_exists('ErpLayoutExtraFields', false) && file_exists($bdLayoutHelper)) {
         require_once $bdLayoutHelper;

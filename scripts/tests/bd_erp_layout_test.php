@@ -416,16 +416,21 @@ namespace {
             fn($l) => str_contains($l[1], '[ErpLayoutExtraFields]') || str_contains($l[1], 'layout sync failed'))));
     // G571 / G570: the marker's type reaches the view - on the Project entry rc72
     // placed WITHOUT one (an upgraded tenant: add-if-absent alone never would)
-    // and on the newly placed Event; the other three keep the vardef's enum.
+    // and on the newly placed Event. G809: Lead Source, Lead Type and Campaign
+    // carry it too now (ERP-Core's required-until-synced and prefill live in
+    // that field type), and they are ALREADY placed on this tenant (rc72), so
+    // this is the TYPE step reaching placed entries, including the one an
+    // admin moved - its position is unchanged (T6b).
     $types = [];
     foreach (ViewdefManager::$views['Quotes']['panels'][2]['fields'] as $e) {
         if (str_starts_with($e['name'], 'bd_')) {
             $types[$e['name']] = $e['type'] ?? null;
         }
     }
-    $check('T6f G571/G570 the Event and the (already placed) Project entries carry erp-dependent-enum; nothing else does',
-        ['bd_lead_type' => null, 'bd_lead_source' => null, 'bd_project_id' => 'erp-dependent-enum',
-         'bd_marketing_campaign' => null, 'bd_marketing_event' => 'erp-dependent-enum'],
+    $check('T6f G571/G570/G809 every Bench picker entry, placed before or now, carries erp-dependent-enum',
+        ['bd_lead_type' => 'erp-dependent-enum', 'bd_lead_source' => 'erp-dependent-enum',
+         'bd_project_id' => 'erp-dependent-enum', 'bd_marketing_campaign' => 'erp-dependent-enum',
+         'bd_marketing_event' => 'erp-dependent-enum'],
         $types);
 
     // ── report ──────────────────────────────────────────────────────────────

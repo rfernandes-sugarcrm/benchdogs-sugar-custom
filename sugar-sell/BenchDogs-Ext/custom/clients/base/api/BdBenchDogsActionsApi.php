@@ -10,8 +10,9 @@
  * marker removal (K-3) and the customer-group placement. K-2 and K-3 are SPENT:
  * the one-off "Retire Bench Dogs Residue" ran on every QA tenant (et 1.0.0
  * 2026-09-22 22:22Z, stock and Ophir 1.0.1 2026-09-23 00:58Z, G234 CLOSED) and
- * nothing re-adds either. post_install already places the customer-group fields
- * on every install. So the route had no job left, and 🔒 1520 makes removal the
+ * nothing re-adds either. The customer-group fields are placed by ERP-Core's
+ * ErpLayoutExtraFields::sync() from their vardef marker (rc70+). So the route
+ * had no job left, and 🔒 1520 makes removal the
  * default for anything that is not customer-category code.
  *
  * WHY THE PATH STILL SHIPS, EMPTY. ServiceDictionary::buildAllDictionaries()

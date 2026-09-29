@@ -110,6 +110,17 @@ KEPT = {
     # account_type_dom. The writer is core's customer_type_extra {"SUS": "Suspect"}.
     "custom/Extension/application/Ext/Language/_override_en_us.bd_account_type_suspect.php":
         "G450: account_type_dom['Suspect'] beside Customer/Prospect (Epicor SUS)",
+    # ── G809 (0.9.42-rc78): the owner's per-item consent is his own request on
+    # benchdogs-sandbox quote 8972, 2026-09-29 19:10Z: "if these are required
+    # fields it should not let me save the quote ... can we fix it on the
+    # benchdogs MLP?". ADM's Reference requirement, in the browser only.
+    "custom/Extension/modules/Quotes/Ext/Dependencies/bd_adm_reference_required.php":
+        "G809: Reference required in the edit views on an unsent ADM quote whose ship-to "
+        "cannot default it (a view dependency: never served required, never run on save)",
+    # ── G804 (0.9.42-rc78): the owner approved the ADM customer-group list,
+    # 🔒 2081b (2026-09-29). ADM refuses a new customer without a group.
+    "custom/Extension/modules/Accounts/Ext/LogicHooks/bd_customer_group_name.php":
+        "G804: on an Account not in the ERP, the Cust. Group name follows the picked Group Code",
 }
 
 ONEOFF ="the one-off deletes or blanks it (🔒 1521); re-run it after installing rc69"

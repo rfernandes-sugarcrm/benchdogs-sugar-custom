@@ -106,9 +106,10 @@ namespace {
 
         public static function newBean($module)
         {
-            // A SugarQuery's from() template (ERP_LookupValues) is not a record;
-            // anything else the rules instantiate would be.
-            if ($module !== 'ERP_LookupValues') {
+            // A SugarQuery's from() template (ERP_LookupValues; G809: Quotes, the
+            // account-history read) is not a record; anything else the rules
+            // instantiate would be.
+            if ($module !== 'ERP_LookupValues' && $module !== 'Quotes') {
                 self::$created++;
             }
             return new BdTestBean(['module_name' => $module]);
@@ -118,10 +119,24 @@ namespace {
     class BdTestWhere
     {
         public $equals = [];
+        public $notEmpty = [];
+        public $notEquals = [];
 
         public function equals($field, $value)
         {
             $this->equals[$field] = $value;
+            return $this;
+        }
+
+        public function isNotEmpty($field)
+        {
+            $this->notEmpty[] = $field;
+            return $this;
+        }
+
+        public function notEquals($field, $value)
+        {
+            $this->notEquals[$field] = $value;
             return $this;
         }
     }
@@ -130,6 +145,8 @@ namespace {
     {
         public static $rows = [];
         public static $last = null;
+        /** G809: every query built, in order (the Quotes history read is not the last one). */
+        public static $all = [];
         public static $constructed = 0;
         public $from = null;
         public $fromOptions = [];
@@ -142,6 +159,7 @@ namespace {
         {
             $this->whereObj = new BdTestWhere();
             self::$last = $this;
+            self::$all[] = $this;
             self::$constructed++;
         }
 
@@ -173,17 +191,35 @@ namespace {
 
         public function execute()
         {
+            // G809: a row belongs to one module ('_module', default the lookup
+            // table every earlier section reads), as a real table does.
+            $module = is_object($this->from) ? (string) ($this->from->module_name ?? '') : '';
             $out = [];
             foreach (self::$rows as $row) {
+                if (($row['_module'] ?? 'ERP_LookupValues') !== $module) {
+                    continue;
+                }
                 foreach ($this->whereObj->equals as $f => $v) {
                     if ((string) ($row[$f] ?? '') !== (string) $v) {
                         continue 2;
                     }
                 }
+                foreach ($this->whereObj->notEmpty as $f) {
+                    if (trim((string) ($row[$f] ?? '')) === '') {
+                        continue 2;
+                    }
+                }
+                foreach ($this->whereObj->notEquals as $f => $v) {
+                    if ((string) ($row[$f] ?? '') === (string) $v) {
+                        continue 2;
+                    }
+                }
                 $out[] = $row;
             }
-            usort($out, fn($a, $b) => strcmp((string) ($a['name'] ?? ''), (string) ($b['name'] ?? '')));
-            return $out;
+            [$by, $dir] = $this->order ?: ['name', 'ASC'];
+            usort($out, fn($a, $b) => (strtoupper($dir) === 'DESC' ? -1 : 1)
+                * strcmp((string) ($a[$by] ?? ''), (string) ($b[$by] ?? '')));
+            return $this->limit === null ? $out : array_slice($out, 0, $this->limit);
         }
     }
 
@@ -281,6 +317,7 @@ namespace {
     $freshQuery = function () {
         BdAdmRules::forgetAdmCompanies();
         SugarQuery::$constructed = 0;
+        SugarQuery::$all = [];
         BeanFactory::$reads = [];
     };
     // The modules read, in order (ids dropped).
@@ -392,8 +429,9 @@ namespace {
         $types = $GLOBALS['app_list_strings']['erp_lookup_type_list'];
         $check('G1 core\'s types survive', ['Country', 'Reason'],
             array_values(array_intersect(['Country', 'Reason'], array_keys($types))));
-        $bdTypes = ['BdLeadSources', 'BdLeadTypes', 'BdProjects', 'BdMarketingCampaigns', 'BdMarketingEvents'];
-        $check('G2 the five Bench types are added (G460: the two marketing lists)', $bdTypes,
+        $bdTypes = ['BdLeadSources', 'BdLeadTypes', 'BdProjects', 'BdMarketingCampaigns', 'BdMarketingEvents',
+            'BdCustomerGroups'];
+        $check('G2 the six Bench types are added (G460: the two marketing lists; G804: customer groups)', $bdTypes,
             array_values(array_intersect($bdTypes, array_keys($types))));
         $check('G3 the shipped project default is in place', ['CMI' => '20065'],
             $GLOBALS['app_list_strings']['bd_adm_project_by_group_list']);
@@ -602,10 +640,158 @@ namespace {
         $check('K7 the two option functions read their own list, whatever Sugar passes',
             [BdAdmRules::marketingOptions('BdMarketingCampaigns'), BdAdmRules::marketingOptions('BdMarketingEvents')],
             [bd_adm_marketing_campaign_options(...$legacy), bd_adm_marketing_event_options('BdMarketingCampaigns')]);
-        $check('K8 NO default: the before_save hook never names either field',
-            [false, false],
-            [str_contains(file_get_contents('custom/modules/Quotes/BdAdmRules.php'), '$bean->bd_marketing_'),
-             str_contains(file_get_contents('custom/Extension/modules/Quotes/Ext/LogicHooks/bd_adm_quote_defaults.php'), 'marketing')]);
+        // K8 pinned "the before_save hook never names either field" until G809:
+        // the owner asked for defaults (quote 8972), so the pair is now COPIED
+        // from the account's newest quote (section Q). What still holds is the
+        // G460 rule: nothing is ever INVENTED - with no history both stay empty.
+        SugarQuery::$rows = array_merge($ADM_ROWS, $K_CAMPS, $K_EVENTS);
+        $freshQuery();
+        $noHistory = $quote('ADM', ['id' => 'q-k8', 'lines' => []]);
+        BdAdmRules::applyDefaults($noHistory, true);
+        $check('K8 G460/G809 NO invented default: an account with no quotes leaves Campaign and Event empty',
+            [null, null], [$noHistory->bd_marketing_campaign ?? null, $noHistory->bd_marketing_event ?? null]);
+
+        // ── Q. G809: defaults from the account's newest quote ─────────────
+        // Owner, quote 8972: "maybe we should put defaults". The pilot measured
+        // consecutive quotes of one customer repeating Lead Source 93 %, Lead
+        // Type 95 %, Campaign 74 %. The account's quotes (acct-adm) are rows of
+        // module Quotes; a quote of ANOTHER account (acct-epic) must never count.
+        $Q_LOOKUPS = [
+            ['type' => 'BdLeadSources', 'is_active' => 1, 'erp_sync_key' => 'ADM__BdLeadSources_E-MAIL',
+             'erp_display_sync_key' => 'E-MAIL', 'name' => 'Email'],
+            ['type' => 'BdLeadSources', 'is_active' => 1, 'erp_sync_key' => 'ADM__BdLeadSources_ADVERTISE',
+             'erp_display_sync_key' => 'ADVERTISE', 'name' => 'ADVERTISE'],
+            ['type' => 'BdLeadSources', 'is_active' => 0, 'erp_sync_key' => 'ADM__BdLeadSources_LOYPROG',
+             'erp_display_sync_key' => 'LOYPROG', 'name' => 'Retired'],
+            ['type' => 'BdLeadTypes', 'is_active' => 1, 'erp_sync_key' => 'ADM__BdLeadTypes_BROKER',
+             'erp_display_sync_key' => 'BROKER', 'name' => 'Broker'],
+            ['type' => 'BdLeadTypes', 'is_active' => 1, 'erp_sync_key' => 'ADM__BdLeadTypes_DIRFOOD',
+             'erp_display_sync_key' => 'DIRFOOD', 'name' => 'Direct food'],
+        ];
+        $qRow = fn(string $id, string $account, string $entered, array $f) =>
+            ['_module' => 'Quotes', 'id' => $id, 'billing_account_id' => $account, 'date_entered' => $entered] + $f;
+        $HISTORY = [
+            // oldest first; the NEWEST holding each field wins
+            $qRow('h-1', 'acct-adm', '2026-01-05 10:00:00', ['bd_lead_source' => 'ADVERTISE', 'bd_lead_type' => 'DIRFOOD',
+                'bd_marketing_campaign' => '26BREHC', 'bd_marketing_event' => '26BREHC/4']),
+            $qRow('h-2', 'acct-adm', '2026-03-10 10:00:00', ['bd_lead_source' => 'E-MAIL', 'bd_lead_type' => '',
+                'bd_marketing_campaign' => '26DISCNV', 'bd_marketing_event' => '26DISCNV/2']),
+            $qRow('h-3', 'acct-adm', '2026-05-20 10:00:00', ['bd_lead_source' => '', 'bd_lead_type' => 'BROKER',
+                'bd_marketing_campaign' => '26DISCNV', 'bd_marketing_event' => '']),
+            // another account's NEWER quote: never read for acct-adm
+            $qRow('o-1', 'acct-epic', '2026-09-01 10:00:00', ['bd_lead_source' => 'ADVERTISE', 'bd_lead_type' => 'DIRFOOD',
+                'bd_marketing_campaign' => '26BREHC', 'bd_marketing_event' => '26BREHC/4']),
+        ];
+        $withHistory = function (array $history) use ($ADM_ROWS, $Q_LOOKUPS, $K_CAMPS, $K_EVENTS, $freshQuery) {
+            SugarQuery::$rows = array_merge($ADM_ROWS, $Q_LOOKUPS, $K_CAMPS, $K_EVENTS, $history);
+            $freshQuery();
+        };
+        $picks = fn($q) => [$q->bd_lead_source ?? null, $q->bd_lead_type ?? null,
+            $q->bd_marketing_campaign ?? null, $q->bd_marketing_event ?? null];
+        // The Quotes reads (the account-history lookups), in order.
+        $quoteReads = fn() => array_values(array_filter(SugarQuery::$all,
+            fn($q) => is_object($q->from) && ($q->from->module_name ?? '') === 'Quotes'));
+
+        $withHistory($HISTORY);
+        $new = $quote('ADM', ['id' => 'q-new', 'shipping_address_city' => 'LENEXA', 'shipping_address_state' => 'KS',
+                              'lines' => []]);
+        $set = BdAdmRules::applyDefaults($new, true);
+        $check('Q1 a NEW ADM quote: each empty pick from the account\'s NEWEST quote holding it; the pair from '
+            . 'the newest holding BOTH', [['E-MAIL', 'BROKER', '26DISCNV', '26DISCNV/2'],
+            ['erp_reference', 'bd_lead_source', 'bd_lead_type', 'bd_marketing_campaign', 'bd_marketing_event']],
+            [$picks($new), $set]);
+        $reads = $quoteReads();
+        $pairRead = end($reads);
+        $check('Q2 three reads (Lead Source, Lead Type, the pair): this account\'s quotes, the field(s) not empty, '
+            . 'newest first, one row, never this quote',
+            [3, [['bd_lead_source'], ['bd_lead_type'], ['bd_marketing_campaign', 'bd_marketing_event']],
+             ['billing_account_id' => 'acct-adm'], ['id' => $new->id], ['date_entered', 'DESC'], 1],
+            [count($reads), array_map(fn($q) => $q->whereObj->notEmpty, $reads), $pairRead->whereObj->equals,
+             $pairRead->whereObj->notEquals, $pairRead->order, $pairRead->limit]);
+
+        $withHistory(array_merge($HISTORY, [$qRow('q-ADM', 'acct-adm', '2026-09-29 12:05:15',
+            ['bd_lead_source' => 'ADVERTISE', 'bd_lead_type' => 'DIRFOOD'])]));
+        $itself = $quote('ADM', ['lines' => []]);   // id q-ADM: its own row is the newest
+        BdAdmRules::applyDefaults($itself, true);
+        $check('Q2b a quote is never its own history (its own newer row is skipped)', ['E-MAIL', 'BROKER'],
+            [$itself->bd_lead_source ?? null, $itself->bd_lead_type ?? null]);
+
+        $withHistory($HISTORY);
+        $update = $quote('ADM', ['id' => 'q-upd', 'lines' => []]);
+        BdAdmRules::applyDefaults($update);
+        $check('Q3 an UPDATE (not a create) copies nothing from history', [null, null, null, null], $picks($update));
+
+        $withHistory($HISTORY);
+        $typed = $quote('ADM', ['id' => 'q-typed', 'bd_lead_source' => 'ADVERTISE', 'bd_lead_type' => 'DIRFOOD',
+                                'bd_marketing_campaign' => '26BREHC', 'bd_marketing_event' => '26BREHC/4', 'lines' => []]);
+        BdAdmRules::applyDefaults($typed, true);
+        $check('Q4 the seller\'s picks are never overwritten', ['ADVERTISE', 'DIRFOOD', '26BREHC', '26BREHC/4'],
+            $picks($typed));
+        $withHistory($HISTORY);
+        $partly = $quote('ADM', ['id' => 'q-part', 'bd_lead_source' => 'ADVERTISE', 'lines' => []]);
+        BdAdmRules::applyDefaults($partly, true);
+        $check('Q4b one pick typed, the rest empty: the typed one stays, only the empty ones are filled',
+            ['ADVERTISE', 'BROKER', '26DISCNV', '26DISCNV/2'], $picks($partly));
+
+        $withHistory([$qRow('r-1', 'acct-adm', '2026-06-01 10:00:00', ['bd_lead_source' => 'LOYPROG',
+            'bd_lead_type' => 'GONE', 'bd_marketing_campaign' => '25DIRCNV', 'bd_marketing_event' => '25DIRCNV/1'])]);
+        $retired = $quote('ADM', ['id' => 'q-ret', 'lines' => []]);
+        BdAdmRules::applyDefaults($retired, true);
+        $check('Q5 a value the picker no longer offers (inactive code, retired campaign/event) is NOT copied',
+            [null, null, null, null], $picks($retired));
+
+        $withHistory($HISTORY);
+        $sent = $quote('ADM', ['id' => 'q-sent', 'erp_display_sync_key' => '8719', 'lines' => []]);
+        $check('Q6 a quote already in the ERP: nothing copied, NOTHING read (exit 1)', [[], [null, null, null, null], 0, []],
+            [BdAdmRules::applyDefaults($sent, true), $picks($sent), SugarQuery::$constructed, BeanFactory::$reads]);
+
+        $withHistory($HISTORY);
+        $epic = $quote('EPIC06', ['id' => 'q-epic', 'lines' => []]);
+        BdAdmRules::applyDefaults($epic, true);
+        $check('Q7 CONTROL an EPIC06 quote copies nothing (its account has a newer quote with values)',
+            [null, null, null, null], $picks($epic));
+
+        $withHistory([$qRow('m-1', 'acct-adm', '2026-06-01 10:00:00', ['bd_marketing_campaign' => '26DISCNV',
+            'bd_marketing_event' => '26BREHC/4'])]);
+        $mismatch = $quote('ADM', ['id' => 'q-mis', 'lines' => []]);
+        BdAdmRules::applyDefaults($mismatch, true);
+        $check('Q8 a quote whose event is NOT its campaign\'s (quote #4\'s mismatch) gives no pair', [null, null],
+            [$mismatch->bd_marketing_campaign ?? null, $mismatch->bd_marketing_event ?? null]);
+
+        $withHistory($HISTORY);
+        $other = $quote('ADM', ['id' => 'q-oth', 'bd_marketing_campaign' => '26BREHC', 'lines' => []]);
+        BdAdmRules::applyDefaults($other, true);
+        $same = $quote('ADM', ['id' => 'q-same', 'bd_marketing_campaign' => '26DISCNV', 'lines' => []]);
+        BdAdmRules::applyDefaults($same, true);
+        $eventOnly = $quote('ADM', ['id' => 'q-ev', 'bd_marketing_event' => '26DISCNV/1', 'lines' => []]);
+        BdAdmRules::applyDefaults($eventOnly, true);
+        $check('Q9 the seller chose ANOTHER campaign: no event; the SAME campaign: its event; an event alone: no '
+            . 'campaign derived', [['26BREHC', null], ['26DISCNV', '26DISCNV/2'], [null, '26DISCNV/1']],
+            [[$other->bd_marketing_campaign, $other->bd_marketing_event ?? null],
+             [$same->bd_marketing_campaign, $same->bd_marketing_event ?? null],
+             [$eventOnly->bd_marketing_campaign ?? null, $eventOnly->bd_marketing_event]]);
+
+        $check('Q10 pairToCopy, the pure rule', [['26DISCNV', '26DISCNV/2'], [], [], [], ['26DISCNV', '26DISCNV/2']],
+            [BdAdmRules::pairToCopy('', '26DISCNV', '26DISCNV/2'), BdAdmRules::pairToCopy('', '26DISC', '26DISCNV/2'),
+             BdAdmRules::pairToCopy('26BREHC', '26DISCNV', '26DISCNV/2'), BdAdmRules::pairToCopy('', '', ''),
+             BdAdmRules::pairToCopy(' 26DISCNV ', '26DISCNV', '26DISCNV/2')]);
+
+        $withHistory($HISTORY);
+        $noAccount = new BdTestBean(['id' => 'q-noacct', 'lines' => []]);
+        $check('Q11 a quote with no account reads no quote and copies nothing', [[], []],
+            [BdAdmRules::applyDefaults($noAccount, true), $quoteReads()]);
+
+        // The hook decides "create" from Sugar's own before_save argument.
+        $viaHook = function ($arguments) use ($withHistory, $HISTORY, $quote, $picks) {
+            $withHistory($HISTORY);
+            $q = $quote('ADM', ['id' => 'q-hook', 'lines' => []]);
+            (new BdAdmRules())->beforeSave($q, 'before_save', $arguments);
+            return $picks($q)[0];
+        };
+        $check('Q12 before_save: isUpdate=false fills; isUpdate=true and a missing argument do not',
+            ['E-MAIL', null, null],
+            [$viaHook(['isUpdate' => false]), $viaHook(['isUpdate' => true]), $viaHook([])]);
+        $check('Q13 🔒 1499: the history defaults create no record', 0, BeanFactory::$created - $createdBefore);
 
         // ── M. the vardefs ──────────────────────────────────────────────────
         $dictionary = [];
@@ -624,12 +810,17 @@ namespace {
         $check('M3 each picker names a function that exists, in a file that ships',
             ['bd_lead_source' => true, 'bd_lead_type' => true, 'bd_project_id' => true,
              'bd_marketing_campaign' => true, 'bd_marketing_event' => true], $fnOk);
+        // G809: all five carry ERP-Core's erp-dependent-enum (it reads the
+        // required-until-synced and prefill keys); before G809 only Project and Event did.
         $check('M4 each carries ERP-Epicor\'s marker: record view, ERP panel, after Reference in order', [
-                'bd_lead_source' => ['view' => 'record', 'panel' => 'LBL_RECORDVIEW_PANEL_ERP', 'after' => 'erp_reference'],
-                'bd_lead_type' => ['view' => 'record', 'panel' => 'LBL_RECORDVIEW_PANEL_ERP', 'after' => 'bd_lead_source'],
+                'bd_lead_source' => ['view' => 'record', 'panel' => 'LBL_RECORDVIEW_PANEL_ERP', 'after' => 'erp_reference',
+                    'type' => 'erp-dependent-enum'],
+                'bd_lead_type' => ['view' => 'record', 'panel' => 'LBL_RECORDVIEW_PANEL_ERP', 'after' => 'bd_lead_source',
+                    'type' => 'erp-dependent-enum'],
                 'bd_project_id' => ['view' => 'record', 'panel' => 'LBL_RECORDVIEW_PANEL_ERP', 'after' => 'bd_lead_type',
                     'type' => 'erp-dependent-enum'],
-                'bd_marketing_campaign' => ['view' => 'record', 'panel' => 'LBL_RECORDVIEW_PANEL_ERP', 'after' => 'bd_project_id'],
+                'bd_marketing_campaign' => ['view' => 'record', 'panel' => 'LBL_RECORDVIEW_PANEL_ERP', 'after' => 'bd_project_id',
+                    'type' => 'erp-dependent-enum'],
                 'bd_marketing_event' => ['view' => 'record', 'panel' => 'LBL_RECORDVIEW_PANEL_ERP', 'after' => 'bd_marketing_campaign',
                     'type' => 'erp-dependent-enum'],
             ], array_map(fn($f) => $f['erp_layout'] ?? null, $fields));
@@ -687,6 +878,112 @@ namespace {
                 'bd_customer_group' => ['view' => 'record', 'panel' => 'panel_overview', 'after' => 'industry'],
                 'bd_customer_group_code' => ['view' => 'record', 'panel' => 'panel_overview', 'after' => 'bd_customer_group'],
             ], array_map(fn($f) => $f['erp_layout'] ?? null, $dictionary['Account']['fields'] ?? []));
+
+        // G809: the four seller pickers are required in the browser only until
+        // the quote is in the ERP, and three of them prefill on the create form
+        // (the Event fills the Campaign + Event pair). None carries a vardef
+        // 'required' (M2): the served flag is what the connector's schema reads.
+        $g809Keys = ['erp_required_until_synced', 'erp_prefill_from_account_latest'];
+        $check('M9 G809 the ERP-Core keys: required-until-synced on Lead Source, Lead Type, Campaign, Event (not '
+            . 'Project, which keeps G570\'s rule); prefill from billing_account_id on Lead Source, Lead Type and the Event',
+            ['bd_lead_source' => ['erp_required_until_synced' => true, 'erp_prefill_from_account_latest' => 'billing_account_id'],
+             'bd_lead_type' => ['erp_required_until_synced' => true, 'erp_prefill_from_account_latest' => 'billing_account_id'],
+             'bd_project_id' => [],
+             'bd_marketing_campaign' => ['erp_required_until_synced' => true],
+             'bd_marketing_event' => ['erp_required_until_synced' => true, 'erp_prefill_from_account_latest' => 'billing_account_id']],
+            array_map(fn($f) => array_intersect_key($f, array_flip($g809Keys)), $fields));
+        $check('M10 G809 no picker combines the two required keys (erp_required_when_options would block ERP quotes)',
+            [], array_keys(array_filter($fields, fn($f) => !empty($f['erp_required_when_options'])
+                && !empty($f['erp_required_until_synced']))));
+
+        // ── S. G809: the Reference requirement is a VIEW dependency ─────────
+        $dependencies = [];
+        include 'custom/Extension/modules/Quotes/Ext/Dependencies/bd_adm_reference_required.php';
+        $dep = $dependencies['Quotes']['bd_adm_reference_required'] ?? [];
+        $action = $dep['actions'][0] ?? [];
+        $formula = (string) ($action['params']['value'] ?? '');
+        preg_match_all('/\$([a-z_]+)/', $formula, $named);
+        $check('S1 one SetRequired on erp_reference, for the EDIT views only (never a server save: no "save"/"all" hook)',
+            [['edit'], 'SetRequired', 'erp_reference', true, 1],
+            [$dep['hooks'] ?? null, $action['name'] ?? null, $action['params']['target'] ?? null, $dep['onload'] ?? null,
+             count($dep['actions'] ?? [])]);
+        $check('S2 the formula reads exactly: not in the ERP, an ADM Lead Source, no ship-to city, no ship-to state; '
+            . 'and those are its trigger fields',
+            [['bd_lead_source', 'erp_display_sync_key', 'shipping_address_city', 'shipping_address_state'],
+             ['bd_lead_source', 'erp_display_sync_key', 'shipping_address_city', 'shipping_address_state']],
+            [array_values(array_unique(array_merge([], (function ($a) { sort($a); return $a; })($named[1])))),
+             (function ($a) { sort($a); return $a; })($dep['triggerFields'] ?? [])]);
+
+        // ── R. G804: the Account's Cust. Group ──────────────────────────────
+        $dictionary = [];
+        include 'custom/Extension/modules/Accounts/Ext/Vardefs/bd_customer_group.php';
+        $code = $dictionary['Account']['fields']['bd_customer_group_code'] ?? [];
+        $name = $dictionary['Account']['fields']['bd_customer_group'] ?? [];
+        $check('R1 the Group Code is ADM\'s picker: an enum over bd_adm_customer_group_options, never pre-picked, '
+            . 'same column length, not required',
+            ['enum', 'bd_adm_customer_group_options', true, true, 10, false],
+            [$code['type'] ?? null, $code['function']['name'] ?? null, is_file($code['function']['include'] ?? ''),
+             $code['defaultToBlank'] ?? null, $code['len'] ?? null, !empty($code['required'])]);
+        $check('R2 read-only once the account holds EITHER ERP key (formula), editable before; the NAME stays read-only',
+            [true, 'not(and(equal($erp_display_sync_key,""),equal($erp_sync_key,"")))', true, false],
+            [$code['readonly'] ?? null, $code['readonly_formula'] ?? null, $name['readonly'] ?? null,
+             isset($name['readonly_formula'])]);
+        $GROUP_ROWS = [
+            ['type' => 'BdCustomerGroups', 'is_active' => 1, 'erp_sync_key' => 'ADM__BdCustomerGroups_BRKR',
+             'erp_display_sync_key' => 'BRKR', 'name' => 'Broker'],
+            ['type' => 'BdCustomerGroups', 'is_active' => 1, 'erp_sync_key' => 'ADM__BdCustomerGroups_AUTO',
+             'erp_display_sync_key' => 'AUTO', 'name' => 'Automotive'],
+            ['type' => 'BdCustomerGroups', 'is_active' => 0, 'erp_sync_key' => 'ADM__BdCustomerGroups_OLD',
+             'erp_display_sync_key' => 'OLD', 'name' => 'Retired group'],
+        ];
+        SugarQuery::$rows = array_merge($ADM_ROWS, $GROUP_ROWS);
+        $check('R3 the options: ADM\'s ACTIVE groups, "CODE - Name", blank first',
+            ['' => '', 'AUTO' => 'AUTO - Automotive', 'BRKR' => 'BRKR - Broker'], bd_adm_customer_group_options());
+        $acct = fn(array $f) => new BdTestBean(['id' => 'acct-new'] + $f);
+        $freshQuery();
+        $picked = $acct(['bd_customer_group_code' => 'BRKR']);
+        $check('R4 a NEW account with a picked group gets ADM\'s name for it',
+            [true, 'Broker'], [BdAdmRules::applyCustomerGroupName($picked, false), $picked->bd_customer_group ?? null]);
+        $unknown = $acct(['bd_customer_group_code' => 'ZZZ']);
+        BdAdmRules::applyCustomerGroupName($unknown, false);
+        $check('R5 a code ADM\'s list does not know: the code itself, never an invented name', 'ZZZ',
+            $unknown->bd_customer_group);
+        $freshQuery();
+        $erpAcct = $acct(['erp_sync_key' => 'ADM__1668', 'erp_display_sync_key' => '1668',
+                          'bd_customer_group_code' => 'BRKR', 'bd_customer_group' => 'Brokers (ERP)',
+                          'fetched_row' => ['bd_customer_group_code' => 'AUTO']]);
+        $check('R6 CONTROL an account the ERP holds: untouched, nothing read (the extension writes both)',
+            [false, 'Brokers (ERP)', 0], [BdAdmRules::applyCustomerGroupName($erpAcct, true), $erpAcct->bd_customer_group,
+             SugarQuery::$constructed]);
+        $freshQuery();
+        $same = $acct(['bd_customer_group_code' => 'BRKR', 'bd_customer_group' => 'Broker',
+                       'fetched_row' => ['bd_customer_group_code' => 'BRKR']]);
+        $check('R7 an update that does not change the code reads nothing', [false, 0],
+            [BdAdmRules::applyCustomerGroupName($same, true), SugarQuery::$constructed]);
+        $changed = $acct(['bd_customer_group_code' => 'AUTO', 'bd_customer_group' => 'Broker',
+                          'fetched_row' => ['bd_customer_group_code' => 'BRKR']]);
+        $cleared = $acct(['bd_customer_group_code' => '', 'bd_customer_group' => 'Broker',
+                          'fetched_row' => ['bd_customer_group_code' => 'BRKR']]);
+        BdAdmRules::applyCustomerGroupName($changed, true);
+        BdAdmRules::applyCustomerGroupName($cleared, true);
+        $check('R8 an update that changes the code follows it; one that clears it clears the name',
+            ['Automotive', ''], [$changed->bd_customer_group, $cleared->bd_customer_group]);
+        $freshQuery();
+        $none = $acct(['bd_customer_group' => 'Legacy']);
+        $check('R9 a new account with no code: nothing touched, nothing read', [false, 'Legacy', 0],
+            [BdAdmRules::applyCustomerGroupName($none, false), $none->bd_customer_group, SugarQuery::$constructed]);
+        $viaAccountHook = function ($arguments) use ($acct) {
+            $a = $acct(['bd_customer_group_code' => 'AUTO', 'fetched_row' => ['bd_customer_group_code' => 'AUTO']]);
+            (new BdAdmRules())->accountBeforeSave($a, 'before_save', $arguments);
+            return $a->bd_customer_group ?? null;
+        };
+        $check('R10 the hook reads Sugar\'s isUpdate: a create names the group; an unchanged update does not',
+            ['Automotive', null], [$viaAccountHook(['isUpdate' => false]), $viaAccountHook(['isUpdate' => true])]);
+        $hook_array = [];
+        include 'custom/Extension/modules/Accounts/Ext/LogicHooks/bd_customer_group_name.php';
+        $ah = $hook_array['before_save'][0] ?? [];
+        $check('R11 the Accounts before_save points at an existing file, class and method', [true, true],
+            [is_file($ah[2] ?? ''), method_exists($ah[3] ?? '', $ah[4] ?? '')]);
 
         // ── N. the before_save registration ─────────────────────────────────
         $hook_array = [];

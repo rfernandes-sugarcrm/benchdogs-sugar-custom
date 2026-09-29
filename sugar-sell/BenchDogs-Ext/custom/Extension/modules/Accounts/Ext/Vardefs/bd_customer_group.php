@@ -11,9 +11,34 @@
  * would make every report unreadable; storing only the description would make
  * every report break the day somebody renames a group.
  *
- * ERP-owned. The container extension writes both on the erp_customers sweep;
- * nothing in Sugar should be editing them, which is why they are declared
- * here rather than left to Studio.
+ * ERP-owned ONCE THE ACCOUNT IS IN THE ERP. The container extension writes both
+ * on the erp_customers sweep; nothing in Sugar edits them on such an account,
+ * which is why they are declared here rather than left to Studio.
+ *
+ * G804 (🔒 2081b): BEFORE the account is in the ERP, the seller picks the
+ * group. Create Customer in Epicor on Bench needs one: ADM answered HTTP 400
+ * "Group is required." (benchdogs-sandbox, 2026-09-29), and the connector
+ * extension now sends Customer.GroupCode from bd_customer_group_code or refuses
+ * naming the account's Cust. Group. So on an account with no ERP key:
+ *   - bd_customer_group_code is a PICKER over ADM's own customer groups
+ *     (ERP_LookupValues type BdCustomerGroups, which the Bench connector
+ *     extension publishes: key = GroupCode, label "CODE - GroupDesc"), built
+ *     the way the Bench quote pickers are: a vardef `enum` with an option
+ *     function (BdAdmRules::lookupOptions), `defaultToBlank`. It stores the
+ *     CODE, the value the extension reads. The vardef was a varchar; the
+ *     column is the same varchar(10), and a REST write of any string is still
+ *     accepted (SugarFieldEnum has no apiValidate; core types an enum as a
+ *     string). No view `type` marker: the stock enum is all it needs, and a
+ *     marker type would rewrite every tenant's Accounts view (the placed
+ *     entries carry no type, measured on benchdogs-sandbox 2026-09-29, so the
+ *     vardef's enum is what renders);
+ *   - bd_customer_group (the name) stays read-only and follows the pick on
+ *     save (BdAdmRules::accountBeforeSave: ADM's GroupDesc for the code, else
+ *     the code itself, the extension's own rule for the field).
+ * On an account the ERP holds, both stay READ-ONLY (readonly_formula below):
+ * Epicor owns the group, and the extension fills it Epicor -> Sugar.
+ * Not required: a Prospect may be saved without a group; the extension's
+ * refusal at create time names the field. No new field (🔒 1810b).
  *
  * These declarations are a HARD PREREQUISITE for that extension, not a
  * convenience: core enforces the cached Sugar schema on the delivery path
@@ -50,7 +75,12 @@
  * one-off sugar-sell/ONEOFF-MoveBdCustomerGroup does that, once, without adding
  * layout code to this package (🔒 1724b).
  *
- * READ-ONLY (G507): 'readonly' => true. sync() writes only name + label into the
+ * READ-ONLY (G507): 'readonly' => true. G804 adds a 'readonly_formula' to the
+ * CODE field: read-only once the account has an ERP key, editable before -
+ * ERP-Core's own shape for account_type (readonly + readonly_formula; sidecar's
+ * isFieldAlwaysReadOnly() treats a vardef readonly WITH a readonly_formula as
+ * "the formula decides", and the server's ReadOnly action is a no-op). The NAME
+ * field keeps the plain flag. sync() writes only name + label into the
  * view, so the flag lives here: Sidecar's isFieldAlwaysReadOnly() falls back to
  * the vardef's readonly when the viewdef sets none (26.1.0
  * include/javascript/sugar7/utils.js), and a readonly field renders in detail
@@ -83,8 +113,16 @@ $dictionary['Account']['fields']['bd_customer_group'] = array(
 $dictionary['Account']['fields']['bd_customer_group_code'] = array(
     'name' => 'bd_customer_group_code',
     'vname' => 'LBL_BD_CUSTOMER_GROUP_CODE',
-    'type' => 'varchar',
+    // G804: a picker over ADM's customer groups (see the docblock); the column
+    // is unchanged (an enum is stored as varchar(len)).
+    'type' => 'enum',
     'len' => 10,
+    'function' => array(
+        'name' => 'bd_adm_customer_group_options',
+        'include' => 'custom/modules/Quotes/BdAdmLookupOptions.php',
+    ),
+    // Never pre-picked by the browser (G574's rule for every Bench picker).
+    'defaultToBlank' => true,
     'comment' => 'Epicor Customer.GroupCode verbatim - the stable key to group and filter on',
     'reportable' => true,
     'audited' => true,
@@ -92,6 +130,8 @@ $dictionary['Account']['fields']['bd_customer_group_code'] = array(
     'massupdate' => false,
     'inline_edit' => false,
     'readonly' => true,
+    // G804: read-only once the account is in the ERP (either key set).
+    'readonly_formula' => 'not(and(equal($erp_display_sync_key,""),equal($erp_sync_key,"")))',
     'erp_layout' => array(
         'view' => 'record',
         'panel' => 'panel_overview',

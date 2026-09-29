@@ -3,7 +3,8 @@
 // phpcs:disable PSR1.Files.SideEffects.FoundWithSymbols
 
 /**
- * G380 / G381 / G460: the option sources behind the five Bench Dogs quote pickers
+ * G380 / G381 / G460: the option sources behind the five Bench Dogs quote pickers,
+ * and (G804) the Account's Cust. Group picker
  * (vardef 'function' => array('name' => ..., 'include' => this file)).
  *
  * PLAIN FUNCTIONS, AND THEY IGNORE THEIR ARGUMENTS, ON PURPOSE. Sugar calls a
@@ -52,6 +53,14 @@ if (!function_exists('bd_adm_marketing_campaign_options')) {
     function bd_adm_marketing_campaign_options(...$ignored): array
     {
         return BdAdmRules::marketingOptions(BdAdmRules::TYPE_MARKETING_CAMPAIGNS);
+    }
+}
+
+if (!function_exists('bd_adm_customer_group_options')) {
+    /** G804: ADM's active customer groups (Epicor CustGrup), for an Account not yet in the ERP. */
+    function bd_adm_customer_group_options(...$ignored): array
+    {
+        return BdAdmRules::lookupOptions(BdAdmRules::TYPE_CUSTOMER_GROUPS);
     }
 }
 
