@@ -33,11 +33,9 @@
  *    customer's own last choice (pilot ADM: consecutive quotes of one customer
  *    repeat Lead Source 93 %, Lead Type 95 %, Campaign 74 %) - and only a value
  *    the picker still offers. The pair comes from ONE quote. This is the
- *    server half, for a quote created without the form whose create save
- *    carries billing_account_id (an API create) - not the Account page's quote
- *    button, which links the account after its first save; the create form's
- *    half is ERP-Core's erp_prefill_from_account_latest, the same rule in the
- *    browser.
+ *    server half, for a quote created without the form (API, the Account
+ *    button); the create form's half is ERP-Core's
+ *    erp_prefill_from_account_latest, the same rule in the browser.
  *
  * WHICH QUOTES ARE ADM, WITH NO COMPANY LIST OF ITS OWN (🔒 1724b: "ADM" from
  * one source). A quote is an ADM quote when its ERP company has published

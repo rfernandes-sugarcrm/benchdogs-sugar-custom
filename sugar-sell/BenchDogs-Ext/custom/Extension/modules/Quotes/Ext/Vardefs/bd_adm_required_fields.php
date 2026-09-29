@@ -31,12 +31,8 @@
  * repeat Lead Source 93 %, Lead Type 95 %, Campaign 74 %. Two writers, one
  * rule: ERP-Core's 'erp_prefill_from_account_latest' on the create form, and
  * BdAdmRules::applyDefaults() in before_save for a quote created without the
- * form whose create save carries its billing account (an API create with
- * billing_account_id). NOT the Account page's quote button: ERP-Epicor's
- * AccountsErpActionsApi saves the quote first and links the account after,
- * so that first save has no account to read (the same is true of the older
- * Reference / Project defaults below). Assumption recorded by the
- * coordinator: the owner may overrule the "newest quote" choice.
+ * form (API, the Account button). Assumption recorded by the coordinator: the
+ * owner may overrule the "newest quote" choice.
  *
  * NOT HERE (🔒 1724b): Reference is ERP-Epicor's generic Quotes.erp_reference
  * (this package DEFAULTS it on an ADM quote, BdAdmRules, and claims its layout

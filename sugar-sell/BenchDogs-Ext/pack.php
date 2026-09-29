@@ -30,6 +30,10 @@
  *   custom/Extension/modules/Accounts/Ext/LogicHooks/bd_customer_group_name.php
  *       G804 (🔒 2081b): on an Account not in the ERP, the Cust. Group name
  *       follows the Group Code the seller picked from ADM's customer groups.
+ *   custom/Extension/modules/Accounts/Ext/Dependencies/bd_adm_customer_group_required.php
+ *       🔒 2085b / 🔒 2086b: Cust. Group required in the edit views on an ADM
+ *       Customer not yet in the ERP. A VIEW dependency: never served as a
+ *       required field and never run on a server save.
  *   custom/clients/base/api/BdBenchDogsActionsApi.php
  *       EMPTY, and the one retirement stub left: it unregisters rc68's
  *       bd-tools/repair-ui route on upgraded tenants (see the file).
@@ -58,7 +62,7 @@
 
 $packageID      = 'sugarai_benchdogs_ext';
 $packageLabel   = 'SugarAI: Bench Dogs Extensions';
-$description    = 'Bench Dogs extensions for Sugar Sell: the two customer-group fields (a Cust. Group picker before the account is in the ERP) and the Suspect account type on Accounts, and the ADM company\'s own quote values (Lead Source, Lead Type, Project, Marketing Campaign and Marketing Event pickers, required until the quote is in the ERP and defaulted from the account\'s last quote; Reference and Project defaults; the Reference placement and requirement).';
+$description    = 'Bench Dogs extensions for Sugar Sell: the two customer-group fields (a Cust. Group picker before the account is in the ERP, required for an ADM Customer) and the Suspect account type on Accounts, and the ADM company\'s own quote values (Lead Source, Lead Type, Project, Marketing Campaign and Marketing Event pickers, required until the quote is in the ERP and defaulted from the account\'s last quote; Reference and Project defaults; the Reference placement and requirement).';
 $supportedVersionRegex = '(26|25|14)\\..*$';
 $acceptableSugarFlavors = array('ENT', 'ULT', 'PRO');
 

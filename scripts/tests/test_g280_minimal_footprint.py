@@ -121,6 +121,12 @@ KEPT = {
     # 🔒 2081b (2026-09-29). ADM refuses a new customer without a group.
     "custom/Extension/modules/Accounts/Ext/LogicHooks/bd_customer_group_name.php":
         "G804: on an Account not in the ERP, the Cust. Group name follows the picked Group Code",
+    # ── 🔒 2085b (0.9.42-rc79): the owner's YES to "Cust. Group required on
+    # save for a Customer not yet in the ERP"; 🔒 2086b ruled the ADM gate a
+    # Bench-specific rule ("no its benchdogs specific").
+    "custom/Extension/modules/Accounts/Ext/Dependencies/bd_adm_customer_group_required.php":
+        "🔒2085b: Cust. Group required in the edit views on an ADM Customer not yet in the ERP "
+        "(a view dependency: never served required, never run on save)",
 }
 
 ONEOFF ="the one-off deletes or blanks it (🔒 1521); re-run it after installing rc69"

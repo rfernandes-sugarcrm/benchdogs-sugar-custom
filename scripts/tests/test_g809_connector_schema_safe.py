@@ -30,6 +30,16 @@ IF IT WERE BROKEN you would see:
   ReferenceFormulaInSugarsOwnParser  FAIL - the Reference formula is true when
       it should not be (an ERP quote, an Ophir quote, a ship-to with a city or
       a state) or false when it should be.
+
+🔒 2085b adds the Accounts twin: Cust. Group (bd_customer_group_code) is
+required in the edit views on an ADM Customer not yet in the ERP, through
+Ext/Dependencies (never served `required` or `required_formula`):
+  test_2085b_the_group_rule_is_a_view_dependency...  FAIL - the rule is gone,
+      aimed at another field, or would run on a server save;
+  test_2085b_the_connectors_own_check_passes_an_account_without_a_group  FAIL -
+      an Account write without a group is refused by the connector;
+  GroupFormulaInSugarsOwnParser  FAIL - the formula blocks a Prospect/Suspect,
+      an ERP account or an Ophir/EPIC06 customer, or misses the ADM Customer.
 """
 from __future__ import annotations
 
@@ -47,6 +57,8 @@ from test_g450_suspect_account_type import code_only, sugar_order
 FIVE = ["erp_reference", "bd_lead_source", "bd_lead_type", "bd_marketing_campaign", "bd_marketing_event"]
 ACCOUNT_TWO = ["bd_customer_group", "bd_customer_group_code"]
 DEPENDENCY = PKG / "custom/Extension/modules/Quotes/Ext/Dependencies/bd_adm_reference_required.php"
+#: 🔒 2085b: the Accounts twin - Cust. Group required on an ADM Customer not yet in the ERP.
+GROUP_DEPENDENCY = PKG / "custom/Extension/modules/Accounts/Ext/Dependencies/bd_adm_customer_group_required.php"
 
 MERGE = r"""<?php
 $plan = json_decode(file_get_contents('php://stdin'), true);
@@ -93,12 +105,29 @@ class ServedQuoteFieldsAreNotRequired(unittest.TestCase):
             self.assertNotIn("required_formula", served["Quote"][name])
         for name in ACCOUNT_TWO:
             self.assertFalse(served["Account"][name].get("required"), name)
+            # 🔒 2085b: nor a required_formula - ERP-Epicor's G496 order check
+            # and the G805 price-step create read any served
+            # 'equal($account_type,"Customer")' formula, with no ADM gate.
+            self.assertNotIn("required_formula", served["Account"][name], name)
 
     def test_the_reference_rule_is_a_view_dependency_that_never_runs_on_save(self):
         text = code_only(DEPENDENCY)
         self.assertIn("'hooks' => array('edit'),", text)
         self.assertNotIn("'save'", text)
         self.assertNotIn("'all'", text)
+
+    def test_2085b_the_group_rule_is_a_view_dependency_on_the_picker_that_never_runs_on_save(self):
+        text = code_only(GROUP_DEPENDENCY)
+        self.assertIn("$dependencies['Accounts']['bd_adm_customer_group_required']", text)
+        self.assertIn("'hooks' => array('edit'),", text)
+        self.assertNotIn("'save'", text)
+        self.assertNotIn("'all'", text)
+        self.assertIn("'target' => 'bd_customer_group_code',", text)
+        self.assertIn("'name' => 'SetRequired',", text)
+        # it re-evaluates when any input changes, the company relate included
+        for trigger in ("account_type", "erp_display_sync_key", "erp_sync_key",
+                        "erp_companies_accounts_name", "erp_companies_accountserp_companies_ida"):
+            self.assertIn(f"'{trigger}',", text)
 
 
 #: The connector's Python: an explicit BD_CORE_PYTHON, else the workspace's
@@ -147,6 +176,18 @@ print(json.dumps({"violations": [str(v) for v in ok], "control": control}))
                      "needs the connector's Python (BD_CORE_PYTHON or the workspace validation-venv); "
                      "CI has no erp-integration-core")
 class TheConnectorsOwnSchemaCheck(unittest.TestCase):
+    def test_2085b_the_connectors_own_check_passes_an_account_without_a_group(self):
+        """The erp_customers sweep and the seed write Accounts through the same
+        check: an account payload with no group must still pass, and the
+        CONTROL (the same field served required) is refused."""
+        served = served_fields()["Account"]
+        out = subprocess.run([CORE_PYTHON, "-c", RUN_CORE_ACCOUNTS], input=json.dumps(served), text=True,
+                             capture_output=True)
+        self.assertEqual(out.returncode, 0, out.stderr[-2000:])
+        result = json.loads(out.stdout.strip().splitlines()[-1])
+        self.assertEqual(result["violations"], [])
+        self.assertIn("bd_customer_group_code:missing_required", result["control"])
+
     def test_the_connectors_own_check_passes_a_quote_without_them(self):
         served = served_fields()["Quote"]
         out = subprocess.run([CORE_PYTHON, "-c", RUN_CORE], input=json.dumps(served), text=True,
@@ -160,6 +201,15 @@ class TheConnectorsOwnSchemaCheck(unittest.TestCase):
         # the shipped vardefs' doing, not a check that never refuses.
         self.assertIn("erp_reference:missing_required", result["control"])
 
+
+RUN_CORE_ACCOUNTS = RUN_CORE.replace('"Quotes"', '"Accounts"').replace(
+    'payload = {"name": "ADM quote 9001", "erp_sync_key": "ADM__9001", "erp_display_sync_key": "9001", "quote_stage": "Draft"}',
+    'payload = {"name": "LENEXA DISPLAYS", "erp_sync_key": "ADM__1668", "erp_display_sync_key": "1668", "quote_stage": "x"}',
+).replace(
+    'rejected["erp_reference"] = dict(fields["erp_reference"], required=True, required_formula="true")',
+    'rejected["bd_customer_group_code"] = dict(fields["bd_customer_group_code"], required=True)',
+)
+assert RUN_CORE_ACCOUNTS.count('"Accounts"') >= 2 and "LENEXA" in RUN_CORE_ACCOUNTS and "bd_customer_group_code" in RUN_CORE_ACCOUNTS
 
 TREES = [p for p in (Path.home() / "Documents/Code" / f"SugarEnt-Full-{v}" for v in ("26.1.0", "25.2.0"))
          if (p / "include/Expressions/Expression/Parser/Parser.php").is_file()]
@@ -208,6 +258,83 @@ CASES = {
                                                        "shipping_address_state": "KS"}, False),
     "whitespace-only key is empty in SugarLogic too": ({"erp_display_sync_key": "", "bd_lead_source": "E-MAIL"}, True),
 }
+
+
+EVALUATE_GROUP = r"""<?php
+chdir($argv[1]);
+define('sugarEntry', true);
+spl_autoload_register(function ($c) {
+    $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator('include/Expressions/Expression',
+        FilesystemIterator::SKIP_DOTS));
+    foreach ($it as $f) { if ($f->getFilename() === $c . '.php') { require_once $f->getPathname(); return; } }
+});
+function sugar_cached($p) { return 'cache/' . $p; }
+function safeCount($a) { return is_countable($a) ? count($a) : 0; }
+class TimeDate { static function getInstance() { return new self(); } }
+$GLOBALS['log'] = new class { function __call($n, $a) {} };
+#[AllowDynamicProperties] class FakeCompany {
+    public $field_defs = ['erp_sync_key' => ['name' => 'erp_sync_key', 'type' => 'varchar']];
+    function checkUserAccess() { return true; }
+}
+class Link2 { public $beans; function __construct($b) { $this->beans = $b; } function getBeansForSugarLogic() { return $this->beans; } }
+#[AllowDynamicProperties] class FakeAccount {
+    public $field_defs = [];
+    function load_relationship($n) { return isset($this->$n); }
+}
+$dependencies = [];
+include $argv[2];
+$formula = $dependencies['Accounts']['bd_adm_customer_group_required']['actions'][0]['params']['value'];
+$out = [];
+foreach (json_decode($argv[3], true) as $label => $case) {
+    $a = new FakeAccount();
+    foreach (['account_type' => 'enum', 'erp_display_sync_key' => 'varchar', 'erp_sync_key' => 'varchar'] as $n => $t) {
+        $a->field_defs[$n] = ['name' => $n, 'type' => $t];
+        $a->$n = $case[$n] ?? '';
+    }
+    $a->field_defs['erp_companies_accounts'] = ['name' => 'erp_companies_accounts', 'type' => 'link'];
+    $beans = [];
+    if (isset($case['company'])) {
+        $c = new FakeCompany();
+        $c->erp_sync_key = $case['company'];
+        $beans = ['co-1' => $c];
+    }
+    $a->erp_companies_accounts = new Link2($beans);
+    $out[$label] = Parser::evaluate($formula, $a)->evaluate() === AbstractExpression::$TRUE;
+}
+echo json_encode($out);
+"""
+
+GROUP_CASES = {
+    "a NEW ADM Customer, not in the ERP (the rule)": ({"account_type": "Customer", "company": "ADM"}, True),
+    "an ADM Prospect kept in Sugar": ({"account_type": "Prospect", "company": "ADM"}, False),
+    "an ADM Suspect kept in Sugar": ({"account_type": "Suspect", "company": "ADM"}, False),
+    "an ADM Customer already in the ERP (display key)": (
+        {"account_type": "Customer", "company": "ADM", "erp_display_sync_key": "1668"}, False),
+    "an ADM Customer already in the ERP (scoped key only)": (
+        {"account_type": "Customer", "company": "ADM", "erp_sync_key": "ADM__1668"}, False),
+    "Ophir/stock: an EPIC06 Customer, not in the ERP (no groups to pick)": (
+        {"account_type": "Customer", "company": "EPIC06"}, False),
+    "a Customer with no ERP company yet (ERP-Core requires one first)": ({"account_type": "Customer"}, False),
+}
+
+
+class GroupFormulaInSugarsOwnParser(unittest.TestCase):
+    """🔒 2085b: the Cust. Group formula, evaluated by SugarCRM's own SugarLogic
+    Parser with related() over the account's ERP company link."""
+
+    requires_sugarent_tree = True
+
+    def test_the_group_formula_in_sugars_own_parser(self):
+        self.assertTrue(PARSER_TREES, "no SugarEnt tree with a built SugarLogic function map")
+        php = shutil.which("php")
+        for tree in PARSER_TREES:
+            out = subprocess.run([php, "-d", "error_reporting=E_ALL & ~E_DEPRECATED", "-r",
+                                  EVALUATE_GROUP.replace("<?php", "", 1), "--", str(tree), str(GROUP_DEPENDENCY),
+                                  json.dumps({k: v[0] for k, v in GROUP_CASES.items()})],
+                                 capture_output=True, text=True)
+            self.assertEqual(out.returncode, 0, out.stdout[-1500:] + out.stderr[-1500:])
+            got = json.loads(out.stdout.strip().splitlines()[-1])
+            self.assertEqual(got, {k: v[1] for k, v in GROUP_CASES.items()}, tree.name)
 
 
 class ReferenceFormulaInSugarsOwnParser(unittest.TestCase):
