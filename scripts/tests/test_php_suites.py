@@ -61,17 +61,22 @@ def run(name: str, **env: str) -> subprocess.CompletedProcess:
 
 #: rc70 (G380, 🔒 1724b) runs against ERP-Epicor's REAL code (lane D, landed
 #: a0f6b632): the sibling checkout's files when present, else the pins.
+#: 0.9.42-rc83: BD_QUOTE_FACTS is the GLOBAL ErpQuoteFacts of ERP-Epicor 1.1
+#: (the last one shipped, 1.1.179, pinned to its commit under
+#: fixtures/erp-epicor-1.1/): 1.2.0 no longer ships that file, and BdAdmRules
+#: must keep working on a tenant that has not upgraded yet.
 LANDED = {
-    "BD_QUOTE_FACTS": str(shared_sugar.resolve("ErpQuoteFacts.php")),
+    "BD_QUOTE_FACTS": str(HERE / "fixtures/erp-epicor-1.1/custom/modules/Quotes/ErpQuoteFacts.php"),
     "BD_LAYOUT_FIELDS": str(shared_sugar.resolve("ErpLayoutExtraFields.php")),
     "BD_ERP_REFERENCE": str(shared_sugar.resolve("erp_reference.php")),
 }
 
-#: T2 of the Rafael review (erp-integration-sugar #158): ERP-Epicor's
-#: ErpQuoteFacts as Sugarcrm\Sugarcrm\custom\Erp\ErpQuoteFacts under a
-#: docroot's custom/src, found only through an autoloader. A copy pinned to one
-#: commit (fixtures/erp-t2/PROVENANCE.json), not a shared-sugar pin: see there.
-T2_CUSTOM_SRC = str(HERE / "fixtures/erp-t2/custom/src")
+#: ERP-Epicor 1.2.0 (T2 of the Rafael review, erp-integration-sugar #158; the
+#: build 280e0929): ErpQuoteFacts is Sugarcrm\Sugarcrm\custom\Erp\ErpQuoteFacts
+#: in ERP-Epicor's custom/src, found only through an autoloader - ERP-Core's own
+#: stand-in, the sibling checkout's when present, else the pinned mirror, whose
+#: roots are that same checkout's packages (shared_sugar.py).
+ERP_AUTOLOADER = str(shared_sugar.resolve("sugar_autoloader.php"))
 
 
 #: The fewest checks each suite may report and still count as having run.
@@ -132,12 +137,13 @@ class PhpSuitesTest(unittest.TestCase):
         ADM, the Reference and Project defaults and their exit order, the
         pickers' options, the vardef markers) - and, in a second run with no
         ErpQuoteFacts at all, that an older ERP-Epicor skips the defaults and
-        never fails a save - and, in a third run, the whole suite against T2's
-        namespaced, autoloaded ErpQuoteFacts (#158), with no global class."""
+        never fails a save - and, in a third run, the whole suite against
+        ERP-Epicor 1.2.0's namespaced, autoloaded ErpQuoteFacts (T2, #158),
+        with no global class. The first run is ERP-Epicor 1.1's global class."""
         self.assert_suite_passes("bd_adm_rules_test.php", **LANDED)
         self.assert_suite_passes("bd_adm_rules_test.php", BD_NO_QUOTE_FACTS="1")
         self.assert_suite_passes(
-            "bd_adm_rules_test.php", BD_QUOTE_FACTS_NS=T2_CUSTOM_SRC,
+            "bd_adm_rules_test.php", BD_ERP_AUTOLOADER=ERP_AUTOLOADER,
             BD_ERP_REFERENCE=LANDED["BD_ERP_REFERENCE"])
 
     def test_bd_erp_layout(self):

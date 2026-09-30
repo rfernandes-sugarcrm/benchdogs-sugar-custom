@@ -3,15 +3,15 @@
   "files": {
     "pf_sales_stage_override.php": {
       "source": "sugar-sell/ERP-Epicor-PartialFulfillment/custom/Extension/application/Ext/Language/_override_en_us.partial_fulfillment_sales_stage.php",
-      "commit": "d262125c5d9a0670d1f0a71df99b23cf6635296f",
-      "sha256": "8350ebad4b35f96fd35cd29ecd855d59a365093f40022c7ebf4404a4a8d06e8c",
-      "bytes": 2645
+      "commit": "280e092999e575604a4c5798597150f637ddc798",
+      "sha256": "5398f49e10c0803b8589eb908afd2219d5e7b34150efb7bb27aaf4f3ef979c3b",
+      "bytes": 408
     },
     "pf_sales_stage_style.php": {
       "source": "sugar-sell/ERP-Epicor-PartialFulfillment/custom/Extension/application/Ext/DropdownsStyle/partial_fulfillment_sales_stage_style.php",
-      "commit": "d262125c5d9a0670d1f0a71df99b23cf6635296f",
-      "sha256": "4a40ca0f8cddaade66b45b9608c289328f83b9ede2b1da5c4399d9bf59c0d4eb",
-      "bytes": 2419
+      "commit": "280e092999e575604a4c5798597150f637ddc798",
+      "sha256": "f86ff9ed8c863c6592874509ed577ddfad3a698cceade35044048d5ab47e7a26",
+      "bytes": 1300
     }
   }
 }
