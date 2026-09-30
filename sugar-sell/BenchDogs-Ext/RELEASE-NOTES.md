@@ -1,3 +1,49 @@
+# 0.9.42-rc81 — G809: each quote default comes from the account's newest quote holding a value ADM still offers; Project is defaulted too
+
+Built on rc80 (#36, 43ec7f1, not yet on main). **Requires** ERP-Epicor ≥ 1.1.134
+and Partial Fulfillment ≥ 1.0.50 (unchanged). The create-form half needs
+**ERP-Epicor 1.1.175** (ERP-Core's `erp-dependent-enum`, same G809 rule,
+erp-integration-sugar `fix/g809-per-field-prefill`). On ERP-Epicor 1.1.173 /
+1.1.174 the create form reads Project's new key too, but with the one-row read
+(a retired newest value still blocks a field); before 1.1.173 the key is inert.
+The server half below applies at save either way.
+
+**Graded on rc80 + 1.1.174** (benchdogs-dev, account BENCHMARK CONSTRUCTION
+COMPANY. INC, 2026-09-30T00:26Z): a new quote got Lead Source BIDINVTE and Lead
+Type CASEGDS, but Mktg Campaign and Marketing Event stayed EMPTY although older
+quotes of the account hold a pair. Each field already came from the newest quote
+holding IT (the Lead Source read and the pair read are separate; tests Q1, Q16b).
+What failed: each read took ONE row, and the newest quote holding a pair holds
+24CGINST / 24CGINST/1, which the pickers do not offer (inferred: the create form
+would otherwise have filled it) - so nothing was filled.
+
+- **One rule, both writers.** `BdAdmRules::applyAccountHistory()` (before_save,
+  a quote created without the form) now reads the account's newest
+  `HISTORY_SCAN` = 20 quotes holding the field, newest `date_entered` first, and
+  takes the FIRST whose value the picker still offers; a retired code is skipped,
+  never copied. The pair: the first quote holding both whose event is its
+  campaign's and whose campaign and event are both offered; with the seller's
+  campaign already chosen, the newest quote holding THAT campaign gives its own
+  event (a quote with another campaign is skipped, never mixed; Q9's first case
+  changed accordingly). ERP-Core's create form reads the same 20 by the same rule.
+- **Project (owner scope, 2026-09-29T21:05Z).** `bd_project_id` gets
+  `erp_prefill_from_account_latest` (metadata on the existing field; no new field,
+  column or setting, 🔒 1810b), and the server half copies it too
+  (`ACCOUNT_HISTORY_FIELDS`). 🔒 1712b's product-group default runs first and
+  keeps precedence where it applies; history fills only what it left empty.
+  ERP quotes do not carry a Project (it is OrderDtl.ProjectID; nothing reads it
+  back), so the history is the account's quotes raised in Sugar.
+- **Not changed, and worth a ruling:** "newest" is Sugar's `date_entered`. On the
+  reseeded tenants the older ERP quotes were inserted AFTER the recent ones
+  (benchdogs-dev: ADM__7178, Sugar #7407, entered 13:23:45Z; ADM__8663 with
+  26CGCOMM, Sugar #1213, earlier), so for such an account the newest by
+  `date_entered` is not the customer's latest ERP quote.
+- Tests (`bd_adm_rules_test.php`, 119 checks): Q14-Q18 new, Q2 (four reads, up to
+  20 rows), Q9 and M9 updated. Red on rc80 43ec7f1: 8 fail (Q16 reproduces the
+  graded symptom: BIDINVTE / CASEGDS filled, the pair empty). Mutants 7 run, 6
+  killed; the survivor (history before the product-group default) is equivalent:
+  that default overwrites the value either way.
+
 # 0.9.42-rc80 — G817: the quote's create prompt asks for Cust. Group instead of offering a Create the ERP refuses
 
 Built on rc79 (#35, main fe97ab2). **Requires** ERP-Epicor ≥ 1.1.134 and

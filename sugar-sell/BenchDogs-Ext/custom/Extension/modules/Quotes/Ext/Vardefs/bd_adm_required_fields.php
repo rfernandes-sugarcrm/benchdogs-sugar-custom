@@ -23,10 +23,11 @@
  *
  * G809 (owner, benchdogs-sandbox quote 8972, 2026-09-29: "if these are required
  * fields it should not let me save the quote and maybe we should put
- * defaults"): Lead Source, Lead Type and the Campaign + Event pair are now
- * DEFAULTED FROM THE SAME ACCOUNT'S NEWEST QUOTE that holds them - the
- * customer's own last choice, not an invented code - and only into an empty
- * field, only with a value the picker still offers. Measured on the pilot ADM
+ * defaults"): Lead Source, Lead Type, Project and the Campaign + Event pair
+ * are now DEFAULTED FROM THE SAME ACCOUNT'S NEWEST QUOTE holding a value the
+ * picker still offers, EACH FIELD FROM ITS OWN such quote (a code retired on
+ * a newer quote is skipped, never copied) - the customer's own last choice,
+ * not an invented code - and only into an empty field. Measured on the pilot ADM
  * company (760 quotes since 2025-09-01): consecutive quotes of one customer
  * repeat Lead Source 93 %, Lead Type 95 %, Campaign 74 %. Two writers, one
  * rule: ERP-Core's 'erp_prefill_from_account_latest' on the create form, and
@@ -94,6 +95,14 @@
  *    seller now picks the Project, so the before_save CMI -> 20065 default
  *    (🔒 1712b, fills only an EMPTY Project) applies only to quotes created
  *    without the form (API / the Account button).
+ *  - bd_project_id, G809 owner scope (2026-09-29T21:05Z, benchdogs-sandbox:
+ *    "Project is also required ... but is NOT prefilled from the account's
+ *    history like the other four"): 'erp_prefill_from_account_latest' too, so
+ *    the create form fills it from the account's newest quote holding a
+ *    project ADM still offers; the before_save history does the same for a
+ *    quote created without the form, AFTER the product-group default above
+ *    (which keeps precedence where it applies). Metadata on the existing
+ *    field only: no new field, column or setting (🔒 1810b).
  *
  * G574: 'defaultToBlank' => true ON ALL FIVE - THE BROWSER NEVER PICKS ONE.
  * Measured on benchdogs-dev (SALES ORDER smoke 2026-09-25, #Quotes/create): a
@@ -192,6 +201,9 @@ $dictionary['Quote']['fields']['bd_project_id'] = array(
     'defaultToBlank' => true,
     // G570: required in the browser while ADM projects exist (see the docblock).
     'erp_required_when_options' => true,
+    // G809 (owner scope): the create form fills it from the account's newest
+    // quote holding an offered project (see the docblock).
+    'erp_prefill_from_account_latest' => 'billing_account_id',
     'erp_layout' => array(
         'view' => 'record',
         'panel' => 'LBL_RECORDVIEW_PANEL_ERP',

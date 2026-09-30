@@ -667,6 +667,19 @@ namespace {
              'erp_display_sync_key' => 'BROKER', 'name' => 'Broker'],
             ['type' => 'BdLeadTypes', 'is_active' => 1, 'erp_sync_key' => 'ADM__BdLeadTypes_DIRFOOD',
              'erp_display_sync_key' => 'DIRFOOD', 'name' => 'Direct food'],
+            // G809 retest (benchdogs-dev, 2026-09-30): the measured codes of the
+            // graded account, a retired 2024 campaign whose event row is still
+            // active (ADM keeps events of an inactive campaign; the picker
+            // offers neither), and ADM projects, one retired.
+            ['type' => 'BdLeadSources', 'is_active' => 1, 'erp_sync_key' => 'ADM__BdLeadSources_BIDINVTE',
+             'erp_display_sync_key' => 'BIDINVTE', 'name' => 'Bid invite'],
+            ['type' => 'BdLeadTypes', 'is_active' => 1, 'erp_sync_key' => 'ADM__BdLeadTypes_CASEGDS',
+             'erp_display_sync_key' => 'CASEGDS', 'name' => 'Casegoods'],
+            ['type' => 'BdMarketingCampaigns', 'is_active' => 0, 'erp_display_sync_key' => '24CGINST', 'name' => '2024 CG INST'],
+            ['type' => 'BdMarketingEvents', 'is_active' => 1, 'erp_display_sync_key' => '24CGINST/1', 'name' => 'EXISTING CUST'],
+            ['type' => 'BdProjects', 'is_active' => 1, 'erp_display_sync_key' => '20065', 'name' => 'CMI program'],
+            ['type' => 'BdProjects', 'is_active' => 1, 'erp_display_sync_key' => '17879', 'name' => 'LGH EXPANSION'],
+            ['type' => 'BdProjects', 'is_active' => 0, 'erp_display_sync_key' => '11111', 'name' => 'Closed project'],
         ];
         $qRow = fn(string $id, string $account, string $entered, array $f) =>
             ['_module' => 'Quotes', 'id' => $id, 'billing_account_id' => $account, 'date_entered' => $entered] + $f;
@@ -702,10 +715,10 @@ namespace {
             [$picks($new), $set]);
         $reads = $quoteReads();
         $pairRead = end($reads);
-        $check('Q2 three reads (Lead Source, Lead Type, the pair): this account\'s quotes, the field(s) not empty, '
-            . 'newest first, one row, never this quote',
-            [3, [['bd_lead_source'], ['bd_lead_type'], ['bd_marketing_campaign', 'bd_marketing_event']],
-             ['billing_account_id' => 'acct-adm'], ['id' => $new->id], ['date_entered', 'DESC'], 1],
+        $check('Q2 four reads (Lead Source, Lead Type, Project, the pair): this account\'s quotes, the field(s) not '
+            . 'empty, newest first, up to 20 rows (the first usable wins, Q15), never this quote',
+            [4, [['bd_lead_source'], ['bd_lead_type'], ['bd_project_id'], ['bd_marketing_campaign', 'bd_marketing_event']],
+             ['billing_account_id' => 'acct-adm'], ['id' => $new->id], ['date_entered', 'DESC'], 20],
             [count($reads), array_map(fn($q) => $q->whereObj->notEmpty, $reads), $pairRead->whereObj->equals,
              $pairRead->whereObj->notEquals, $pairRead->order, $pairRead->limit]);
 
@@ -765,8 +778,13 @@ namespace {
         BdAdmRules::applyDefaults($same, true);
         $eventOnly = $quote('ADM', ['id' => 'q-ev', 'bd_marketing_event' => '26DISCNV/1', 'lines' => []]);
         BdAdmRules::applyDefaults($eventOnly, true);
-        $check('Q9 the seller chose ANOTHER campaign: no event; the SAME campaign: its event; an event alone: no '
-            . 'campaign derived', [['26BREHC', null], ['26DISCNV', '26DISCNV/2'], [null, '26DISCNV/1']],
+        // Q9's first case read ONE row until the G809 retest (the newest pair,
+        // 26DISCNV, was not the seller's, so nothing). Now a quote with another
+        // campaign is skipped like any unusable one, and the newest quote holding
+        // the SELLER's campaign (h-1) gives its own event: still one quote's pair.
+        $check('Q9 the seller chose ANOTHER campaign: the event of the newest quote holding THAT campaign; the SAME '
+            . 'campaign: its event; an event alone: no campaign derived',
+            [['26BREHC', '26BREHC/4'], ['26DISCNV', '26DISCNV/2'], [null, '26DISCNV/1']],
             [[$other->bd_marketing_campaign, $other->bd_marketing_event ?? null],
              [$same->bd_marketing_campaign, $same->bd_marketing_event ?? null],
              [$eventOnly->bd_marketing_campaign ?? null, $eventOnly->bd_marketing_event]]);
@@ -792,6 +810,95 @@ namespace {
             ['E-MAIL', null, null],
             [$viaHook(['isUpdate' => false]), $viaHook(['isUpdate' => true]), $viaHook([])]);
         $check('Q13 🔒 1499: the history defaults create no record', 0, BeanFactory::$created - $createdBefore);
+
+        // ── Q14-Q18. G809 retest (Bench rc80 + ERP-Epicor 1.1.174, benchdogs-dev,
+        // 2026-09-30T00:26Z): Lead Source / Lead Type prefilled, Mktg Campaign and
+        // Marketing Event EMPTY although older quotes of the account hold a pair.
+        // Each field already came from the newest quote holding IT (Q1, Q16b);
+        // what failed is that ONE row was read per field, so a retired value on
+        // the newest holder (a 2024 campaign) hid every older, usable one. Now
+        // the newest HISTORY_SCAN holders are read and the first usable wins -
+        // the same rule, and the same number, as ERP-Core's create form.
+        $picks5 = fn($q) => [$q->bd_lead_source ?? null, $q->bd_lead_type ?? null, $q->bd_project_id ?? null,
+            $q->bd_marketing_campaign ?? null, $q->bd_marketing_event ?? null];
+        $check('Q14 HISTORY_SCAN is 20, the number ERP-Core\'s erp-dependent-enum reads (erpPrefillScan): one rule, '
+            . 'two writers', 20, defined('BdAdmRules::HISTORY_SCAN') ? constant('BdAdmRules::HISTORY_SCAN') : null);
+
+        $withHistory([
+            $qRow('r-new', 'acct-adm', '2026-09-01 10:00:00', ['bd_lead_source' => 'LOYPROG', 'bd_lead_type' => 'GONE',
+                'bd_project_id' => '11111', 'bd_marketing_campaign' => '24CGINST', 'bd_marketing_event' => '24CGINST/1']),
+            $qRow('r-old', 'acct-adm', '2026-04-01 10:00:00', ['bd_lead_source' => 'E-MAIL', 'bd_lead_type' => 'BROKER',
+                'bd_project_id' => '17879', 'bd_marketing_campaign' => '26DISCNV', 'bd_marketing_event' => '26DISCNV/2']),
+            $qRow('r-oldest', 'acct-adm', '2026-01-01 10:00:00', ['bd_lead_source' => 'ADVERTISE', 'bd_lead_type' => 'DIRFOOD',
+                'bd_project_id' => '20065', 'bd_marketing_campaign' => '26BREHC', 'bd_marketing_event' => '26BREHC/4']),
+        ]);
+        $skip = $quote('ADM', ['id' => 'q-skip', 'lines' => []]);
+        BdAdmRules::applyDefaults($skip, true);
+        $check('Q15 the NEWEST quote holds only retired codes (LOYPROG, GONE, project 11111, 24CGINST/1): each field '
+            . 'from the next newest quote holding an OFFERED one; the pair from that ONE quote',
+            ['E-MAIL', 'BROKER', '17879', '26DISCNV', '26DISCNV/2'], $picks5($skip));
+
+        // THE MEASURED SHAPE: 7647 (newest, Sugar-only) holds Lead Source and
+        // Lead Type but no pair; ADM__7178 holds 24CGINST / 24CGINST/1.
+        $dev = fn(array $older) => array_merge([
+            $qRow('q-7647', 'acct-adm', '2026-09-29 17:20:00', ['bd_lead_source' => 'BIDINVTE', 'bd_lead_type' => 'CASEGDS']),
+        ], $older);
+        $withHistory($dev([
+            $qRow('q-7178', 'acct-adm', '2026-09-29 04:00:00', ['bd_lead_source' => 'E-MAIL', 'bd_lead_type' => 'BROKER',
+                'bd_marketing_campaign' => '24CGINST', 'bd_marketing_event' => '24CGINST/1']),
+            $qRow('q-6120', 'acct-adm', '2026-09-29 03:00:00', ['bd_lead_source' => 'E-MAIL', 'bd_lead_type' => 'BROKER',
+                'bd_marketing_campaign' => '26DISCNV', 'bd_marketing_event' => '26DISCNV/2']),
+        ]));
+        $measured = $quote('ADM', ['id' => 'q-dev', 'lines' => []]);
+        BdAdmRules::applyDefaults($measured, true);
+        $check('Q16 measured shape, the newest pair RETIRED: Lead Source/Type from 7647, the pair from the newest '
+            . 'quote holding an OFFERED pair', ['BIDINVTE', 'CASEGDS', null, '26DISCNV', '26DISCNV/2'], $picks5($measured));
+        $withHistory($dev([
+            $qRow('q-7178', 'acct-adm', '2026-09-29 04:00:00', ['bd_lead_source' => 'E-MAIL', 'bd_lead_type' => 'BROKER',
+                'bd_marketing_campaign' => '26BREHC', 'bd_marketing_event' => '26BREHC/4']),
+        ]));
+        $literal = $quote('ADM', ['id' => 'q-dev2', 'lines' => []]);
+        BdAdmRules::applyDefaults($literal, true);
+        $check('Q16b measured shape, the older pair OFFERED: all four (each field from the newest quote holding IT - '
+            . 'true before this fix too)', ['BIDINVTE', 'CASEGDS', null, '26BREHC', '26BREHC/4'], $picks5($literal));
+
+        $withHistory([
+            $qRow('p-1', 'acct-adm', '2026-09-01 10:00:00', ['bd_marketing_campaign' => '26DISCNV', 'bd_marketing_event' => '26BREHC/4']),
+            $qRow('p-2', 'acct-adm', '2026-08-01 10:00:00', ['bd_marketing_campaign' => '26DISCNV', 'bd_marketing_event' => '26DISCNV/1']),
+            $qRow('p-3', 'acct-adm', '2026-07-01 10:00:00', ['bd_marketing_campaign' => '26BREHC', 'bd_marketing_event' => '26BREHC/4']),
+        ]);
+        $mixed = $quote('ADM', ['id' => 'q-mixed', 'lines' => []]);
+        BdAdmRules::applyDefaults($mixed, true);
+        $chosen = $quote('ADM', ['id' => 'q-chosen', 'bd_marketing_campaign' => '26BREHC', 'lines' => []]);
+        BdAdmRules::applyDefaults($chosen, true);
+        $check('Q17 the pair: a newest quote whose event is not its campaign\'s is skipped (never mixed); with the '
+            . 'seller\'s campaign chosen, the event of the newest quote holding THAT campaign',
+            [['26DISCNV', '26DISCNV/1'], ['26BREHC', '26BREHC/4']],
+            [[$mixed->bd_marketing_campaign ?? null, $mixed->bd_marketing_event ?? null],
+             [$chosen->bd_marketing_campaign ?? null, $chosen->bd_marketing_event ?? null]]);
+
+        // G809, owner scope (2026-09-29T21:05Z): Project prefills from the
+        // account's history like the other four. 🔒 1712b's product-group
+        // default is applied FIRST (it fills only an empty Project, as before);
+        // the history fills only what that left empty. Both only into EMPTY.
+        $projectHistory = [
+            $qRow('j-new', 'acct-adm', '2026-09-01 10:00:00', ['bd_project_id' => '11111']),
+            $qRow('j-old', 'acct-adm', '2026-06-01 10:00:00', ['bd_project_id' => '17879']),
+        ];
+        $withHistory($projectHistory);
+        $pNew = $quote('ADM', ['id' => 'q-pnew', 'lines' => []]);
+        $pCmi = $quote('ADM', ['id' => 'q-pcmi', 'lines' => [$lCmi]]);
+        $pTyped = $quote('ADM', ['id' => 'q-ptyped', 'bd_project_id' => '20065', 'lines' => []]);
+        $pUpd = $quote('ADM', ['id' => 'q-pupd', 'lines' => []]);
+        BdAdmRules::applyDefaults($pNew, true);
+        BdAdmRules::applyDefaults($pCmi, true);
+        BdAdmRules::applyDefaults($pTyped, true);
+        BdAdmRules::applyDefaults($pUpd);
+        $check('Q18 Project: a new quote gets the newest OFFERED project of the account (retired 11111 skipped); a '
+            . 'CMI quote keeps 🔒 1712b\'s 20065; the seller\'s pick stays; an update copies nothing',
+            ['17879', '20065', '20065', null],
+            [$pNew->bd_project_id ?? null, $pCmi->bd_project_id ?? null, $pTyped->bd_project_id ?? null,
+             $pUpd->bd_project_id ?? null]);
 
         // ── M. the vardefs ──────────────────────────────────────────────────
         $dictionary = [];
@@ -885,10 +992,11 @@ namespace {
         // 'required' (M2): the served flag is what the connector's schema reads.
         $g809Keys = ['erp_required_until_synced', 'erp_prefill_from_account_latest'];
         $check('M9 G809 the ERP-Core keys: required-until-synced on Lead Source, Lead Type, Campaign, Event (not '
-            . 'Project, which keeps G570\'s rule); prefill from billing_account_id on Lead Source, Lead Type and the Event',
+            . 'Project, which keeps G570\'s rule); prefill from billing_account_id on Lead Source, Lead Type, Project '
+            . '(owner scope, 2026-09-29) and the Event',
             ['bd_lead_source' => ['erp_required_until_synced' => true, 'erp_prefill_from_account_latest' => 'billing_account_id'],
              'bd_lead_type' => ['erp_required_until_synced' => true, 'erp_prefill_from_account_latest' => 'billing_account_id'],
-             'bd_project_id' => [],
+             'bd_project_id' => ['erp_prefill_from_account_latest' => 'billing_account_id'],
              'bd_marketing_campaign' => ['erp_required_until_synced' => true],
              'bd_marketing_event' => ['erp_required_until_synced' => true, 'erp_prefill_from_account_latest' => 'billing_account_id']],
             array_map(fn($f) => array_intersect_key($f, array_flip($g809Keys)), $fields));

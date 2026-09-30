@@ -28,11 +28,12 @@
  *    only). ADM names no default event (DefMktgEvntSeq 0, isDefault false,
  *    measured), so nothing is ever INVENTED for them.
  *  - G809 (owner, quote 8972: "maybe we should put defaults"): on a NEW ADM
- *    quote, an EMPTY Lead Source, Lead Type and Campaign + Event pair are
- *    copied from the SAME ACCOUNT's newest quote that holds them - the
- *    customer's own last choice (pilot ADM: consecutive quotes of one customer
- *    repeat Lead Source 93 %, Lead Type 95 %, Campaign 74 %) - and only a value
- *    the picker still offers. The pair comes from ONE quote. This is the
+ *    quote, an EMPTY Lead Source, Lead Type, Project (owner scope,
+ *    2026-09-29) and Campaign + Event pair are copied from the SAME ACCOUNT's
+ *    newest quote that holds a value the picker still offers - EACH FIELD
+ *    from its own newest such quote, the customer's own last choice (pilot
+ *    ADM: consecutive quotes of one customer repeat Lead Source 93 %, Lead
+ *    Type 95 %, Campaign 74 %). The pair comes from ONE quote. This is the
  *    server half, for a quote created without the form (API, the Account
  *    button); the create form's half is ERP-Core's
  *    erp_prefill_from_account_latest, the same rule in the browser.
@@ -99,13 +100,27 @@ class BdAdmRules
      * G809: the single pickers defaulted from the account's newest quote,
      * field => the lookup type whose ACTIVE rows it may take a value from.
      * (The Campaign + Event pair is defaulted as a pair, not from here.)
+     * Project (owner, 2026-09-29T21:05Z: required but not prefilled like the
+     * others) comes AFTER 🔒 1712b's product-group default in applyDefaults(),
+     * so it fills only a Project that default left empty.
      */
     public const ACCOUNT_HISTORY_FIELDS = array(
         'bd_lead_source' => self::TYPE_LEAD_SOURCES,
         'bd_lead_type' => self::TYPE_LEAD_TYPES,
+        'bd_project_id' => self::TYPE_PROJECTS,
     );
     public const FIELD_CAMPAIGN = 'bd_marketing_campaign';
     public const FIELD_EVENT = 'bd_marketing_event';
+
+    /**
+     * G809: how many of the account's newest quotes holding a field one
+     * history read returns; the FIRST whose value is usable wins. Graded on
+     * benchdogs-dev (2026-09-30, rc80): reading ONE row per field let a
+     * retired value on the newest holder (campaign 24CGINST) hide every older
+     * usable one, and Campaign + Event stayed empty. The same number as
+     * ERP-Core's erp-dependent-enum (erpPrefillScan): one rule, two writers.
+     */
+    public const HISTORY_SCAN = 20;
 
     /** Upper bound on the BdLeadSources rows read to learn the ADM companies. */
     public const MAX_LEAD_SOURCE_ROWS = 5000;
@@ -329,8 +344,10 @@ class BdAdmRules
     /**
      * Fill an EMPTY erp_reference and an EMPTY bd_project_id on an ADM quote
      * that has not reached the ERP yet, and (G809, $isCreate only) an EMPTY
-     * Lead Source, Lead Type and Campaign + Event pair from the account's
-     * newest quote that holds them. Returns the names of the fields set.
+     * Lead Source, Lead Type, Project and Campaign + Event pair from the
+     * account's newest quote holding a usable value of each. The product-group
+     * Project default runs first; the history fills a Project only when that
+     * left it empty. Returns the names of the fields set.
      *
      * The exits are ordered cheapest first, so a quote this cannot touch
      * loads no record:
@@ -410,13 +427,17 @@ class BdAdmRules
     }
 
     /**
-     * Fill the EMPTY history fields of a new quote. Each single picker from the
-     * newest quote of the account that holds it; the Campaign + Event pair from
-     * the newest quote that holds BOTH, only when that event is that campaign's,
-     * and: both when both are empty, the event alone when the campaign already
-     * is that quote's campaign, nothing when the seller chose another campaign
-     * (or only an event - one is never derived from the other). A value the
-     * picker no longer offers (an inactive code) is not copied.
+     * Fill the EMPTY history fields of a new quote, each field on its own: of
+     * the account's newest quotes holding that field (HISTORY_SCAN of them,
+     * newest first), the FIRST whose value the picker still offers - a code
+     * retired since (an inactive lead source, project or campaign) is skipped
+     * for the next quote, never copied. The Campaign + Event pair likewise
+     * from the first quote holding BOTH whose event is that campaign's and
+     * whose campaign and event are both offered, and: both when both are
+     * empty, the event alone when the seller's campaign is that quote's
+     * campaign (a quote with another campaign is skipped - never mixed), an
+     * event alone never derives a campaign. No usable quote: the field stays
+     * empty for the seller.
      *
      * @return string[] the fields set
      */
@@ -432,35 +453,45 @@ class BdAdmRules
             if (self::text($bean, $field) !== '') {
                 continue;
             }
-            $row = self::newestQuoteHolding($account, array($field), $self);
-            $value = trim((string) ($row[$field] ?? ''));
-            if ($value !== '' && self::offered($value, self::lookupOptions($type))) {
-                $bean->$field = $value;
-                $set[] = $field;
+            $options = null;
+            foreach (self::newestQuotesHolding($account, array($field), $self) as $row) {
+                $value = trim((string) ($row[$field] ?? ''));
+                $options = $options ?? self::lookupOptions($type);
+                if ($value !== '' && self::offered($value, $options)) {
+                    $bean->$field = $value;
+                    $set[] = $field;
+                    break;
+                }
             }
         }
         if (self::text($bean, self::FIELD_EVENT) !== '') {
             return $set;
         }
-        $row = self::newestQuoteHolding($account, array(self::FIELD_CAMPAIGN, self::FIELD_EVENT), $self);
-        $pair = self::pairToCopy(
-            self::text($bean, self::FIELD_CAMPAIGN),
-            trim((string) ($row[self::FIELD_CAMPAIGN] ?? '')),
-            trim((string) ($row[self::FIELD_EVENT] ?? ''))
-        );
-        if ($pair === array()) {
-            return $set;
+        $current = self::text($bean, self::FIELD_CAMPAIGN);
+        $campaigns = null;
+        $events = null;
+        foreach (self::newestQuotesHolding($account, array(self::FIELD_CAMPAIGN, self::FIELD_EVENT), $self) as $row) {
+            $pair = self::pairToCopy(
+                $current,
+                trim((string) ($row[self::FIELD_CAMPAIGN] ?? '')),
+                trim((string) ($row[self::FIELD_EVENT] ?? ''))
+            );
+            if ($pair === array()) {
+                continue;
+            }
+            $campaigns = $campaigns ?? self::marketingOptions(self::TYPE_MARKETING_CAMPAIGNS);
+            $events = $events ?? self::marketingOptions(self::TYPE_MARKETING_EVENTS);
+            if (!self::offered($pair[0], $campaigns) || !self::offered($pair[1], $events)) {
+                continue;
+            }
+            if ($current === '') {
+                $bean->{self::FIELD_CAMPAIGN} = $pair[0];
+                $set[] = self::FIELD_CAMPAIGN;
+            }
+            $bean->{self::FIELD_EVENT} = $pair[1];
+            $set[] = self::FIELD_EVENT;
+            break;
         }
-        if (!self::offered($pair[0], self::marketingOptions(self::TYPE_MARKETING_CAMPAIGNS))
-            || !self::offered($pair[1], self::marketingOptions(self::TYPE_MARKETING_EVENTS))) {
-            return $set;
-        }
-        if (self::text($bean, self::FIELD_CAMPAIGN) === '') {
-            $bean->{self::FIELD_CAMPAIGN} = $pair[0];
-            $set[] = self::FIELD_CAMPAIGN;
-        }
-        $bean->{self::FIELD_EVENT} = $pair[1];
-        $set[] = self::FIELD_EVENT;
 
         return $set;
     }
@@ -487,12 +518,15 @@ class BdAdmRules
     }
 
     /**
-     * The newest quote (date_entered) of this billing account, other than
-     * $exceptId, whose $fields are all non-empty, as a row of those fields, or
-     * null. One query. Team security applies: it copies only from a quote the
-     * saving user may see, as the browser's read does.
+     * The newest quotes (date_entered, newest first, at most HISTORY_SCAN) of
+     * this billing account, other than $exceptId, whose $fields are all
+     * non-empty, as rows of those fields; [] when there are none. One query.
+     * Team security applies: it copies only from a quote the saving user may
+     * see, as the browser's read does.
+     *
+     * @return array[]
      */
-    public static function newestQuoteHolding(string $accountId, array $fields, string $exceptId): ?array
+    public static function newestQuotesHolding(string $accountId, array $fields, string $exceptId): array
     {
         $query = new SugarQuery();
         $query->from(BeanFactory::newBean('Quotes'));
@@ -505,10 +539,16 @@ class BdAdmRules
             $where->notEquals('id', $exceptId);
         }
         $query->orderBy('date_entered', 'DESC');
-        $query->limit(1);
+        $query->limit(self::HISTORY_SCAN);
         $rows = $query->execute();
+        $out = array();
+        foreach (is_array($rows) ? $rows : array() as $row) {
+            if (is_array($row)) {
+                $out[] = $row;
+            }
+        }
 
-        return is_array($rows) && isset($rows[0]) && is_array($rows[0]) ? $rows[0] : null;
+        return $out;
     }
 
     /** Does this picker list offer $value (a real, non-blank option)? */
