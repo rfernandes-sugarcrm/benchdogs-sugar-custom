@@ -98,8 +98,8 @@ MIN_CHECKS = {
     "bd_customer_group_move_test.php": 25,
     # rc82 (G458): 44 checks at 2026-09-30; floor ~15% under, as above.
     "bd_contact_fields_test.php": 37,
-    # rc84 (G848): 109 checks at 2026-09-30; floor ~15% under, as above.
-    "bd_seller_discounts_hidden_test.php": 92,
+    # rc85 (G848, 🔒2159b): 136 checks at 2026-09-30 (rc84: 109); floor ~15% under, as above.
+    "bd_seller_discounts_hidden_test.php": 115,
 }
 #: bd_adm_rules_test.php's second run has no ErpQuoteFacts and is meant to be
 #: tiny: an older ERP-Epicor skips the defaults and never fails a save.

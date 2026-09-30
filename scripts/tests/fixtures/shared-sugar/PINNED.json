@@ -70,6 +70,16 @@
       "source": "sugar-sell/ERP-Core/tests/support/sugar_autoloader.php",
       "sha256": "afe64b78b89b4f2930bf60ccf5f2502ccaf974da127b6dbb09953b6d519df08b",
       "bytes": 2377
+    },
+    "en_us.erp_quote_charges.php": {
+      "source": "sugar-sell/ERP-Core/src/custom/Extension/modules/Quotes/Ext/Language/en_us.erp_quote_charges.php",
+      "sha256": "5f4af4970a04f77b8b9a0780e8fdd6a854f15dad2ac1301f192a0aaf7ffa1756",
+      "bytes": 1057
+    },
+    "en_us.erp_quote_grid_money_labels.php": {
+      "source": "sugar-sell/ERP-Core/src/custom/Extension/modules/Products/Ext/Language/en_us.erp_quote_grid_money_labels.php",
+      "sha256": "3964d6dcf1beb481b6d7482bcfeadd182948a639269feee768db360621e4cc83",
+      "bytes": 333
     }
   }
 }

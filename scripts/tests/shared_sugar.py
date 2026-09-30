@@ -128,6 +128,12 @@ SOURCES = {
     # relative to (never by an absolute path).
     "sugar_autoloader.php":
         "sugar-sell/ERP-Core/tests/support/sugar_autoloader.php",
+    # 0.9.42-rc85 (G848, 🔒2159b): the two ERP-Core captions the Bench language overrides relabel, so the test
+    # reads the KEY names and ERP-Core's own text from ERP-Core rather than restating them.
+    "en_us.erp_quote_charges.php":
+        "sugar-sell/ERP-Core/src/custom/Extension/modules/Quotes/Ext/Language/en_us.erp_quote_charges.php",
+    "en_us.erp_quote_grid_money_labels.php":
+        "sugar-sell/ERP-Core/src/custom/Extension/modules/Products/Ext/Language/en_us.erp_quote_grid_money_labels.php",
 }
 
 

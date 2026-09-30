@@ -159,6 +159,13 @@ KEPT = {
         "G848: the grid's Line Discount column / edit-row input (discount_field) not drawn",
     "custom/Extension/modules/Products/Ext/clients/base/views/record/_override_zz_bd_hide_seller_discounts.php":
         "G848: the quote line's own page draws no discount_field",
+    # G848 (0.9.42-rc85, 🔒2159b): the list preview's discount, and two captions relabelled (existing keys, en_us).
+    "custom/Extension/modules/Quotes/Ext/clients/base/views/preview/_override_zz_bd_hide_seller_discounts.php":
+        "G848: the Quotes list preview draws no Order Discount (deal_tot)",
+    "custom/Extension/modules/Quotes/Ext/Language/_override_en_us.bd_hide_seller_discounts.php":
+        "G848: ERP-Core's 'Line Items Discounted Subtotal' (LBL_NEW_SUB) reads 'Subtotal' on Bench",
+    "custom/Extension/modules/Products/Ext/Language/_override_en_us.bd_hide_seller_discounts.php":
+        "G848: ERP-Core's 'Discounted Total' grid column (LBL_ERP_DISCOUNTED_TOTAL) reads 'Total' on Bench",
 }
 
 ONEOFF ="the one-off deletes or blanks it (🔒 1521); re-run it after installing rc69"

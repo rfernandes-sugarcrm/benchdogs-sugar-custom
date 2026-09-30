@@ -42,7 +42,7 @@ $bdHideNames = array(
 // No panel of its own to take off.
 $bdHidePanelNames = array();
 
-// ---- one body, the same in all five files ----
+// ---- one body, the same in every file ----
 $bdHidePanels = $viewdefs[$bdHideModule]['base']['view'][$bdHideView]['panels'] ?? null;
 if (is_array($bdHidePanels) && $bdHidePanels !== array()) {
     try {

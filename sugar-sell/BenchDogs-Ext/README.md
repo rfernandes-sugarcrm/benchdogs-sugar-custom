@@ -31,6 +31,8 @@ and the package ships no module of its own.
 > **rc84 (G848) adds none either:** five sidecar view overlays that stop a
 > quote DRAWING a discount (below), merged at metadata build; they write
 > nothing to a deployed view and change no stored value.
+> **rc85 (G848, 🔒2159b) adds none either:** a sixth overlay (the Quotes list
+> preview) and two en_us language overrides of existing ERP-Core keys.
 >
 > **rc72 (G507): the Account pair's marker is `panel_overview` after Industry,
 > and both fields are `readonly`.** Moving the pair OUT of the header rc69 put it
@@ -84,6 +86,15 @@ and the package ships no module of its own.
 > | `Quotes/…/quote-data-grand-totals-footer/` | `erp_document_discount_amount` ("Order Level Discount", shown by ERP-Epicor only when non-zero) | every other row; the stored figure and its recalculation |
 > | `Products/…/quote-data-group-list/` (rows, edit row, column headers) | `discount_field` ("Line Discount": `discount_amount` + the % / amount toggle `discount_select`) and the line-discount figures derived from them | `discount_price` (Unit Price), `discount_usdollar`, Extended Price, Discounted Total |
 > | `Products/…/record/` (the line page the line number opens) | the same `discount_field` | everything else |
+> | `Quotes/…/preview/` (rc85, 🔒2159b: the Quotes LIST preview) | `deal_tot` ("Order Discount") | Subtotal, Tax, Shipping, Grand Total and every other entry |
+>
+> rc85 also relabels two ERP-Core captions on Bench only, as en_us overrides of the EXISTING keys (no new label, no field):
+> `custom/Extension/modules/Quotes/Ext/Language/_override_en_us.bd_hide_seller_discounts.php` sets `LBL_NEW_SUB` to
+> **"Subtotal"** (ERP-Core: "Line Items Discounted Subtotal"; the Bench quote PDF's subtotal caption reads the same key),
+> and `custom/Extension/modules/Products/Ext/Language/_override_en_us.bd_hide_seller_discounts.php` sets
+> `LBL_ERP_DISCOUNTED_TOTAL` to **"Total"** (ERP-Core: "Discounted Total", the grid column). `_override` merges them after
+> ERP-Core's plain files whichever package is installed last (ModuleInstaller sorts `_override*` last, then mtime).
+> Other languages keep ERP-Core's text. Uninstall returns ERP-Core's captions.
 >
 > Why an overlay and not a layout write (decision 803): Sugar includes these
 > right after whatever viewdef is deployed, at every metadata build, so they

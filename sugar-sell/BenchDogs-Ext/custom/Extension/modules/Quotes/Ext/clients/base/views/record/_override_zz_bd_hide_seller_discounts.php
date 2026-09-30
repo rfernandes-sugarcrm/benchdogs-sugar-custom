@@ -87,7 +87,7 @@ $bdHideNames = array(
 // The panel ERP-Epicor builds around erp_discount_panel: taken off once empty.
 $bdHidePanelNames = array('LBL_RECORDVIEW_PANEL_ERP_DISCOUNT');
 
-// ---- one body, the same in all five files ----
+// ---- one body, the same in every file ----
 $bdHidePanels = $viewdefs[$bdHideModule]['base']['view'][$bdHideView]['panels'] ?? null;
 if (is_array($bdHidePanels) && $bdHidePanels !== array()) {
     try {

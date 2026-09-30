@@ -69,6 +69,8 @@ namespace {
         'Quotes/quote-data-grand-totals-footer' => ['Quotes', 'quote-data-grand-totals-footer'],
         'Products/quote-data-group-list' => ['Products', 'quote-data-group-list'],
         'Products/record' => ['Products', 'record'],
+        // rc85 (🔒2159b): the Quotes LIST preview's discount figure.
+        'Quotes/preview' => ['Quotes', 'preview'],
     ];
 
     function bd_fragment(string $surface): string
@@ -224,6 +226,43 @@ namespace {
                             'convertToBase' => false]]
                 ),
             ]],
+        ];
+    }
+
+    /** Stock's Quotes list preview (SugarEnt 26.1.0 modules/Quotes/clients/base/views/preview/preview.php), reduced to its shape; no ERP package overrides it. */
+    function bd_quotes_preview(): array
+    {
+        $address = static function (string $prefix): array {
+            return array_map(static function ($part) use ($prefix) {
+                return ['name' => "{$prefix}_address_$part", 'placeholder' => 'LBL_' . strtoupper($part === 'postalcode' ? 'postal_code' : $part)];
+            }, ['street', 'city', 'state', 'postalcode', 'country']);
+        };
+        return [
+            'templateMeta' => ['maxColumns' => 1],
+            'panels' => [
+                ['name' => 'panel_header', 'fields' => [
+                    ['name' => 'picture', 'type' => 'avatar', 'size' => 'medium', 'dismiss_label' => true, 'readonly' => true],
+                    'name',
+                    ['name' => 'quote_stage', 'type' => 'event-status', 'enum_width' => 'auto'],
+                ]],
+                ['name' => 'panel_body', 'fields' => [
+                    'opportunity_name', 'quote_num', 'purchase_order_num', 'date_quote_expected_closed', 'payment_terms',
+                    'original_po_date', 'billing_account_name', 'billing_contact_name',
+                    ['name' => 'billing_address_fieldset', 'inline' => false, 'type' => 'fieldset',
+                        'label' => 'LBL_BILLING_ADDRESS_STREET', 'fields' => $address('billing')],
+                    ['name' => 'deal_tot', 'label' => 'LBL_LIST_DEAL_TOT', 'css_class' => 'quote-totals-row-item',
+                        'related_fields' => ['deal_tot_discount_percentage']],
+                    ['name' => 'new_sub', 'css_class' => 'quote-totals-row-item'],
+                    ['name' => 'tax', 'label' => 'LBL_TAX_TOTAL', 'css_class' => 'quote-totals-row-item'],
+                    ['name' => 'shipping', 'css_class' => 'quote-totals-row-item'],
+                    ['name' => 'total', 'label' => 'LBL_LIST_GRAND_TOTAL', 'css_class' => 'quote-totals-row-item'],
+                    'shipping_account_name', 'shipping_contact_name',
+                    ['name' => 'shipping_address_fieldset', 'inline' => false, 'type' => 'fieldset',
+                        'label' => 'LBL_SHIPPING_ADDRESS_STREET', 'fields' => $address('shipping')],
+                    'description', 'tag',
+                ]],
+                ['name' => 'panel_hidden', 'hide' => true, 'fields' => ['assigned_user_name', 'team_name']],
+            ],
         ];
     }
 
@@ -563,6 +602,70 @@ namespace {
         $e === $expected, json_encode(bd_names($e['panels'][1]['fields'] ?? [])));
     check('E3 still LISTS; no notice', bd_all_lists($e) && $GLOBALS['bd_notices'] === []);
 
+    // ── J. the Quotes LIST preview (rc85, 🔒2159b) ───────────────────────────
+    $GLOBALS['bd_notices'] = [];
+    $jin = bd_quotes_preview();
+    [$j] = bd_include('Quotes/preview', $jin);
+    $j = $j ?? [];
+    check('J1 the list preview draws no Order Discount (deal_tot)', bd_entries($j, 'deal_tot') === []);
+    $expected = $jin;
+    $expected['panels'][1]['fields'] = array_values(array_filter($jin['panels'][1]['fields'], static function ($f) {
+        return !(is_array($f) && ($f['name'] ?? '') === 'deal_tot');
+    }));
+    check('J2 Subtotal, Tax, Shipping, Grand Total and every other entry stay, byte-identical, in order',
+        $j === $expected, json_encode(bd_names($j['panels'][1]['fields'] ?? [])));
+    check('J3 still LISTS; no notice', bd_all_lists($j) && $GLOBALS['bd_notices'] === []);
+    [$j2] = bd_include('Quotes/preview', bd_quotes_preview(), 3);
+    check('J4 three inclusions = one', $j2 === $j);
+
+    // ── K. the two captions (rc85, 🔒2159b): Bench language overrides of ERP-Core's keys ──
+    /**
+     * Sugar 26.1.0 merges a module's language fragments the way ModuleInstaller::mergeModuleFiles() and
+     * sortExtensionFiles() do (2292-2460): every file whose name holds the language, `_override*` last, then by
+     * mtime; each included with $mod_strings in scope. $files: [basename => [path, mtime]].
+     */
+    function bd_lang_merge(array $files): array
+    {
+        uksort($files, static function ($a, $b) use ($files) {
+            $oa = substr($a, 0, 9) === '_override';
+            $ob = substr($b, 0, 9) === '_override';
+            return $oa <=> $ob ?: $files[$a][1] <=> $files[$b][1];
+        });
+        $mod_strings = [];
+        foreach ($files as [$path]) {
+            if (is_file($path)) {
+                include $path;
+            }
+        }
+        return $mod_strings;
+    }
+    const BD_LANG_FILE = '_override_en_us.bd_hide_seller_discounts.php';
+    $bdPin = __DIR__ . '/fixtures/shared-sugar/sugar-sell/ERP-Core/src/custom/Extension/modules';
+    $bdCaptions = [
+        'Quotes' => ["$bdPin/Quotes/Ext/Language/en_us.erp_quote_charges.php", 'LBL_NEW_SUB', 'Subtotal'],
+        'Products' => ["$bdPin/Products/Ext/Language/en_us.erp_quote_grid_money_labels.php", 'LBL_ERP_DISCOUNTED_TOTAL', 'Total'],
+    ];
+    foreach ($bdCaptions as $module => [$erpFile, $key, $caption]) {
+        $bench = BD_EXT . "/$module/Ext/Language/" . BD_LANG_FILE;
+        $erpOnly = bd_lang_merge(['en_us.erp' => [$erpFile, 2]]);
+        check("K0 $module: ERP-Core (pinned 280e0929) still defines $key, not as '$caption'",
+            isset($erpOnly[$key]) && $erpOnly[$key] !== $caption, json_encode($erpOnly[$key] ?? null));
+        // Worst case: the Bench file is OLDER than ERP-Core's (ERP-Epicor upgraded after Bench). Only the `_override` name wins then.
+        $merged = bd_lang_merge([basename($erpFile) => [$erpFile, 2], BD_LANG_FILE => [$bench, 1]]);
+        check("K1 $module: on a Bench tenant $key reads '$caption', whichever package was installed last",
+            ($merged[$key] ?? null) === $caption, json_encode($merged[$key] ?? null));
+        $others = $erpOnly;
+        unset($others[$key]);
+        $mergedOthers = $merged;
+        unset($mergedOthers[$key]);
+        check("K2 $module: every other ERP-Core caption in that file is unchanged", $others !== [] && $mergedOthers === $others);
+        $only = bd_lang_merge([BD_LANG_FILE => [$bench, 1]]);
+        check("K3 $module: the Bench file sets ONLY $key (an override of an existing key, no new label)",
+            array_keys($only) === [$key], json_encode(array_keys($only)));
+        check("K4 $module: the file name starts with _override and holds en_us (merged last, English only)",
+            is_file($bench) && strpos(basename($bench), '_override') === 0 && strpos(basename($bench), 'en_us') !== false);
+    }
+
     // ── F. a view with nothing to hide is served exactly as read ─────────────
     foreach (BD_SURFACES as $surface => $unused) {
         $clean = ['panels' => [3 => ['name' => 'p1', 'fields' => ['name', ['name' => 'discount_price'],
@@ -621,6 +724,8 @@ namespace {
             . "array('name' => 'discount_field', 'type' => 'fieldset', 'fields' => array('discount_amount', 'discount_select'));",
         'Products/record' => '<?php $viewdefs[\'Products\'][\'base\'][\'view\'][\'record\'][\'panels\'][0][\'fields\'][] = '
             . "array('name' => 'discount_amount');",
+        'Quotes/preview' => '<?php $viewdefs[\'Quotes\'][\'base\'][\'view\'][\'preview\'][\'panels\'][0][\'fields\'][] = '
+            . "array('name' => 'deal_tot', 'label' => 'LBL_LIST_DEAL_TOT');",
     ];
     $bdTmpExt = "$bdRoot/compiled.ext.php";
     foreach (BD_SURFACES as $surface => $unused) {
@@ -678,10 +783,10 @@ namespace {
                 . 'BeanFactory|->save\(|\$db\b|DBManager|MetaDataManager|unlink|rmdir/i', $code) === 0);
         check("I6 $surface: it names only its own view", $src !== '' && strpos($code, "\$bdHideModule = '$module';") !== false
             && strpos($code, "\$bdHideView = '$view';") !== false);
-        $at = strpos($src, '// ---- one body, the same in all five files ----');
+        $at = strpos($src, '// ---- one body, the same in every file ----');
         $bodies[$surface] = $at === false ? '' : substr($src, $at);
     }
-    check('I7 the five files share ONE body, byte for byte (a fix reaches every surface)',
+    check('I7 every overlay shares ONE body, byte for byte (a fix reaches every surface)',
         count(array_unique($bodies)) === 1 && reset($bodies) !== '');
 
     $failed = count(array_filter($checks, static function ($c) { return !$c[1]; }));

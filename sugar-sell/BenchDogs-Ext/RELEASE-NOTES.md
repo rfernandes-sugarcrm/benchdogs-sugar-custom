@@ -1,3 +1,14 @@
+# 0.9.42-rc85 — G848 extended: the list preview, and Subtotal / Total (🔒2159b)
+
+rc85 = rc84 (95692e90, zip d3243486…, its own tree) + these three files only. **Requires** unchanged.
+
+- `custom/Extension/modules/Quotes/Ext/clients/base/views/preview/_override_zz_bd_hide_seller_discounts.php`: the Quotes LIST preview draws no `deal_tot` ("Order Discount"); the same body as rc84's five overlays (six now; the shared-body marker reads "every file").
+- `custom/Extension/modules/Quotes/Ext/Language/_override_en_us.bd_hide_seller_discounts.php`: `LBL_NEW_SUB` = "Subtotal" (ERP-Core: "Line Items Discounted Subtotal"; also the Bench quote PDF's subtotal caption).
+- `custom/Extension/modules/Products/Ext/Language/_override_en_us.bd_hide_seller_discounts.php`: `LBL_ERP_DISCOUNTED_TOTAL` = "Total" (ERP-Core: "Discounted Total", the grid column).
+- en_us only (other languages keep ERP-Core's text); `_override` merges after ERP-Core's plain files in either install order.
+- Tests: `bd_seller_discounts_hidden_test.php` 136 checks (rc84: 109): section J (the stock-shaped preview), section K (ERP-Core's two language files pinned from 280e0929, merged with the Bench overrides in Sugar's order, the Bench file OLDER than ERP-Core's). 20 red with the three files absent; 7/7 mutations killed.
+- Not done (carried): mobile viewdefs, PDF templates' discount rows, Admin > Quotes Configuration's discount_field, no API-side refusal (🔒2151b (d)).
+
 # 0.9.42-rc84 — G848: a Bench Dogs seller sees no discount on a quote (🔒2151b)
 
 Built on rc83 (#40, 2ad8de2, open against #38's branch; #39 is merged into
