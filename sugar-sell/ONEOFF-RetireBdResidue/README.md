@@ -4,10 +4,11 @@
 >
 > Bench Dogs **0.9.42-rc86** moved its ADM rules class to `custom/src/BenchDogs/BdAdmRules.php`
 > (namespaced, autoloaded). Module Loader never deletes the old `custom/modules/Quotes/BdAdmRules.php`
-> an upgraded tenant keeps, so 1.0.5 **blanks** it with `lib/emptied.php`, like the other orphaned class
+> an upgraded tenant keeps, so 1.0.5 **blanks** it with `leftovers/emptied.php`, like the other orphaned class
 > files, **only when rc86's class is on disk**. With rc85 or older still installed its hooks still load
 > the old file, so it is LEFT and reported under SKIPPED. Install rc86 first, then this.
-> Also: the package's PHP comments are one line of why (MLP026), and `lib/emptied.php` is shorter, so a
+> Its inputs moved from `lib/` to `leftovers/`, the one place a one-off's own files may ride unaligned with an installdef (check_built_packages G665).
+> Also: the package's PHP comments are one line of why (MLP026), and `leftovers/emptied.php` is shorter, so a
 > file an earlier version blanked is blanked again once (reported "blanked", not "already blank").
 
 > **What changed in 1.0.4** (G599)
@@ -176,7 +177,7 @@ Loader therefore never deleted. That is the failure that left `bd01_erp_rung_cos
 | item | what it is | how this package reproduces it |
 |---|---|---|
 | **K-1** | the emptied `custom/Extension/` stubs — every `bd_*` vardef, label, hook registration, dropdown style and language fragment the package ever installed | **87 of the 89 historical Extension paths are DELETED** by `ModuleInstaller::uninstallExt()` (`:675-712`), driven from the public `installdefs` property (`:85`) with a synthetic worklist. It builds `custom/Extension/{modules/<M>\|application}/Ext/<subdir>/<name>.php` and hands it to `rmdir_recursive()`, which unlinks a plain file (`include/dir_inc.php:96-99`). Grouped into 7 calls by Ext subdirectory. |
-| **K-2** | `BdQuotesLayoutExtensions::write()` — splices the Bench Dogs panel out of the **deployed** Quotes record view | the class is **carried in this zip** (`lib/`, verbatim from rc66 `74a846e`) and called. Reported by hashing `custom/modules/Quotes/clients/base/views/record/record.php` before and after: `write()` only calls `deployRecordView()` when it actually changed something, so a changed hash is a real removal and an unchanged one is the *spentness* evidence. |
+| **K-2** | `BdQuotesLayoutExtensions::write()` — splices the Bench Dogs panel out of the **deployed** Quotes record view | the class is **carried in this zip** (`leftovers/`, verbatim from rc66 `74a846e`) and called. Reported by hashing `custom/modules/Quotes/clients/base/views/record/record.php` before and after: `write()` only calls `deployRecordView()` when it actually changed something, so a changed hash is a real removal and an unchanged one is the *spentness* evidence. |
 | **K-3** | `BdOpportunitiesLayoutExtensions::remove()` — the retired `bd_governing_origin` marker | identical mechanism against the Opportunities record viewdef. |
 | **K-4** | `BdKineticOpportunityHook.php` tombstone + its empty registration | the **registration** `custom/Extension/modules/Quotes/Ext/LogicHooks/bd_kinetic_opportunity.php` is deleted with K-1; the **tombstone class** is blanked (see below). Registration first, so nothing is left pointing at a blanked class. |
 | **K-5** | `post_install.php`'s `uninstall_languages('zz_bd_stage_doms')` — the fragment `install_languages()` CONCATENATED across every past version | the same `ModuleInstaller` call with the same `id_name`, `base_dir` and template path, **copied from `BenchDogs-Ext/scripts/post_install.php:302-317`**, not reinvented. Reported by `file_exists()` on `custom/Extension/application/Ext/Language/en_us.zz_bd_stage_doms.php` before and after. |
@@ -196,7 +197,7 @@ Plus, beyond the seven:
   directory (`:2680-2684`) — the same route `uninstall_copy()` (`:521-547`) takes to remove a file a
   package installed with no backup. `$absent` is a path under this unpacked package that it never ships,
   checked absent first (if it existed, `copy_path` would copy it over the adapter instead).
-* **21 orphaned class files blanked** with `lib/emptied.php` through
+* **21 orphaned class files blanked** with `leftovers/emptied.php` through
   `ModuleInstaller::copy_path()` (`:1424-1462`) with **no** backup path — so nothing is backed up and
   nothing can be restored. Blanked rather than deleted because there is **no platform primitive that
   deletes a single file at an arbitrary path**: `uninstallExt` only builds `custom/Extension/**` paths,
@@ -214,7 +215,7 @@ Plus, beyond the seven:
 | `custom/Extension/modules/Accounts/Ext/Language/en_us.bd_customer_group.php` | **KEPT BY rc69**: its label |
 | `custom/modules/Accounts/BdAccountsLayoutExtensions.php` | **KEPT BY rc69**: places those two fields |
 | `custom/clients/base/api/BdBenchDogsActionsApi.php` | **KEPT BY rc69**, which ships it **empty** (🔒 1573): the empty body is what unregisters `bd-tools/repair-ui` |
-| `custom/modules/Quotes/BdQuotesLayoutExtensions.php` | not shipped since rc69 and inert (K-2 runs this package's own `lib/` copy); left because an rc68-or-earlier Bench Dogs uninstall still requires it |
+| `custom/modules/Quotes/BdQuotesLayoutExtensions.php` | not shipped since rc69 and inert (K-2 runs this package's own `leftovers/` copy); left because an rc68-or-earlier Bench Dogs uninstall still requires it |
 | `custom/modules/Opportunities/BdOpportunitiesLayoutExtensions.php` | the same, for K-3 |
 | `custom/modules/Quotes/ErpQuoteHooks/OpportunityContribution.php` | **Partial Fulfillment 1.0.41 ships the same path.** Blanking puts an empty stub at a provider path (🔒 1508 / G280 forbid it); deleting drops ERP-Core to `(float) $quote->total`, the fabricated zero 🔒 1511 forbids. Retired only by the PF-reinstall sequence in the port review §4.1 |
 | `.../ErpQuoteHooks/OpportunityLineRollupPolicy.php`, `OrderSelectedLinesPolicy.php` | Bench Dogs' old adapters at hook paths, checked one by one in 1.0.2 and left because neither can block anything: PF no longer consults the line-rollup policy (🔒 1468); the order-selected policy answers "no objection" when its selector is blank. **Never blank a file at a hook path**: the hook still finds it and fails closed. |
@@ -225,7 +226,7 @@ Plus, beyond the seven:
 
 ### 🚩 The one mechanism here with no precedent in this codebase
 
-`dirname(__DIR__)` is used to read this package's **own** `lib/` from inside `post_execute`. Neither
+`dirname(__DIR__)` is used to read this package's **own** `leftovers/` from inside `post_execute`. Neither
 sibling one-off reads anything from its package, and `BenchDogs-Ext`'s `post_install` reads only tenant
 paths that `install_copy` has already landed. **So this is unproven on a real install and is stated as
 unproven.**
@@ -256,7 +257,7 @@ because `isInstalling` is declared `protected $isInstalling = false` (`:125`), s
 ## 3. Idempotency, and how an operator reads the result
 
 Every entry is guarded by `file_exists()` before and re-checked after. The blanked files still *exist*,
-so they are compared by `md5_file()` against `lib/emptied.php` — `filesize()`, `file_get_contents()`
+so they are compared by `md5_file()` against `leftovers/emptied.php` — `filesize()`, `file_get_contents()`
 and `file()` are all deny-listed; `md5_file()` is not, and it is used here only to compare two local
 files.
 

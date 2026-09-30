@@ -61,7 +61,7 @@ PACKAGE = ROOT / "sugar-sell" / "BenchDogs-Ext"
 REPORT = PACKAGE / "custom" / "modules" / "Opportunities" / "BdAutoSelectedReport.php"
 LAYOUT = PACKAGE / "custom" / "modules" / "Opportunities" / "BdOpportunitiesLayoutExtensions.php"
 ONEOFF = ROOT / "sugar-sell" / "ONEOFF-RetireBdResidue"
-ONEOFF_LAYOUT = ONEOFF / "lib" / "BdOpportunitiesLayoutExtensions.php"
+ONEOFF_LAYOUT = ONEOFF / "leftovers" / "BdOpportunitiesLayoutExtensions.php"
 POST_INSTALL = PACKAGE / "scripts" / "post_execute.php"
 PRE_UNINSTALL = PACKAGE / "scripts" / "bd_pre_uninstall.php"
 

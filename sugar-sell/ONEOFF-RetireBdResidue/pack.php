@@ -120,7 +120,7 @@ $manifest = array(
 );
 
 // No 'copy' key at all - see the docblock. post_execute is addressed by
-// <basepath> and runs from the unpacked package; lib/ is read by that script
+// <basepath> and runs from the unpacked package; leftovers/ is read by that script
 // through dirname(__DIR__) and never lands in the instance.
 $installdefs = array(
     'id'           => $packageID,
@@ -141,9 +141,9 @@ $zip->open($zipPath, ZipArchive::CREATE);
 // has exactly four files.
 $files = array(
     'scripts/post_execute.php',
-    'lib/BdQuotesLayoutExtensions.php',
-    'lib/BdOpportunitiesLayoutExtensions.php',
-    'lib/emptied.php',
+    'leftovers/BdQuotesLayoutExtensions.php',
+    'leftovers/BdOpportunitiesLayoutExtensions.php',
+    'leftovers/emptied.php',
 );
 foreach ($files as $f) {
     if (!file_exists($f)) {

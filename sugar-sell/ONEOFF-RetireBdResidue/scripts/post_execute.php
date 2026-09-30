@@ -251,7 +251,7 @@ $bdPackageDir = dirname(__DIR__);
 
 /** How these two report: a removal is claimed only when the deployed view actually changed. */
 $bdQuotesViewdef = 'custom/modules/Quotes/clients/base/views/record/record.php';
-$bdQuotesLib = $bdPackageDir . '/lib/BdQuotesLayoutExtensions.php';
+$bdQuotesLib = $bdPackageDir . '/leftovers/BdQuotesLayoutExtensions.php';
 try {
     if (!class_exists('BdQuotesLayoutExtensions', false) && file_exists($bdQuotesLib)) {
         require_once $bdQuotesLib;
@@ -267,7 +267,7 @@ try {
             $bdAlreadyGone[] = 'K-2 Bench Dogs panel - already absent from the deployed Quotes record view';
         }
     } else {
-        $bdSkipped[] = 'K-2 Quotes panel - SKIPPED, lib/BdQuotesLayoutExtensions.php did not load from '
+        $bdSkipped[] = 'K-2 Quotes panel - SKIPPED, leftovers/BdQuotesLayoutExtensions.php did not load from '
             . $bdQuotesLib;
     }
 } catch (Throwable $e) {
@@ -275,7 +275,7 @@ try {
 }
 
 $bdOppsViewdef = 'custom/modules/Opportunities/clients/base/views/record/record.php';
-$bdOppsLib = $bdPackageDir . '/lib/BdOpportunitiesLayoutExtensions.php';
+$bdOppsLib = $bdPackageDir . '/leftovers/BdOpportunitiesLayoutExtensions.php';
 try {
     if (!class_exists('BdOpportunitiesLayoutExtensions', false) && file_exists($bdOppsLib)) {
         require_once $bdOppsLib;
@@ -292,7 +292,7 @@ try {
             $bdAlreadyGone[] = 'K-3 retired bd_governing_origin marker - already absent from the deployed Opportunities record view';
         }
     } else {
-        $bdSkipped[] = 'K-3 Opportunity marker - SKIPPED, lib/BdOpportunitiesLayoutExtensions.php did not load from '
+        $bdSkipped[] = 'K-3 Opportunity marker - SKIPPED, leftovers/BdOpportunitiesLayoutExtensions.php did not load from '
             . $bdOppsLib;
     }
 } catch (Throwable $e) {
@@ -328,7 +328,7 @@ try {
     $bdFailed[] = $bdStageFragment . ' (' . $e->getMessage() . ')';
 }
 
-/** The orphaned class files (K-4's tombstone and 20 others), blanked with lib/emptied.php (G280, 🔒 1567, 🔒 1508, 🔒 1511). */
+/** The orphaned class files (K-4's tombstone and 20 others), blanked with leftovers/emptied.php (G280, 🔒 1567, 🔒 1508, 🔒 1511). */
 $bdOrphanClasses = array(
     'custom/dropdowntemplates/bd_stage_doms.append.php',
     'custom/modules/Accounts/BdAccountCountryGuard.php',
@@ -362,15 +362,15 @@ if (file_exists('custom/src/BenchDogs/BdAdmRules.php')) {
     $bdSkipped[] = 'custom/modules/Quotes/BdAdmRules.php - LEFT: Bench Dogs 0.9.42-rc86 is not installed, and its ADM rules still load this file';
 }
 
-$bdEmptySource = $bdPackageDir . '/lib/emptied.php';
+$bdEmptySource = $bdPackageDir . '/leftovers/emptied.php';
 if (!file_exists($bdEmptySource)) {
     // Refuse the whole group rather than blank some of it. A half-done sweep is
     // the one outcome that cannot be told apart from a finished one on the next
     // run, and this package's only product is evidence.
-    $bdSkipped[] = 'orphaned class files - SKIPPED ENTIRELY, lib/emptied.php not found at '
+    $bdSkipped[] = 'orphaned class files - SKIPPED ENTIRELY, leftovers/emptied.php not found at '
         . $bdEmptySource . '; ' . count($bdOrphanClasses) . ' path(s) left exactly as they were';
 } else {
-    // Idempotency: a blanked file still exists, so its digest against lib/emptied.php tells a second run from a first.
+    // Idempotency: a blanked file still exists, so its digest against leftovers/emptied.php tells a second run from a first.
     $bdEmptyHash = md5_file($bdEmptySource);
     foreach ($bdOrphanClasses as $bdOrphan) {
         if (!file_exists($bdOrphan)) {
@@ -504,7 +504,7 @@ $bdNotOurs = array(
         . ' bd-tools/repair-ui route off the tenant.',
     'custom/modules/Quotes/BdQuotesLayoutExtensions.php'
         . ' - not shipped since rc69 and inert: nothing rc69 ships calls it, and K-2 above ran this'
-        . ' package\'s own lib/ copy. Left because an rc68-or-earlier Bench Dogs uninstall requires it.',
+        . ' package\'s own leftovers/ copy. Left because an rc68-or-earlier Bench Dogs uninstall requires it.',
     'custom/modules/Opportunities/BdOpportunitiesLayoutExtensions.php'
         . ' - the same, for K-3.',
     'custom/modules/Quotes/ErpQuoteHooks/OpportunityContribution.php'

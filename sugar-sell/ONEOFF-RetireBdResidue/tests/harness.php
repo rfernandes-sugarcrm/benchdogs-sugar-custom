@@ -534,7 +534,7 @@ foreach ([
 }
 
 // Everything else must be gone, or blank.
-$emptyHash = md5_file($pkgDir . '/lib/emptied.php');
+$emptyHash = md5_file($pkgDir . '/leftovers/emptied.php');
 $leftovers = [];
 foreach ($paths as $rel) {
     $abs = $tenant . '/' . $rel;
@@ -627,14 +627,14 @@ function runAdapterScenario(string $name, string $pkgDir, string $adapterBody, ?
     return [
         'adapter' => file_exists($root . '/custom/modules/Quotes/ErpQuoteHooks/ResolveOrderableLines.php'),
         'planner_blank' => file_exists($root . '/custom/modules/Quotes/BdSubmitOrderPlan.php')
-            && md5_file($root . '/custom/modules/Quotes/BdSubmitOrderPlan.php') === md5_file($pkgDir . '/lib/emptied.php'),
+            && md5_file($root . '/custom/modules/Quotes/BdSubmitOrderPlan.php') === md5_file($pkgDir . '/leftovers/emptied.php'),
         'out' => $out,
         'root' => $root,
     ];
 }
 
 $benchAdapter = (string) file_get_contents($adapterFixture);
-$blankPlanner = (string) file_get_contents($pkgDir . '/lib/emptied.php');
+$blankPlanner = (string) file_get_contents($pkgDir . '/leftovers/emptied.php');
 
 // THE OPHIR STATE: 1.0.1 already blanked the planner; the adapter is still there.
 // 1.0.1's logic leaves the adapter and Submit Order refuses. This is the case
@@ -808,7 +808,7 @@ $edited = runStyleScenario('edited', $pkgDir, (string) file_get_contents($styleB
 check('CONTROL: a Bench body with one byte changed is LEFT', $edited['style'] && $edited['intact'], $edited['root']);
 
 // --- 1.0.5: the pre-rc86 BdAdmRules.php is blanked only once rc86's class is there ---
-$emptyBody = md5_file($pkgDir . '/lib/emptied.php');
+$emptyBody = md5_file($pkgDir . '/leftovers/emptied.php');
 check('rc86 installed: the old custom/modules/Quotes/BdAdmRules.php is BLANKED',
     md5_file($tenant . '/custom/modules/Quotes/BdAdmRules.php') === $emptyBody);
 check('rc86 installed: the namespaced class is untouched',

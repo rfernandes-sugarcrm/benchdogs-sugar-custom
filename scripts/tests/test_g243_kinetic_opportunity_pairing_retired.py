@@ -281,7 +281,7 @@ class TheRegistrationRegistersNothing(unittest.TestCase):
 class TheClassCreatesNoOpportunity(unittest.TestCase):
     """The second half. Through rc68 the tombstone class was CALLED here against
     a BeanFactory that counted bean creation. From rc69 the tenant's copy is
-    BLANKED by the one-off with lib/emptied.php, so what has to hold is that the
+    BLANKED by the one-off with leftovers/emptied.php, so what has to hold is that the
     blank body defines nothing at all - and that the registration goes first, so
     no compiled hook entry is left pointing at a class that is no longer there
     (LogicHook::loadHookClass() fails soft on that anyway, 26.1.0
@@ -293,7 +293,7 @@ class TheClassCreatesNoOpportunity(unittest.TestCase):
         self.assertEqual(oneoff_worklist()[rel], "blanked")
 
     def test_the_blank_body_defines_nothing(self):
-        emptied = ONEOFF_LIB / "lib/emptied.php"
+        emptied = ONEOFF_LIB / "leftovers/emptied.php"
         done = subprocess.run(
             [_php(), "-r", "$c = get_declared_classes(); $f = get_defined_functions()['user'];"
              " require $argv[1]; echo json_encode(['classes' => array_values(array_diff("
