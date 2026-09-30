@@ -28,6 +28,9 @@ and the package ships no module of its own.
 > **rc82 (G458) adds no layout WRITER either:** one sidecar record-view overlay
 > for five fields a CUSTOMER package owns (below), merged at metadata build; it
 > writes nothing to a deployed view.
+> **rc84 (G848) adds none either:** five sidecar view overlays that stop a
+> quote DRAWING a discount (below), merged at metadata build; they write
+> nothing to a deployed view and change no stored value.
 >
 > **rc72 (G507): the Account pair's marker is `panel_overview` after Industry,
 > and both fields are `readonly`.** Moving the pair OUT of the header rc69 put it
@@ -67,6 +70,30 @@ and the package ships no module of its own.
 > | Path | What it is | Why it is here and not in core |
 > |---|---|---|
 > | `custom/Extension/modules/Contacts/Ext/clients/base/views/record/bd_epicor_contact_fields.php` | a sidecar overlay on the Contacts record view: `epicor_function_c`, `role_c`, `primary_billing_c`, `primary_purchasing_c`, `primary_shipping_c` at the end of ERP-Core's **ERP** panel (`LBL_RECORDVIEW_PANEL_ERP`, after ERP Contact ID; else `panel_body`; else the first non-header panel with fields), every entry of the five `readonly`, **only the ones the tenant's merged Contact vardefs hold** | The five are Bench Dogs' OWN fields (their package `Bench_Dogs_Account_Contact_Fields` 1.0.0, `custom_fields`), and it ships no layout. The `erp_layout` marker cannot carry them: ERP-Core's `ErpLayoutExtraFields::sync()` supports Quotes/Accounts only, and a marker on a field another package owns is included BEFORE `fields_meta_data` merges (SugarEnt 26.1.0 `VardefManager::refreshVardefs`), so it can neither see the field nor avoid leaving a typeless phantom def where that package is absent. The overlay is merged each metadata build (`MetaDataFiles::getClientFileContents`), follows a Studio-edited view, reaches upgraded tenants, and leaves with uninstall. On Ophir / stock / et (no customer package) it changes nothing |
+
+> **Grown by G848 (0.9.42-rc84)** (owner 🔒2151b, 2026-09-30: *"benchdog dont
+> want seller to apply discount so both the discount pannel and the line item
+> doscounts should be not vissible on benchdog MLP"*). Five files, one body
+> (`scripts/tests/bd_seller_discounts_hidden_test.php` holds them byte-equal),
+> none a field or a setting:
+>
+> | Path (`custom/Extension/modules/…/Ext/clients/base/views/…/_override_zz_bd_hide_seller_discounts.php`) | Not drawn | Left alone |
+> |---|---|---|
+> | `Quotes/…/record/` (also the create form, which is built from the record meta) | ERP-Epicor's **Discount** panel `LBL_RECORDVIEW_PANEL_ERP_DISCOUNT` and its one field `erp_discount_panel` ("Apply a discount / Whole order / % / Apply"); any quote-level discount figure an admin placed | the nested fetch list (lines still READ `discount_amount` / `discount_select`), the ERP panel's Discount Warning, ERP-Epicor's SetVisibility rules |
+> | `Quotes/…/quote-data-grand-totals-header/` | `deal_tot` ("Order Level Discount") | Line Items Discounted Subtotal, Tax (via ERP), Shipping, Grand Total |
+> | `Quotes/…/quote-data-grand-totals-footer/` | `erp_document_discount_amount` ("Order Level Discount", shown by ERP-Epicor only when non-zero) | every other row; the stored figure and its recalculation |
+> | `Products/…/quote-data-group-list/` (rows, edit row, column headers) | `discount_field` ("Line Discount": `discount_amount` + the % / amount toggle `discount_select`) and the line-discount figures derived from them | `discount_price` (Unit Price), `discount_usdollar`, Extended Price, Discounted Total |
+> | `Products/…/record/` (the line page the line number opens) | the same `discount_field` | everything else |
+>
+> Why an overlay and not a layout write (decision 803): Sugar includes these
+> right after whatever viewdef is deployed, at every metadata build, so they
+> follow ERP-Epicor's layout in either install order, and nothing ever saves
+> the hidden view (`ViewdefManager::loadViewdef()` skips `.ext.` paths).
+> `_override` merges them after any plain fragment another package adds. A
+> tenant without this package keeps every discount field; uninstall deletes the
+> files and Module Loader's rebuild gives the fields back. A discount Epicor
+> sends still lands in the line and quote totals; nothing here refuses a
+> discount sent through the API (🔒2151b (d)).
 
 ## G380 / G381 — what Bench Dogs' ADM company requires (🔒 1705b, 🔒 1724b)
 

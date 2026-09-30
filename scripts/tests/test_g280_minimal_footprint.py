@@ -139,6 +139,26 @@ KEPT = {
     "custom/Extension/modules/Contacts/Ext/clients/base/views/record/bd_epicor_contact_fields.php":
         "G458: the customer's five Epicor contact fields shown read-only on the Contacts record "
         "view (ERP panel), only where the tenant has them (a sidecar overlay; no deployed-view write)",
+    # ── G848 (0.9.42-rc84): the owner's order 🔒2151b (2026-09-30: "benchdog dont
+    # want seller to apply discount so both the discount pannel and the line
+    # item doscounts should be not vissible on benchdog MLP"; the coordinator's
+    # assumption (c) records that it supersedes 🔒 1508's trim for this item).
+    # Five sidecar overlays, one body: they HIDE (no field, no setting, no
+    # deployed-view write), only in this package, under a name
+    # ONEOFF-RetireBdResidue does not delete.
+    "custom/Extension/modules/Quotes/Ext/clients/base/views/record/_override_zz_bd_hide_seller_discounts.php":
+        "G848: ERP-Epicor's Discount panel (erp_discount_panel) off the quote record/create view",
+    "custom/Extension/modules/Quotes/Ext/clients/base/views/quote-data-grand-totals-header/"
+    "_override_zz_bd_hide_seller_discounts.php":
+        "G848: the totals strip's Order Level Discount (deal_tot) not drawn",
+    "custom/Extension/modules/Quotes/Ext/clients/base/views/quote-data-grand-totals-footer/"
+    "_override_zz_bd_hide_seller_discounts.php":
+        "G848: the footer's Order Level Discount row (erp_document_discount_amount) not drawn",
+    "custom/Extension/modules/Products/Ext/clients/base/views/quote-data-group-list/"
+    "_override_zz_bd_hide_seller_discounts.php":
+        "G848: the grid's Line Discount column / edit-row input (discount_field) not drawn",
+    "custom/Extension/modules/Products/Ext/clients/base/views/record/_override_zz_bd_hide_seller_discounts.php":
+        "G848: the quote line's own page draws no discount_field",
 }
 
 ONEOFF ="the one-off deletes or blanks it (🔒 1521); re-run it after installing rc69"

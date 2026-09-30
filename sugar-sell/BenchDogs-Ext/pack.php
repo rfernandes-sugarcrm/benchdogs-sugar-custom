@@ -43,6 +43,17 @@
  *       creates them; the Bench connector extension fills them) read-only on
  *       the Contacts record view's ERP panel, only where the tenant's merged
  *       vardefs hold them. Not a field, and no deployed-view write.
+ *   custom/Extension/modules/Quotes/Ext/clients/base/views/{record,
+ *     quote-data-grand-totals-header,quote-data-grand-totals-footer}/_override_zz_bd_hide_seller_discounts.php
+ *   custom/Extension/modules/Products/Ext/clients/base/views/{quote-data-group-list,record}/
+ *     _override_zz_bd_hide_seller_discounts.php
+ *       G848 (🔒 2151b): Bench Dogs sellers do not apply discounts. Five sidecar
+ *       overlays, one body, that stop the quote DRAWING a discount: ERP-Epicor's
+ *       Discount panel (erp_discount_panel), the totals' Order Level Discount
+ *       (deal_tot in the strip, erp_document_discount_amount in the footer), the
+ *       grid's Line Discount column and edit-row input (discount_field) and the
+ *       line page's. Hide only: no field, no setting, no deployed-view write, no
+ *       stored value or total touched; uninstall gives every one back.
  *   custom/clients/base/api/BdBenchDogsActionsApi.php
  *       EMPTY, and the one retirement stub left: it unregisters rc68's
  *       bd-tools/repair-ui route on upgraded tenants (see the file).
@@ -71,7 +82,7 @@
 
 $packageID      = 'sugarai_benchdogs_ext';
 $packageLabel   = 'SugarAI: Bench Dogs Extensions';
-$description    = 'Bench Dogs extensions for Sugar Sell: the two customer-group fields (a Cust. Group picker before the account is in the ERP, required for an ADM Customer and asked for before the quote offers to create an ADM account in the ERP) and the Suspect account type on Accounts, and the ADM company\'s own quote values (Lead Source, Lead Type, Project, Marketing Campaign and Marketing Event pickers, required until the quote is in the ERP and defaulted from the account\'s last quote; Reference and Project defaults; the Reference placement and requirement), and the Epicor contact Function, Role and primary flags (Bench Dogs\' own contact fields) shown read-only on the Contacts record view where the tenant has them.';
+$description    = 'Bench Dogs extensions for Sugar Sell: the two customer-group fields (a Cust. Group picker before the account is in the ERP, required for an ADM Customer and asked for before the quote offers to create an ADM account in the ERP) and the Suspect account type on Accounts, and the ADM company\'s own quote values (Lead Source, Lead Type, Project, Marketing Campaign and Marketing Event pickers, required until the quote is in the ERP and defaulted from the account\'s last quote; Reference and Project defaults; the Reference placement and requirement), and the Epicor contact Function, Role and primary flags (Bench Dogs\' own contact fields) shown read-only on the Contacts record view where the tenant has them; and, because Bench Dogs sellers do not apply discounts, no discount panel, order-level discount or line discount shown on a quote.';
 $supportedVersionRegex = '(26|25|14)\\..*$';
 $acceptableSugarFlavors = array('ENT', 'ULT', 'PRO');
 

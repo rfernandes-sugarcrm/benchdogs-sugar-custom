@@ -47,6 +47,7 @@ SUITES = (
     "bd_erp_layout_test.php",
     "bd_customer_group_move_test.php",
     "bd_contact_fields_test.php",
+    "bd_seller_discounts_hidden_test.php",
 )
 
 php = shutil.which("php")
@@ -97,6 +98,8 @@ MIN_CHECKS = {
     "bd_customer_group_move_test.php": 25,
     # rc82 (G458): 44 checks at 2026-09-30; floor ~15% under, as above.
     "bd_contact_fields_test.php": 37,
+    # rc84 (G848): 109 checks at 2026-09-30; floor ~15% under, as above.
+    "bd_seller_discounts_hidden_test.php": 92,
 }
 #: bd_adm_rules_test.php's second run has no ErpQuoteFacts and is meant to be
 #: tiny: an older ERP-Epicor skips the defaults and never fails a save.
@@ -169,6 +172,23 @@ class PhpSuitesTest(unittest.TestCase):
         per build - and a tenant WITHOUT that package gets its view back
         byte for byte (no field it lacks is referenced)."""
         self.assert_suite_passes("bd_contact_fields_test.php")
+
+    def test_bd_seller_discounts_hidden(self):
+        """G848 (rc84, 🔒2151b): no discount on a Bench quote - ERP-Epicor's
+        Discount panel, the totals' Order Level Discount, the grid's Line
+        Discount column and the line page's discount - by five sidecar
+        overlays run the way MetaDataFiles includes them and compiled the way
+        mergeExtensionFiles compiles them, over ERP-Epicor's OWN panel and
+        totals definitions; the fetch list and every other entry untouched.
+
+        ERP-Epicor's QuotesLayout is the PIN (1.2.0, 280e0929), not the sibling
+        checkout: the rc this ships in is built against 1.2.0, and a sibling
+        left on an older build branch would grade it against a layout no
+        Bench tenant runs."""
+        self.assert_suite_passes(
+            "bd_seller_discounts_hidden_test.php",
+            BD_QUOTES_LAYOUT=str(shared_sugar.pinned_path("QuotesLayout.php")),
+            BD_BASE_ERP_LAYOUT=str(shared_sugar.pinned_path("BaseErpLayout.php")))
 
 
 

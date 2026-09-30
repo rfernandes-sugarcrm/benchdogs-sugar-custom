@@ -1,3 +1,80 @@
+# 0.9.42-rc84 — G848: a Bench Dogs seller sees no discount on a quote (🔒2151b)
+
+Built on rc83 (#40, 2ad8de2, open against #38's branch; #39 is merged into
+#38, and #38 and #36 are open against main): rc84 = rc83 + this change only.
+**Requires** ERP-Epicor ≥ 1.1.134 and Partial Fulfillment ≥ 1.0.50
+(unchanged). Every name hidden here was read on ERP-Epicor 1.1.179
+(erp-integration-sugar staging-2) and 1.2.0 (280e0929); a name a tenant does
+not serve is simply not there to hide.
+
+**The order** (owner, 2026-09-30 21:17Z, 🔒2151b): *"benchdog dont want seller
+to apply discount so both the discount pannel and the line item doscounts
+should be not vissible on benchdog MLP"*. His screenshot (benchdogs-sandbox,
+quote "1-800-FLOWERS - Sep 30, 2026") showed ERP-Epicor's **DISCOUNT** panel
+("Apply a discount", "Whole order", % / amount, 0.00, Apply) and the totals
+strip's **"Order Level Discount $0.00"**; the grid's **"Line Discount"** column
+sits right of Stock Availability (G175's served order).
+
+**Measured before building** (erp-integration-sugar staging-2 fa3a861a and the
+1.2.0 pin 280e0929 agree on every name; SugarEnt 26.1.0 for stock):
+
+| Surface (view) | Field / panel | Label a seller reads | Written by |
+|---|---|---|---|
+| Quotes `record` (and create) | panel `LBL_RECORDVIEW_PANEL_ERP_DISCOUNT`, field `erp_discount_panel` (type `erp-discount`) | "Discount" / "Apply a discount" | ERP-Epicor `QuotesLayout::erpDiscountPanel()` |
+| Quotes `quote-data-grand-totals-header` | `deal_tot` | "Order Level Discount" (`LBL_ERP_DOCUMENT_DISCOUNT_AMOUNT`) | ERP-Epicor `erpTotalsHeaderFields()` (🔒 1544a) |
+| Quotes `quote-data-grand-totals-footer` | `erp_document_discount_amount` (drawn only when ≠ 0) | "Order Level Discount" | ERP-Epicor `erpTotalsFooterFields()` |
+| Products `quote-data-group-list` (rows, edit row, column headers) | fieldset `discount_field` = `discount_amount` + `discount_select` | "Line Discount" (`LBL_ERP_LINE_DISCOUNT`) | stock, relabelled by ERP-Core (🔒 1439) |
+| Products `record` (the line page the line number opens, G605) | fieldset `discount_field` | "Discount Amount" | stock |
+
+- **Five new files, one body**, each
+  `custom/Extension/modules/<Module>/Ext/clients/base/views/<view>/_override_zz_bd_hide_seller_discounts.php`:
+  sidecar view overlays that take those entries out of the served view (from
+  every panel, and from a fieldset one level down), plus - defensively - the
+  same quote-level or line-level discount figures if an admin placed one
+  (`deal_tot_usdollar`, `deal_tot_discount_percentage`, `discount`,
+  `erp_document_discount_percent`; `discount_rate_percent`,
+  `discount_amount_usdollar`, `discount_amount_signed`, `deal_calc`,
+  `deal_calc_usdollar`). The Discount panel goes once it is empty; an admin's
+  own field in it keeps it. **Never** `discount_price` or `discount_usdollar`:
+  those are the Unit Price.
+- **Hide only.** No field, setting or dropdown value (🔒1810b); no deployed
+  viewdef written (Sugar includes the overlay after the deployed viewdef at
+  every metadata build, and `ViewdefManager::loadViewdef()` skips `.ext.`
+  paths, so ERP-Epicor's installer, Quotes Configuration and Studio never save
+  the hidden view). The quote's nested fetch list is never entered, so lines are
+  still read with `discount_amount` / `discount_select`, and a discount Epicor
+  sends still lands in the line and quote totals. ERP-Epicor's SetVisibility
+  rules for the panel are left as deployed (Sugar's action returns at a missing
+  target). The ERP panel's Discount Warning (`erp_discount_refusal`, read-only)
+  stays. No server-side refusal of an API-typed discount (🔒2151b (d)).
+- **Either install order; uninstall restores.** `_override` merges after any
+  plain fragment in the same directory. Module Loader rebuilds every module's
+  extensions on install and on uninstall and clears the API metadata cache, so
+  the lifecycle scripts are unchanged (their Accounts/Quotes rebuild is for the
+  vardef sync, not for these). Stock and et (no Bench package) keep every
+  discount field.
+- **Tests.** `scripts/tests/bd_seller_discounts_hidden_test.php` (109 checks,
+  wired into `test_php_suites.py`): each overlay run the way
+  `MetaDataFiles::getClientFileContents()` runs it (method scope, up to three
+  inclusions), on the views a Bench tenant serves built from ERP-Epicor's own
+  definitions read off the pinned `QuotesLayout` by reflection, and compiled
+  the way `ModuleInstaller::mergeExtensionFiles()` compiles a sidecar directory
+  (tags stripped, `_override` last) beside a sibling fragment that puts a
+  discount back. **Red first** on rc83: 75 of 109 fail (A1 the Discount panel
+  is there, B1 `deal_tot`, C1, D1 `discount_field`, E1). **Mutations, 14 of 14
+  killed** (applied to all five bodies): removal short-circuited; fieldset
+  members kept; panels or fields left keyed (a JSON object, not a list);
+  the sweep widened into the fetch list; the empty Discount panel kept;
+  `deal_tot` / `erp_document_discount_amount` / `erp_discount_panel` /
+  `discount_select` dropped from a list; `$viewdefs` assigned when nothing
+  changed; no `unset`; the panel name dropped; a plain (non-`_override`)
+  name. Sugar 26.1.0's own ModuleScanner: no finding on the five;
+  `mlp_lint.py` source and built zip clean.
+- **Proposed, not done:** with no discount visible, "Line Items Discounted
+  Subtotal" (ERP-Core `LBL_NEW_SUB`) and the grid's "Discounted Total"
+  (`LBL_ERP_DISCOUNTED_TOTAL`) still say "Discounted". Relabelling them is a
+  language override this package would have to own; left for the owner.
+
 # 0.9.42-rc83 — G840: the ADM quote defaults keep working on ERP-Epicor 1.2.0, whose ErpQuoteFacts is namespaced
 
 Built on rc82 (#39, bc2d24a; stacked on rc81 #38; neither on main yet): rc83 =
