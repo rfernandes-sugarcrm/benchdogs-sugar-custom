@@ -1,6 +1,9 @@
 <?php
 
-// phpcs:disable PSR1.Classes.ClassDeclaration.MissingNamespace
+namespace Sugarcrm\Sugarcrm\custom\BenchDogs;
+
+use BeanFactory;
+use SugarQuery;
 
 /** G380 / G381 (🔒 1705b, 🔒 1724b): Bench Dogs' ADM rules, the Sugar half; everything generic is ERP-Epicor's or core's (G530, 🔒 1712b, G460, G809). */
 class BdAdmRules
@@ -148,7 +151,7 @@ class BdAdmRules
             return \Sugarcrm\Sugarcrm\custom\Erp\ErpQuoteFacts::companyCode($bean);
         }
 
-        return ErpQuoteFacts::companyCode($bean);
+        return \ErpQuoteFacts::companyCode($bean);
     }
 
     /** ErpQuoteFacts::productGroup(), from whichever class is installed. */
@@ -158,7 +161,7 @@ class BdAdmRules
             return \Sugarcrm\Sugarcrm\custom\Erp\ErpQuoteFacts::productGroup($line);
         }
 
-        return ErpQuoteFacts::productGroup($line);
+        return \ErpQuoteFacts::productGroup($line);
     }
 
     // ── G380: Reference defaults to the ship-to's city and state ─────────────
@@ -207,7 +210,7 @@ class BdAdmRules
             return 0;
         }
 
-        return ErpQuoteFacts::referenceMaxLength($bean);
+        return \ErpQuoteFacts::referenceMaxLength($bean);
     }
 
     // ── G381: Project pre-filled from the product-group default list ─────────

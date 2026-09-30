@@ -4,9 +4,7 @@
 
 /** G380 / G381 / G460, G804: the option functions behind the five ADM quote pickers and the Account's Cust. Group picker; they ignore their arguments on purpose. */
 
-if (!class_exists('BdAdmRules', false)) {
-    require_once 'custom/modules/Quotes/BdAdmRules.php';
-}
+use Sugarcrm\Sugarcrm\custom\BenchDogs\BdAdmRules;
 
 if (!function_exists('bd_adm_lead_source_options')) {
     /** ADM's active Lead Source codes (user-code type LEADSRC). */

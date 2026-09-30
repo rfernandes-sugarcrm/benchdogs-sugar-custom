@@ -450,6 +450,11 @@ $styleFixtures = $pkgDir . '/tests/fixtures/dropdowns-style';
 $styleBenchBody = $styleFixtures . '/sales_stage_dom_style.rc39-rc64.php.txt';
 copy($styleBenchBody, $tenant . '/' . $styleRel);
 
+// 1.0.5: this tenant runs Bench Dogs 0.9.42-rc86, whose ADM rules are the namespaced class.
+$rc86Rules = $tenant . '/custom/src/BenchDogs/BdAdmRules.php';
+@mkdir(dirname($rc86Rules), 0775, true);
+file_put_contents($rc86Rules, "<?php\n// rc86 body\nnamespace Sugarcrm\\Sugarcrm\\custom\\BenchDogs;\n");
+
 $before = count($paths) + 1;
 
 // ---------------------------------------------------------------------------
@@ -801,6 +806,25 @@ check('CONTROL: and it is NOT counted as removed', strpos($sugar['out'], 'REMOVE
 // Studio owns it now.
 $edited = runStyleScenario('edited', $pkgDir, (string) file_get_contents($styleBenchBody) . "\n");
 check('CONTROL: a Bench body with one byte changed is LEFT', $edited['style'] && $edited['intact'], $edited['root']);
+
+// --- 1.0.5: the pre-rc86 BdAdmRules.php is blanked only once rc86's class is there ---
+$emptyBody = md5_file($pkgDir . '/lib/emptied.php');
+check('rc86 installed: the old custom/modules/Quotes/BdAdmRules.php is BLANKED',
+    md5_file($tenant . '/custom/modules/Quotes/BdAdmRules.php') === $emptyBody);
+check('rc86 installed: the namespaced class is untouched',
+    strpos((string) file_get_contents($rc86Rules), 'rc86 body') !== false);
+$rc85 = sys_get_temp_dir() . '/bd-residue-rc85-' . getmypid();
+if (is_dir($rc85)) {
+    rmdir_recursive($rc85);
+}
+@mkdir($rc85 . '/custom/modules/Quotes', 0775, true);
+file_put_contents($rc85 . '/custom/modules/Quotes/BdAdmRules.php', "<?php\n// rc85 body: still loaded by its hooks\n");
+[$rc85Out] = runOnce($rc85, $pkgDir);
+check('CONTROL: rc85 still installed: its BdAdmRules.php is LEFT, with its body',
+    strpos((string) file_get_contents($rc85 . '/custom/modules/Quotes/BdAdmRules.php'), 'rc85 body') !== false);
+check('CONTROL: and the report says why, under SKIPPED',
+    strpos($rc85Out, 'SKIPPED (') !== false
+        && strpos($rc85Out, 'BdAdmRules.php - LEFT: Bench Dogs 0.9.42-rc86 is not installed') !== false, $rc85Out);
 
 echo "\nTenant tree left at: {$tenant}\n";
 echo $fail === 0 ? "ALL CHECKS PASSED\n" : "{$fail} CHECK(S) FAILED\n";

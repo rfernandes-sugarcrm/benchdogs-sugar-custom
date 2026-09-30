@@ -355,6 +355,12 @@ $bdOrphanClasses = array(
     'custom/modules/Quotes/BdQuoteKpiHook.php',
     'custom/modules/Quotes/BdSubmitOrderPlan.php',
 );
+// 1.0.5 (MLP024, 🔒2161b): Bench Dogs 0.9.42-rc86 autoloads BdAdmRules from custom/src/BenchDogs; before rc86 this file still serves the ADM rules.
+if (file_exists('custom/src/BenchDogs/BdAdmRules.php')) {
+    $bdOrphanClasses[] = 'custom/modules/Quotes/BdAdmRules.php';
+} elseif (file_exists('custom/modules/Quotes/BdAdmRules.php')) {
+    $bdSkipped[] = 'custom/modules/Quotes/BdAdmRules.php - LEFT: Bench Dogs 0.9.42-rc86 is not installed, and its ADM rules still load this file';
+}
 
 $bdEmptySource = $bdPackageDir . '/lib/emptied.php';
 if (!file_exists($bdEmptySource)) {

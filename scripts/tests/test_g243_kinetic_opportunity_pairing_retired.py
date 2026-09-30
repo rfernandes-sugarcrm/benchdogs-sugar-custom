@@ -214,8 +214,9 @@ class TheRegistrationRegistersNothing(unittest.TestCase):
     #:  - G804 (🔒 2081b): on an Account not in the ERP, the Cust. Group name
     #:    follows the picked Group Code.
     #: In the order the harness sees them (Accounts' fragment first).
-    ALLOWED = [["before_save", "custom/modules/Quotes/BdAdmRules.php", "BdAdmRules", "accountBeforeSave"],
-               ["before_save", "custom/modules/Quotes/BdAdmRules.php", "BdAdmRules", "beforeSave"]]
+    # rc86 (MLP024): the namespaced class, no file - Sugar autoloads it from custom/src/BenchDogs.
+    ALLOWED = [["before_save", None, "Sugarcrm\\Sugarcrm\\custom\\BenchDogs\\BdAdmRules", "accountBeforeSave"],
+               ["before_save", None, "Sugarcrm\\Sugarcrm\\custom\\BenchDogs\\BdAdmRules", "beforeSave"]]
 
     def test_no_shipped_fragment_registers_a_hook(self):
         """Every Extension fragment this package ships, INCLUDED into a harness
@@ -255,7 +256,9 @@ class TheRegistrationRegistersNothing(unittest.TestCase):
     def test_the_one_allowed_hook_creates_and_saves_nothing(self):
         """The allowed hook's class, code only: it may set fields on the bean
         it is handed (before_save), and must never create or save a record."""
-        body = (PACKAGE / self.ALLOWED[0][1]).read_text(encoding="utf-8")
+        # rc86: the class is registered with no file; Sugar's PSR-4 rule for custom/ names its path.
+        cls = self.ALLOWED[0][2].removeprefix("Sugarcrm\\Sugarcrm\\custom\\").replace("\\", "/")
+        body = (PACKAGE / "custom/src" / f"{cls}.php").read_text(encoding="utf-8")
         code = re.sub(r"/\*.*?\*/", "", body, flags=re.S)
         code = re.sub(r"(?m)(^|\s)//[^\n]*", r"\1", code)
         for forbidden in ("->save(", "::newBean('Opportunities'", "Opportunit"):

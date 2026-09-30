@@ -4,7 +4,7 @@
 $hook_array['before_save'][] = array(
     95,
     'Bench Dogs: ADM quote defaults (Reference, Project)',
-    'custom/modules/Quotes/BdAdmRules.php',
-    'BdAdmRules',
+    null,
+    'Sugarcrm\\Sugarcrm\\custom\\BenchDogs\\BdAdmRules',
     'beforeSave',
 );

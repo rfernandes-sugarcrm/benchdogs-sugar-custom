@@ -119,6 +119,7 @@ custom/modules/Quotes/BdQliColumnTemplate.php
 custom/modules/Quotes/BdQuantityBreaksTabLayout.php
 custom/modules/Quotes/BdQuantityBreakTab.php
 custom/modules/Quotes/BdQuoteCarrierCanonicalHook.php
+custom/modules/Quotes/BdAdmRules.php
 custom/modules/Quotes/BdQuoteKpiHook.php
 custom/modules/Quotes/BdQuotesLayoutExtensions.php
 custom/modules/Quotes/BdSubmitOrderPlan.php

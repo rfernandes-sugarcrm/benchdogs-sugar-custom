@@ -1,3 +1,13 @@
+# 0.9.42-rc86 — Rafael's MLP rules on Bench (MLP020–MLP026, 🔒2161b)
+
+rc86 = rc85 (9d9e2acc, zip 99a2aa91…, its own tree) + these changes only. No behaviour change. **Requires** unchanged; install **before** ONEOFF-RetireBdResidue 1.0.5.
+
+- The vendored MLP linter is re-pinned to erp-integration-sugar `refactor/rafael-review` (280e0929) with `scripts/refresh_mlp_lint.py`, and `test_mlp_lint_pin.py` floors it at MLP001–MLP026. Bench carries no baseline: its first run found 88 findings (87 × MLP026, 1 × MLP024), all fixed here.
+- MLP026: every flagged PHP comment block is one line of why, keeping its G-number / 🔒 reference (as erp-integration-sugar #164 did), in BenchDogs-Ext and both one-offs. Comments only.
+- MLP024: `BdAdmRules` moved from `custom/modules/Quotes/` to `custom/src/BenchDogs/BdAdmRules.php` as `Sugarcrm\Sugarcrm\custom\BenchDogs\BdAdmRules`. Sugar autoloads it: the two before_save hooks (Quotes defaults, Accounts Cust. Group name) register the class with no file, and `BdAdmLookupOptions.php` imports it instead of `require_once`-ing a path. G840's ADM quote defaults are unchanged (bd_adm_rules_test.php, all three ERP-Epicor shapes).
+- An upgraded tenant keeps the old `custom/modules/Quotes/BdAdmRules.php` (Module Loader never deletes a file a later build stops shipping); nothing rc86 ships loads it. ONEOFF-RetireBdResidue **1.0.5** blanks it, only once rc86's class is on disk.
+- Tests: the hook checks (R11, N1, test_g243's allowed list) now read the namespaced class at its PSR-4 path; each was shown red against a broken registration (class, method, path) before the move.
+
 # 0.9.42-rc85 — G848 extended: the list preview, and Subtotal / Total (🔒2159b)
 
 rc85 = rc84 (95692e90, zip d3243486…, its own tree) + these three files only. **Requires** unchanged.

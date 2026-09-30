@@ -76,7 +76,7 @@ $description    = 'One-off cleanup. Removes the files and deployed metadata that
     . 'no table, drops no table and writes no record. Since 1.0.2 it also deletes the '
     . 'orphaned bench dogs order adapter whose blanked planner made every submit order '
     . 'refuse. Since 1.0.4 it deletes the sales stage dropdown style only when its body is one '
-    . 'the bench dogs package shipped, and leaves a style the tenant or sugar itself wrote. It KEEPS the four files the current bench dogs package ships (the two '
+    . 'the bench dogs package shipped, and leaves a style the tenant or sugar itself wrote. Since 1.0.5 it blanks the pre-rc86 BdAdmRules.php once bench dogs 0.9.42-rc86 is installed. It KEEPS the four files the current bench dogs package ships (the two '
     . 'customer-group fields, their placement and the emptied repair-route file) and every '
     . 'path another package also ships - all of which it names in its own install log. Idempotent: run it '
     . 'twice and the second run reports nothing left to remove. Uninstall it immediately '

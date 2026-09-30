@@ -1,4 +1,14 @@
-# ONEOFF-RetireBdResidue 1.0.4
+# ONEOFF-RetireBdResidue 1.0.5
+
+> **What changed in 1.0.5** (MLP024, 🔒2161b)
+>
+> Bench Dogs **0.9.42-rc86** moved its ADM rules class to `custom/src/BenchDogs/BdAdmRules.php`
+> (namespaced, autoloaded). Module Loader never deletes the old `custom/modules/Quotes/BdAdmRules.php`
+> an upgraded tenant keeps, so 1.0.5 **blanks** it with `lib/emptied.php`, like the other orphaned class
+> files, **only when rc86's class is on disk**. With rc85 or older still installed its hooks still load
+> the old file, so it is LEFT and reported under SKIPPED. Install rc86 first, then this.
+> Also: the package's PHP comments are one line of why (MLP026), and `lib/emptied.php` is shorter, so a
+> file an earlier version blanked is blanked again once (reported "blanked", not "already blank").
 
 > **What changed in 1.0.4** (G599)
 >

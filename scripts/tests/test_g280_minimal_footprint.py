@@ -97,8 +97,8 @@ KEPT = {
         "G380/G381: before_save fills an EMPTY Reference / Project on an unsent ADM quote",
     "custom/Extension/application/Ext/Language/en_us.bd_adm_lists.php":
         "the five lookup-type labels + the one tenant list (group->project)",
-    "custom/modules/Quotes/BdAdmRules.php":
-        "the ADM rules themselves: which companies are ADM, the two defaults, options",
+    "custom/src/BenchDogs/BdAdmRules.php":
+        "the ADM rules themselves: which companies are ADM, the two defaults, options (rc86: namespaced, MLP024)",
     "custom/modules/Quotes/BdAdmLookupOptions.php":
         "the pickers' option functions (vardef 'function' needs a plain function)",
     # ── G450 (0.9.42-rc74): the owner's per-item consent is his Yes to "a
@@ -189,6 +189,8 @@ REMOVED = {
     "custom/modules/Quotes/BdQuotesLayoutExtensions.php": INERT,
     "custom/modules/Opportunities/BdOpportunitiesLayoutExtensions.php": INERT,
     "custom/modules/Quotes/BdKineticOpportunityHook.php": ONEOFF,
+    # rc86 (MLP024): the class moved to custom/src/BenchDogs; the one-off (1.0.5) blanks the old path once rc86 is installed.
+    "custom/modules/Quotes/BdAdmRules.php": ONEOFF,
     "custom/Extension/application/Ext/DropdownsStyle/sales_stage_dom_style.php": ONEOFF,
     "custom/Extension/application/Ext/Language/_override_en_us.bd_country_lookup.php": ONEOFF,
     "custom/Extension/application/Ext/Language/en_us.bd_country_lookup.php": ONEOFF,

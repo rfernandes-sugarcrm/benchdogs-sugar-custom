@@ -268,8 +268,9 @@ class TheReleaseStagePolicyStep(unittest.TestCase):
         self.assertNotIn(RELEASE_POLICY, _not_ours_block())
         self.assertNotIn(RELEASE_POLICY, oneoff_worklist())   # deleted by 4c, not blanked by 4
 
-    def test_the_one_off_is_1_0_4(self):
-        self.assertEqual((ONEOFF / "version").read_text().strip(), "1.0.4")
+    def test_the_one_off_is_1_0_5(self):
+        # 1.0.5: the pre-rc86 BdAdmRules.php joins the blanked orphans, behind the rc86 guard.
+        self.assertEqual((ONEOFF / "version").read_text().strip(), "1.0.5")
 
 
 class TheStageStyleIsDeletedOnlyWhenItIsABenchBody(unittest.TestCase):

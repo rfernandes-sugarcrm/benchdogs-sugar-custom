@@ -4,7 +4,7 @@
 $hook_array['before_save'][] = array(
     96,
     'Bench Dogs: ADM Cust. Group name follows the picked Group Code',
-    'custom/modules/Quotes/BdAdmRules.php',
-    'BdAdmRules',
+    null,
+    'Sugarcrm\\Sugarcrm\\custom\\BenchDogs\\BdAdmRules',
     'accountBeforeSave',
 );

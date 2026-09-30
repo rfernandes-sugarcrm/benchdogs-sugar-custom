@@ -70,6 +70,9 @@ def oneoff_worklist() -> dict[str, str]:
 
     for path in re.findall(r"'(custom/[^']+\.php)'", _block(source, "$bdOrphanClasses = array(")):
         out[path] = "blanked"
+    # 1.0.5: a path appended behind a guard (BdAdmRules, only once rc86's class is on disk).
+    for path in re.findall(r"\$bdOrphanClasses\[\]\s*=\s*'(custom/[^']+\.php)'", source):
+        out[path] = "blanked"
     return out
 
 

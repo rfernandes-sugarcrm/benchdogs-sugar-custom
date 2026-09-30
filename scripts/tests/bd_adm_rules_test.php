@@ -55,6 +55,9 @@
  */
 
 namespace {
+    // rc86 (MLP024, 🔒2161b): BdAdmRules lives at custom/src/BenchDogs, autoloaded by Sugar's custom PSR-4 rule.
+    use Sugarcrm\Sugarcrm\custom\BenchDogs\BdAdmRules;
+
     $noFacts = getenv('BD_NO_QUOTE_FACTS') === '1';
 
     // T2 / ERP-Epicor 1.2.0: the namespaced class. BD_ERP_AUTOLOADER names
@@ -321,7 +324,7 @@ namespace {
     };
     $loadLists();
 
-    require 'custom/modules/Quotes/BdAdmRules.php';
+    require 'custom/src/BenchDogs/BdAdmRules.php';
     require 'custom/modules/Quotes/BdAdmLookupOptions.php';
 
     // What core publishes for the ADM connection's code lists (core's scoped
@@ -597,9 +600,9 @@ namespace {
         $older = shell_exec(escapeshellarg(PHP_BINARY) . ' -r ' . escapeshellarg(
             'class ErpQuoteFacts {} class L { public $e = []; function error($m) { $this->e[] = $m; } }'
             . ' $GLOBALS["log"] = new L(); chdir(' . var_export($pkg, true) . ');'
-            . ' require "custom/modules/Quotes/BdAdmRules.php"; $q = new stdClass(); $q->id = "q-old";'
-            . ' $max = BdAdmRules::referenceMaxLength($q);'
-            . ' echo json_encode([$max, BdAdmRules::defaultReference("HARRISBURG", "PA", $max),'
+            . ' require "custom/src/BenchDogs/BdAdmRules.php"; $q = new stdClass(); $q->id = "q-old";'
+            . ' $max = \\Sugarcrm\\Sugarcrm\\custom\\BenchDogs\\BdAdmRules::referenceMaxLength($q);'
+            . ' echo json_encode([$max, \\Sugarcrm\\Sugarcrm\\custom\\BenchDogs\\BdAdmRules::defaultReference("HARRISBURG", "PA", $max),'
             . ' count($GLOBALS["log"]->e) === 1 && strpos($GLOBALS["log"]->e[0], "older than G530") !== false'
             . ' && strpos($GLOBALS["log"]->e[0], "q-old") !== false]);')
             . ' 2>&1');
@@ -890,7 +893,7 @@ namespace {
         $picks5 = fn($q) => [$q->bd_lead_source ?? null, $q->bd_lead_type ?? null, $q->bd_project_id ?? null,
             $q->bd_marketing_campaign ?? null, $q->bd_marketing_event ?? null];
         $check('Q14 HISTORY_SCAN is 20, the number ERP-Core\'s erp-dependent-enum reads (erpPrefillScan): one rule, '
-            . 'two writers', 20, defined('BdAdmRules::HISTORY_SCAN') ? constant('BdAdmRules::HISTORY_SCAN') : null);
+            . 'two writers', 20, defined(BdAdmRules::class . '::HISTORY_SCAN') ? constant(BdAdmRules::class . '::HISTORY_SCAN') : null);
 
         $withHistory([
             $qRow('r-new', 'acct-adm', '2026-09-01 10:00:00', ['bd_lead_source' => 'LOYPROG', 'bd_lead_type' => 'GONE',
@@ -1155,21 +1158,29 @@ namespace {
         };
         $check('R10 the hook reads Sugar\'s isUpdate: a create names the group; an unchanged update does not',
             ['Automotive', null], [$viaAccountHook(['isUpdate' => false]), $viaAccountHook(['isUpdate' => true])]);
+        // Sugar's rule for a custom namespace (SugarAutoLoader): Sugarcrm\Sugarcrm\custom\X\Y -> custom/src/X/Y.php.
+        $psr4 = function (string $class): string {
+            $prefix = 'Sugarcrm\\Sugarcrm\\custom\\';
+            return strncmp($class, $prefix, strlen($prefix)) === 0
+                ? 'custom/src/' . str_replace('\\', '/', substr($class, strlen($prefix))) . '.php' : '';
+        };
         $hook_array = [];
         include 'custom/Extension/modules/Accounts/Ext/LogicHooks/bd_customer_group_name.php';
         $ah = $hook_array['before_save'][0] ?? [];
-        $check('R11 the Accounts before_save points at an existing file, class and method', [true, true],
-            [is_file($ah[2] ?? ''), method_exists($ah[3] ?? '', $ah[4] ?? '')]);
+        $check('R11 the Accounts before_save names the autoloaded class (no file) at its PSR-4 path, and its method',
+            [null, BdAdmRules::class, true, true],
+            [array_key_exists(2, $ah) ? $ah[2] : 'missing', $ah[3] ?? '', is_file($psr4($ah[3] ?? '')), method_exists($ah[3] ?? '', $ah[4] ?? '')]);
 
         // ── N. the before_save registration ─────────────────────────────────
         $hook_array = [];
         include 'custom/Extension/modules/Quotes/Ext/LogicHooks/bd_adm_quote_defaults.php';
         $h = $hook_array['before_save'][0] ?? [];
-        $check('N1 before_save -> an existing file, class and instance method', [true, true],
-            [is_file($h[2] ?? ''), method_exists($h[3] ?? '', $h[4] ?? '')]);
+        $check('N1 before_save -> the autoloaded class (no file) at its PSR-4 path, and its instance method',
+            [null, BdAdmRules::class, true, true],
+            [array_key_exists(2, $h) ? $h[2] : 'missing', $h[3] ?? '', is_file($psr4($h[3] ?? '')), method_exists($h[3] ?? '', $h[4] ?? '')]);
 
         // ── P. the one fixed path ───────────────────────────────────────────
-        $src = file_get_contents('custom/modules/Quotes/BdAdmRules.php');
+        $src = file_get_contents('custom/src/BenchDogs/BdAdmRules.php');
         $check('P1 the include names the same literal path as QUOTE_FACTS_FILE', true,
             str_contains($src, "@include_once '" . BdAdmRules::QUOTE_FACTS_FILE . "';"));
 
@@ -1195,6 +1206,7 @@ namespace {
             $probeFile = $leftoverRoot . '/probe.php';
             file_put_contents($probeFile, <<<'PROBE'
 <?php
+use Sugarcrm\Sugarcrm\custom\BenchDogs\BdAdmRules;
 [, $pkg, $erpAutoloader, $leftoverRoot] = $argv;
 if ($erpAutoloader !== '') {
     require $erpAutoloader;
@@ -1203,7 +1215,7 @@ class L { public $e = []; function error($m) { $this->e[] = $m; } }
 $GLOBALS['log'] = new L();
 set_include_path($leftoverRoot . PATH_SEPARATOR . get_include_path());
 chdir($pkg);
-require 'custom/modules/Quotes/BdAdmRules.php';
+require 'custom/src/BenchDogs/BdAdmRules.php';
 $available = BdAdmRules::quoteFactsAvailable();
 $q = new stdClass();
 $q->id = 'q-leftover';
