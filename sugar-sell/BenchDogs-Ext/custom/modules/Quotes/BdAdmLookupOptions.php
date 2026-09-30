@@ -2,23 +2,7 @@
 
 // phpcs:disable PSR1.Files.SideEffects.FoundWithSymbols
 
-/**
- * G380 / G381 / G460: the option sources behind the five Bench Dogs quote pickers,
- * and (G804) the Account's Cust. Group picker
- * (vardef 'function' => array('name' => ..., 'include' => this file)).
- *
- * PLAIN FUNCTIONS, AND THEY IGNORE THEIR ARGUMENTS, ON PURPOSE. Sugar calls a
- * vardef option function through more than one path with more than one
- * signature: the REST enum endpoint (ModuleApi::getEnumValues ->
- * getOptionsFromVardef -> getFunctionValue) passes the vardef's 'params';
- * the legacy SugarFieldBase path calls $funcName($fields, $name, $value,
- * $view); workflow and import call it bare. A function whose answer depended
- * on its arguments would answer differently per path. One list per function,
- * named, keeps every path on the same answer.
- *
- * The whole list logic is BdAdmRules's (lookupOptions(), marketingOptions());
- * these are one line each.
- */
+/** G380 / G381 / G460, G804: the option functions behind the five ADM quote pickers and the Account's Cust. Group picker; they ignore their arguments on purpose. */
 
 if (!class_exists('BdAdmRules', false)) {
     require_once 'custom/modules/Quotes/BdAdmRules.php';

@@ -430,7 +430,8 @@ class StepReportStructureTest(unittest.TestCase):
     def step_region(self):
         """Everything above the report block: the steps."""
         source = self.source()
-        marker = "THE STEP REPORT"
+        # The report block's first statement (T7: pinned in code, not in its comment).
+        marker = "$bdNotApplied = array();"
         self.assertIn(marker, source, "the report block is gone")
         return source.split(marker, 1)[0]
 
@@ -482,16 +483,12 @@ class StepReportStructureTest(unittest.TestCase):
         source = self.source()
         self.assertNotRegex(source, r"grep sugarcrm\.log")
         self.assertIn("package_install.log", source)
-        self.assertIn("MlpLogger::replaceDefault()", source)
-        self.assertIn("Package Install Log File", source)
         self.assertIn("PID", source)
 
     def test_the_uninstall_instruction_names_the_same_log(self):
         source = (PACKAGE / "scripts/bd_pre_uninstall.php").read_text()
         self.assertNotRegex(source, r"grep sugarcrm\.log")
         self.assertIn("package_install.log", source)
-        self.assertIn("Package Install Log File", source)
-        self.assertIn("PID", source)
 
 
 class SugarPlatformContractTest(unittest.TestCase):

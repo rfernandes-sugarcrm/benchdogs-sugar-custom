@@ -1,37 +1,6 @@
 <?php
 
-/**
- * G848 (0.9.42-rc84, owner 🔒2151b) - Bench Dogs sellers do not apply
- * discounts. THE QUOTE'S LINE GRID has no "Line Discount" column and no
- * discount input in its edit row.
- *
- * WHAT GOES HERE: discount_field, stock's line-discount fieldset (ERP-Core
- * labels it LBL_ERP_LINE_DISCOUNT, "Line Discount", and places it between
- * Extended Price and Discounted Total, 🔒 1439): discount_amount (the figure)
- * and discount_select (the % / amount toggle). The rows, the edit row, the
- * column headers (Quotes quote-data-list-header) and the group layout all
- * build their columns from THIS view (app.metadata.getView('Products',
- * 'quote-data-group-list')), so one overlay takes the column off all of them.
- * Also those two members placed loose, and the line-discount figures derived
- * from them, if an admin configured one (Admin > Quotes Configuration's
- * worksheet columns write this view).
- *
- * NOT a discount, and so NOT here: discount_price is the Unit Price and
- * discount_usdollar its base-currency twin; subtotal (Extended Price) and
- * total_amount (Discounted Total, the line total) stay.
- *
- * WHAT STAYS: the stored discount and the math. Each line is still read with
- * discount_amount and discount_select (the quote record view's nested fetch
- * list, which nothing here touches), so a discount Epicor's price list or
- * estimator sets still lands in total_amount and the quote total. ERP-Core's
- * grid controller locks the discount fields it finds on a row; it finds none
- * and counts none.
- *
- * The mechanism, why it writes nothing and why uninstall gives the column
- * back: see the Quotes record view's fragment of the same name
- * (custom/Extension/modules/Quotes/Ext/clients/base/views/record/). Same body,
- * byte for byte; scripts/tests/bd_seller_discounts_hidden_test.php.
- */
+/** G848 (🔒2151b): the quote grid draws no Line Discount (discount_field) column or edit-row input. */
 $bdHideModule = 'Products';
 $bdHideView = 'quote-data-group-list';
 // The line discount and the figures derived from it. Never discount_price or

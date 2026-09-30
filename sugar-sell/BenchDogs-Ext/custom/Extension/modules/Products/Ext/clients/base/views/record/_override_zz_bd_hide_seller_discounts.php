@@ -1,30 +1,6 @@
 <?php
 
-/**
- * G848 (0.9.42-rc84, owner 🔒2151b) - Bench Dogs sellers do not apply
- * discounts. A QUOTE LINE'S OWN PAGE (the Quoted Line Item record view, which
- * the grid's line number links to since G605) has no discount input either.
- *
- * WHAT GOES HERE: discount_field, the same stock fieldset as on the grid
- * (discount_amount + the % / amount toggle discount_select), on panel_body;
- * those two placed loose; and the line-discount figures derived from them.
- * The Quoted Line Item create form is built from this same record meta
- * (clients/base/views/create/create.js:189), so it follows.
- *
- * NOT a discount, and so NOT here: discount_price is the Unit Price and
- * discount_usdollar its base-currency twin. The unit, the dates and the cost
- * worksheet ERP-Core places on this page stay as they are.
- *
- * WHAT STAYS: the stored discount. The page only stops drawing it; a line's
- * total is computed from the stored value as before. ERP-Core's record
- * controller names the discount fields to lock them; with none on the page
- * there is nothing to lock.
- *
- * The mechanism, why it writes nothing and why uninstall gives the field
- * back: see the Quotes record view's fragment of the same name
- * (custom/Extension/modules/Quotes/Ext/clients/base/views/record/). Same body,
- * byte for byte; scripts/tests/bd_seller_discounts_hidden_test.php.
- */
+/** G848 (🔒2151b): the quote line's own record page draws no discount_field. */
 $bdHideModule = 'Products';
 $bdHideView = 'record';
 // The line discount and the figures derived from it. Never discount_price or

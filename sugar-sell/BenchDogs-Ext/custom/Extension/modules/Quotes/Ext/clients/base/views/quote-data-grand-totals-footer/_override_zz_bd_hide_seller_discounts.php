@@ -1,31 +1,6 @@
 <?php
 
-/**
- * G848 (0.9.42-rc84, owner 🔒2151b) - Bench Dogs sellers do not apply
- * discounts. THE QUOTE'S TOTALS FOOTER shows no "Order Level Discount" row.
- *
- * WHAT GOES HERE: erp_document_discount_amount, the row ERP-Epicor adds before
- * Shipping with the same label as the header strip's cell,
- * LBL_ERP_DOCUMENT_DISCOUNT_AMOUNT ("Order Level Discount";
- * QuotesLayout::erpTotalsFooterFields()); its controller shows it only when
- * the figure is not zero, i.e. when Epicor sent an order-level discount. With
- * the header cell hidden, this row would be the one place left that says
- * "Order Level Discount". Also any row an admin configured from the same
- * quote-level figures (deal_tot and its twins, discount,
- * erp_document_discount_percent - Admin > Quotes Configuration's footer rows
- * write this view).
- *
- * WHAT STAYS: the stored figure and the arithmetic. ERP-Epicor's footer
- * controller asks for erp_document_discount_amount / _percent itself
- * (context.addFields) and recalculates the amount from new_sub whether or not
- * a row draws it; the enforced total is the server's. Every other row
- * (new_sub, Tax (via ERP), Shipping, Grand Total) is left as it is, in order.
- *
- * The mechanism, why it writes nothing and why uninstall gives the row back:
- * see the Quotes record view's fragment of the same name
- * (custom/Extension/modules/Quotes/Ext/clients/base/views/record/). Same body,
- * byte for byte; scripts/tests/bd_seller_discounts_hidden_test.php.
- */
+/** G848 (🔒2151b): the totals footer draws no Order Level Discount row (erp_document_discount_amount). */
 $bdHideModule = 'Quotes';
 $bdHideView = 'quote-data-grand-totals-footer';
 // ERP-Epicor's seller discount control, and the quote-level discount figures.

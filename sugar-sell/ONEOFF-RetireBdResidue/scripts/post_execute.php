@@ -1,112 +1,6 @@
 <?php
 
-/**
- * ONE-OFF CLEANUP. Takes the Bench Dogs package's SEVEN retirement items off the
- * tenant, so the shipped package can stop carrying them.
- *
- * DISPOSABLE BY DESIGN, exactly like its two siblings ONEOFF-RetireBdQuoteMirror
- * and ONEOFF-DropBdQuoteMirrorTables: install it, let it run, uninstall it.
- *
- * 🛑 READ THIS FIRST - WHY THERE IS NO `copy` INSTALLDEF, AND WHY THAT IS THE
- *    WHOLE DESIGN.
- *
- * The obvious way to build this package would be to ship the retired paths EMPTY
- * through installdefs['copy'], the way BenchDogs-Ext itself ships its 38 stubs.
- * MEASURED IN SUGARENT 26.1.0, THAT WOULD UNDO ITSELF ON UNINSTALL:
- *
- *   ModuleInstaller::install_copy()              (:503-518)
- *       -> copy_path($from, $to, $backup_path)   with $backup_path = <zip>-restore
- *       -> copy_recursive_with_backup(..., $uninstall = false)
- *          :2669-2678  if (file_exists($dest)) { copy($dest, "$backup_path/$dest"); }
- *                      ...then copy($source, $dest)
- *
- *   ModuleInstaller::uninstall_copy()            (:521-545)
- *       -> copy_path($backup_path, $cp['to'], $backup_path, true)
- *       -> copy_recursive_with_backup(..., $uninstall = true)
- *          :2656-2662  copy($source, $dest)   <-- THE BACKUP IS COPIED BACK
- *
- * So a package that overwrites a live file through `copy` hands Sugar a pristine
- * copy of the PREVIOUS body, and Module Loader restores it the moment the package
- * is uninstalled. A cleanup built that way would work, look like it had worked,
- * and then silently revert every tenant on the day somebody tidied Module Loader.
- * That is worse than doing nothing, because it is invisible.
- *
- * This package therefore has an EMPTY `copy` list. Everything below is done from
- * post_execute through platform code, so there is no copy list for uninstall_copy
- * to walk, no -restore directory holding the old bodies, and nothing to put back.
- * Uninstalling it is a genuine no-op - the same property the two sibling one-offs
- * were built for and for the same reason.
- *
- * 🚩 THE CONVERSE, AND IT IS A REAL OPERATIONAL RULE, NOT A CAVEAT.
- * The restore hazard still exists for BENCHDOGS-EXT itself, which DOES ship every
- * one of these paths through `copy`. Uninstalling BenchDogs-Ext restores the
- * bodies that were on disk when THAT zip was installed - on et, the rc62 vardefs
- * this package just removed. So:
- *
- *     RUN THIS ONE-OFF **AFTER** ANY BENCHDOGS-EXT INSTALL OR UNINSTALL,
- *     AND RE-RUN IT AFTER ANY FUTURE BENCHDOGS-EXT UNINSTALL.
- *
- * It is idempotent, so re-running costs nothing and reports "nothing left to
- * remove". Installing a LATER BenchDogs-Ext that no longer ships these paths does
- * NOT resurrect them: install_copy only touches paths in its own copy list.
- *
- * WHY NOTHING HERE CALLS unlink(), rmdir() OR file_put_contents().
- * All three - and rmdir_recursive, copy, copy_recursive, mkdir_recursive, glob,
- * is_dir, is_file, fopen, fwrite, sugar_file_put_contents and write_array_to_file -
- * are on ModuleScanner's deny-list for packaged code (26.1.0
- * ModuleInstall/ModuleScanner.php:106-218). A package that called them would be
- * refused at upload. Every removal below is performed BY PLATFORM CODE, reached
- * through ModuleInstaller, where the deny-list does not apply. file_exists() is
- * not on the list, which is what makes the before/after census possible.
- *
- * WHAT IT DOES, IN ORDER, AND WHY THE ORDER IS THAT.
- *   1. Extension fragments (K-1, K-4's registration, K-5's source, D-3) are
- *      DELETED first, so that nothing is still registered against a class that
- *      step 4 is about to blank. (1.0.4, G599) One of them,
- *      DropdownsStyle/sales_stage_dom_style.php, is a path SugarCRM itself writes:
- *      it is deleted only when its body is one Bench Dogs shipped, and any other
- *      body is LEFT and reported under SKIPPED with its md5.
- *   2. Bench-only client-field directories are DELETED.
- *   3. The deployed-METADATA retirements run (K-2, K-3, K-5) - the only three
- *      items no installdef can reach, because they live in rows this package
- *      does not ship.
- *   4. Orphaned Bench Dogs class files are BLANKED (not deleted: blanking is
- *      the one single-file primitive that is safe for a class another file
- *      might still require).
- *   4b. (1.0.2) Bench Dogs' orphaned ORDER ADAPTER is DELETED once its planner
- *      is blank or absent - step 4 blanks that planner, and a blank planner
- *      makes the adapter refuse every Submit Order. See that step.
- *   4c. (1.0.3, G594) Bench Dogs' orphaned RELEASE-STAGE POLICY is DELETED
- *      when its body is one Bench Dogs shipped - the rc45-rc64 body keeps a
- *      fully ordered quote's Opportunity at Partial Production Ordered / 90
- *      instead of Closed Won. See that step.
- *   5. The paths it deliberately did NOT touch are reported by name.
- *
- * HOW AN OPERATOR READS THE RESULT, WITHOUT A SHELL AND WITHOUT sugarcrm.log.
- * ModuleInstaller::post_execute() wraps the require in
- *     ob_start(function ($val) { $this->log($val); }, 64);          (:435-440)
- * and ModuleInstaller::log() calls addInstallationMessage() and
- * $GLOBALS['log']->debug(). During a Module Loader install the default logger has
- * been swapped by MlpLogger::replaceDefault() (src/PackageManager/PackageManager.php:941,
- * modules/Administration/UpgradeWizard_commit.php:17), which sets the log file to
- * package_install and the level to debug. So EVERY echo below appears in BOTH:
- *   - Module Loader's own "Display Log" panel on the install page, and
- *   - package_install.log, which the Admin Diagnostic Tool can export from a
- *     SugarCloud tenant (pick ONLY "Package Install Log").
- * The $GLOBALS['log']->fatal() summary at the end lands there too, at a level no
- * configuration filters out. Nothing here depends on sugarcrm.log.
- *
- * IDEMPOTENT, AND THE SECOND RUN IS THE EVIDENCE. Every entry is guarded by
- * file_exists() before and re-checked after. A second run finds nothing, removes
- * nothing, and prints "NOTHING LEFT TO REMOVE" - which is exactly the evidence
- * 0.9.42-rc66 used to retire BdAutoSelectedReport, and exactly what lets the
- * shipped package drop each item afterwards.
- *
- * NO DATA IS TOUCHED. No bean is loaded, no row is written, no table is dropped,
- * no quote and no quote line is deleted. The only database write in the whole
- * script is ModuleInstaller's own language-cache rebuild inside
- * uninstall_languages().
- */
+/** One-off cleanup (G599, G594): takes the Bench Dogs package's retirement items off the tenant; install it, let it run, uninstall it. */
 
 // Guarded on the class, not the path: ModuleInstaller is already loaded during an
 // install, and a second require through a different resolved path is what killed
@@ -115,13 +9,7 @@ if (!class_exists('ModuleInstaller', false)) {
     require_once 'ModuleInstall/ModuleInstaller.php';
 }
 
-// THE VERSION THAT IS ACTUALLY RUNNING, read from the manifest rather than typed.
-// ModuleInstaller::post_execute() (26.1.0 :426-440) runs extract($data) over
-// readManifest() before require_once'ing this file, so $manifest is in scope -
-// the same read BenchDogs-Ext's own post_execute makes. Through 1.0.1 the header
-// and the fatal() summary said "1.0.0" whatever was installed, so the log could
-// not identify the zip. 'unknown' means the manifest was not in scope, i.e. this
-// file was run by something other than the installer.
+// The version that is actually running, read from the manifest in scope, never typed.
 $bdOneoffVersion = isset($manifest['version']) ? (string) $manifest['version'] : 'unknown';
 
 $bdRemoved = array();
@@ -129,32 +17,7 @@ $bdAlreadyGone = array();
 $bdFailed = array();
 $bdSkipped = array();
 
-/**
- * THE EXTENSION FRAGMENTS - K-1, K-4 (registration half), K-5 (source), D-3.
- *
- * Every custom/Extension/** path BenchDogs-Ext has EVER installed, taken from the
- * package's whole git history rather than from its current tree: 89 paths, of
- * which 87 are removed here. A census of the current package would miss the
- * orphans - files an old version installed and a later one stopped shipping, which
- * Module Loader therefore never deleted. That is the same failure mode that left
- * bd01_erp_rung_costs behind for ONEOFF-RetireBdQuoteMirror to find: only the
- * TENANT knew about it.
- *
- * THE TWO DELIBERATE EXCEPTIONS, and they are the whole point of 🔒 1508 / 🔒 1514:
- *   custom/Extension/modules/Accounts/Ext/Vardefs/bd_customer_group.php
- *   custom/Extension/modules/Accounts/Ext/Language/en_us.bd_customer_group.php
- * The two customer-group fields are the customer-category code the package KEEPS.
- * They are not in the list below and this package must never remove them.
- *
- * THE MECHANISM. ModuleInstaller::uninstallExt() (:675-712) builds
- *     custom/Extension/modules/<to_module>/Ext/<extname>/<name>.php
- * (or custom/Extension/application/Ext/<extname>/<name>.php when to_module is
- * 'application') and hands it to rmdir_recursive(), which unlinks a plain file
- * (include/dir_inc.php:96-99). It reads its worklist from $installer->installdefs,
- * which is a PUBLIC property (:85), so the list is supplied here rather than by a
- * manifest. That is the same technique BenchDogs-Ext's own post_install already
- * uses to drive uninstall_languages(), and no path below contains "..".
- */
+/** The extension fragments (K-1, K-4 registration half, K-5 source, D-3): every custom/Extension path BenchDogs-Ext ever installed (🔒 1508, 🔒 1514). */
 $bdExtensionGroups = array(
     'Vardefs' => array(
         array('to_module' => 'Contacts', 'name' => 'bd_contact_sync_fields'),
@@ -261,60 +124,9 @@ $bdExtensionGroups = array(
     ),
 );
 
-/**
- * NO CLOSURE HERE, AND NO HELPER FUNCTION EITHER. The Extension path is built
- * inline at both sites below, duplicated on purpose: calling through a variable
- * is refused by ModuleScanner and flagged as a BLOCKER by mlp_lint MLP017, and a
- * closure assigned to a variable and then called is exactly that shape. The
- * linter caught it on this file's first build - 56 findings - which is why the
- * build step lints the ZIP with an MLP019-era copy and not the working tree's.
- *
- * The two branches are copied from uninstallExt():675-706, not guessed: for
- * to_module 'application' the Ext root is custom/Extension/application/Ext,
- * otherwise custom/Extension/modules/<to_module>/Ext.
- */
+/** No closure and no helper: the path is built inline twice, because a variable call is refused by ModuleScanner (MLP017). */
 
-/**
- * 1.0.4 (G599) - EXTENSION PATHS ANOTHER WRITER SHARES ARE DELETED ONLY WHEN THE
- * BODY IS ONE BENCH DOGS SHIPPED.
- *
- * Through 1.0.3 every entry above was deleted BY PATH. For 86 of them that is
- * right: each name was chosen by Bench Dogs (bd_*, bd01_*, zzz_bd_*, en_us.bd_*,
- * or a _overridesubpanel-for-<retired bd01 relationship>), so nothing else can
- * have written it. ONE name is not Bench Dogs' to choose:
- *
- *     custom/Extension/application/Ext/DropdownsStyle/sales_stage_dom_style.php
- *
- * is "<dropdown>_style.php", the file SugarCRM 26.1 ITSELF writes for
- * sales_stage_dom. DropdownsManager::buildDropdownStyle() -> saveContents()
- * (src/Dropdowns/DropdownsManager.php:111-199, :364-379) writes it with a
- * "// created: <timestamp>" header whenever the served style's entries differ from
- * the dropdown's keys, and synchronizeDropdownsStyle() (:30-50) runs that for every
- * dropdown at the end of every Module Loader install (ModuleInstaller.php:385), every
- * uninstall (:2085) and every extension rebuild / Quick Repair
- * (rebuild_dropdowns_style, :3910-3914). The Admin Dropdown Editor
- * (DropdownEditorApi::saveDropdownStyle, :878-897) and Studio
- * (parser.dropdown.php:66) write the same path. On every tenant with ERP-Core,
- * whose REPLACE-mode sales_stage_dom has six keys against core's ten styled ones,
- * that condition always holds - so the file is Sugar's by default, and it is where
- * a customer's own sales-stage colours live. OBSERVED: on et, where no Bench Dogs
- * package was installed between the two runs, 1.0.2 deleted it on 2026-09-24 and
- * 1.0.3 found it back and deleted it again on 2026-09-25. The stock tenant's own
- * copy (a tenant Bench Dogs was never installed on) is pinned as the control in
- * tests/fixtures/dropdowns-style/.
- *
- * So a path listed here is deleted only when its md5 is one of the bodies Bench
- * Dogs shipped there (every distinct body in the BenchDogs-Ext zips on the build
- * machine, rc11 .. rc68; each pinned under tests/fixtures/dropdowns-style/ and
- * deleted by the harness). Any other body is LEFT, and reported under SKIPPED
- * with its md5. A Sugar-written body carries its write time, so its md5 can never
- * match this list by accident.
- *
- * DELETING A BENCH BODY BLANKS NOTHING: core's include/DropdownsStyle plus Partial
- * Fulfillment's own partial_fulfillment_sales_stage_style.php style every key of
- * the ERP-Core dropdown (measured: 0 unstyled), and Sugar writes its own file back
- * when its style sync next finds it missing.
- */
+/** 1.0.4 (G599): an extension path another writer shares is deleted only when its body is one Bench Dogs shipped. */
 $bdGuardedExtensionBodies = array(
     'custom/Extension/application/Ext/DropdownsStyle/sales_stage_dom_style.php' => array(
         // BenchDogs-Ext 0.9.42-rc11 (zip only; unguarded '... Closed' pair)
@@ -333,10 +145,7 @@ $bdInstaller = new ModuleInstaller();
 $bdInstaller->silent = true;
 
 foreach ($bdExtensionGroups as $bdSubdir => $bdItems) {
-    // Only ask the platform to remove entries that are actually on this tenant.
-    // A worklist of 87 against a tenant that holds nine of them would still work -
-    // uninstallExt() checks file_exists itself - but then the report could not
-    // tell "removed" from "was never here", and that distinction IS the evidence.
+    // Only ask the platform to remove entries that are on this tenant, so the report can tell removed from never here.
     $bdPresent = array();
     foreach ($bdItems as $bdItem) {
         if ($bdItem['to_module'] === 'application') {
@@ -397,34 +206,9 @@ foreach ($bdExtensionGroups as $bdSubdir => $bdItems) {
     }
 }
 
-/**
- * THE BENCH-ONLY CLIENT-FIELD DIRECTORIES.
- *
- * Five Sidecar field directories this package installed for buttons that no
- * longer exist - "Create Opportunity & Quote" (G15), "Send to Estimating",
- * "Best Pricing", "Order Selected", "Order Winning". Each is a whole directory
- * that belongs to Bench Dogs alone, which is what makes uninstall_customizations()
- * (:2625-2640) the right primitive: it rmdir_recursive's a directory and is the
- * same call ONEOFF-RetireBdQuoteMirror already uses. Its parameter is named
- * $beans, but it does nothing except prefix each entry with custom/modules/,
- * custom/Extension/modules/ and custom/working/modules/ and delete what is a
- * directory - so a nested name is a longer path, not a different behaviour. No
- * entry contains "..".
- *
- * 🛑 NOT IN THIS LIST, DELIBERATELY:
- *   custom/modules/ProductBundles/clients/base/views/quote-data-group-list
- *   custom/modules/Products/clients/base/views/quote-data-group-list
- * ERP-Core ships quote-data-group-list.js at the first of those paths on the
- * DEPLOYED core tree. Deleting it would take out the core quote grid on every
- * tenant, including the two that have never had Bench Dogs. They are reported at
- * the end instead, and they belong to whoever owns ERP-Core.
- */
+/** The Bench-only client-field directories (G15). */
 $bdDirectories = array(
-    // The three retired bd01 quote-mirror modules. ONEOFF-RetireBdQuoteMirror
-    // makes the same call, and that is deliberate duplication, not an oversight:
-    // that package REFUSES to run while the modules are still registered, so a
-    // tenant that took it in the wrong order still has these directories. The
-    // call is idempotent, so running it twice costs one is_dir() each.
+    // The three retired bd01 quote-mirror modules; ONEOFF-RetireBdQuoteMirror makes the same idempotent call.
     'bd01_ERP_Quote',
     'bd01_ERP_Quote_Line',
     'bd01_ERP_Quote_Cost',
@@ -459,64 +243,13 @@ if ($bdDirsPresent) {
     }
 }
 
-/**
- * WHERE THIS PACKAGE'S OWN FILES ARE.
- *
- * post_execute is required from <base_dir>/scripts/post_execute.php by
- * ModuleInstaller::post_execute():435, so dirname(__DIR__) is the unpacked
- * package. It is resolved once, and every use of it is guarded by file_exists:
- * if the guess is wrong, the affected step reports itself as SKIPPED and the rest
- * of the run still completes. Nothing here half-finishes silently.
- */
+/** Where this package's own files are: the unpacked package post_execute is required from. */
 $bdPackageDir = dirname(__DIR__);
 
-/**
- * K-2 - THE BENCH DOGS PANEL, SPLICED OUT OF THE **DEPLOYED** QUOTES RECORD VIEW.
- * K-3 - THE RETIRED bd_governing_origin MARKER ON THE OPPORTUNITY RECORD VIEW.
- *
- * These two are the reason this one-off cannot be "just delete some files". They
- * mutate rows that no installdef can see - the tenant's DEPLOYED record-view
- * metadata - so nothing a package ships or stops shipping reaches them. The work
- * has to RUN.
- *
- * 🚩 THE CLASSES ARE CARRIED IN THIS ZIP, NOT READ OFF THE TENANT, AND THAT IS A
- *    DELIBERATE CHOICE WITH A COST.
- * BenchDogs-Ext's own post_install requires the tenant's copy under
- * custom/modules/. Doing that here would make the one-off behave differently on
- * et (rc62's bodies) than on Bench (rc66's), which is the opposite of what a
- * one-off is for, and would leave the package unable to drop the files. So
- * lib/ holds a verbatim copy of both classes as of BenchDogs-Ext 0.9.42-rc66
- * (74a846e) and they are required from there.
- * THE COST, STATED: these are Lane D's files. If Lane D changes either class,
- * this package's copy is stale and must be re-vendored. It is a copy, not a fork,
- * and nothing in it has been edited.
- *
- * class_exists(..., false) before each require: the tenant's own copy may already
- * be loaded in this request, and requiring a second body for the same class name
- * is a fatal. If it is already loaded, that one is used.
- */
-// 🚩 NO DYNAMIC DISPATCH. An earlier draft drove these two through a
-// $step['class']::{$step['method']}() loop, which is shorter and which BOTH
-// ModuleScanner and mlp_lint MLP017 reject: a variable static call is exactly the
-// shape a scanner cannot follow. Written out, twice, on purpose.
+/** K-2 and K-3: the Bench Dogs panel spliced out of the deployed Quotes record view, and the retired bd_governing_origin marker off the Opportunity record view. */
+// No dynamic dispatch: a variable static call is refused by ModuleScanner and MLP017, so the two calls are written out.
 
-/**
- * 🚩 HOW THESE TWO REPORT, AND WHY IT IS NOT "I CALLED IT, SO I REMOVED IT".
- *
- * write() and remove() both return void and both log nothing. Reporting a
- * removal just because the call was made would make this package claim two
- * removals on EVERY run for ever - which would destroy the one thing it exists
- * to produce, a second run that says "nothing left to remove".
- *
- * Both methods only write when they actually changed something: they return
- * early at "$at === false" / "if (!$changed)" and otherwise call
- * deployRecordView(), which is ViewdefManager::saveViewdef() writing
- *     custom/modules/<Module>/clients/base/views/record/record.php
- * (26.1.0 src/MetaData/ViewdefManager.php:62-74). So the deployed viewdef file
- * is the observable. Hash it before and after: changed means the panel or the
- * marker was really there and is now gone; unchanged means it was already
- * absent, which IS the spentness evidence K-2 and K-3 are waiting for.
- */
+/** How these two report: a removal is claimed only when the deployed view actually changed. */
 $bdQuotesViewdef = 'custom/modules/Quotes/clients/base/views/record/record.php';
 $bdQuotesLib = $bdPackageDir . '/lib/BdQuotesLayoutExtensions.php';
 try {
@@ -566,25 +299,7 @@ try {
     $bdFailed[] = 'K-3 Opportunity marker (' . $e->getMessage() . ')';
 }
 
-/**
- * K-5 - THE ACCUMULATED zz_bd_stage_doms LANGUAGE FRAGMENT.
- *
- * Until rc64, BenchDogs-Ext's post_install appended its stage vocabulary to
- * custom/Extension/application/Ext/Language/en_us.zz_bd_stage_doms.php through
- * ModuleInstaller::install_languages(), which CONCATENATES rather than overwrites
- * (26.1.0 ModuleInstaller.php:1227-1235). The file on a long-lived tenant
- * therefore carries every key every past version ever appended, including
- * 🔒 314's retired '...Closed' pair. Partial Fulfillment owns that vocabulary now.
- *
- * uninstall_languages() is the exact mirror of the install and the only removal a
- * package has for it: it deletes en_us.<id_name>.php and rebuilds the language
- * cache (:1243-1265). Same installer class, same id_name, same template path as
- * the install used - copied from BenchDogs-Ext post_install.php:302-317, not
- * reinvented, because the guards in that block were put there for reasons this
- * package cannot see.
- *
- * Idempotent: on a tenant that never had the file the call only rebuilds.
- */
+/** K-5: the accumulated zz_bd_stage_doms language fragment (🔒 314). */
 $bdStageFragment = 'custom/Extension/application/Ext/Language/en_us.zz_bd_stage_doms.php';
 try {
     $bdMi = new ModuleInstaller();
@@ -613,47 +328,7 @@ try {
     $bdFailed[] = $bdStageFragment . ' (' . $e->getMessage() . ')';
 }
 
-/**
- * THE ORPHANED CLASS FILES - K-4's tombstone and 20 others.
- *
- * These are single .php files sitting under module directories that OTHER
- * packages also write to (custom/modules/Quotes, /Products, /Accounts,
- * /Contacts, /Opportunities). There is no platform primitive that deletes one
- * file at an arbitrary path: uninstallExt only builds custom/Extension/** paths,
- * uninstall_customizations only removes DIRECTORIES, and unlink/rmdir_recursive/
- * SugarAutoLoader::unlink are all denied to packaged code. So these are BLANKED,
- * not deleted - overwritten with lib/emptied.php, which declares nothing.
- *
- * 🚩 AND THIS IS THE ONE PLACE THE RESTORE HAZARD IN THE HEADER STILL APPLIES, SO
- *    READ IT AGAIN. The write goes through ModuleInstaller::copy_path() with NO
- *    backup path (:1424-1460 -> copy_recursive), NOT through installdefs['copy'].
- *    Nothing is backed up, this package has no copy list, and uninstall_copy()
- *    therefore has nothing to walk and nothing to restore. Uninstalling THIS
- *    package leaves the blanked files blank. Uninstalling BENCHDOGS-EXT does not:
- *    its own -restore directory holds the bodies, so re-run this one-off after.
- *
- * 🛑 NOTHING BenchDogs-Ext 0.9.42-rc69 SHIPS IS IN THIS LIST, AND NEVER MAY BE.
- *   rc69 (G280 / 🔒 1567, minimal footprint) installs exactly four files; its
- *   three lifecycle scripts run from its own unpacked package and never land
- *   under custom/. The four are named in $bdNotOurs below as "KEPT BY rc69",
- *   and scripts/tests/test_oneoff_retire_bd_residue.py fails if that set and
- *   rc69's copy list ever differ, or if any worklist here names one of them.
- *   custom/modules/Quotes/BdQuotesLayoutExtensions.php and
- *   custom/modules/Opportunities/BdOpportunitiesLayoutExtensions.php are not
- *   in this list either: rc69 no longer ships them and nothing it ships calls
- *   them, but an rc68-or-earlier Bench Dogs uninstall still requires them.
- *
- * 🛑 AND custom/modules/Quotes/ErpQuoteHooks/** IS NOT IN THIS LIST EITHER.
- *   OpportunityContribution.php is shipped by Partial Fulfillment 1.0.41 at the
- *   SAME path. Blanking it would put an empty stub at a provider path, which
- *   🔒 1508 and G280 both forbid, and deleting it drops ERP-Core to
- *   (float) $quote->total - the fabricated zero 🔒 1511 forbids. Blanking ANY
- *   file at a hook path is wrong for the same reason: the hook still finds the
- *   file, the class is gone, and the hook fails closed. Two of the five have to
- *   go, and both are DELETED, never blanked: ResolveOrderableLines.php by step 4b
- *   and OpportunityReleaseStagePolicy.php by step 4c (1.0.3, G594). The other
- *   three are reported, untouched.
- */
+/** The orphaned class files (K-4's tombstone and 20 others), blanked with lib/emptied.php (G280, 🔒 1567, 🔒 1508, 🔒 1511). */
 $bdOrphanClasses = array(
     'custom/dropdowntemplates/bd_stage_doms.append.php',
     'custom/modules/Accounts/BdAccountCountryGuard.php',
@@ -689,14 +364,7 @@ if (!file_exists($bdEmptySource)) {
     $bdSkipped[] = 'orphaned class files - SKIPPED ENTIRELY, lib/emptied.php not found at '
         . $bdEmptySource . '; ' . count($bdOrphanClasses) . ' path(s) left exactly as they were';
 } else {
-    // THE IDEMPOTENCY TEST FOR THIS GROUP, AND WHY IT IS A HASH.
-    // A blanked file still EXISTS, so file_exists() cannot tell a second run from
-    // a first one - and a cleanup that reports 21 removals every time it runs is
-    // not evidence of anything. The blanked body is byte-identical to
-    // lib/emptied.php by construction, so comparing digests answers it exactly.
-    // filesize(), file_get_contents() and file() are all on the scanner's
-    // deny-list; md5_file() is not (26.1.0 ModuleScanner.php:106-218), and it is
-    // used here to COMPARE TWO LOCAL FILES, never as a security boundary.
+    // Idempotency: a blanked file still exists, so its digest against lib/emptied.php tells a second run from a first.
     $bdEmptyHash = md5_file($bdEmptySource);
     foreach ($bdOrphanClasses as $bdOrphan) {
         if (!file_exists($bdOrphan)) {
@@ -722,62 +390,7 @@ if (!file_exists($bdEmptySource)) {
     }
 }
 
-/**
- * 4b. THE ORPHANED ORDER ADAPTER - NEW IN 1.0.2, AND IT UNDOES A REGRESSION
- *     1.0.0 / 1.0.1 CAUSED.
- *
- *     custom/modules/Quotes/ErpQuoteHooks/ResolveOrderableLines.php
- *
- * MEASURED ON OPHIR (quote 368, 2026-09-23 02:55Z and 02:57Z): Submit Order
- * refused BEFORE reaching Epicor - "The Bench Dogs order planner is not
- * installed, so this quote cannot be adjudicated and nothing was sent."
- * create_order returned status=error, created=false.
- *
- * WHY. BenchDogs-Ext 0.9.42-rc37..rc40 shipped a PAIR: the planner
- * custom/modules/Quotes/BdSubmitOrderPlan.php, and this adapter, which is the one
- * file ERP-Epicor's ErpQuoteHooks::fireResolveOrderableLines() looks for. Later
- * builds stopped shipping both, so a tenant that ever took rc37-rc40 keeps both.
- * Step 4 BLANKS the planner (it is in $bdOrphanClasses). 1.0.0 / 1.0.1 then left
- * the adapter alone as "an ERP-Core contract path" - but the FILE there is Bench
- * Dogs', and with its planner blank it REFUSES by design: its loadPlanner() finds
- * no class and it answers that refusal rather than "no objection". So the cleanup
- * turned an inert orphan into a refusal on every Submit Order.
- *
- * WHAT ERP-EPICOR DOES WITH NO ADAPTER, read from its source rather than assumed
- * (erp-integration-sugar bc5b176, sugar-sell/ERP-Epicor/src):
- *   custom/modules/Quotes/ErpQuoteHooks.php:139-144 - no file: the candidates
- *       come back UNCHANGED, status 'hook_absent'. Not an error path.
- *   custom/clients/base/api/QuotesErpActionsApi.php:1767-1782 - candidates
- *       unchanged means the whole-quote route, the one every tenant without Bench
- *       Dogs already takes; :5474-5477 - that order lane drops the quantity-break
- *       rungs the customer did not choose (G200) on its own.
- * A BLANKED adapter would NOT do: file_exists() is still true, the require'd file
- * declares no class, `new ErpQuoteResolveOrderableLinesHook()` throws, and
- * ErpQuoteHooks.php:147-164 refuses with "Line selection could not be resolved".
- * So this one file is DELETED, not blanked.
- *
- * HOW, WITHOUT unlink(). ModuleInstaller::copy_path() in uninstall mode (26.1.0
- * :1424-1462) hands copy_recursive_with_backup() (:2656-2690) a source; when that
- * source is neither a file nor a directory it unlinks the destination
- * (:2680-2684). That is the exact route uninstall_copy() (:521-547) uses to delete
- * a file a package installed when there is no backup of it - platform code, so
- * the deny-list does not apply. The source is a path under this unpacked package
- * that the package never ships, and it is checked ABSENT first: if it existed,
- * copy_path would copy it over the adapter instead of deleting it.
- *
- * ONLY BENCH DOGS' OWN ADAPTER, AND ONLY WHEN ITS PLANNER CANNOT ANSWER.
- *   - The body must be the one Bench Dogs shipped. md5 f6c3d474... is the only
- *     body in BenchDogs-Ext's git history (17a87c0, blob 2963abf0) and the one in
- *     every rc37-rc40 zip found on the build machine. Another package may ship
- *     its own adapter at this contract path; that file is not this package's to
- *     delete. A different body is LEFT and reported under SKIPPED, because Submit
- *     Order may still be refusing and an operator has to see why.
- *   - The planner must be absent, or blank (byte-identical to lib/emptied.php).
- *     If step 4 could not blank it, the pair still works and is left alone.
- * It runs AFTER step 4, so a first run on an untouched tenant blanks the planner
- * and retires its adapter in the same pass. Idempotent: a second run finds no
- * adapter and says so.
- */
+/** 4b (1.0.2, G200): the orphaned order adapter ErpQuoteHooks/ResolveOrderableLines.php, undoing a regression 1.0.0 / 1.0.1 caused. */
 $bdAdapter = 'custom/modules/Quotes/ErpQuoteHooks/ResolveOrderableLines.php';
 $bdPlanner = 'custom/modules/Quotes/BdSubmitOrderPlan.php';
 $bdAdapterBenchMd5 = array(
@@ -821,58 +434,7 @@ if (!file_exists($bdAdapter)) {
     }
 }
 
-/**
- * 4c. THE ORPHANED RELEASE-STAGE POLICY - NEW IN 1.0.3 (G594).
- *
- *     custom/modules/Quotes/ErpQuoteHooks/OpportunityReleaseStagePolicy.php
- *
- * MEASURED ON benchdogs-dev (quote #8 ab7ca13c, 2026-09-25 08:52Z, ADM orders
- * 27599 + 27600): the order that completed the quote left its Opportunity at
- * Partial Production Ordered / 90 instead of Closed Won / 100, and the audit shows
- * only erp_ordered_amount / erp_open_amount moving. Stock, which never had Bench
- * Dogs, moves the same step to Closed Won / 100 (G346).
- *
- * WHY. Partial Fulfillment's ErpOpportunityValuation::releaseStageDecision()
- * (erp-integration-sugar f5c5eecd, :500-560) finds this file by a HARDCODED PATH,
- * and a provider that answers a valid stage WINS (:523-524) - so PF's own
- * "nothing left open -> Closed Won" (orderedInFullResolution(), G346, :529-530)
- * is never reached. BenchDogs-Ext 0.9.42-rc45..rc64 shipped a provider that answers
- * 'Partial Production Ordered' / 90 whenever ANY line is ordered and never asks
- * whether anything is still open, so it answers that on the final release too.
- * rc65 overwrote it with a provider that returns null; rc66 stopped shipping the
- * path. Module Loader never deletes a file a later build stops shipping (§CW /
- * G37), so a tenant that went from rc64-or-earlier straight to rc66+ keeps the
- * deciding body for good. benchdogs-dev did exactly that: rc60 -> rc68 (the
- * 2026-09-23 dev-instance kit) -> rc69 -> rc72 -> rc74, never rc65. Through 1.0.2
- * this package left the file alone as "reads no class this package blanks" -
- * true about blanking, and beside the point: the body itself DECIDES.
- *
- * WHAT PF DOES WITH NO FILE, read from its source rather than assumed:
- * policy_provider_absent takes the generic path - a partial release writes the
- * configured partial stage (Partial Production Ordered / 90, :533-559) and a final
- * release writes Closed Won at sales_probability_dom's 100 (:529-530, :658-683).
- * rc65's null stub reaches the identical decision.
- * scripts/tests/test_release_stage_absent_equals_null.py runs PF's real resolver
- * all three ways: null stub, no file, and this rc45-rc64 body (case E).
- *
- * DELETED, NEVER BLANKED. A file at this path that defines no class makes PF
- * return policy_provider_invalid, which PRESERVES the stage on EVERY release,
- * partial ones included (:511-515) - strictly worse than the defect. Same
- * mechanism as step 4b: copy_path() in uninstall mode with a source that does not
- * exist unlinks the destination (26.1.0 ModuleInstaller.php:2685-2688), platform
- * code the scanner's deny-list does not reach. The source is checked ABSENT first.
- *
- * ONLY A BODY BENCH DOGS SHIPPED. The allowlist is every distinct body found at
- * this path in the BenchDogs-Ext zips on the build machine (102 zips), not only
- * in git: rc39/rc40 were built from a tree git never recorded. Each body is
- * pinned under tests/fixtures/release-stage-policy/ and the harness deletes each
- * one. rc65's null stub is included: deleting it changes no decision, and
- * afterwards no Bench Dogs body is left at a provider path. Any other body is
- * somebody else's provider - LEFT, and reported under SKIPPED with its md5,
- * because it may be exactly why an Opportunity never reaches Closed Won.
- *
- * Idempotent: a second run finds no file and says so.
- */
+/** 4c (1.0.3, G594): the orphaned release-stage policy ErpQuoteHooks/OpportunityReleaseStagePolicy.php (G346, G37). */
 $bdReleasePolicy = 'custom/modules/Quotes/ErpQuoteHooks/OpportunityReleaseStagePolicy.php';
 $bdReleasePolicyBenchMd5 = array(
     // rc4 (blob 434b0658): reads the bd01 quote mirror, answers '... Closed'
@@ -923,20 +485,7 @@ if (!file_exists($bdReleasePolicy)) {
     }
 }
 
-/**
- * WHAT THIS PACKAGE DELIBERATELY DID NOT TOUCH.
- *
- * Reported by name on every run, present or not, because "I left it alone" is a
- * finding an operator has to be able to read as easily as "I removed it". Each
- * of these is a path BenchDogs-Ext installed that this package is not entitled to
- * remove, with the reason.
- *
- * "KEPT BY rc69" IS EXACTLY WHAT BenchDogs-Ext 0.9.42-rc69 INSTALLS (G280 /
- * 🔒 1567): four files, its whole copy list. Its three lifecycle scripts run from
- * its own unpacked package and never land under custom/, so there is nothing on
- * the tenant to leave alone for them. scripts/tests/test_oneoff_retire_bd_residue.py
- * holds these four equal to rc69's KEPT list and checks no worklist names one.
- */
+/** What this package deliberately did not touch, reported by name on every run (G280, 🔒 1567). */
 $bdNotOurs = array(
     'custom/Extension/modules/Accounts/Ext/Vardefs/bd_customer_group.php'
         . ' - KEPT BY rc69: the customer category (🔒 1508 / 🔒 1514 / 🔒 1567).',
@@ -968,32 +517,7 @@ foreach ($bdAdapterLeft as $bdItem) {
     $bdNotOurs[] = $bdItem;
 }
 
-/**
- * THE REPORT.
- *
- * Two destinations, both reachable on SugarCloud without a shell:
- *
- *   echo  -> ModuleInstaller::post_execute() has this require inside
- *            ob_start(function ($val) { $this->log($val); }, 64)  (:435-440)
- *            and log() calls addInstallationMessage(), which is what Module
- *            Loader's "Display Log" link on the install page renders. It also
- *            calls $GLOBALS['log']->debug(), and MlpLogger::replaceDefault()
- *            (PackageManager.php:941) has already pointed the default logger at
- *            package_install AT DEBUG LEVEL for the duration of the install.
- *
- *   fatal -> package_install.log at a level nothing filters, exportable from
- *            Admin > Diagnostic Tool with ONLY "Package Install Log" ticked.
- *
- * That is the answer to the problem that made these items hard to retire in the
- * first place: post_install wrote to sugarcrm.log, which SugarCloud keeps out of
- * reach. Nothing below needs sugarcrm.log and nothing below needs bd-tools/repair-ui.
- *
- * 🚩 WHAT IS NOT DONE HERE, AND WHO OWNS IT. The brief suggested routing the
- * outcome through the bd-tools/repair-ui route. That would mean editing
- * custom/clients/base/api/BdBenchDogsActionsApi.php, which belongs to the Sugar
- * package lane, not to packaging. It has not been touched. The two destinations
- * above make it unnecessary rather than merely blocked.
- */
+/** The report: echoed into Module Loader's Display Log, and written as fatal to package_install.log (Admin > Diagnostic Tool). */
 // echo DIRECTLY, never through a one-line helper closure. Same MLP017 blocker as
 // above: a closure held in a variable and then called is a call through a
 // variable, and ModuleScanner rejects the whole upload over one occurrence.

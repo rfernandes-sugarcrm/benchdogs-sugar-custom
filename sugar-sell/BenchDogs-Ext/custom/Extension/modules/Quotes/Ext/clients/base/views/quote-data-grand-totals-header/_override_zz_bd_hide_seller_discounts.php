@@ -1,30 +1,6 @@
 <?php
 
-/**
- * G848 (0.9.42-rc84, owner 🔒2151b) - Bench Dogs sellers do not apply
- * discounts. THE QUOTE'S TOTALS STRIP (the bar above the lines) shows no
- * "Order Level Discount".
- *
- * WHAT GOES HERE: deal_tot. ERP-Epicor moves stock's first-place "Discount"
- * cell to follow new_sub and labels it LBL_ERP_DOCUMENT_DISCOUNT_AMOUNT
- * ("Order Level Discount"; QuotesLayout::erpTotalsHeaderFields(), 🔒 1544a),
- * and its Quotes currency field draws the order-level discount and its % in
- * it. Matched by NAME, so stock's own label goes the same way. Also any cell
- * an admin configured from the same quote-level figures (deal_tot's two
- * twins, discount, erp_document_discount_amount / _percent - Admin > Quotes
- * Configuration's summary columns write this view).
- *
- * WHAT STAYS: Line Items Discounted Subtotal (new_sub), Tax (via ERP), Shipping
- * and Grand Total, as they are and in order. deal_tot's related_fields and the
- * record's fetch list are never entered: the figure is still READ and still
- * computed, only not drawn. ERP-Epicor's header controller finds no deal_tot
- * cell to space (getField() returns nothing and it returns).
- *
- * The mechanism, why it writes nothing and why uninstall gives the cell back:
- * see the Quotes record view's fragment of the same name
- * (custom/Extension/modules/Quotes/Ext/clients/base/views/record/). Same body,
- * byte for byte; scripts/tests/bd_seller_discounts_hidden_test.php.
- */
+/** G848 (🔒2151b): the totals strip draws no Order Level Discount (deal_tot) (🔒 1544a). */
 $bdHideModule = 'Quotes';
 $bdHideView = 'quote-data-grand-totals-header';
 // ERP-Epicor's seller discount control, and the quote-level discount figures.

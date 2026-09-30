@@ -2,76 +2,7 @@
 
 // phpcs:disable PSR1.Classes.ClassDeclaration.MissingNamespace
 
-/**
- * G380 / G381 (owner rulings 🔒 1705b, 🔒 1724b): Bench Dogs' ADM rules, the Sugar
- * half. ADM config and ADM rules ONLY - everything generic is ERP-Epicor's or
- * core's, and this class ASKS for it rather than re-deriving it.
- *
- * WHAT LIVES HERE (each a rule of ONE customer's ERP company):
- *
- *  - Reference DEFAULTS to the ship-to's city and state ("WAYNE NJ") on an ADM
- *    quote not yet sent to the ERP. The field is ERP-Epicor's generic
- *    Quotes.erp_reference; only this default is Bench's. Only an EMPTY value is
- *    filled, so the seller may change it. G530: the default is SHORTENED to
- *    what the ERP takes (Epicor QuoteHed.Reference, 10 characters, the field's
- *    erp_max_length) - the state is kept and the city cut ("HARRISB PA").
- *  - Project is PRE-FILLED from the product-group -> project default list
- *    (bd_adm_project_by_group_list, tenant data an admin edits in Dropdown
- *    Editor; CMI -> 20065, owner rule 🔒 1712b), only when EVERY line's group
- *    maps to the SAME project.
- *  - the seller's pick lists for Lead Source, Lead Type and Project: active
- *    ERP_LookupValues rows of types BdLeadSources / BdLeadTypes / BdProjects,
- *    which core publishes from the ADM connection's own code-list config.
- *  - G460: the pick lists for Marketing Campaign and Marketing Event: active
- *    rows of types BdMarketingCampaigns / BdMarketingEvents, which the Bench
- *    connector extension publishes from ADM's own masters (ADM connection
- *    only). ADM names no default event (DefMktgEvntSeq 0, isDefault false,
- *    measured), so nothing is ever INVENTED for them.
- *  - G809 (owner, quote 8972: "maybe we should put defaults"): on a NEW ADM
- *    quote, an EMPTY Lead Source, Lead Type, Project (owner scope,
- *    2026-09-29) and Campaign + Event pair are copied from the SAME ACCOUNT's
- *    newest quote that holds a value the picker still offers - EACH FIELD
- *    from its own newest such quote, the customer's own last choice (pilot
- *    ADM: consecutive quotes of one customer repeat Lead Source 93 %, Lead
- *    Type 95 %, Campaign 74 %). The pair comes from ONE quote. This is the
- *    server half, for a quote created without the form (API, the Account
- *    button); the create form's half is ERP-Core's
- *    erp_prefill_from_account_latest, the same rule in the browser.
- *
- * WHICH QUOTES ARE ADM, WITH NO COMPANY LIST OF ITS OWN (🔒 1724b: "ADM" from
- * one source). A quote is an ADM quote when its ERP company has published
- * BdLeadSources rows (erp_sync_key "<COMPANY>__BdLeadSources_<code>", core's
- * scoped key). Only the ADM connection's lookup_code_lists config publishes that
- * type, so this side follows core's config and cannot disagree with it.
- *
- * WHAT DOES NOT LIVE HERE ANY MORE: which ERP company a quote is for, and which
- * product group a line is in, are ERP-Epicor's ErpQuoteFacts (G380 (g)) - the
- * one copy QuotesErpActionsApi builds its payload from, so an answer here cannot
- * drift from what is sent (the old private copies had already drifted, footprint
- * SB8). The part-number refusal is ERP-Epicor's per-company switch (G380 (e));
- * this package no longer fills its ordering hook points. Refusing a send that
- * lacks an ADM value is the connector extension's write-back hook.
- *
- * AN OLDER ERP-EPICOR IS TOLERATED, NEVER FATAL. ErpQuoteFacts is loaded by its
- * one literal path, guarded by class_exists (MLP001), with @include_once so a
- * missing file is a warning, not a fatal. Without it the defaults are skipped
- * and the reason is logged: they are a convenience, and a Quote save must never
- * fail for them (MLP004).
- *
- * SO IS A NEWER ONE. The Rafael review's T2 (erp-integration-sugar #158) moves
- * the class to custom/src/Erp as Sugarcrm\Sugarcrm\custom\Erp\ErpQuoteFacts,
- * found by Sugar's autoloader, and deletes the old file on the tenant; it ships
- * no global alias. That class is asked for FIRST, with autoloading on (nothing
- * else is bound to have loaded it before this before_save, so a class_exists
- * with autoload off would switch the defaults off), and only when it is not
- * installed is the old global class looked for at its literal path - so a
- * leftover old file beside the namespaced class is never included. Every call
- * names one class or the other literally (the facts* helpers); class_alias is on
- * ModuleScanner's blacklist, and a class held in a variable is dynamic dispatch.
- *
- * Scanner-safe: no glob, no is_callable, no dynamic dispatch, no call_user_func,
- * no class_alias.
- */
+/** G380 / G381 (🔒 1705b, 🔒 1724b): Bench Dogs' ADM rules, the Sugar half; everything generic is ERP-Epicor's or core's (G530, 🔒 1712b, G460, G809). */
 class BdAdmRules
 {
     /** ERP_LookupValues discriminators, a contract with core's code-list config. */
@@ -91,12 +22,7 @@ class BdAdmRules
     public const FIELD_GROUP_CODE = 'bd_customer_group_code';
     public const FIELD_GROUP_NAME = 'bd_customer_group';
 
-    /**
-     * G460: an event's picker key is "<campaign>/<seq>" (26DISCNV/2), split at
-     * the LAST separator - the contract with the connector extension
-     * (adm_rules.EVENT_KEY_SEPARATOR), which splits the seller's pick the same
-     * way and refuses a pair whose event is not the campaign's.
-     */
+    /** G460: an event's picker key is "<campaign>/<seq>" (26DISCNV/2), split at the LAST separator - the contract with the connector extension (adm_rules.EVENT_KEY_SEPARATOR), which splits the seller's pick the same way and refuses a pair whose event is not the campaign's. */
     public const EVENT_KEY_SEPARATOR = '/';
 
     /** Tenant data (app_list_strings), editable in Admin > Dropdown Editor. */
@@ -108,14 +34,7 @@ class BdAdmRules
     /** A quote with more lines than this is not scanned for a project default. */
     public const MAX_LINES_SCANNED = 500;
 
-    /**
-     * G809: the single pickers defaulted from the account's newest quote,
-     * field => the lookup type whose ACTIVE rows it may take a value from.
-     * (The Campaign + Event pair is defaulted as a pair, not from here.)
-     * Project (owner, 2026-09-29T21:05Z: required but not prefilled like the
-     * others) comes AFTER 🔒 1712b's product-group default in applyDefaults(),
-     * so it fills only a Project that default left empty.
-     */
+    /** G809: the single pickers defaulted from the account's newest quote, field => the lookup type whose ACTIVE rows it may take a value from (🔒 1712b). */
     public const ACCOUNT_HISTORY_FIELDS = array(
         'bd_lead_source' => self::TYPE_LEAD_SOURCES,
         'bd_lead_type' => self::TYPE_LEAD_TYPES,
@@ -124,14 +43,7 @@ class BdAdmRules
     public const FIELD_CAMPAIGN = 'bd_marketing_campaign';
     public const FIELD_EVENT = 'bd_marketing_event';
 
-    /**
-     * G809: how many of the account's newest quotes holding a field one
-     * history read returns; the FIRST whose value is usable wins. Graded on
-     * benchdogs-dev (2026-09-30, rc80): reading ONE row per field let a
-     * retired value on the newest holder (campaign 24CGINST) hide every older
-     * usable one, and Campaign + Event stayed empty. The same number as
-     * ERP-Core's erp-dependent-enum (erpPrefillScan): one rule, two writers.
-     */
+    /** G809: how many of the account's newest quotes holding a field one history read returns; the FIRST whose value is usable wins. */
     public const HISTORY_SCAN = 20;
 
     /** Upper bound on the BdLeadSources rows read to learn the ADM companies. */
@@ -143,13 +55,7 @@ class BdAdmRules
     // ── which quotes are ADM ─────────────────────────────────────────────────
 
     /**
-     * The ERP companies that have published BdLeadSources rows, upper-cased,
-     * read ONCE per request (one query, however many quotes are saved).
-     *
-     * The company is split off each row's erp_sync_key in PHP at the FIRST
-     * "__" (core's scoped key), never matched with SQL LIKE: '_' is a LIKE
-     * wildcard, so 'ADM__%' would also match 'ADMX_...'.
-     *
+     * The ERP companies that have published BdLeadSources rows, upper-cased, read ONCE per request (one query, however many quotes are saved).
      * @return string[]
      */
     public static function admCompanies(): array
@@ -257,26 +163,7 @@ class BdAdmRules
 
     // ── G380: Reference defaults to the ship-to's city and state ─────────────
 
-    /**
-     * "WAYNE NJ": the city and the state, whichever are present, one space
-     * apart - SHORTENED to $max characters when it is longer (G530).
-     *
-     * Measured (benchdogs-sandbox #36, 2026-09-24 21:08:21Z): the default
-     * "HARRISBURG PA" (13) was refused by ADM, "The maximum number of
-     * characters allowed for Reference is 10", and no ERP quote was created.
-     *
-     * THE RULE, so a seller can predict it:
-     *   1. it fits ($max <= 0 means no limit is known): unchanged;
-     *   2. the STATE is kept whole and the CITY is cut to the room left
-     *      ($max - state - 1 for the space): "HARRISBURG PA" -> "HARRISB PA",
-     *      "SALT LAKE CITY UT" -> "SALT LA UT"; a cut that ends on a space
-     *      drops it ("NEW YORK NY" at 7 -> "NEW NY", never "NEW  NY");
-     *   3. no room for a city beside the state (a state of $max - 1 or more
-     *      characters), or no state: the first $max characters of what there
-     *      is, trailing space dropped.
-     * Characters, not bytes. The seller can overwrite it; only an EMPTY
-     * Reference is ever defaulted.
-     */
+    /** "WAYNE NJ": the city and the state, whichever are present, one space apart - SHORTENED to $max characters when it is longer (G530). */
     public static function defaultReference(string $city, string $state, int $max = 0): string
     {
         $city = trim($city);
@@ -303,15 +190,7 @@ class BdAdmRules
         return rtrim(mb_substr($full, 0, $max, 'UTF-8'));
     }
 
-    /**
-     * G530: the most characters the ERP takes in this quote's Reference,
-     * asked of ERP-Epicor (ErpQuoteFacts::referenceMaxLength(), which reads
-     * the field's erp_max_length), 0 when that ERP-Epicor is older and does
-     * not say - then the default is not cut, and Send to Estimation's answer
-     * is the ERP's own, as before. That case is LOGGED, like a missing
-     * ErpQuoteFacts: an uncut default is exactly the G530 symptom, and the
-     * log is where the reason must be findable.
-     */
+    /** G530: the most characters the ERP takes in this quote's Reference, asked of ERP-Epicor (ErpQuoteFacts::referenceMaxLength(), which reads the field's erp_max_length), 0 when that ERP-Epicor is older and does not say - then the default is not cut, and Send to Estimation's answer is the ERP's own, as before. */
     public static function referenceMaxLength($bean): int
     {
         if (self::factsAreNamespaced()) {
@@ -333,13 +212,7 @@ class BdAdmRules
 
     // ── G381: Project pre-filled from the product-group default list ─────────
 
-    /**
-     * The one project the default list gives these product groups, or '' when
-     * any group is blank or unmapped, or the groups map to different projects.
-     * One project per quote goes on every order line, so a quote mixing a
-     * mapped group with an unmapped one (CMI with DISPLAYS, which has no
-     * dominant project) is left for the seller to pick.
-     */
+    /** The one project the default list gives these product groups, or '' when any group is blank or unmapped, or the groups map to different projects. */
     public static function defaultProject(array $groups): string
     {
         if ($groups === array()) {
@@ -367,16 +240,7 @@ class BdAdmRules
 
     // ── the before_save hook ─────────────────────────────────────────────────
 
-    /**
-     * Logic hook entry point (before_save on Quotes). Runs on EVERY Quote save
-     * on the tenant, so it is built to cost nothing for a quote it cannot touch.
-     *
-     * FAILS OPEN, and that is the non-lossy direction here: these are
-     * DEFAULTS, a convenience for the seller. A defaults lookup that throws
-     * must not fail the save of a quote the seller is editing (MLP004); the
-     * worst case is an empty Reference or Project, which the send refuses by
-     * name. The failure is logged, never swallowed silently.
-     */
+    /** Logic hook entry point (before_save on Quotes). */
     public function beforeSave($bean, $event, $arguments): void
     {
         try {
@@ -392,25 +256,7 @@ class BdAdmRules
         }
     }
 
-    /**
-     * Fill an EMPTY erp_reference and an EMPTY bd_project_id on an ADM quote
-     * that has not reached the ERP yet, and (G809, $isCreate only) an EMPTY
-     * Lead Source, Lead Type, Project and Campaign + Event pair from the
-     * account's newest quote holding a usable value of each. The product-group
-     * Project default runs first; the history fills a Project only when that
-     * left it empty. Returns the names of the fields set.
-     *
-     * The exits are ordered cheapest first, so a quote this cannot touch
-     * loads no record:
-     *   1. the quote already has an ERP number (its values are the ERP's);
-     *   2. every value it could fill is already set (nothing to default);
-     *   3. no company has published BdLeadSources at all - every non-Bench
-     *      tenant, and a Bench tenant before its code lists land (one query per
-     *      request, cached);
-     *   4. ERP-Epicor's ErpQuoteFacts is not there (an older ERP-Epicor), logged;
-     *   5. the quote's company is not an ADM company (this reads the account).
-     * Never overwrites what a seller typed; never touches another company's quote.
-     */
+    /** Fill an EMPTY erp_reference and an EMPTY bd_project_id on an ADM quote that has not reached the ERP yet, and (G809, $isCreate only) an EMPTY Lead Source, Lead Type, Project and Campaign + Event pair from the account's newest quote holding a usable value of each. */
     public static function applyDefaults($bean, bool $isCreate = false): array
     {
         $set = array();
@@ -478,18 +324,7 @@ class BdAdmRules
     }
 
     /**
-     * Fill the EMPTY history fields of a new quote, each field on its own: of
-     * the account's newest quotes holding that field (HISTORY_SCAN of them,
-     * newest first), the FIRST whose value the picker still offers - a code
-     * retired since (an inactive lead source, project or campaign) is skipped
-     * for the next quote, never copied. The Campaign + Event pair likewise
-     * from the first quote holding BOTH whose event is that campaign's and
-     * whose campaign and event are both offered, and: both when both are
-     * empty, the event alone when the seller's campaign is that quote's
-     * campaign (a quote with another campaign is skipped - never mixed), an
-     * event alone never derives a campaign. No usable quote: the field stays
-     * empty for the seller.
-     *
+     * Fill the EMPTY history fields of a new quote, each field on its own: of the account's newest quotes holding that field (HISTORY_SCAN of them, newest first), the FIRST whose value the picker still offers - a code retired since (an inactive lead source, project or campaign) is skipped for the next quote, never copied.
      * @return string[] the fields set
      */
     public static function applyAccountHistory($bean): array
@@ -548,11 +383,7 @@ class BdAdmRules
     }
 
     /**
-     * The pure half of the pair rule: [campaign, event] to copy from the
-     * account's quote, or [] when nothing may be copied. The event must be
-     * the campaign's (split at the LAST separator, eventCampaign()); a quote
-     * whose campaign the seller did not choose is never mixed in.
-     *
+     * The pure half of the pair rule: [campaign, event] to copy from the account's quote, or [] when nothing may be copied.
      * @return string[]
      */
     public static function pairToCopy(string $current, string $campaign, string $event): array
@@ -569,12 +400,7 @@ class BdAdmRules
     }
 
     /**
-     * The newest quotes (date_entered, newest first, at most HISTORY_SCAN) of
-     * this billing account, other than $exceptId, whose $fields are all
-     * non-empty, as rows of those fields; [] when there are none. One query.
-     * Team security applies: it copies only from a quote the saving user may
-     * see, as the browser's read does.
-     *
+     * The newest quotes (date_entered, newest first, at most HISTORY_SCAN) of this billing account, other than $exceptId, whose $fields are all non-empty, as rows of those fields; [] when there are none.
      * @return array[]
      */
     public static function newestQuotesHolding(string $accountId, array $fields, string $exceptId): array
@@ -637,20 +463,7 @@ class BdAdmRules
 
     // ── G804: the Account's Cust. Group ──────────────────────────────────────
 
-    /**
-     * Logic hook entry point (before_save on Accounts). On an Account NOT in
-     * the ERP whose Group Code the seller picked (bd_customer_group_code, the
-     * code the connector extension sends as Customer.GroupCode, G804), keep the
-     * readable Cust. Group (bd_customer_group) in step: the group's name from
-     * ADM's own list, else the code itself (the extension's rule for the same
-     * field: never a fabricated name). A cleared pick clears the name.
-     *
-     * An Account the ERP holds is left alone: the extension's erp_customers
-     * sweep writes both fields from Epicor, and the picker is read-only there.
-     * Only a CHANGED code is acted on (a create that sets one, or an update
-     * that changes it), so a save that does not touch the group reads nothing.
-     * Fails open and logs, like the quote defaults: a save never fails for it.
-     */
+    /** Logic hook entry point (before_save on Accounts) (G804). */
     public function accountBeforeSave($bean, $event, $arguments): void
     {
         try {
@@ -730,20 +543,7 @@ class BdAdmRules
 
     // ── G460: the marketing pickers ─────────────────────────────────────────
 
-    /**
-     * Options for the Marketing Campaign or the Marketing Event picker: '' first,
-     * then the ACTIVE rows of that type that can form an ACTIVE PAIR - a
-     * campaign is offered only when at least one active event of it is, and an
-     * event only when its campaign is. Two queries (one per type), across teams.
-     *
-     * WHY THE PAIRING. ADM refuses a quote without a valid campaign AND event
-     * (G460). Of ADM's 42 active campaigns, 25 have NO active event (measured
-     * 2026-09-25): offering one of those would let the seller pick a campaign no
-     * event can complete. The list is every usable event, keyed and labelled
-     * with its campaign; since G571 ERP-Core's erp-dependent-enum shows only the
-     * chosen campaign's events in the browser (the vardef's erp_lookup_parent),
-     * and the connector extension still refuses a pair that does not match.
-     */
+    /** Options for the Marketing Campaign or the Marketing Event picker: '' first, then the ACTIVE rows of that type that can form an ACTIVE PAIR - a campaign is offered only when at least one active event of it is, and an event only when its campaign is (G460, G571). */
     public static function marketingOptions(string $type): array
     {
         return self::marketingOptionsFromRows(
@@ -773,12 +573,7 @@ class BdAdmRules
         return array($campaign, (int) $seq);
     }
 
-    /**
-     * The pure half of marketingOptions(), so it can be tested without a
-     * database. Campaigns in code order; events by campaign, then seq as a
-     * NUMBER (ADM reuses the same descriptions under every campaign, so a name
-     * order would interleave them). Labels are "KEY - Name".
-     */
+    /** The pure half of marketingOptions(), so it can be tested without a database. */
     public static function marketingOptionsFromRows(string $type, array $campaignRows, array $eventRows): array
     {
         $campaigns = array();
@@ -788,11 +583,7 @@ class BdAdmRules
                 $campaigns[$code] = trim((string) ($row['name'] ?? ''));
             }
         }
-        // Sorted by a composed string key and ksort(): usort() and its kin are
-        // on ModuleScanner's blacklist (MLP002 - one call rejects the upload).
-        // "<campaign>\0<seq, zero-padded>" orders by campaign exactly as
-        // strcmp() does (NUL sorts before any code character), then by seq as
-        // a number.
+        // Sorted by a composed string key and ksort(): usort() and its kin are on ModuleScanner's blacklist (MLP002 - one call rejects the upload).
         $events = array();
         foreach ($eventRows as $row) {
             $key = trim((string) ($row['erp_display_sync_key'] ?? ''));
