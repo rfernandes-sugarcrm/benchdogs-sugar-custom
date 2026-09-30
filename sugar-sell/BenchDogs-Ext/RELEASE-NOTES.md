@@ -1,3 +1,55 @@
+# 0.9.42-rc83 — G840: the ADM quote defaults keep working on ERP-Epicor 1.2.0, whose ErpQuoteFacts is namespaced
+
+Built on rc82 (#39, bc2d24a; stacked on rc81 #38; neither on main yet): rc83 =
+rc82 + #40 (c0b7030, the one shipped change) + the test re-pin below.
+**Requires** ERP-Epicor ≥ 1.1.134 and Partial Fulfillment ≥ 1.0.50 (unchanged).
+It runs on BOTH sides of ERP-Epicor 1.2.0, so it goes on a tenant BEFORE 1.2.0
+(🔒2142b); on 1.1.x it behaves exactly as rc82.
+
+**The defect** (G840): ERP-Epicor 1.2.0 (erp-integration-sugar
+`refactor/rafael-review` @ 280e0929, tree 206337c9; T2 of the Rafael review,
+#158) moves ErpQuoteFacts to `custom/src/Erp` as
+`Sugarcrm\Sugarcrm\custom\Erp\ErpQuoteFacts`, autoloaded, deletes the old
+`custom/modules/Quotes/ErpQuoteFacts.php` on the tenant
+(ONEOFF-RemoveErpLeftovers) and ships no global alias. rc82's BdAdmRules asked
+only for the global class (autoload off), then the old literal path - so on
+1.2.0 every ADM quote default (Reference, Project, G809's Lead Source / Lead
+Type / Project / Campaign + Event) would silently stop, logging
+"custom/modules/Quotes/ErpQuoteFacts.php is missing" on each save.
+
+- **`BdAdmRules::quoteFactsAvailable()`** asks for the namespaced class first,
+  WITH autoload, and only then the global class at its literal path, so a
+  leftover old file beside the namespaced class is never included. The three
+  calls (`companyCode`, `productGroup`, `referenceMaxLength`) go through
+  helpers that name one class or the other literally: no `class_alias`
+  (ModuleScanner blacklist), no class held in a variable (MLP017).
+- **Nothing else here names what 1.2.0 moved.** All 74 classes 1.2.0 puts in
+  `custom/src/Erp`, and every `custom/...` path this package names, were
+  checked against Sugar staging (a7737052, ERP-Epicor 1.1.179) and 280e0929:
+  only ErpQuoteFacts. No field type, view or layout this package names is
+  removed; the provider paths under `custom/modules/Quotes/ErpQuoteHooks/` are
+  unchanged; the package id `sugarai_erp_epicor` is the same, and 1.2.0
+  satisfies the ≥ 1.1.134 dependency.
+- **Tests re-pinned to 1.2.0.** `fixtures/shared-sugar/` is now taken from ONE
+  commit (280e0929, named in full in `PINNED.json`) and mirrors the sibling's
+  paths; the four moved pins (QuoteOpportunityAmount,
+  QuotePrimaryQuoteSoleEnforcer, ErpAccountCountryGuard - ERP-Core's - and
+  ErpQuoteFacts - ERP-Epicor's) are loaded through ERP-Core's own autoloader
+  stand-in (`tests/support/sugar_autoloader.php`, pinned too), never by
+  require. The global ErpQuoteFacts a 1.1 tenant still runs is pinned to its
+  last commit (a7737052, 1.1.179) under `fixtures/erp-epicor-1.1/`.
+  `bd_adm_rules_test.php` runs three times: 1.1's global class (121 checks),
+  no class (4), 1.2.0's namespaced class through the stand-in (124).
+- **Red first.** Against a sibling checkout of 280e0929 the drift guard failed
+  12 of its 13 pins (4 moved, 8 changed). With rc82's BdAdmRules (bc2d24a) and
+  the 280e0929 pin: 1.2.0 run 25 of 124 fail, 1.1 run 2 of 121, no-class run 1
+  of 4; with rc83, 0 in all three. Five controls fire and revert: a byte flipped
+  in a 1.2.0 pin and in the 1.1 pin, a pin path put back to the old location,
+  the harness naming the global class, the pinned enforcer removed.
+- Whole suite (`-m "not sugarent_tree"`): with the 280e0929 sibling 363
+  passed, 4 skipped; pins only (CI's shape) 358 passed, 9 skipped (the nine the
+  workflow names).
+
 # 0.9.42-rc82 — G458: the Epicor contact Function, Role and primary flags are SHOWN, read-only, on the Contacts record view
 
 Built on rc81 (#38, a14f18f - the tree installed on benchdogs-dev / sandbox;
