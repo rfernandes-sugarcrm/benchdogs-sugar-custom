@@ -125,6 +125,8 @@ namespace Sugarcrm\Sugarcrm\MetaData {
     }
 }
 namespace {
+// SugarAutoLoader's $dirMap rule for a global class: custom/include/Foo.php (rc87: the scripts autoload ErpLayoutExtraFields).
+spl_autoload_register(function ($c) { if (is_file("custom/include/$c.php")) { require_once "custom/include/$c.php"; } });
     use Sugarcrm\Sugarcrm\MetaData\ViewdefManager;
     $GLOBALS['logged'] = [];
     class TestLog { public function __call($m, $a) { $GLOBALS['logged'][] = (string) ($a[0] ?? ''); } }
@@ -261,8 +263,9 @@ class BenchDogsInstallLeavesButtonsAlone(unittest.TestCase):
         panels = [p["name"] for p in self.full["defs"]["Quotes"]["panels"]]
         self.assertEqual(panels, [p["name"] for p in QUOTES_PANELS])
         oneoff = (ROOT / "sugar-sell/ONEOFF-RetireBdResidue/scripts/post_execute.php").read_text()
-        self.assertIn("BdQuotesLayoutExtensions::write();", oneoff,
+        self.assertIn("'LBL_RECORDVIEW_PANEL_BENCHDOGS'", oneoff,
                       "nothing removes the retired Bench Dogs panel any more")
+        self.assertIn("saveViewdef($bdRecord, 'Quotes', 'base', 'record')", oneoff)
 
     def test_control_the_install_asks_erp_core_to_place_the_fields(self):
         """ANTI-VACUITY: the install really ran. Since rc70 (🔒 1724b) it places

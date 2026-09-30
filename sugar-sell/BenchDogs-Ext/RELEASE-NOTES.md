@@ -1,3 +1,17 @@
+# 0.9.42-rc87 — Rafael's review of #41 (🔒2167b); ONEOFF-RetireBdResidue 1.0.6
+
+rc87 = rc86 (12702b66, zip 627dc550…, its own tree) + the review fixes. Install order on a Bench tenant: ERP-Epicor >= 1.2.0 → PF → rc87 → ONEOFF-RetireBdResidue 1.0.6.
+
+- **ERP-Epicor >= 1.2.0 required (the blocker, owner 🔒2167b).** BdAdmRules imports `Sugarcrm\Sugarcrm\custom\Erp\ErpQuoteFacts`; the path include, `QUOTE_FACTS_FILE`, `factsAreNamespaced()`, `factsCompanyCode()`/`factsProductGroup()` and the pre-G530 `method_exists` branch are gone. Below 1.2.0 the manifest refuses the install, and if the class is ever missing at run time the ADM defaults are skipped with a logged error naming the 1.2.0 requirement (never a silent fallback to 1.1's global class).
+- **The REST stub is no longer shipped** (`custom/clients/base/api/BdBenchDogsActionsApi.php`); the one-off deletes the tenant's copy.
+- **One body for the six discount overlays:** `custom/src/BenchDogs/BdHiddenFields::strip(array $panels, array $names, array $panelNames): array`, with its try/catch inside. Each overlay is three lines, calls it by its full name (no `use`, the fragments are concatenated), and runs only on a panel list and only when the class autoloads.
+- **Admin > Quotes Configuration** saves the summary columns into the deployed views, but the overlays strip the discount fields at render: an admin who re-adds Discount sees it saved and never drawn on a Bench tenant.
+- **The picker option sources are static methods on BdAdmRules** (`'function' => array('name' => 'Sugarcrm\\Sugarcrm\\custom\\BenchDogs\\BdAdmRules::leadSourceOptions')`, no include). Checked against Sugar 26.1: `getOptionsFromVardef` → `getFunctionValue` (no function_bean) resolves the string with `is_callable`/`call_user_func_array`, and ModuleScanner accepts a string name (an array name is refused as "wrong format"). `custom/modules/Quotes/BdAdmLookupOptions.php` is retired; the one-off deletes it.
+- **ErpLayoutExtraFields is autoloaded** in post_execute and post_uninstall (a plain `class_exists`); the step report's MISSING and NOT-LOADED outcomes are one: "MISSING: class ErpLayoutExtraFields".
+- **pack.php** narrative comments are one line each; `mlp-lint.yml` says 26 rules and explains MLP026; the carried linter is refactor/rafael-review's at cf52eace.
+- **ONEOFF-RetireBdResidue 1.0.6** (Rafael's one-off layout): the zip is `scripts/post_execute.php`, `scripts/leftovers.php` and an empty placeholder under `leftovers/` per listed path; everything is DELETED through `uninstall_new_files` (nothing is blanked, `emptied.php` is gone), the three paths other writers share (the stage style, the release-stage policy, the order adapter) only when they hold a Bench body, each from its own placeholder subtree; the retired directories through `uninstall_customizations`; K-2 and K-3 inline through `ViewdefManager`, no cache calls (Module Loader rebuilds after post_execute). It requires the Bench Dogs release built from the same tree.
+- Tests: the ADM suite runs its refusal checks below 1.2.0 (O1-O6) and a getFunctionValue probe (M9); the overlay suite checks the new shape (I4-I8); the one-off harness runs the real pack.php zip over a census-seeded tenant (58 checks). Mutations: item 1 4/4, overlays 11/11, option sources 5/5, one-off 15/15, autoload 1/1.
+
 # 0.9.42-rc86 — Rafael's MLP rules on Bench (MLP020–MLP026, 🔒2161b)
 
 rc86 = rc85 (9d9e2acc, zip 99a2aa91…, its own tree) + these changes only. No behaviour change. **Requires** unchanged; install **before** ONEOFF-RetireBdResidue 1.0.5.

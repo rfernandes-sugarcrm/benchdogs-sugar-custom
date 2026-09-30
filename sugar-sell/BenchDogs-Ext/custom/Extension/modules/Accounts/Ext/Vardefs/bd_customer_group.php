@@ -29,8 +29,7 @@ $dictionary['Account']['fields']['bd_customer_group_code'] = array(
     'type' => 'enum',
     'len' => 10,
     'function' => array(
-        'name' => 'bd_adm_customer_group_options',
-        'include' => 'custom/modules/Quotes/BdAdmLookupOptions.php',
+        'name' => 'Sugarcrm\\Sugarcrm\\custom\\BenchDogs\\BdAdmRules::customerGroupOptions',
     ),
     // Never pre-picked by the browser (G574's rule for every Bench picker).
     'defaultToBlank' => true,

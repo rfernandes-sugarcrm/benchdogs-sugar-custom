@@ -86,6 +86,7 @@ MUTATION-VERIFIED (each applied, this file re-run, the named case observed red):
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import shutil
 import subprocess
@@ -125,6 +126,16 @@ BUILD_ON_TENANT = {k for k in KEPT if k.startswith("custom/")}
 #: routes them INERT). The one-off must not blank them while a tenant may still
 #: run rc69, whose install and uninstall call them.
 RC69_DROPPED_BY_THIS_BUILD = {"custom/modules/Accounts/BdAccountsLayoutExtensions.php"}
+#: rc69 files later builds RETIRED, which the one-off now deletes: rc87 stopped shipping the emptied REST stub
+#: (Rafael's review of #41, item 2), and the one-off requires rc87 or newer.
+RC69_RETIRED_SINCE = {"custom/clients/base/api/BdBenchDogsActionsApi.php"}
+
+
+def guarded() -> dict[str, set[str]]:
+    """1.0.6: the paths deleted only when they hold a Bench body, and those bodies' md5s, from scripts/leftovers.php."""
+    done = subprocess.run(["php", "-r", "echo json_encode((require $argv[1])['remove_if_bench']);",
+                           str(ONEOFF / "scripts/leftovers.php")], capture_output=True, text=True, check=True)
+    return {path: set(md5s) for path, md5s in json.loads(done.stdout).items()}
 
 
 def _not_ours_block() -> str:
@@ -148,7 +159,7 @@ def kept_by_rc69_in_the_report() -> set[str]:
 
 class TheOneOffNeverTakesWhatRc69Ships(unittest.TestCase):
     def test_no_worklist_names_a_file_rc69_ships(self):
-        self.assertEqual(set(oneoff_worklist()) & RC69_ON_TENANT, set(),
+        self.assertEqual(set(oneoff_worklist()) & (RC69_ON_TENANT - RC69_RETIRED_SINCE), set(),
                          "the one-off would delete or blank a file rc69 installs")
 
     def test_the_adapter_step_does_not_target_a_file_rc69_ships(self):
@@ -156,7 +167,7 @@ class TheOneOffNeverTakesWhatRc69Ships(unittest.TestCase):
         self.assertNotIn(PLANNER, RC69_ON_TENANT)
 
     def test_the_kept_by_rc69_report_is_exactly_rc69s_copy_list(self):
-        self.assertEqual(kept_by_rc69_in_the_report(), RC69_ON_TENANT)
+        self.assertEqual(kept_by_rc69_in_the_report(), RC69_ON_TENANT - RC69_RETIRED_SINCE)
 
     def test_the_report_matches_the_built_rc69_manifest_too(self):
         """The one-off's rc69 list is what rc69 shipped. This build keeps all of
@@ -188,8 +199,7 @@ class TheOneOffNeverTakesWhatThisBuildShips(unittest.TestCase):
         one-off's md5-gated delete can never meet a body of ours."""
         self.assertFalse((PKG / ADAPTER).exists())
         self.assertNotIn(ADAPTER, zip_names())
-        source = ONEOFF_POST_EXECUTE.read_text(encoding="utf-8")
-        self.assertIn("$bdAdapterBenchMd5 = array(", source)   # anti-vacuity
+        self.assertIn(ADAPTER, guarded())   # anti-vacuity: the one-off still guards the adapter
 
     def test_the_report_no_longer_claims_an_owner_keep_for_the_repair_route(self):
         """🔒 1573: no such ruling exists; rc69 ships the file EMPTY."""
@@ -234,10 +244,7 @@ class TheReleaseStagePolicyStep(unittest.TestCase):
 
     @staticmethod
     def allowlist() -> set[str]:
-        source = ONEOFF_POST_EXECUTE.read_text(encoding="utf-8")
-        start = source.index("$bdReleasePolicyBenchMd5 = array(")
-        block = source[start:source.index("\n);", start)]
-        return set(re.findall(r"^\s*'([0-9a-f]{32})',\s*$", block, re.M))
+        return guarded()[RELEASE_POLICY]
 
     @staticmethod
     def pinned() -> dict[str, str]:
@@ -266,11 +273,11 @@ class TheReleaseStagePolicyStep(unittest.TestCase):
 
     def test_the_policy_is_no_longer_reported_as_left_alone(self):
         self.assertNotIn(RELEASE_POLICY, _not_ours_block())
-        self.assertNotIn(RELEASE_POLICY, oneoff_worklist())   # deleted by 4c, not blanked by 4
+        self.assertEqual(oneoff_worklist().get(RELEASE_POLICY), "deleted-if-bench")
 
-    def test_the_one_off_is_1_0_5(self):
-        # 1.0.5: the pre-rc86 BdAdmRules.php joins the blanked orphans, behind the rc86 guard.
-        self.assertEqual((ONEOFF / "version").read_text().strip(), "1.0.5")
+    def test_the_one_off_is_1_0_6(self):
+        # 1.0.6: Rafael's one-off layout (scripts/leftovers.php + placeholders), everything deleted, nothing blanked.
+        self.assertEqual((ONEOFF / "version").read_text().strip(), "1.0.6")
 
 
 class TheStageStyleIsDeletedOnlyWhenItIsABenchBody(unittest.TestCase):
@@ -280,21 +287,16 @@ class TheStageStyleIsDeletedOnlyWhenItIsABenchBody(unittest.TestCase):
 
     @staticmethod
     def guarded() -> dict[str, set[str]]:
-        source = ONEOFF_POST_EXECUTE.read_text(encoding="utf-8")
-        start = source.index("$bdGuardedExtensionBodies = array(")
-        block = source[start:source.index("\n);", start)]
-        out: dict[str, set[str]] = {}
-        for path, inner in re.findall(r"'(custom/[^']+\.php)'\s*=>\s*array\((.*?)\n    \)", block, re.S):
-            out[path] = set(re.findall(r"^\s*'([0-9a-f]{32})',\s*$", inner, re.M))
-        return out
+        return guarded()
 
     @staticmethod
     def pinned() -> dict[str, str]:
         return {hashlib.md5(p.read_bytes()).hexdigest(): p.name
                 for p in sorted(STAGE_STYLE_BODIES.glob("sales_stage_dom_style.rc*.php.txt"))}
 
-    def test_the_only_guarded_path_is_the_stage_style(self):
-        self.assertEqual(set(self.guarded()), {STAGE_STYLE})
+    def test_exactly_three_paths_are_guarded(self):
+        # 1.0.6: the stage style (G599), the release-stage policy (G594) and the order adapter share their paths with other writers.
+        self.assertEqual(set(self.guarded()), {STAGE_STYLE, RELEASE_POLICY, ADAPTER})
 
     def test_the_style_allowlist_is_exactly_the_pinned_bench_bodies(self):
         """Every md5 the one-off deletes has a body the harness deletes, and every
@@ -325,7 +327,7 @@ class TheStageStyleIsDeletedOnlyWhenItIsABenchBody(unittest.TestCase):
     def test_the_style_is_still_on_the_worklist(self):
         """The guard narrows the delete; it does not drop the path. A tenant that
         still holds a Bench body keeps a route off it (test_stage_dropdown_style)."""
-        self.assertEqual(oneoff_worklist().get(STAGE_STYLE), "deleted")
+        self.assertEqual(oneoff_worklist().get(STAGE_STYLE), "deleted-if-bench")
 
     def test_every_unguarded_by_path_entry_has_a_bench_chosen_name(self):
         """Why only one path needs the guard: every other name was chosen by Bench

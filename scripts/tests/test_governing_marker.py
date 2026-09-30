@@ -61,7 +61,8 @@ PACKAGE = ROOT / "sugar-sell" / "BenchDogs-Ext"
 REPORT = PACKAGE / "custom" / "modules" / "Opportunities" / "BdAutoSelectedReport.php"
 LAYOUT = PACKAGE / "custom" / "modules" / "Opportunities" / "BdOpportunitiesLayoutExtensions.php"
 ONEOFF = ROOT / "sugar-sell" / "ONEOFF-RetireBdResidue"
-ONEOFF_LAYOUT = ONEOFF / "leftovers" / "BdOpportunitiesLayoutExtensions.php"
+#: 1.0.6: K-3 runs inline in the one-off's post_execute (Rafael's one-off layout: no classes of its own).
+ONEOFF_POST = ONEOFF / "scripts" / "post_execute.php"
 POST_INSTALL = PACKAGE / "scripts" / "post_execute.php"
 PRE_UNINSTALL = PACKAGE / "scripts" / "bd_pre_uninstall.php"
 
@@ -99,7 +100,7 @@ class TheRetiredFieldHasNoWriterLeftTest(unittest.TestCase):
                     found.append((str(path.relative_to(ROOT)), line.strip()))
         self.assertEqual(found, [], found)
         # ...and the one-off's copy is the one that still strips it.
-        self.assertIn("private const FIELD = 'bd_governing_origin';", code(ONEOFF_LAYOUT))
+        self.assertIn("=== 'bd_governing_origin'", code(ONEOFF_POST))
 
     def test_the_label_the_placement_rendered_is_named_by_nothing(self):
         """`LBL_BD_GOVERNING_ORIGIN` is a 1044 stub that defines no label, so
@@ -129,11 +130,10 @@ class TheInstallRemovesRatherThanPlacesTest(unittest.TestCase):
         longer ships the class at all (rc69); the one-off's K-3 copy is the one
         remover left, and it must not have grown a writer back."""
         self.assertFalse(LAYOUT.exists(), f"{LAYOUT.name} ships again; K-3 is the one-off's")
-        layout = code(ONEOFF_LAYOUT)
-        self.assertNotIn("function writeGoverningOriginField", layout)
-        self.assertNotIn("function indexOf", layout)
-        # One caller of saveViewdef, and it is reached only from remove().
-        self.assertEqual(layout.count("saveViewdef"), 1, layout)
+        layout = code(ONEOFF_POST)
+        self.assertNotIn("writeGoverningOriginField", layout)
+        # One save of the Opportunities view, and it only ever drops the marker (tests/harness.php runs it).
+        self.assertEqual(layout.count("'Opportunities', 'base', 'record')"), 1, layout)
 
     def test_the_install_neither_writes_nor_removes_the_marker_any_more(self):
         """FAILED ON THE ORIGINAL BEHAVIOUR: post_install.php:191 called
@@ -142,7 +142,7 @@ class TheInstallRemovesRatherThanPlacesTest(unittest.TestCase):
         post = code(POST_INSTALL)
         self.assertNotIn("writeGoverningOriginField", post)
         self.assertNotIn("BdOpportunitiesLayoutExtensions", post)
-        self.assertIn("BdOpportunitiesLayoutExtensions::remove();", code(ONEOFF / "scripts" / "post_execute.php"))
+        self.assertIn("saveViewdef($bdRecord, 'Opportunities', 'base', 'record')", code(ONEOFF_POST))
 
     def test_the_package_builds_no_saved_report_at_all(self):
         """THE DUTY THAT SURVIVES rc66, and the only one that was ever about a

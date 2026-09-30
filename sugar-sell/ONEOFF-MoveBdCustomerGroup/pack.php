@@ -1,19 +1,6 @@
 #!/usr/bin/env php
 <?php
-/**
- * Build ONEOFF-MoveBdCustomerGroup (G507): a disposable one-off that takes the
- * two Bench Dogs customer-group fields out of the Account record HEADER and puts
- * them, labelled, on the record's first tab. See scripts/post_execute.php and
- * README.md.
- *
- * Same shape as ONEOFF-RetireBdResidue and ONEOFF-RetireBdActionsApi:
- *     installdefs['copy']  = ABSENT  (not empty-array: absent)
- * so uninstall_copy() has nothing to walk and nothing to restore - uninstalling
- * this package is a genuine no-op and cannot put the header entries back.
- *
- * Usage: php pack.php [version]   (default: the `version` file)
- * Writes releases/oneoff_move_bd_customer_group-<version>.zip
- */
+// One-off (G507): moves the two customer-group fields out of the Account record header; no copy installdef, so its uninstall restores nothing.
 
 $packageID      = 'oneoff_move_bd_customer_group';
 $packageLabel   = 'One-off: Move Bench Dogs Customer Group out of the Account header (G507)';

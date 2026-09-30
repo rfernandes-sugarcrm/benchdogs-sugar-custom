@@ -24,13 +24,14 @@
  * installdef: only something that RUNS can take it back off.
  *
  * 🔁 0.9.42-rc69 (G280 / 🔒 1567, 🔒 1521): the removal is SPENT in the shipped
- * package. The one-off ONEOFF-RetireBdResidue carries a verbatim copy of this
- * class (its K-3), ran it on every QA tenant, and deletes both 🔒 1044 stubs.
- * So BenchDogs-Ext no longer ships the class, calls it, or ships the stubs. This
- * suite now runs the ONE-OFF'S copy - the only implementation that still
- * reaches a tenant - and asserts the package carries none of it.
+ * package. The one-off ONEOFF-RetireBdResidue does it (its K-3), ran it on
+ * every QA tenant, and deletes both 🔒 1044 stubs. So BenchDogs-Ext no longer
+ * ships the class, calls it, or ships the stubs. From one-off 1.0.6 K-3 is inline
+ * in the one-off's post_execute (ViewdefManager, no class); this suite RUNS that
+ * script - the only implementation that still reaches a tenant - and asserts the
+ * package carries none of it.
  *
- * 🚩 THIS TEST RUNS remove(). It does not scan it. The defect that produced
+ * 🚩 THIS TEST RUNS K-3. It does not scan it. The defect that produced
  * the Quotes half of this change was a handler bound to the wrong EVENT,
  * invisible to every source scan in its package, so a scan is no longer
  * accepted here as evidence that a layout mutation does what it says.
@@ -44,7 +45,7 @@
  */
 
 // ---------------------------------------------------------------------------
-// Stubs, declared before the class under test is included.
+// Stubs, declared before the one-off's post_execute runs.
 // ---------------------------------------------------------------------------
 namespace Sugarcrm\Sugarcrm\MetaData {
     class ViewdefManager
@@ -67,33 +68,27 @@ namespace Sugarcrm\Sugarcrm\MetaData {
 }
 
 namespace {
-    class MetaDataFiles
-    {
-        public static function clearModuleClientCache($module, $type): void
-        {
-        }
-    }
-
-    class TemplateHandler
-    {
-        public static function clearCache($module): void
-        {
-        }
-    }
-
+    // No MetaDataFiles / TemplateHandler stubs: the one-off makes no cache call (MLP021), so one creeping back fatals here.
     use Sugarcrm\Sugarcrm\MetaData\ViewdefManager;
-
-    // TemplateHandler.php is include_once'd by deployRecordView; give the
-    // include path a real file so the run is warning-free.
-    $tmp = sys_get_temp_dir() . '/bd_governing_test_' . getmypid();
-    @mkdir($tmp . '/include/TemplateHandler', 0777, true);
-    file_put_contents($tmp . '/include/TemplateHandler/TemplateHandler.php', "<?php\n");
-    set_include_path($tmp . PATH_SEPARATOR . get_include_path());
 
     $root = __DIR__ . '/../../sugar-sell/BenchDogs-Ext/';
     $oneoff = __DIR__ . '/../../sugar-sell/ONEOFF-RetireBdResidue/';
-    $oneoffLib = $oneoff . 'lib/BdOpportunitiesLayoutExtensions.php';
-    require $oneoffLib;
+    // 1.0.6: K-3 runs inline in the one-off's post_execute; each case below runs that script, file removals stubbed out.
+    class BdGoverningHarnessInstaller
+    {
+        public $base_dir;
+        public function __construct($d) { $this->base_dir = $d; }
+        public function uninstall_new_files($cp, $backup) {}
+        public function uninstall_customizations($beans) {}
+        public function run(): void
+        {
+            $manifest = array('version' => 'test');
+            ob_start();
+            require $this->base_dir . '/scripts/post_execute.php';
+            ob_end_clean();
+        }
+    }
+    $GLOBALS['log'] = new class { public function __call($n, $a) {} };
 
     $checks = [];
     $check = function (string $name, $expected, $actual) use (&$checks) {
@@ -119,8 +114,8 @@ namespace {
 
     // What the one-off's post_execute calls (K-3). Named once, so this file
     // cannot drift from it by testing a method nothing runs.
-    $install = function (): void {
-        \BdOpportunitiesLayoutExtensions::remove();
+    $install = function () use ($oneoff): void {
+        (new \BdGoverningHarnessInstaller(rtrim($oneoff, '/')))->run();
     };
 
     // 1. 🛑 THE RE-INSTALL CASE. This is the state rc26..rc56 left on every
@@ -179,11 +174,11 @@ namespace {
     // 6. 🚩 THE WRITER WENT WITH THE PLACEMENT. A member that can never run
     //    reads as live machinery, and this package has already paid three
     //    install cycles for code that looked active and was not.
-    $src = file_get_contents($oneoffLib);
+    $src = file_get_contents($oneoff . 'scripts/post_execute.php');
     $check('writeGoverningOriginField() is gone', false,
-        str_contains($src, 'function writeGoverningOriginField'));
-    $check('and so is the panel-picking helper it used', false,
-        str_contains($src, 'function indexOf'));
+        str_contains($src, 'writeGoverningOriginField'));
+    $check('and nothing ever adds the marker back', false,
+        (bool) preg_match("/fields'\\]\\[\\]\\s*=\\s*'bd_governing_origin'|array_push/", $src));
 
     // 7. 🛑 THE SHIPPED PACKAGE NEITHER WRITES NOR REMOVES IT ANY MORE (rc69),
     //    and the one-off is what calls the removal. Comments are stripped
@@ -195,8 +190,8 @@ namespace {
         str_contains($postCode, 'writeGoverningOriginField'));
     $check('post_execute.php no longer carries the spent removal either', false,
         str_contains($postCode, 'BdOpportunitiesLayoutExtensions'));
-    $check('the one-off calls the removal', true,
-        str_contains($strip($oneoff . 'scripts/post_execute.php'), 'BdOpportunitiesLayoutExtensions::remove();'));
+    $check('the one-off does the removal itself, through ViewdefManager (K-3)', true,
+        str_contains($strip($oneoff . 'scripts/post_execute.php'), "saveViewdef(\$bdRecord, 'Opportunities', 'base', 'record')"));
     $check('and the package ships no copy of the class', false,
         is_file($root . 'custom/modules/Opportunities/BdOpportunitiesLayoutExtensions.php'));
 
@@ -204,16 +199,15 @@ namespace {
     //    because only overwriting a copied custom/Extension file retired it
     //    (§CW / G37). From rc69 the one-off DELETES both paths on the tenant,
     //    so they no longer ship - and the one-off must still name both.
-    $oneoffSrc = file_get_contents($oneoff . 'scripts/post_execute.php');
+    $oneoffList = (require $oneoff . 'scripts/leftovers.php')['remove'];
     foreach ([
-        'the vardef stub' => ['Vardefs/bd_governing_origin.php',
-            "array('to_module' => 'Opportunities', 'name' => 'bd_governing_origin')"],
+        'the vardef stub' => ['Vardefs/bd_governing_origin.php', 'custom/Extension/modules/Opportunities/Ext/Vardefs/bd_governing_origin.php'],
         'the label stub' => ['Language/en_us.bd_governing_origin.php',
-            "array('to_module' => 'Opportunities', 'name' => 'en_us.bd_governing_origin')"],
+            'custom/Extension/modules/Opportunities/Ext/Language/en_us.bd_governing_origin.php'],
     ] as $what => [$rel, $entry]) {
         $check("{$what} no longer ships", false,
             is_file($root . 'custom/Extension/modules/Opportunities/Ext/' . $rel));
-        $check("{$what} is on the one-off's worklist", true, str_contains($oneoffSrc, $entry));
+        $check("{$what} is on the one-off's worklist", true, in_array($entry, $oneoffList, true));
     }
 
     $failed = 0;
@@ -226,6 +220,5 @@ namespace {
         }
     }
     printf("\n%d checks, %d failed\n", count($checks), $failed);
-    @unlink($tmp . '/include/TemplateHandler/TemplateHandler.php');
     exit($failed ? 1 : 0);
 }

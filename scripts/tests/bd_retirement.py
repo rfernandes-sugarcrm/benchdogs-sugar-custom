@@ -22,11 +22,13 @@ three, because any one alone is a claim about the repo rather than the tenant:
      still carries it (an upgrade from an older build, or rc68's re-copy on a
      tenant that took rc68 after the one-off ran) has a route off it.
 
-The worklist is read out of the one-off's post_execute.php itself, not restated
-here, so this cannot agree with a list the one-off does not actually run.
+The worklist is read out of the one-off's scripts/leftovers.php (by php), the list its
+post_execute.php removes, not restated here. From 1.0.6 every path is DELETED
+(uninstall_new_files over a placeholder tree); nothing is blanked any more.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -39,40 +41,19 @@ from tempfile import TemporaryDirectory
 ROOT = Path(__file__).resolve().parents[2]
 PKG = Path(os.environ.get("BD_PKG", ROOT / "sugar-sell/BenchDogs-Ext"))
 ONEOFF_POST_EXECUTE = ROOT / "sugar-sell/ONEOFF-RetireBdResidue/scripts/post_execute.php"
+#: 1.0.6 (Rafael's one-off layout): the hardcoded lists the one-off removes.
+ONEOFF_LEFTOVERS = ROOT / "sugar-sell/ONEOFF-RetireBdResidue/scripts/leftovers.php"
 
-_ENTRY = re.compile(r"array\('to_module'\s*=>\s*'([^']+)',\s*'name'\s*=>\s*'([^']+)'\)")
-_GROUP = re.compile(r"^\s*'([^']+)'\s*=>\s*array\(\s*$")
-
-
-def _block(source: str, opener: str) -> str:
-    start = source.index(opener)
-    end = source.index("\n);", start)
-    return source[start:end]
-
-
+@cache
 def oneoff_worklist() -> dict[str, str]:
-    """Every tenant path the one-off removes, mapped to how: 'deleted' or 'blanked'."""
-    source = ONEOFF_POST_EXECUTE.read_text(encoding="utf-8")
-    out: dict[str, str] = {}
-
-    group = None
-    for line in _block(source, "$bdExtensionGroups = array(").splitlines():
-        header = _GROUP.match(line)
-        if header:
-            group = header.group(1)
-            continue
-        for module, name in _ENTRY.findall(line):
-            if module == "application":
-                path = f"custom/Extension/application/Ext/{group}/{name}.php"
-            else:
-                path = f"custom/Extension/modules/{module}/Ext/{group}/{name}.php"
-            out[path] = "deleted"
-
-    for path in re.findall(r"'(custom/[^']+\.php)'", _block(source, "$bdOrphanClasses = array(")):
-        out[path] = "blanked"
-    # 1.0.5: a path appended behind a guard (BdAdmRules, only once rc86's class is on disk).
-    for path in re.findall(r"\$bdOrphanClasses\[\]\s*=\s*'(custom/[^']+\.php)'", source):
-        out[path] = "blanked"
+    """Every tenant path the one-off removes, read from its scripts/leftovers.php by php itself:
+    'deleted' (wherever present) or 'deleted-if-bench' (only a body Bench Dogs shipped; 1.0.6)."""
+    done = subprocess.run(
+        ["php", "-r", "echo json_encode(require $argv[1]);", str(ONEOFF_LEFTOVERS)],
+        capture_output=True, text=True, check=True)
+    lists = json.loads(done.stdout)
+    out = {path: "deleted" for path in lists["remove"]}
+    out.update({path: "deleted-if-bench" for path in lists["remove_if_bench"]})
     return out
 
 

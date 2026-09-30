@@ -3,6 +3,7 @@
 namespace Sugarcrm\Sugarcrm\custom\BenchDogs;
 
 use BeanFactory;
+use Sugarcrm\Sugarcrm\custom\Erp\ErpQuoteFacts;
 use SugarQuery;
 
 /** G380 / G381 (🔒 1705b, 🔒 1724b): Bench Dogs' ADM rules, the Sugar half; everything generic is ERP-Epicor's or core's (G530, 🔒 1712b, G460, G809). */
@@ -30,9 +31,6 @@ class BdAdmRules
 
     /** Tenant data (app_list_strings), editable in Admin > Dropdown Editor. */
     public const LIST_PROJECT_BY_GROUP = 'bd_adm_project_by_group_list';
-
-    /** ERP-Epicor's public quote facts (G380 (g)), by its one fixed path. */
-    public const QUOTE_FACTS_FILE = 'custom/modules/Quotes/ErpQuoteFacts.php';
 
     /** A quote with more lines than this is not scanned for a project default. */
     public const MAX_LINES_SCANNED = 500;
@@ -117,51 +115,10 @@ class BdAdmRules
 
     // ── ERP-Epicor's quote facts ─────────────────────────────────────────────
 
-    /** True when ERP-Epicor's ErpQuoteFacts is loaded or loadable. */
+    /** True when ERP-Epicor >= 1.2.0's ErpQuoteFacts is loadable; the package's manifest requires it. */
     public static function quoteFactsAvailable(): bool
     {
-        // T2 first, AUTOLOADED (see the class docblock): the installed class
-        // wins over any leftover old file.
-        if (class_exists('Sugarcrm\\Sugarcrm\\custom\\Erp\\ErpQuoteFacts')) {
-            return true;
-        }
-        if (!class_exists('ErpQuoteFacts', false)) {
-            // The literal path, as ERP-Epicor documents it (MLP001); keep it
-            // equal to QUOTE_FACTS_FILE (bd_adm_rules_test.php pins that).
-            @include_once 'custom/modules/Quotes/ErpQuoteFacts.php';
-        }
-
-        return class_exists('ErpQuoteFacts', false);
-    }
-
-    /**
-     * True when the ErpQuoteFacts that answers is T2's namespaced one. Autoload
-     * OFF on purpose: quoteFactsAvailable() already asked with it on, and this
-     * runs once per quote line.
-     */
-    private static function factsAreNamespaced(): bool
-    {
-        return class_exists('Sugarcrm\\Sugarcrm\\custom\\Erp\\ErpQuoteFacts', false);
-    }
-
-    /** ErpQuoteFacts::companyCode(), from whichever class is installed. */
-    private static function factsCompanyCode($bean): string
-    {
-        if (self::factsAreNamespaced()) {
-            return \Sugarcrm\Sugarcrm\custom\Erp\ErpQuoteFacts::companyCode($bean);
-        }
-
-        return \ErpQuoteFacts::companyCode($bean);
-    }
-
-    /** ErpQuoteFacts::productGroup(), from whichever class is installed. */
-    private static function factsProductGroup($line): string
-    {
-        if (self::factsAreNamespaced()) {
-            return \Sugarcrm\Sugarcrm\custom\Erp\ErpQuoteFacts::productGroup($line);
-        }
-
-        return \ErpQuoteFacts::productGroup($line);
+        return class_exists(ErpQuoteFacts::class);
     }
 
     // ── G380: Reference defaults to the ship-to's city and state ─────────────
@@ -193,24 +150,10 @@ class BdAdmRules
         return rtrim(mb_substr($full, 0, $max, 'UTF-8'));
     }
 
-    /** G530: the most characters the ERP takes in this quote's Reference, asked of ERP-Epicor (ErpQuoteFacts::referenceMaxLength(), which reads the field's erp_max_length), 0 when that ERP-Epicor is older and does not say - then the default is not cut, and Send to Estimation's answer is the ERP's own, as before. */
+    /** G530: the most characters the ERP takes in this quote's Reference (ErpQuoteFacts::referenceMaxLength()), 0 when the field states none. */
     public static function referenceMaxLength($bean): int
     {
-        if (self::factsAreNamespaced()) {
-            // T2 (#158) is newer than G530, so the method is there.
-            return \Sugarcrm\Sugarcrm\custom\Erp\ErpQuoteFacts::referenceMaxLength($bean);
-        }
-        if (!method_exists('ErpQuoteFacts', 'referenceMaxLength')) {
-            if (isset($GLOBALS['log']) && is_object($GLOBALS['log'])) {
-                $GLOBALS['log']->error('BenchDogs-Ext: ERP-Epicor is older than G530 (no '
-                    . 'ErpQuoteFacts::referenceMaxLength), so the ADM Reference default is NOT shortened '
-                    . 'to the ERP limit for quote ' . (is_object($bean) ? (string) ($bean->id ?? '') : ''));
-            }
-
-            return 0;
-        }
-
-        return \ErpQuoteFacts::referenceMaxLength($bean);
+        return ErpQuoteFacts::referenceMaxLength($bean);
     }
 
     // ── G381: Project pre-filled from the product-group default list ─────────
@@ -276,12 +219,12 @@ class BdAdmRules
             return $set;
         }
         if (!self::quoteFactsAvailable()) {
-            $GLOBALS['log']->error('BenchDogs-Ext: ' . self::QUOTE_FACTS_FILE . ' is missing (ERP-Epicor older than'
-                . ' the G380 release); ADM quote defaults skipped for quote ' . (string) ($bean->id ?? ''));
+            $GLOBALS['log']->error('BenchDogs-Ext: ERP-Epicor 1.2.0\'s ' . ErpQuoteFacts::class . ' is missing (this'
+                . ' package requires ERP-Epicor >= 1.2.0); ADM quote defaults skipped for quote ' . (string) ($bean->id ?? ''));
 
             return $set;
         }
-        if (!self::isAdmCompany(self::factsCompanyCode($bean))) {
+        if (!self::isAdmCompany(ErpQuoteFacts::companyCode($bean))) {
             return $set;
         }
         if ($needsReference) {
@@ -458,7 +401,7 @@ class BdAdmRules
             if (!empty($line->deleted)) {
                 continue;
             }
-            $groups[] = self::factsProductGroup($line);
+            $groups[] = ErpQuoteFacts::productGroup($line);
         }
 
         return $groups;
@@ -526,6 +469,44 @@ class BdAdmRules
         $query->orderBy('name', 'ASC');
 
         return self::optionsFromRows($query->execute());
+    }
+
+    // The vardef option sources: Sugar calls them through more than one path and signature, so they ignore their arguments.
+
+    /** ADM's active Lead Source codes (user-code type LEADSRC). */
+    public static function leadSourceOptions(...$ignored): array
+    {
+        return self::lookupOptions(self::TYPE_LEAD_SOURCES);
+    }
+
+    /** ADM's active Lead Type codes (user-code type LEADTYPE). */
+    public static function leadTypeOptions(...$ignored): array
+    {
+        return self::lookupOptions(self::TYPE_LEAD_TYPES);
+    }
+
+    /** ADM's active projects (Erp.BO.ProjectSvc). */
+    public static function projectOptions(...$ignored): array
+    {
+        return self::lookupOptions(self::TYPE_PROJECTS);
+    }
+
+    /** G460: ADM's active campaigns that have an active event. */
+    public static function marketingCampaignOptions(...$ignored): array
+    {
+        return self::marketingOptions(self::TYPE_MARKETING_CAMPAIGNS);
+    }
+
+    /** G460: ADM's active events of active campaigns, keyed "<campaign>/<seq>". */
+    public static function marketingEventOptions(...$ignored): array
+    {
+        return self::marketingOptions(self::TYPE_MARKETING_EVENTS);
+    }
+
+    /** G804: ADM's active customer groups (Epicor CustGrup), for an Account not yet in the ERP. */
+    public static function customerGroupOptions(...$ignored): array
+    {
+        return self::lookupOptions(self::TYPE_CUSTOMER_GROUPS);
     }
 
     /** The pure half of lookupOptions(), so it can be tested without a database. */

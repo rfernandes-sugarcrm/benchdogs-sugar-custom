@@ -24,20 +24,20 @@
  * only have made a dead field look supported in Studio and the report builder.
  *
  * 🔁 0.9.42-rc69 (G280 / 🔒 1567, 🔒 1521): the removal is SPENT in the shipped
- * package. The one-off ONEOFF-RetireBdResidue carries a verbatim copy of this
- * class (its K-2) and ran it on every QA tenant, so BenchDogs-Ext no longer
- * ships the class or calls it. This suite now runs the ONE-OFF'S copy - the
- * only implementation that still reaches a tenant - and asserts the package
- * ships none of it.
+ * package. The one-off ONEOFF-RetireBdResidue does it (its K-2) and ran it on
+ * every QA tenant, so BenchDogs-Ext no longer ships the class or calls it.
+ * From one-off 1.0.6 K-2 is inline in the one-off's post_execute (ViewdefManager,
+ * no class); this suite RUNS that script - the only implementation that still
+ * reaches a tenant - and asserts the package ships none of it.
  *
- * 🚩 THIS TEST RUNS write(). It does not scan it. The defect that produced
+ * 🚩 THIS TEST RUNS K-2. It does not scan it. The defect that produced
  * this whole change was a handler bound to the wrong EVENT, invisible to
  * every source scan in its package, so a scan is no longer accepted here as
  * evidence that a layout mutation does what it says.
  */
 
 // ---------------------------------------------------------------------------
-// Stubs, declared before the class under test is included.
+// Stubs, declared before the one-off's post_execute runs.
 // ---------------------------------------------------------------------------
 namespace Sugarcrm\Sugarcrm\MetaData {
     class ViewdefManager
@@ -60,31 +60,31 @@ namespace Sugarcrm\Sugarcrm\MetaData {
 }
 
 namespace {
-    class MetaDataFiles
-    {
-        public static function clearModuleClientCache($module, $type): void
-        {
-        }
-    }
-
-    class TemplateHandler
-    {
-        public static function clearCache($module): void
-        {
-        }
-    }
-
+    // No MetaDataFiles / TemplateHandler stubs: the one-off makes no cache call (MLP021), so one creeping back fatals here.
     use Sugarcrm\Sugarcrm\MetaData\ViewdefManager;
 
-    // TemplateHandler.php is include_once'd by deployRecordView; give the
-    // include path a real file so the run is warning-free.
-    $tmp = sys_get_temp_dir() . '/bd_panel_test_' . getmypid();
-    @mkdir($tmp . '/include/TemplateHandler', 0777, true);
-    file_put_contents($tmp . '/include/TemplateHandler/TemplateHandler.php', "<?php\n");
-    set_include_path($tmp . PATH_SEPARATOR . get_include_path());
-
-    $oneoffLib = __DIR__ . '/../../sugar-sell/ONEOFF-RetireBdResidue/lib/BdQuotesLayoutExtensions.php';
-    require $oneoffLib;
+    $oneoff = __DIR__ . '/../../sugar-sell/ONEOFF-RetireBdResidue/';
+    $leftovers = require $oneoff . 'scripts/leftovers.php';
+    // 1.0.6 (Rafael's one-off layout): K-2 runs inline in the one-off's post_execute through ViewdefManager. Each case
+    // below RUNS that script, with Module Loader's file removals stubbed out, so the removal is exercised, not scanned.
+    class BdPanelHarnessInstaller
+    {
+        public $base_dir;
+        public function __construct($d) { $this->base_dir = $d; }
+        public function uninstall_new_files($cp, $backup) {}
+        public function uninstall_customizations($beans) {}
+        public function run(): string
+        {
+            $manifest = array('version' => 'test');
+            ob_start();
+            require $this->base_dir . '/scripts/post_execute.php';
+            return (string) ob_get_clean();
+        }
+    }
+    $GLOBALS['log'] = new class { public function __call($n, $a) {} };
+    $install = function () use ($oneoff): string {
+        return (new \BdPanelHarnessInstaller(rtrim($oneoff, '/')))->run();
+    };
 
     $checks = [];
     $check = function (string $name, $expected, $actual) use (&$checks) {
@@ -94,10 +94,13 @@ namespace {
 
     $check('the shipped package carries no copy of the remover any more (rc69)', false,
         is_file(__DIR__ . '/../../sugar-sell/BenchDogs-Ext/custom/modules/Quotes/BdQuotesLayoutExtensions.php'));
+    $check('and the one-off ships no class of its own for it any more (1.0.6)', false,
+        is_dir($oneoff . 'leftovers') || is_dir($oneoff . 'lib'));
 
     $panelName = 'LBL_RECORDVIEW_PANEL_BENCHDOGS';
     $otherPanel = ['name' => 'LBL_RECORDVIEW_PANEL_ERP', 'fields' => [['name' => 'erp_sync_key']]];
 
+    // The Opportunities view (K-3) is left null throughout, so every save counted here is the Quotes one.
     $reset = function (?array $panels) {
         ViewdefManager::$loaded = $panels === null ? null : ['panels' => $panels];
         ViewdefManager::$saved = null;
@@ -115,45 +118,43 @@ namespace {
             ['name' => 'bd_erp_total'], ['name' => 'bd_erp_stage'], ['name' => 'bd_reason_code'],
         ]],
     ]);
-    BdQuotesLayoutExtensions::write();
+    $report = $install();
     $check('a deployed Bench Dogs panel is removed on install',
         false, in_array($panelName, $savedPanelNames(), true));
     $check('and the other packages\' panels survive untouched',
         ['LBL_RECORDVIEW_PANEL_ERP'], $savedPanelNames());
+    $check('with their fields intact', [['name' => 'erp_sync_key']], ViewdefManager::$saved['panels'][0]['fields'] ?? null);
+    // K-2 sits in a try/catch, so a step that throws AFTER saving (a cache call to a class Sugar never loads here, say)
+    // still saves; only the run's own report shows it.
+    $check('and the run reports it removed, with nothing FAILED', [true, false],
+        [str_contains($report, 'K-2 Bench Dogs panel spliced out'), str_contains($report, 'FAILED (')]);
 
-    // 2. It is NEVER ADDED to a view that does not have it.
+    // 2. A view an admin duplicated the panel on loses every copy.
+    $reset([['name' => $panelName, 'fields' => []], $otherPanel, ['name' => $panelName, 'fields' => []]]);
+    $install();
+    $check('every copy of the panel goes, not only the first', ['LBL_RECORDVIEW_PANEL_ERP'], $savedPanelNames());
+
+    // 3. It is NEVER ADDED to a view that does not have it.
     $reset([$otherPanel]);
-    BdQuotesLayoutExtensions::write();
+    $install();
     $check('it is never added to a view without it', 0, ViewdefManager::$saveCount);
-    $reset([$otherPanel]);
-    BdQuotesLayoutExtensions::write(true);
-    $check('not even with $replace = true (both values mean the same now)',
-        0, ViewdefManager::$saveCount);
 
-    // 3. Idempotent: a second install after removal writes nothing.
+    // 4. Idempotent: a second run after removal writes nothing.
     $reset([$otherPanel, ['name' => $panelName, 'fields' => []]]);
-    BdQuotesLayoutExtensions::write();
+    $install();
     $first = ViewdefManager::$saveCount;
     $reset(ViewdefManager::$saved['panels'] ?? []);
-    BdQuotesLayoutExtensions::write();
-    $check('the first install writes once', 1, $first);
-    $check('and a second install writes nothing', 0, ViewdefManager::$saveCount);
+    $install();
+    $check('the first run writes once', 1, $first);
+    $check('and a second run writes nothing', 0, ViewdefManager::$saveCount);
 
-    // 4. A view it cannot read is left alone rather than overwritten.
+    // 5. A view it cannot read, or one with no panels, is left alone rather than overwritten.
     $reset(null);
-    BdQuotesLayoutExtensions::write();
-    // Honestly: deleting the null guard does NOT fail this check, because the
-    // "$at === false -> return" path catches the same case a line later. The
-    // check pins the OUTCOME, which holds either way; it is not evidence that
-    // the null guard specifically is load-bearing.
+    $install();
     $check('an unreadable record view is never written over', 0, ViewdefManager::$saveCount);
-
-    // 5. 🚩 The dead helpers went out WITH the panel. Members that can never
-    //    run read as live machinery; this package has already paid three
-    //    install cycles for code that looked active and was not.
-    $src = file_get_contents($oneoffLib);
-    $check('benchDogsPanel() is gone', false, str_contains($src, 'function benchDogsPanel'));
-    $check('dropRetiredPanelFields() is gone', false, str_contains($src, 'function dropRetiredPanelFields'));
+    $reset([]);
+    $install();
+    $check('nor is one with no panels at all', 0, ViewdefManager::$saveCount);
 
     // 6. 🛑 THE FIELDS ARE GONE, NOT MERELY HIDDEN.
     //
@@ -170,28 +171,10 @@ namespace {
     //   bd_erp_total   -> erp_estimate_total
     //   bd_reason_code -> erp_reason_code (no live reader remained)
     $root = __DIR__ . '/../../sugar-sell/BenchDogs-Ext/';
-    $api = file_get_contents($root . 'custom/clients/base/api/BdBenchDogsActionsApi.php');
-    // Comments stripped: the file NAMES bd_erp_stage in the note explaining
-    // why it no longer writes it, and a blunt substring match would read that
-    // explanation as the defect it documents.
-    $apiCode = preg_replace(['~/\*.*?\*/~s', '~//[^\n]*~'], '', $api);
-    $check('the bd_erp_stage writer is GONE (executable code)',
-        false, str_contains($apiCode, 'bd_erp_stage'));
-    // 0.9.42-rc65 (G280 / 🔒 1507): the stamp itself is CORE's now. This package
-    // no longer ships bd-send-to-estimating, so there is no Bench writer to
-    // check - what must hold is that it writes NEITHER stage field.
-    $check('and the API writes no quote stage at all any more',
-        false, str_contains($apiCode, '->quote_stage ='));
-    $check('the retired estimating route is unregistered', false,
-        str_contains($apiCode, 'bd-send-to-estimating'));
-    $check('and so is the duplicate opportunity-quote route', false,
-        str_contains($apiCode, 'bd-create-opp-quote'));
-    // 0.9.42-rc69 (G280 / 🔒 1567): the admin repair route went too - it re-ran
-    // K-2/K-3, both spent. The file ships EMPTY, so no route survives at all.
-    $check('and so does the admin repair route (rc69)', false,
-        str_contains($apiCode, "'bd-tools', 'repair-ui'"));
-    $check('the api file declares no class at all (rc69)', false,
-        str_contains($apiCode, 'class '));
+    // rc87: the emptied REST stub no longer ships at all; the one-off deletes the tenant's copy.
+    $check('the api stub no longer ships (rc87)', false, is_file($root . 'custom/clients/base/api/BdBenchDogsActionsApi.php'));
+    $check('and the one-off deletes it on the tenant', true,
+        in_array('custom/clients/base/api/BdBenchDogsActionsApi.php', $leftovers['remove'], true));
     foreach (['bd_erp_stage', 'bd_erp_total', 'bd_reason_code'] as $f) {
         $check("the {$f} vardef is GONE", false,
             is_file($root . 'custom/Extension/modules/Quotes/Ext/Vardefs/' . $f . '.php'));
@@ -204,8 +187,7 @@ namespace {
     $stageList = $root . 'custom/Extension/application/Ext/Language/en_us.bd_erp_stage_list.php';
     $check('the bd_erp_stage_list path no longer ships (rc69)', false, is_file($stageList));
     $check('and the one-off still deletes it on the tenant', true,
-        str_contains(file_get_contents(__DIR__ . '/../../sugar-sell/ONEOFF-RetireBdResidue/scripts/post_execute.php'),
-                     "array('to_module' => 'application', 'name' => 'en_us.bd_erp_stage_list')"));
+        in_array('custom/Extension/application/Ext/Language/en_us.bd_erp_stage_list.php', $leftovers['remove'], true));
 
     // 7. 🚩 AND THE DUPLICATE NOTIFICATION HOOK WENT WITH THE FIELD IT WATCHED.
     //
@@ -226,8 +208,12 @@ namespace {
     // core's 'Send to Estimation' both stamps the stage and notifies, so there
     // is no Bench reader left to keep honest. What must hold is that this
     // package never grows a second notifier or a second reader of that seam.
+    $benchCode = '';
+    foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root . 'custom', FilesystemIterator::SKIP_DOTS)) as $f) {
+        $benchCode .= preg_replace(['~/\*.*?\*/~s', '~//[^\n]*~'], '', (string) file_get_contents((string) $f));
+    }
     $check('no Bench code touches the estimating notification seam', false,
-        str_contains($apiCode, 'ErpEstimatingNotificationHook'));
+        str_contains($benchCode, 'ErpEstimatingNotificationHook'));
 
     $failed = 0;
     foreach ($checks as $n => [$name, $ok, $expected, $actual]) {
@@ -239,6 +225,5 @@ namespace {
         }
     }
     printf("\n%d checks, %d failed\n", count($checks), $failed);
-    @unlink($tmp . '/include/TemplateHandler/TemplateHandler.php');
     exit($failed ? 1 : 0);
 }

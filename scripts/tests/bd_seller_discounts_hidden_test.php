@@ -62,6 +62,8 @@ namespace {
     });
 
     const BD_FILE = '_override_zz_bd_hide_seller_discounts.php';
+    // rc87: the overlays call this class by name; Sugar autoloads it from custom/src, the test loads it once.
+    require_once __DIR__ . '/../../sugar-sell/BenchDogs-Ext/custom/src/BenchDogs/BdHiddenFields.php';
     const BD_EXT = __DIR__ . '/../../sugar-sell/BenchDogs-Ext/custom/Extension/modules';
     const BD_SURFACES = [
         'Quotes/record' => ['Quotes', 'record'],
@@ -776,18 +778,34 @@ namespace {
             $src !== '' && $decl === [], json_encode($decl));
         check("I2 $surface: no reference (&) - a by-reference loop leaks into the next fragment", $src !== '' && !$amp);
         check("I3 $surface: every variable is \$bdHide-prefixed", $src !== '' && $vars);
-        check("I4 $surface: it catches Throwable - a metadata build never dies on a layout nicety",
-            preg_match('/catch\s*\(\s*\\\\?Throwable\s+\$bdHide/', $src) === 1);
+        check("I4 $surface: it runs only on a panel LIST, and only when BdHiddenFields autoloads (else the view is served as read)",
+            strpos($code, "is_array(\$viewdefs['$module']['base']['view']['$view']['panels'] ?? null)") !== false
+            && strpos($code, "class_exists('Sugarcrm\\\\Sugarcrm\\\\custom\\\\BenchDogs\\\\BdHiddenFields')") !== false);
         check("I5 $surface: it WRITES nothing - no viewdef save, no file, no record (a stored value cannot move)",
             $src !== '' && preg_match('/saveViewdef|ViewdefManager|file_put_contents|write_array_to_file|sugar_file_put|'
                 . 'BeanFactory|->save\(|\$db\b|DBManager|MetaDataManager|unlink|rmdir/i', $code) === 0);
-        check("I6 $surface: it names only its own view", $src !== '' && strpos($code, "\$bdHideModule = '$module';") !== false
-            && strpos($code, "\$bdHideView = '$view';") !== false);
-        $at = strpos($src, '// ---- one body, the same in every file ----');
-        $bodies[$surface] = $at === false ? '' : substr($src, $at);
+        preg_match_all("/\\\$viewdefs\\['([^']+)'\\]\\['base'\\]\\['view'\\]\\['([^']+)'\\]/", $code, $named, PREG_SET_ORDER);
+        check("I6 $surface: it names only its own view", $src !== '' && $named !== [] && array_unique(array_map(
+            static function ($m) { return $m[1] . '/' . $m[2]; }, $named)) === ["$module/$view"], json_encode($named));
+        $bodies[$surface] = [substr_count($code, '\\Sugarcrm\\Sugarcrm\\custom\\BenchDogs\\BdHiddenFields::strip('),
+            preg_match('/\\b(foreach|for|while|use)\\b/', $code)];
     }
-    check('I7 every overlay shares ONE body, byte for byte (a fix reaches every surface)',
-        count(array_unique($bodies)) === 1 && reset($bodies) !== '');
+    check('I7 every overlay calls BdHiddenFields::strip once by its full name, with no loop or use of its own (one body, a fix reaches every surface)',
+        count($bodies) === count(BD_SURFACES) && array_values(array_unique(array_map('json_encode', $bodies))) === [json_encode([1, 0])],
+        json_encode($bodies));
+    $bdClassSrc = (string) file_get_contents(__DIR__ . '/../../sugar-sell/BenchDogs-Ext/custom/src/BenchDogs/BdHiddenFields.php');
+    check('I7b strip() catches Throwable and hands the panels back as read: a metadata build never dies on a layout nicety',
+        preg_match('/catch\s*\(\s*Throwable\s+\$e\s*\)\s*\{.*?return \$panels;/s', $bdClassSrc) === 1);
+    // Fail open: a tenant where the class cannot load serves the view as read, and the build does not die.
+    $bdProbe = $bdRoot . '/probe-noclass.php';
+    file_put_contents($bdProbe, '<?php $viewdefs = ["Quotes" => ["base" => ["view" => ["record" => ["panels" => '
+        . '[["name" => "LBL_RECORDVIEW_PANEL_ERP_DISCOUNT", "fields" => [["name" => "erp_discount_panel"]]]]]]]]];'
+        . ' include ' . var_export(bd_fragment('Quotes/record'), true) . '; echo json_encode($viewdefs);');
+    $bdNoClass = json_decode((string) shell_exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($bdProbe) . ' 2>&1'), true);
+    @unlink($bdProbe);
+    check('I8 no BdHiddenFields loadable: the view is served exactly as read, no fatal',
+        ($bdNoClass['Quotes']['base']['view']['record']['panels'][0]['fields'][0]['name'] ?? null) === 'erp_discount_panel',
+        json_encode($bdNoClass));
 
     $failed = count(array_filter($checks, static function ($c) { return !$c[1]; }));
     printf("\n%d checks, %d failed\n", count($checks), $failed);

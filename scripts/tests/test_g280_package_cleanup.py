@@ -158,58 +158,17 @@ class RetiredOffTheTenantBecauseThePlatformLoadsThemByPath(unittest.TestCase):
         self.assertEqual(offenders, [], f"the grid sweep is back: {offenders}")
 
 
-@unittest.skipUnless(shutil.which("php"), "requires php")
 class NoRouteIsRegistered(unittest.TestCase):
-    """EXECUTED, not grepped: the real file is loaded with ERP-Epicor's parent
-    API file present - the one condition under which rc68 DID define the class -
-    and what is asserted is the route table Sugar would build.
+    """rc87 (Rafael's review of #41, item 2): the emptied REST stub no longer ships. A tenant keeps its copy
+    (Module Loader never deletes a file a later build stops shipping), whatever body it holds - the empty one
+    rc69-rc86 installed, or rc68's with bd-tools/repair-ui - until the one-off deletes the path; the one-off
+    requires rc87 or newer, so it runs after this build."""
 
-    rc65 unregistered the two seller routes and kept `bd-tools/repair-ui`. rc69
-    (G280 / 🔒 1567) retires that too: it re-ran K-2 and K-3, both spent on
-    every QA tenant, and the customer-group placement post_install already
-    does on every install. Under 🔒 1520 removal is the default."""
+    def test_the_file_no_longer_ships(self):
+        self.assertFalse((PKG / "custom/clients/base/api/BdBenchDogsActionsApi.php").exists())
 
-    #: Runs with `php -r`, so no opening tag.
-    ROUTES_PROBE = r"""
-namespace Sugarcrm\Sugarcrm\Util\Files { class FileLoader { public static function validateFilePath($p) { return $p; } } }
-namespace {
-    @mkdir('custom/clients/base/api', 0777, true);
-    file_put_contents('custom/clients/base/api/BaseErpActionsApi.php', '<?php class BaseErpActionsApi {}');
-    require getenv('BD_API_FILE');
-    if (!class_exists('BdBenchDogsActionsApi')) { echo json_encode(['routes' => [], 'defined' => false]); exit; }
-    echo json_encode(['routes' => (new BdBenchDogsActionsApi())->registerApiRest(), 'defined' => true]);
-}
-"""
-
-    @classmethod
-    def setUpClass(cls):
-        api = PKG / "custom/clients/base/api/BdBenchDogsActionsApi.php"
-        with tempfile.TemporaryDirectory(prefix="g280-api-") as tmp:
-            out = subprocess.run(["php", "-r", cls.ROUTES_PROBE], cwd=tmp,
-                                 capture_output=True, text=True,
-                                 env={**os.environ, "BD_API_FILE": str(api)})
-            if "{" not in out.stdout:
-                raise AssertionError(f"probe failed: {out.stdout[-400:]} {out.stderr[-400:]}")
-            cls.observed = json.loads(out.stdout[out.stdout.index("{"):])
-
-    def test_the_two_duplicate_routes_are_unregistered(self):
-        """Core owns both: ERP-Epicor's AccountsErpActionsApi::createOppQuote is
-        the superset (🔒 1044 / G15) and 'Send to Estimation' is ERP-Core's
-        (🔒 531)."""
-        registered = json.dumps(self.observed["routes"])
-        self.assertNotIn("bd-create-opp-quote", registered)
-        self.assertNotIn("bd-send-to-estimating", registered)
-
-    def test_no_route_is_registered_at_all(self):
-        self.assertFalse(self.observed["defined"], "the api file defines BdBenchDogsActionsApi again")
-        self.assertEqual(self.observed["routes"], [])
-
-    def test_the_file_still_ships(self):
-        """Dropping it would leave rc68's body - and bd-tools/repair-ui - on
-        every tenant that already has it: the one-off does not cover this path,
-        so overwriting it with an empty body is what unregisters the route."""
-        self.assertTrue((PKG / "custom/clients/base/api/BdBenchDogsActionsApi.php").is_file())
-        self.assertNotIn("custom/clients/base/api/BdBenchDogsActionsApi.php", oneoff_worklist())
+    def test_the_one_off_deletes_it_whatever_its_body(self):
+        self.assertEqual(oneoff_worklist().get("custom/clients/base/api/BdBenchDogsActionsApi.php"), "deleted")
 
     def test_the_client_halves_are_gone(self):
         for rel in ("custom/modules/Quotes/clients/base/fields/bd-best-pricing",

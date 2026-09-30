@@ -132,3 +132,5 @@ custom/modules/Quotes/ErpQuoteHooks/OpportunityLineRollupPolicy.php
 custom/modules/Quotes/ErpQuoteHooks/OpportunityReleaseStagePolicy.php
 custom/modules/Quotes/ErpQuoteHooks/OrderSelectedLinesPolicy.php
 custom/modules/Quotes/ErpQuoteHooks/ResolveOrderableLines.php
+custom/Extension/application/Ext/Language/en_us.zz_bd_stage_doms.php
+custom/modules/Quotes/BdAdmLookupOptions.php

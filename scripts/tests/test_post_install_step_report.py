@@ -129,6 +129,8 @@ class ModuleInstaller {
 '''
 
 HARNESS = r'''<?php
+// SugarAutoLoader's $dirMap rule for a global class: include/Foo.php, custom/ first (rc87: the script autoloads ErpLayoutExtraFields).
+spl_autoload_register(function ($c) { if (is_file("custom/include/$c.php")) { require_once "custom/include/$c.php"; } });
 $scenario = SCENARIO;
 $GLOBALS['scenario'] = $scenario;
 $events = [];
@@ -228,6 +230,8 @@ HELPER_ABSENT = {"accounts_layout_missing"}
 
 # repair_rebuild, accounts_erp_layout, quotes_erp_layout (rc70, 🔒 1724b)
 STEP_COUNT = 3
+# rc87: the two layout steps share one loop, so the script holds two step blocks (one catch and one 'ok' each).
+STEP_BLOCKS = 2
 STEP = "accounts_erp_layout"
 
 
@@ -354,7 +358,7 @@ class StepReportTest(unittest.TestCase):
         observed = self.execute("accounts_layout_missing")
         row = self.report_row(observed)
         self.assertEqual(row["steps"][STEP],
-                         "MISSING: " + ACCOUNTS_HELPER)
+                         "MISSING: class ErpLayoutExtraFields")
         self.assertIn(STEP, self.installation_error(observed))
 
     def test_a_class_that_does_not_define_itself_is_reported(self):
@@ -363,7 +367,7 @@ class StepReportTest(unittest.TestCase):
         else and the step silently does not happen."""
         row = self.report_row(self.execute("accounts_layout_not_loaded"))
         self.assertEqual(row["steps"][STEP],
-                         "NOT-LOADED: class ErpLayoutExtraFields")
+                         "MISSING: class ErpLayoutExtraFields")
 
     # -- the reporter itself must not be able to kill an install -----------
 
@@ -442,15 +446,15 @@ class StepReportStructureTest(unittest.TestCase):
         region = self.step_region()
         catches = len(re.findall(r"\}\s*catch\s*\(Throwable\s+\$e\)\s*\{", region))
         recorded = len(re.findall(r"\$bdStepReport\[[^\]]+\]\s*=\s*'FAILED: '", region))
-        self.assertEqual(catches, STEP_COUNT,
-                         "the step count changed; update STEP_COUNT deliberately")
+        self.assertEqual(catches, STEP_BLOCKS,
+                         "the step count changed; update STEP_BLOCKS deliberately")
         self.assertEqual(catches, recorded,
                          "a step catches its own Throwable and reports nothing")
 
     def test_every_step_records_success_too(self):
         region = self.step_region()
         self.assertEqual(
-            len(re.findall(r"\$bdStepReport\[[^\]]+\]\s*=\s*'ok'", region)), STEP_COUNT)
+            len(re.findall(r"\$bdStepReport\[[^\]]+\]\s*=\s*'ok'", region)), STEP_BLOCKS)
 
     def test_the_body_still_cannot_throw(self):
         """Unchanged from the rc26 guard and restated here because this change

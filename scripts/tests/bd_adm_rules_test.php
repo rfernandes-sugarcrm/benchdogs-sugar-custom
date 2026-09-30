@@ -325,7 +325,6 @@ namespace {
     $loadLists();
 
     require 'custom/src/BenchDogs/BdAdmRules.php';
-    require 'custom/modules/Quotes/BdAdmLookupOptions.php';
 
     // What core publishes for the ADM connection's code lists (core's scoped
     // key: <company>__<type>_<code>), plus rows that must not be read as ADM.
@@ -385,8 +384,8 @@ namespace {
     // The modules read, in order (ids dropped).
     $readModules = fn() => array_map(fn($r) => strstr($r, ':', true), BeanFactory::$reads);
 
-    if ($noFacts) {
-        // ── O. an ERP-Epicor without ErpQuoteFacts ──────────────────────────
+    if (!$nsFacts) {
+        // ── O. rc87 (🔒2167b): ERP-Epicor below 1.2.0 (1.1's global class, or none) is refused, never used ──
         SugarQuery::$rows = $ADM_ROWS;
         $freshQuery();
         $GLOBALS['log']->lines = [];
@@ -399,14 +398,20 @@ namespace {
         } catch (\Throwable $e) {
             $threw = get_class($e) . ': ' . $e->getMessage();
         }
-        $check('O1 no ErpQuoteFacts: nothing is defaulted, nothing throws', [null, [], null],
+        $check('O1 no 1.2.0 ErpQuoteFacts: nothing is defaulted, nothing throws', [null, [], null],
             [$threw, $set ?? null, $q->erp_reference ?? null]);
-        $check('O2 the class really is absent in this run (the include found no file)', false,
-            class_exists('ErpQuoteFacts', false));
-        $check('O3 and the reason is logged, naming the file and the quote', true,
+        $check('O2 this run has the 1.1 global class exactly when BD_QUOTE_FACTS installed it (never used)',
+            !$noFacts, class_exists('ErpQuoteFacts', false));
+        $check('O3 and the reason is logged, naming the 1.2.0 requirement and the quote', true,
             (bool) array_filter($GLOBALS['log']->lines, fn($l) => $l[0] === 'error'
-                && str_contains($l[1], 'custom/modules/Quotes/ErpQuoteFacts.php')
+                && str_contains($l[1], 'requires ERP-Epicor >= 1.2.0')
                 && str_contains($l[1], 'q-ADM')));
+        $check('O5 the rules never include a file by path (no fallback to ERP-Epicor 1.1\'s global class)', 0,
+            preg_match('/\b(include|require)(_once)?\b/', (string) preg_replace('~/\*.*?\*/|//[^\n]*~s', '',
+                (string) file_get_contents('custom/src/BenchDogs/BdAdmRules.php'))));
+        $check('O6 the manifest refuses an ERP-Epicor below 1.2.0 (the install-time half)', '1.2.0',
+            preg_match("/'id_name'\\s*=>\\s*'sugarai_erp_epicor',\\s*'version'\\s*=>\\s*'([0-9.]+)'/",
+                (string) file_get_contents('pack.php'), $bdFloor) ? $bdFloor[1] : null);
         $check('O4 T2: neither class: the namespaced lookup was ASKED of the autoloader and found nothing',
             [true, false], [in_array($NS_FACTS, $GLOBALS['bd_autoload_asked'], true), class_exists($NS_FACTS, false)]);
     } else {
@@ -596,19 +601,6 @@ namespace {
         BdAdmRules::applyDefaults($typedLong);
         $check('H16 G530 CONTROL a Reference already set is never shortened here (the seller\'s, or older)',
             'HARRISBURG PA', $typedLong->erp_reference);
-        // An ERP-Epicor older than G530 (ErpQuoteFacts without referenceMaxLength): no cut, no error.
-        $older = shell_exec(escapeshellarg(PHP_BINARY) . ' -r ' . escapeshellarg(
-            'class ErpQuoteFacts {} class L { public $e = []; function error($m) { $this->e[] = $m; } }'
-            . ' $GLOBALS["log"] = new L(); chdir(' . var_export($pkg, true) . ');'
-            . ' require "custom/src/BenchDogs/BdAdmRules.php"; $q = new stdClass(); $q->id = "q-old";'
-            . ' $max = \\Sugarcrm\\Sugarcrm\\custom\\BenchDogs\\BdAdmRules::referenceMaxLength($q);'
-            . ' echo json_encode([$max, \\Sugarcrm\\Sugarcrm\\custom\\BenchDogs\\BdAdmRules::defaultReference("HARRISBURG", "PA", $max),'
-            . ' count($GLOBALS["log"]->e) === 1 && strpos($GLOBALS["log"]->e[0], "older than G530") !== false'
-            . ' && strpos($GLOBALS["log"]->e[0], "q-old") !== false]);')
-            . ' 2>&1');
-        $check('H17 G530 an older ERP-Epicor (no referenceMaxLength): limit 0, the full default, no error, '
-            . 'and the reason LOGGED with the quote', [0, 'HARRISBURG PA', true], json_decode((string) $older, true));
-
         $freshQuery();
         foreach (range(1, 5) as $i) {
             (new BdAdmRules())->beforeSave($quote('ADM', ['id' => "q-$i", 'lines' => []]), 'before_save', []);
@@ -654,10 +646,10 @@ namespace {
         // ── J. the option functions ignore whatever Sugar passes ───────────
         $legacy = [['BD_LEAD_SOURCE' => 'X'], 'bd_lead_source', 'X', 'ListView'];
         $check('J1 lead source: same list bare and with the legacy signature',
-            bd_adm_lead_source_options(), bd_adm_lead_source_options(...$legacy));
-        $check('J2 lead source reads its own type', BdAdmRules::lookupOptions('BdLeadSources'), bd_adm_lead_source_options());
-        $check('J3 lead type reads its own type', BdAdmRules::lookupOptions('BdLeadTypes'), bd_adm_lead_type_options('BdProjects'));
-        $check('J4 project reads its own type', BdAdmRules::lookupOptions('BdProjects'), bd_adm_project_options());
+            BdAdmRules::leadSourceOptions(), BdAdmRules::leadSourceOptions(...$legacy));
+        $check('J2 lead source reads its own type', BdAdmRules::lookupOptions('BdLeadSources'), BdAdmRules::leadSourceOptions());
+        $check('J3 lead type reads its own type', BdAdmRules::lookupOptions('BdLeadTypes'), BdAdmRules::leadTypeOptions('BdProjects'));
+        $check('J4 project reads its own type', BdAdmRules::lookupOptions('BdProjects'), BdAdmRules::projectOptions());
 
         // ── K. G460 the marketing pickers ───────────────────────────────────
         // ADM's shapes (read-only 2026-09-25): 26DISCNV active with active
@@ -710,7 +702,7 @@ namespace {
             BdAdmRules::marketingOptionsFromRows('BdLeadSources', $K_CAMPS, $K_EVENTS));
         $check('K7 the two option functions read their own list, whatever Sugar passes',
             [BdAdmRules::marketingOptions('BdMarketingCampaigns'), BdAdmRules::marketingOptions('BdMarketingEvents')],
-            [bd_adm_marketing_campaign_options(...$legacy), bd_adm_marketing_event_options('BdMarketingCampaigns')]);
+            [BdAdmRules::marketingCampaignOptions(...$legacy), BdAdmRules::marketingEventOptions('BdMarketingCampaigns')]);
         // K8 pinned "the before_save hook never names either field" until G809:
         // the owner asked for defaults (quote 8972), so the pair is now COPIED
         // from the account's newest quote (section Q). What still holds is the
@@ -983,9 +975,9 @@ namespace {
         $fnOk = [];
         foreach (array_keys($fields) as $f) {
             $fn = $fields[$f]['function'] ?? [];
-            $fnOk[$f] = is_file($fn['include'] ?? '') && function_exists($fn['name'] ?? '') && empty($fields[$f]['options']);
+            $fnOk[$f] = !isset($fn['include']) && is_callable($fn['name'] ?? '') && empty($fields[$f]['options']);
         }
-        $check('M3 each picker names a function that exists, in a file that ships',
+        $check('M3 each picker names a BdAdmRules static method that exists, with no include (rc87: autoloaded)',
             ['bd_lead_source' => true, 'bd_lead_type' => true, 'bd_project_id' => true,
              'bd_marketing_campaign' => true, 'bd_marketing_event' => true], $fnOk);
         // G809: all five carry ERP-Core's erp-dependent-enum (it reads the
@@ -1093,15 +1085,68 @@ namespace {
             [array_values(array_unique(array_merge([], (function ($a) { sort($a); return $a; })($named[1])))),
              (function ($a) { sort($a); return $a; })($dep['triggerFields'] ?? [])]);
 
+        // ── M9. rc87: Sugar's getFunctionValue resolves each picker's list with the class AUTOLOADED, no include ──
+        $gfvProbe = sys_get_temp_dir() . '/bd-gfv-' . getmypid() . '.php';
+        file_put_contents($gfvProbe, <<<'GFV'
+<?php
+[, $pkg] = $argv;
+// Sugar's rule for the custom namespace (vendor/composer/autoload_psr4.php): Sugarcrm\Sugarcrm\custom\X\Y -> custom/src/X/Y.php.
+$GLOBALS['gfv_autoloaded'] = [];
+spl_autoload_register(function ($c) use ($pkg) {
+    $p = 'Sugarcrm\\Sugarcrm\\custom\\';
+    $f = $pkg . '/custom/src/' . str_replace('\\', '/', substr($c, strlen($p))) . '.php';
+    if (strncmp($c, $p, strlen($p)) === 0 && is_file($f)) { $GLOBALS['gfv_autoloaded'][] = $c; require $f; }
+});
+class SugarQuery {
+    private $type = '';
+    function from($b, $o = []) { return $this; } function select($f) { return $this; } function orderBy($a, $b) { return $this; }
+    function where() { return $this; } function equals($k, $v) { if ($k === 'type') { $this->type = $v; } return $this; }
+    function execute() { return [['erp_display_sync_key' => 'K-' . $this->type, 'name' => 'N']]; }
+}
+class BeanFactory { static function newBean($m) { return new stdClass(); } }
+// include/utils.php getFunctionValue(), SugarEnt 26.1.0 6375-6411, for a vardef with no function_bean.
+function gfv($function, $args = []) {
+    if (is_array($function)) {
+        if (!empty($function['include'])) { require_once $function['include']; }
+        if (!empty($function['name'])) { $function = $function['name']; }
+    }
+    return is_callable($function) ? call_user_func_array($function, $args) : null;
+}
+chdir($pkg);
+$dictionary = [];
+include 'custom/Extension/modules/Quotes/Ext/Vardefs/bd_adm_required_fields.php';
+include 'custom/Extension/modules/Accounts/Ext/Vardefs/bd_customer_group.php';
+$out = ['loaded_before' => class_exists('Sugarcrm\\Sugarcrm\\custom\\BenchDogs\\BdAdmRules', false)];
+foreach (['Quote' => ['bd_lead_source', 'bd_lead_type', 'bd_project_id', 'bd_marketing_campaign', 'bd_marketing_event'],
+          'Account' => ['bd_customer_group_code']] as $bean => $fields) {
+    foreach ($fields as $f) {
+        $v = gfv($dictionary[$bean]['fields'][$f]['function'] ?? null);
+        $out[$f] = is_array($v) ? array_keys($v) : $v;
+    }
+}
+$out['autoloaded'] = $GLOBALS['gfv_autoloaded'];
+echo json_encode($out);
+GFV);
+        $gfv = json_decode((string) shell_exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($gfvProbe) . ' '
+            . escapeshellarg($pkg) . ' 2>&1'), true);
+        @unlink($gfvProbe);
+        $check('M9 each picker list resolves through getFunctionValue with BdAdmRules AUTOLOADED and no include', [
+                'loaded_before' => false,
+                'bd_lead_source' => ['', 'K-BdLeadSources'], 'bd_lead_type' => ['', 'K-BdLeadTypes'],
+                'bd_project_id' => ['', 'K-BdProjects'], 'bd_marketing_campaign' => [''],
+                'bd_marketing_event' => [''], 'bd_customer_group_code' => ['', 'K-BdCustomerGroups'],
+                'autoloaded' => ['Sugarcrm\\Sugarcrm\\custom\\BenchDogs\\BdAdmRules'],
+            ], $gfv);
+
         // ── R. G804: the Account's Cust. Group ──────────────────────────────
         $dictionary = [];
         include 'custom/Extension/modules/Accounts/Ext/Vardefs/bd_customer_group.php';
         $code = $dictionary['Account']['fields']['bd_customer_group_code'] ?? [];
         $name = $dictionary['Account']['fields']['bd_customer_group'] ?? [];
-        $check('R1 the Group Code is ADM\'s picker: an enum over bd_adm_customer_group_options, never pre-picked, '
-            . 'same column length, not required',
-            ['enum', 'bd_adm_customer_group_options', true, true, 10, false],
-            [$code['type'] ?? null, $code['function']['name'] ?? null, is_file($code['function']['include'] ?? ''),
+        $check('R1 the Group Code is ADM\'s picker: an enum over BdAdmRules::customerGroupOptions (no include), never '
+            . 'pre-picked, same column length, not required',
+            ['enum', BdAdmRules::class . '::customerGroupOptions', false, true, 10, false],
+            [$code['type'] ?? null, $code['function']['name'] ?? null, isset($code['function']['include']),
              $code['defaultToBlank'] ?? null, $code['len'] ?? null, !empty($code['required'])]);
         $check('R2 read-only once the account holds EITHER ERP key (formula), editable before; the NAME stays read-only',
             [true, 'not(and(equal($erp_display_sync_key,""),equal($erp_sync_key,"")))', true, false],
@@ -1117,7 +1162,7 @@ namespace {
         ];
         SugarQuery::$rows = array_merge($ADM_ROWS, $GROUP_ROWS);
         $check('R3 the options: ADM\'s ACTIVE groups, "CODE - Name", blank first',
-            ['' => '', 'AUTO' => 'AUTO - Automotive', 'BRKR' => 'BRKR - Broker'], bd_adm_customer_group_options());
+            ['' => '', 'AUTO' => 'AUTO - Automotive', 'BRKR' => 'BRKR - Broker'], BdAdmRules::customerGroupOptions());
         $acct = fn(array $f) => new BdTestBean(['id' => 'acct-new'] + $f);
         $freshQuery();
         $picked = $acct(['bd_customer_group_code' => 'BRKR']);
@@ -1181,8 +1226,9 @@ namespace {
 
         // ── P. the one fixed path ───────────────────────────────────────────
         $src = file_get_contents('custom/src/BenchDogs/BdAdmRules.php');
-        $check('P1 the include names the same literal path as QUOTE_FACTS_FILE', true,
-            str_contains($src, "@include_once '" . BdAdmRules::QUOTE_FACTS_FILE . "';"));
+        $check('P1 rc87: no literal ErpQuoteFacts path and no QUOTE_FACTS_FILE; the class is imported', [false, false, true],
+            [str_contains($src, 'custom/modules/Quotes/ErpQuoteFacts.php'), str_contains($src, 'QUOTE_FACTS_FILE'),
+             str_contains($src, 'use Sugarcrm\\Sugarcrm\\custom\\Erp\\ErpQuoteFacts;')]);
 
         // ── T. T2: ERP-Epicor's ErpQuoteFacts, namespaced and autoloaded ────
         if ($nsFacts) {
@@ -1222,13 +1268,13 @@ $q->id = 'q-leftover';
 $q->field_defs = ['erp_reference' => ['erp_max_length' => 10]];
 echo json_encode([$available, isset($GLOBALS['bd_stale_included']),
     class_exists('Sugarcrm\\Sugarcrm\\custom\\Erp\\ErpQuoteFacts', false),
-    BdAdmRules::referenceMaxLength($q), count($GLOBALS['log']->e)]);
+    $available ? BdAdmRules::referenceMaxLength($q) : null, count($GLOBALS['log']->e)]);
 PROBE);
             $runProbe = fn(string $root) => json_decode((string) shell_exec(escapeshellarg(PHP_BINARY) . ' '
                 . escapeshellarg($probeFile) . ' ' . escapeshellarg($pkg) . ' ' . escapeshellarg($root) . ' '
                 . escapeshellarg($leftoverRoot) . ' 2>&1'), true);
-            $check('T4 CONTROL an old global file alone at the literal path IS included and answers '
-                . '(it has no referenceMaxLength: limit 0, logged)', [true, true, false, 0, 1], $runProbe(''));
+            $check('T4 rc87: an old global file alone at the literal path is NEVER included; the facts are '
+                . 'unavailable (1.2.0 required)', [false, false, false, null, 0], $runProbe(''));
             $check('T5 beside the namespaced class the leftover is NEVER included; the namespaced class '
                 . 'answers (the field\'s limit, 10; nothing logged)', [true, false, true, 10, 0],
                 $runProbe($erpAutoloader));
@@ -1238,15 +1284,6 @@ PROBE);
             @rmdir($leftoverRoot . '/custom/modules');
             @rmdir($leftoverRoot . '/custom');
             @rmdir($leftoverRoot);
-        } else {
-            $check('T0 only the global class installed: the namespaced lookup was asked and missed, and the '
-                . 'global class answered H1-H4', [true, false, true],
-                [in_array($NS_FACTS, $GLOBALS['bd_autoload_asked'], true), class_exists($NS_FACTS, false),
-                 class_exists('ErpQuoteFacts', false)]);
-            // A miss is a file-system lookup on every call (PHP remembers no
-            // negative autoload), so it is made once per save, never per line:
-            // H1's quote has two lines and a Reference to cut.
-            $check('T0b and that lookup is made ONCE per save, not once per line or per fact', 1, $nsAskedByRules);
         }
     }
 

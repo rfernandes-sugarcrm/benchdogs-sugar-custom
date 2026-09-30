@@ -15,7 +15,7 @@ and the package ships no module of its own.
 > |---|---|---|
 > | `custom/Extension/modules/Accounts/Ext/Vardefs/bd_customer_group.php` | `bd_customer_group_code` (Epicor `Customer.GroupCode`) and `bd_customer_group` (`CustGrup.GroupDesc`) on Account | Bench's customer category (REQ-19). Core has no such field, and core's schema enforcement dead-letters the Bench connector's `erp_customers` writes without the vardef |
 > | `custom/Extension/modules/Accounts/Ext/Language/en_us.bd_customer_group.php` | their two labels | — |
-> | `custom/clients/base/api/BdBenchDogsActionsApi.php` | **EMPTY** — declares no class, registers no route | the one retirement stub left: an api file is loaded by path on every REST dictionary rebuild, so dropping it would leave rc68's `bd-tools/repair-ui` registered on upgraded tenants. Droppable once every tenant carrying Bench Dogs has taken rc69 |
+> | ~~`custom/clients/base/api/BdBenchDogsActionsApi.php`~~ | **no longer shipped (rc87)** | the emptied REST stub; ONEOFF-RetireBdResidue 1.0.6 deletes the tenant's copy |
 > | `scripts/post_execute.php`, `scripts/bd_pre_uninstall.php`, `scripts/post_uninstall.php` | the lifecycle: rebuild + have ERP-Core place the marked fields + the G294 step report; proof of life; rebuild + have ERP-Core retire the marked fields | — |
 >
 > **rc70 (🔒 1724b): this package ships NO layout code.** Its fields carry
@@ -54,7 +54,7 @@ and the package ships no module of its own.
 > | `custom/Extension/modules/Quotes/Ext/Vardefs/bd_adm_required_fields.php` + `.../Language/en_us.bd_adm_required_fields.php` | Quote pickers `bd_lead_source`, `bd_lead_type`, `bd_project_id`, and (G460) `bd_marketing_campaign`, `bd_marketing_event` (each `erp_layout`-marked for the ERP panel, after Reference), and their labels | ADM's own UD columns (`LeadSrc_c`, `LeadType_c`), ADM's one-project-per-quote rule, and ADM's required marketing pair; no other company asks for them |
 > | `custom/Extension/modules/Quotes/Ext/LogicHooks/bd_adm_quote_defaults.php` | before_save: fills an EMPTY `erp_reference` (ship-to city + state, shortened to the ERP's limit, G530) and an EMPTY Project (product-group default) on an unsent ADM quote; exits before loading anything for a quote it cannot touch | ADM-only defaults; creates nothing (🔒 1499 still holds, `test_g243…` pins it) |
 > | `custom/Extension/application/Ext/Language/en_us.bd_adm_lists.php` | labels for the five `ERP_LookupValues` types, and ONE tenant list: `bd_adm_project_by_group_list` | Bench data, edited in Dropdown Editor |
-> | `custom/src/BenchDogs/BdAdmRules.php` (rc86: `Sugarcrm\Sugarcrm\custom\BenchDogs\BdAdmRules`, autoloaded; before rc86 `custom/modules/Quotes/BdAdmRules.php`), `custom/modules/Quotes/BdAdmLookupOptions.php` | the rules (which companies are ADM, the two defaults) and the pickers' option functions | — |
+> | `custom/src/BenchDogs/BdAdmRules.php` (`Sugarcrm\Sugarcrm\custom\BenchDogs\BdAdmRules`, autoloaded; before rc86 `custom/modules/Quotes/BdAdmRules.php`) | the rules (which companies are ADM, the two defaults) and, since rc87, the pickers' option sources as static methods (`BdAdmRules::leadSourceOptions` etc., named by the vardefs with no include; `BdAdmLookupOptions.php` is retired) | — |
 
 > **Grown by G450 (0.9.42-rc74), with the owner's per-item consent** (his Yes to
 > a Bench-only third account type "Suspect" beside the stock Customer/Prospect,
@@ -95,6 +95,10 @@ and the package ships no module of its own.
 > `LBL_ERP_DISCOUNTED_TOTAL` to **"Total"** (ERP-Core: "Discounted Total", the grid column). `_override` merges them after
 > ERP-Core's plain files whichever package is installed last (ModuleInstaller sorts `_override*` last, then mtime).
 > Other languages keep ERP-Core's text. Uninstall returns ERP-Core's captions.
+>
+> rc87: the six overlays are three lines each; the shared rule is `custom/src/BenchDogs/BdHiddenFields.php` (`BdHiddenFields::strip()`, which keeps its own try/catch so a bad panel never breaks a view). An overlay runs only on a panel list, and only when the class autoloads; otherwise the view is served as read.
+>
+> **Admin > Quotes Configuration.** That screen saves the Quotes summary columns into the deployed views, but these overlays strip the discount fields at render. An admin who re-adds Discount there sees the setting saved and never drawn on a Bench tenant. That is by design (🔒2151b); nothing stored changes.
 >
 > Why an overlay and not a layout write (decision 803): Sugar includes these
 > right after whatever viewdef is deployed, at every metadata build, so they

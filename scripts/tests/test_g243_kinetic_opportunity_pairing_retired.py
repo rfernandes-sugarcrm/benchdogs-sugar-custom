@@ -290,22 +290,15 @@ class TheClassCreatesNoOpportunity(unittest.TestCase):
     def test_the_tombstone_is_retired_off_the_tenant(self):
         rel = str(TOMBSTONE.relative_to(PACKAGE))
         assert_retired_by_oneoff(self, rel, "BdKineticOpportunityHook")
-        self.assertEqual(oneoff_worklist()[rel], "blanked")
+        # 1.0.6: deleted through uninstall_new_files, not blanked.
+        self.assertEqual(oneoff_worklist()[rel], "deleted")
 
-    def test_the_blank_body_defines_nothing(self):
-        emptied = ONEOFF_LIB / "leftovers/emptied.php"
-        done = subprocess.run(
-            [_php(), "-r", "$c = get_declared_classes(); $f = get_defined_functions()['user'];"
-             " require $argv[1]; echo json_encode(['classes' => array_values(array_diff("
-             "get_declared_classes(), $c)), 'functions' => array_values(array_diff("
-             "get_defined_functions()['user'], $f))]);", str(emptied)],
-            capture_output=True, text=True, check=True)
-        self.assertEqual(json.loads(done.stdout), {"classes": [], "functions": []})
-
-    def test_the_registration_is_removed_before_the_class_is_blanked(self):
-        source = (ONEOFF_LIB / "scripts/post_execute.php").read_text(encoding="utf-8")
-        self.assertLess(source.index("$bdInstaller->uninstallExt('bd_residue', $bdSubdir);"),
-                        source.index("$bdInstaller->copy_path($bdEmptySource, $bdOrphan);"))
+    def test_the_registration_and_the_class_leave_in_one_pass(self):
+        """1.0.6: both are on the one-off's list and removed by one uninstall_new_files call; Module Loader
+        rebuilds the hooks after post_execute, so no compiled entry is left pointing at the class."""
+        work = oneoff_worklist()
+        self.assertEqual(work.get(str(TOMBSTONE.relative_to(PACKAGE))), "deleted")
+        self.assertEqual(work.get("custom/Extension/modules/Quotes/Ext/LogicHooks/bd_kinetic_opportunity.php"), "deleted")
 
 
 # ── 3. Both files actually ship ─────────────────────────────────────────────

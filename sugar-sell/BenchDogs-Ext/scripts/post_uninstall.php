@@ -22,19 +22,15 @@ try {
     $GLOBALS['log']->error('BenchDogs-Ext: post-uninstall repair failed: ' . $e->getMessage());
 }
 
-// G380 (f) / 🔒 1724b: take this package's marked fields back off the record views, now that their vardefs are gone.
-$bdLayoutHelper = 'custom/include/ErpLayoutExtraFields.php';
+// G380 (f) / 🔒 1724b: take this package's marked fields back off the record views, now that their vardefs are gone; ERP-Core's class is autoloaded.
 foreach (array('Accounts', 'Quotes') as $bdModule) {
     try {
-        if (!class_exists('ErpLayoutExtraFields', false) && file_exists($bdLayoutHelper)) {
-            require_once $bdLayoutHelper;
-        }
-        if (class_exists('ErpLayoutExtraFields', false)) {
+        if (class_exists('ErpLayoutExtraFields')) {
             $bdSynced = ErpLayoutExtraFields::sync($bdModule);
             $GLOBALS['log']->fatal('BenchDogs-Ext: ' . $bdModule . ' retired fields taken off the view: '
                 . implode(', ', (array) ($bdSynced['removed'] ?? array())));
         } else {
-            $GLOBALS['log']->error("BenchDogs-Ext: {$bdLayoutHelper} missing; {$bdModule} record view"
+            $GLOBALS['log']->error('BenchDogs-Ext: class ErpLayoutExtraFields not found; ' . $bdModule . ' record view'
                 . ' not cleaned up (remove bd_* fields from it by hand)');
         }
     } catch (Throwable $e) {

@@ -346,9 +346,11 @@ class RetiredStageNames(unittest.TestCase):
         oneoff = (ROOT / "sugar-sell/ONEOFF-RetireBdResidue/scripts/post_execute.php").read_text()
         code = re.sub(r"/\*.*?\*/", "", oneoff, flags=re.S)
         code = re.sub(r"(^|\s)//[^\n]*", r"\1", code)
-        self.assertIn("->uninstall_languages()", code)
-        self.assertIn("'zz_bd_stage_doms'", code)
-        self.assertIn("'custom/dropdowntemplates/bd_stage_doms.append.php'", code)
+        # 1.0.6: the fragment and its template are plain deletions from the one-off's list.
+        from bd_retirement import oneoff_worklist
+        self.assertEqual(oneoff_worklist().get("custom/Extension/application/Ext/Language/en_us.zz_bd_stage_doms.php"), "deleted")
+        self.assertEqual(oneoff_worklist().get("custom/dropdowntemplates/bd_stage_doms.append.php"), "deleted")
+        self.assertIn("uninstall_new_files", code)
         post = (PKG / "scripts/post_execute.php").read_text()
         post = re.sub(r"/\*.*?\*/", "", post, flags=re.S)
         post = re.sub(r"(^|\s)//[^\n]*", r"\1", post)

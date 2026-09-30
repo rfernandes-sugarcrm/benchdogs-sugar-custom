@@ -29,54 +29,23 @@ try {
     $bdStepReport['repair_rebuild'] = 'FAILED: ' . get_class($e) . ': ' . $e->getMessage();
 }
 
-// G380 (f) / 🔒 1724b: ERP-Core's ErpLayoutExtraFields places every field of the module whose vardef carries the `erp_layout` marker and that is on no panel yet.
-$bdLayoutHelper = 'custom/include/ErpLayoutExtraFields.php';
-
-// REQ-19: the two customer-group fields, on Accounts' panel_overview (their marker).
-try {
-    if (!class_exists('ErpLayoutExtraFields', false) && file_exists($bdLayoutHelper)) {
-        require_once $bdLayoutHelper;
+// G380 (f) / 🔒 1724b: ERP-Core's ErpLayoutExtraFields (custom/include/, found by Sugar's autoloader) places every marked field that is on no panel yet.
+foreach (array('Accounts' => 'accounts_erp_layout', 'Quotes' => 'quotes_erp_layout') as $bdModule => $bdStep) {
+    try {
+        if (class_exists('ErpLayoutExtraFields')) {
+            $bdSynced = ErpLayoutExtraFields::sync($bdModule);
+            $GLOBALS['log']->fatal('BenchDogs-Ext: ' . $bdModule . ' marked fields placed: '
+                . implode(', ', (array) ($bdSynced['added'] ?? array())));
+            $bdStepReport[$bdStep] = 'ok';
+        } else {
+            $GLOBALS['log']->fatal('BenchDogs-Ext: class ErpLayoutExtraFields not found (ERP-Core older than the G380'
+                . ' release?), ' . $bdModule . ' fields not placed');
+            $bdStepReport[$bdStep] = 'MISSING: class ErpLayoutExtraFields';
+        }
+    } catch (Throwable $e) {
+        $GLOBALS['log']->fatal('BenchDogs-Ext: ' . $bdModule . ' layout sync failed: ' . $e->getMessage());
+        $bdStepReport[$bdStep] = 'FAILED: ' . get_class($e) . ': ' . $e->getMessage();
     }
-    if (class_exists('ErpLayoutExtraFields', false)) {
-        $bdSynced = ErpLayoutExtraFields::sync('Accounts');
-        $GLOBALS['log']->fatal('BenchDogs-Ext: Accounts marked fields placed: '
-            . implode(', ', (array) ($bdSynced['added'] ?? array())));
-        $bdStepReport['accounts_erp_layout'] = 'ok';
-    } elseif (file_exists($bdLayoutHelper)) {
-        $GLOBALS['log']->fatal("BenchDogs-Ext: {$bdLayoutHelper} loaded but class ErpLayoutExtraFields is undefined");
-        $bdStepReport['accounts_erp_layout'] = 'NOT-LOADED: class ErpLayoutExtraFields';
-    } else {
-        $GLOBALS['log']->fatal("BenchDogs-Ext: {$bdLayoutHelper} missing (ERP-Core older than the G380"
-            . ' release?), Accounts fields not placed');
-        $bdStepReport['accounts_erp_layout'] = 'MISSING: ' . $bdLayoutHelper;
-    }
-} catch (Throwable $e) {
-    $GLOBALS['log']->fatal('BenchDogs-Ext: Accounts layout sync failed: ' . $e->getMessage());
-    $bdStepReport['accounts_erp_layout'] = 'FAILED: ' . get_class($e) . ': ' . $e->getMessage();
-}
-
-// G380 / G381 / G460 / G606: Reference and the five ADM pickers on
-// ERP-Epicor's ERP panel (their markers).
-try {
-    if (!class_exists('ErpLayoutExtraFields', false) && file_exists($bdLayoutHelper)) {
-        require_once $bdLayoutHelper;
-    }
-    if (class_exists('ErpLayoutExtraFields', false)) {
-        $bdSynced = ErpLayoutExtraFields::sync('Quotes');
-        $GLOBALS['log']->fatal('BenchDogs-Ext: Quotes marked fields placed: '
-            . implode(', ', (array) ($bdSynced['added'] ?? array())));
-        $bdStepReport['quotes_erp_layout'] = 'ok';
-    } elseif (file_exists($bdLayoutHelper)) {
-        $GLOBALS['log']->fatal("BenchDogs-Ext: {$bdLayoutHelper} loaded but class ErpLayoutExtraFields is undefined");
-        $bdStepReport['quotes_erp_layout'] = 'NOT-LOADED: class ErpLayoutExtraFields';
-    } else {
-        $GLOBALS['log']->fatal("BenchDogs-Ext: {$bdLayoutHelper} missing (ERP-Core older than the G380"
-            . ' release?), Quotes fields not placed');
-        $bdStepReport['quotes_erp_layout'] = 'MISSING: ' . $bdLayoutHelper;
-    }
-} catch (Throwable $e) {
-    $GLOBALS['log']->fatal('BenchDogs-Ext: Quotes layout sync failed: ' . $e->getMessage());
-    $bdStepReport['quotes_erp_layout'] = 'FAILED: ' . get_class($e) . ': ' . $e->getMessage();
 }
 
 // The step report (G294): each channel in its own catch, and this block never raises.

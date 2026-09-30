@@ -73,8 +73,6 @@ KEPT = {
         "the customer category (REQ-19): the two Account fields",
     "custom/Extension/modules/Accounts/Ext/Language/en_us.bd_customer_group.php":
         "their two labels",
-    "custom/clients/base/api/BdBenchDogsActionsApi.php":
-        "EMPTY: unregisters rc68's bd-tools/repair-ui on upgraded tenants",
     "scripts/post_execute.php": "lifecycle",
     "scripts/bd_pre_uninstall.php": "lifecycle",
     "scripts/post_uninstall.php": "lifecycle",
@@ -99,8 +97,8 @@ KEPT = {
         "the five lookup-type labels + the one tenant list (group->project)",
     "custom/src/BenchDogs/BdAdmRules.php":
         "the ADM rules themselves: which companies are ADM, the two defaults, options (rc86: namespaced, MLP024)",
-    "custom/modules/Quotes/BdAdmLookupOptions.php":
-        "the pickers' option functions (vardef 'function' needs a plain function)",
+    "custom/src/BenchDogs/BdHiddenFields.php":
+        "G848 (rc87): the one body the six discount overlays call (Rafael's review of #41, item 3)",
     # ── G450 (0.9.42-rc74): the owner's per-item consent is his Yes to "a
     # Bench-only third type Suspect, alongside the stock Customer/Prospect,
     # never renaming them" (GAPS.md G450 row; register ~06:55Z 2026-09-24),
@@ -189,6 +187,9 @@ REMOVED = {
     "custom/modules/Quotes/BdQuotesLayoutExtensions.php": INERT,
     "custom/modules/Opportunities/BdOpportunitiesLayoutExtensions.php": INERT,
     "custom/modules/Quotes/BdKineticOpportunityHook.php": ONEOFF,
+    # rc87 (Rafael's review of #41): the emptied REST stub and the option functions (now BdAdmRules methods).
+    "custom/clients/base/api/BdBenchDogsActionsApi.php": ONEOFF,
+    "custom/modules/Quotes/BdAdmLookupOptions.php": ONEOFF,
     # rc86 (MLP024): the class moved to custom/src/BenchDogs; the one-off (1.0.5) blanks the old path once rc86 is installed.
     "custom/modules/Quotes/BdAdmRules.php": ONEOFF,
     "custom/Extension/application/Ext/DropdownsStyle/sales_stage_dom_style.php": ONEOFF,
@@ -310,42 +311,12 @@ class EveryRemovedPathLeavesTheTenant(unittest.TestCase):
         self.assertEqual(offenders, [])
 
 
-@unittest.skipUnless(shutil.which("php"), "requires php")
-class TheApiStubRegistersNothing(unittest.TestCase):
-    PROBE = r"""
-namespace Sugarcrm\Sugarcrm\Util\Files { class FileLoader { public static function validateFilePath($p) { return $p; } } }
-namespace {
-    class SugarApi {}
-    @mkdir('custom/clients/base/api', 0777, true);
-    // ERP-Epicor present: the one condition under which rc68 DID define the class.
-    file_put_contents('custom/clients/base/api/BaseErpActionsApi.php', '<?php class BaseErpActionsApi extends SugarApi {}');
-    $before = get_declared_classes();
-    require_once getenv('BD_API_FILE');
-    echo json_encode(['new_classes' => array_values(array_diff(get_declared_classes(), $before)),
-                      'defined' => class_exists('BdBenchDogsActionsApi', false)]);
-}
-"""
+class TheApiStubIsRetired(unittest.TestCase):
+    """rc87 (Rafael's review of #41): the emptied REST stub no longer ships; the one-off deletes the tenant's copy."""
 
-    def test_the_api_stub_registers_no_route(self):
-        """EXECUTED the way ServiceDictionary::buildAllDictionaries() loads it:
-        require_once, then class_exists(<file name>). No class means no route."""
-        api = PKG / "custom/clients/base/api/BdBenchDogsActionsApi.php"
-        with tempfile.TemporaryDirectory(prefix="g280-api-") as tmp:
-            out = subprocess.run(["php", "-r", self.PROBE], cwd=tmp, capture_output=True,
-                                 text=True, env={**os.environ, "BD_API_FILE": str(api)})
-        self.assertEqual(out.returncode, 0, out.stderr + out.stdout)
-        observed = json.loads(out.stdout)
-        self.assertFalse(observed["defined"], "the api stub defines the class again")
-        self.assertEqual(observed["new_classes"], [], observed)
-
-    def test_the_api_stub_carries_no_code_at_all(self):
-        tokens = subprocess.run(
-            ["php", "-r", "foreach (token_get_all(file_get_contents($argv[1])) as $t) {"
-             " if (is_array($t) && in_array($t[0], [T_COMMENT, T_DOC_COMMENT, T_WHITESPACE,"
-             " T_OPEN_TAG], true)) continue; echo is_array($t) ? $t[1] : $t; }",
-             str(PKG / "custom/clients/base/api/BdBenchDogsActionsApi.php")],
-            capture_output=True, text=True, check=True).stdout
-        self.assertEqual(tokens, "")
+    def test_the_api_stub_no_longer_ships(self):
+        self.assertFalse((PKG / "custom/clients/base/api").exists())
+        self.assertEqual(oneoff_worklist().get("custom/clients/base/api/BdBenchDogsActionsApi.php"), "deleted")
 
 
 @unittest.skipUnless(shutil.which("php"), "requires php")
@@ -373,9 +344,12 @@ class TheKeptFieldsAreExactlyTheTwo(unittest.TestCase):
 class TheLifecycleDoesOnlyTheKeptWork(unittest.TestCase):
     def test_post_install_runs_exactly_the_kept_steps(self):
         code = code_only(PKG / "scripts/post_execute.php")
-        steps = sorted(set(re.findall(r"\$bdStepReport\['([a-z_]+)'\]\s*=\s*'ok'", code)))
+        # rc87: the two layout steps share one loop, keyed by their step names.
+        steps = sorted(set(re.findall(r"\$bdStepReport\['([a-z_]+)'\]\s*=\s*'ok'", code))
+                       | set(re.findall(r"'[A-Za-z]+' => '([a-z_]+_erp_layout)'", code)))
         self.assertEqual(steps, ["accounts_erp_layout", "quotes_erp_layout", "repair_rebuild"])
-        self.assertEqual(code.count("ErpLayoutExtraFields::sync("), 2)
+        self.assertEqual(code.count("ErpLayoutExtraFields::sync("), 1)
+        self.assertIn("foreach (array('Accounts' => 'accounts_erp_layout', 'Quotes' => 'quotes_erp_layout')", code)
         self.assertLess(code.index("rebuildExtensions"), code.index("ErpLayoutExtraFields::sync("),
                         "sync() must read the vardefs AFTER the rebuild merged this package's")
         for gone in ("partial_order_sales_stage", "uninstall_languages", "zz_bd_stage_doms",
@@ -424,9 +398,8 @@ class TheLifecycleDoesOnlyTheKeptWork(unittest.TestCase):
         # 1.1.131 since rc73: the release carrying G530's limit on the field
         # (erp_reference.erp_max_length, ErpQuoteFacts::referenceMaxLength()),
         # which the Reference default is shortened to.
-        # 1.1.134 (G571 / G570): the release carrying ERP-Core's
-        # erp-dependent-enum and ErpLayoutExtraFields's erp_layout 'type'.
-        self.assertEqual(epicor.group(1), "1.1.134")
+        # rc87 (🔒2167b): BdAdmRules asks ERP-Epicor 1.2.0's namespaced ErpQuoteFacts only.
+        self.assertEqual(epicor.group(1), "1.2.0")
 
 
 if __name__ == "__main__":

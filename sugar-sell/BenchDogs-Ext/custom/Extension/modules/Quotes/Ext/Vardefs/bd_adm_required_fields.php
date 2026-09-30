@@ -8,8 +8,7 @@ $dictionary['Quote']['fields']['bd_lead_source'] = array(
     'type' => 'enum',
     'len' => 50,
     'function' => array(
-        'name' => 'bd_adm_lead_source_options',
-        'include' => 'custom/modules/Quotes/BdAdmLookupOptions.php',
+        'name' => 'Sugarcrm\\Sugarcrm\\custom\\BenchDogs\\BdAdmRules::leadSourceOptions',
     ),
     'comment' => 'ERP QuoteHed.LeadSrc_c: an ADM LEADSRC code the seller picks (G380)',
     'reportable' => true,
@@ -35,8 +34,7 @@ $dictionary['Quote']['fields']['bd_lead_type'] = array(
     'type' => 'enum',
     'len' => 50,
     'function' => array(
-        'name' => 'bd_adm_lead_type_options',
-        'include' => 'custom/modules/Quotes/BdAdmLookupOptions.php',
+        'name' => 'Sugarcrm\\Sugarcrm\\custom\\BenchDogs\\BdAdmRules::leadTypeOptions',
     ),
     'comment' => 'ERP QuoteHed.LeadType_c: an ADM LEADTYPE code the seller picks (G380)',
     'reportable' => true,
@@ -61,8 +59,7 @@ $dictionary['Quote']['fields']['bd_project_id'] = array(
     'type' => 'enum',
     'len' => 50,
     'function' => array(
-        'name' => 'bd_adm_project_options',
-        'include' => 'custom/modules/Quotes/BdAdmLookupOptions.php',
+        'name' => 'Sugarcrm\\Sugarcrm\\custom\\BenchDogs\\BdAdmRules::projectOptions',
     ),
     'comment' => 'ERP OrderDtl.ProjectID for every order line: an ADM project (G381)',
     'reportable' => true,
@@ -89,8 +86,7 @@ $dictionary['Quote']['fields']['bd_marketing_campaign'] = array(
     'type' => 'enum',
     'len' => 50,
     'function' => array(
-        'name' => 'bd_adm_marketing_campaign_options',
-        'include' => 'custom/modules/Quotes/BdAdmLookupOptions.php',
+        'name' => 'Sugarcrm\\Sugarcrm\\custom\\BenchDogs\\BdAdmRules::marketingCampaignOptions',
     ),
     'comment' => 'ERP QuoteHed.MktgCampaignID (and every OrderDtl): an ADM campaign the seller picks (G460)',
     'reportable' => true,
@@ -115,8 +111,7 @@ $dictionary['Quote']['fields']['bd_marketing_event'] = array(
     'type' => 'enum',
     'len' => 50,
     'function' => array(
-        'name' => 'bd_adm_marketing_event_options',
-        'include' => 'custom/modules/Quotes/BdAdmLookupOptions.php',
+        'name' => 'Sugarcrm\\Sugarcrm\\custom\\BenchDogs\\BdAdmRules::marketingEventOptions',
     ),
     'comment' => 'ERP QuoteHed.MktgEvntSeq (and every OrderDtl): "<campaign>/<seq>", an ADM event the seller picks (G460)',
     'reportable' => true,

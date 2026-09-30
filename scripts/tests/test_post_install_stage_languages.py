@@ -188,8 +188,8 @@ class PostInstallStageLanguagesTest(unittest.TestCase):
         calls = [e for e in observed["events"]
                  if isinstance(e, list) and e[0] == "uninstall_languages"]
         self.assertEqual(calls, [])
-        oneoff = (ROOT / "sugar-sell/ONEOFF-RetireBdResidue/scripts/post_execute.php").read_text()
-        self.assertIn("'zz_bd_stage_doms'", oneoff)
+        oneoff = (ROOT / "sugar-sell/ONEOFF-RetireBdResidue/scripts/leftovers.php").read_text()
+        self.assertIn("'custom/Extension/application/Ext/Language/en_us.zz_bd_stage_doms.php'", oneoff)
 
     def test_declares_no_language_fragment(self):
         observed = self.execute()
@@ -255,12 +255,8 @@ class OpportunitiesOnlyRepairContractTest(unittest.TestCase):
     🔒 1567) retires the route: the api file ships empty."""
 
     def test_the_repair_endpoint_is_gone(self):
-        endpoint = PACKAGE / "custom/clients/base/api/BdBenchDogsActionsApi.php"
-        source = endpoint.read_text()
-        self.assertNotIn("function repairUi", source)
-        code = re.sub(r"/\*.*?\*/", "", source, flags=re.S)
-        for gone in ("RevenueLineItems", "install_languages", "registerApiRest"):
-            self.assertNotIn(gone, code)
+        # rc87: the emptied endpoint file no longer ships at all; the one-off deletes the tenant's copy.
+        self.assertFalse((PACKAGE / "custom/clients/base/api/BdBenchDogsActionsApi.php").exists())
 
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@
   "upstream": {
     "repository": "sugarcrm/erp-integration-sugar",
     "branch": "refactor/rafael-review",
-    "commit": "280e092999e575604a4c5798597150f637ddc798"
+    "commit": "cf52eace8a5aa027c292ef0fbbd6d4115d9fda76"
   },
   "files": {
     "scripts/mlp_lint.py": {

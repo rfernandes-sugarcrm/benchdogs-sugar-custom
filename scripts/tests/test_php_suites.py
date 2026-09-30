@@ -119,7 +119,8 @@ class PhpSuitesTest(unittest.TestCase):
         counts = _CHECKS.findall(report)
         self.assertTrue(counts, f"{name} reported no 'N checks, M failed' line:\n{report}")
         checks = int(counts[-1][0])
-        floor = (MIN_CHECKS_NO_QUOTE_FACTS if env.get("BD_NO_QUOTE_FACTS")
+        # rc87 (🔒2167b): below ERP-Epicor 1.2.0 (no class, or 1.1's global one) the suite runs only its refusal checks.
+        floor = (MIN_CHECKS_NO_QUOTE_FACTS if env.get("BD_NO_QUOTE_FACTS") or env.get("BD_QUOTE_FACTS")
                  else MIN_CHECKS[name])
         self.assertGreaterEqual(
             checks, floor,
