@@ -5,9 +5,12 @@
  *
  * Run:  BD_QUOTE_FACTS=<ERP-Epicor's ErpQuoteFacts.php> php scripts/tests/bd_adm_rules_test.php
  *       BD_NO_QUOTE_FACTS=1 php scripts/tests/bd_adm_rules_test.php   (section O)
- *       (scripts/tests/test_php_suites.py runs both, with the sibling
+ *       BD_QUOTE_FACTS_NS=<a docroot's custom/src> php scripts/tests/bd_adm_rules_test.php
+ *                                                                (section T)
+ *       (scripts/tests/test_php_suites.py runs all three, with the sibling
  *       checkout's file when present, else the pin from the landed Sugar
- *       target a0f6b632 under fixtures/shared-sugar/)
+ *       target a0f6b632 under fixtures/shared-sugar/; the third with the
+ *       T2 copy under fixtures/erp-t2/)
  * Exit: 0 all passed, 1 one or more failed.
  *
  * What is proved, each against the real shipped file:
@@ -30,6 +33,14 @@
  *   N. the before_save registration points at a real class and method
  *   O. (BD_NO_QUOTE_FACTS=1) an ERP-Epicor without ErpQuoteFacts: defaults
  *      skipped and logged, the save never fails
+ *   T. (BD_QUOTE_FACTS_NS) T2 of the Rafael review (erp-integration-sugar
+ *      #158): ERP-Epicor's ErpQuoteFacts is Sugarcrm\Sugarcrm\custom\Erp\
+ *      ErpQuoteFacts in custom/src, AUTOLOADED, and the old global file is
+ *      gone. The whole suite runs again against that class, found only by
+ *      an autoloading lookup; a leftover old file beside it is never
+ *      included. In every run the autoloader is registered (Sugar always
+ *      has it), so the other two runs prove the namespaced lookup misses
+ *      cleanly where the class is not installed.
  *
  * ErpQuoteFacts IS ERP-EPICOR'S REAL CLASS (G380 (g), landed a0f6b632), not a
  * stand-in: a stand-in would encode our belief about it. Only BeanFactory is
@@ -41,6 +52,34 @@
 
 namespace {
     $noFacts = getenv('BD_NO_QUOTE_FACTS') === '1';
+
+    // T2: the namespaced class, where ERP-Epicor ships it after the Rafael
+    // review. BD_QUOTE_FACTS_NS names a docroot's custom/src; nothing loads it
+    // up front, so only an autoloading lookup can find it.
+    $NS_FACTS = 'Sugarcrm\\Sugarcrm\\custom\\Erp\\ErpQuoteFacts';
+    $nsRoot = (string) getenv('BD_QUOTE_FACTS_NS');
+    $nsFacts = $nsRoot !== '';
+    // Sugar's rule for custom classes (Sugarcrm\Sugarcrm\custom\ -> custom/src/,
+    // PSR-4), registered in EVERY run as Sugar always has it. With no T2 root
+    // it points at a directory that does not exist, so the lookup misses the
+    // way it does on a tenant whose ERP-Epicor predates T2.
+    $GLOBALS['bd_autoload_asked'] = [];
+    $GLOBALS['bd_autoloaded'] = [];
+    $autoloadRoot = $nsFacts ? $nsRoot : __DIR__ . '/fixtures/erp-t2/not-installed';
+    spl_autoload_register(function ($class) use ($autoloadRoot) {
+        $prefix = 'Sugarcrm\\Sugarcrm\\custom\\';
+        if (strncmp($class, $prefix, strlen($prefix)) !== 0) {
+            return;
+        }
+        $GLOBALS['bd_autoload_asked'][] = $class;
+        $file = $autoloadRoot . '/' . str_replace('\\', '/', substr($class, strlen($prefix))) . '.php';
+        if (is_file($file)) {
+            $GLOBALS['bd_autoloaded'][] = $class;
+            require $file;
+        }
+    });
+    // The class the suite's own direct calls name (A9): the one this run installs.
+    $factsClass = $nsFacts ? $NS_FACTS : 'ErpQuoteFacts';
 
     class BdTestLog
     {
@@ -231,7 +270,12 @@ namespace {
     $referenceVardef = getenv('BD_ERP_REFERENCE') ?: (__DIR__ . '/fixtures/shared-sugar/erp_reference.php');
 
     $factsFile = getenv('BD_QUOTE_FACTS');
-    if (!$noFacts) {
+    if ($nsFacts) {
+        if (!is_file($nsRoot . '/Erp/ErpQuoteFacts.php')) {
+            fwrite(STDERR, "BD_QUOTE_FACTS_NS must name a custom/src holding Erp/ErpQuoteFacts.php\n");
+            exit(2);
+        }
+    } elseif (!$noFacts) {
         if (!is_string($factsFile) || !is_file($factsFile)) {
             fwrite(STDERR, "BD_QUOTE_FACTS must name ERP-Epicor's ErpQuoteFacts.php\n");
             exit(2);
@@ -345,6 +389,8 @@ namespace {
             (bool) array_filter($GLOBALS['log']->lines, fn($l) => $l[0] === 'error'
                 && str_contains($l[1], 'custom/modules/Quotes/ErpQuoteFacts.php')
                 && str_contains($l[1], 'q-ADM')));
+        $check('O4 T2: neither class: the namespaced lookup was ASKED of the autoloader and found nothing',
+            [true, false], [in_array($NS_FACTS, $GLOBALS['bd_autoload_asked'], true), class_exists($NS_FACTS, false)]);
     } else {
         // ── A. which companies are ADM ──────────────────────────────────────
         $check('A1 the company is the text before the FIRST "__"', ['ADM', 'ADM2', 'EPIC06'],
@@ -439,12 +485,19 @@ namespace {
             isset($GLOBALS['app_list_strings']['bd_adm_companies_list']));
 
         // ── H. applyDefaults ────────────────────────────────────────────────
+        // T2: nothing above touched ErpQuoteFacts, so whatever loads the
+        // namespaced class from here on is BdAdmRules asking for it.
+        $nsLoadedBeforeRules = class_exists($NS_FACTS, false);
         SugarQuery::$rows = $ADM_ROWS;
         $createdBefore = BeanFactory::$created;
         $freshQuery();
         $fresh = $quote('ADM', ['shipping_address_city' => 'WAYNE', 'shipping_address_state' => 'NJ',
                                 'lines' => [$lCmi, $lCmi2]]);
         $set = BdAdmRules::applyDefaults($fresh);
+        // T2: what the autoloader had loaded once BdAdmRules alone had run (A9
+        // below names the class itself, so a later read would prove nothing).
+        $autoloadedByRules = array_values(array_unique($GLOBALS['bd_autoloaded']));
+        $nsAskedByRules = count(array_keys($GLOBALS['bd_autoload_asked'], $NS_FACTS, true));
         $check('H1 an unsent ADM quote gets Reference and Project', ['erp_reference', 'bd_project_id'], $set);
         $check('H2 Reference is the ship-to city and state, in the GENERIC field', ['WAYNE NJ', null],
             [$fresh->erp_reference, $fresh->bd_reference ?? null]);
@@ -486,7 +539,7 @@ namespace {
             . 'for it; ErpQuoteFacts has no key-prefix fallback)', [[], null],
             [BdAdmRules::applyDefaults($nolink), $nolink->erp_reference ?? null]);
         $check('A9 a padded category code is trimmed by ErpQuoteFacts, so it still maps', '20065',
-            BdAdmRules::defaultProject([ErpQuoteFacts::productGroup($lCmi)]));
+            BdAdmRules::defaultProject([$factsClass::productGroup($lCmi)]));
 
         $freshQuery();
         $mixed = $quote('ADM', ['shipping_address_city' => 'WAYNE', 'lines' => [$lCmi, $l49]]);
@@ -1104,6 +1157,77 @@ namespace {
         $src = file_get_contents('custom/modules/Quotes/BdAdmRules.php');
         $check('P1 the include names the same literal path as QUOTE_FACTS_FILE', true,
             str_contains($src, "@include_once '" . BdAdmRules::QUOTE_FACTS_FILE . "';"));
+
+        // ── T. T2: ERP-Epicor's ErpQuoteFacts, namespaced and autoloaded ────
+        if ($nsFacts) {
+            $check('T1 the namespaced class was NOT loaded before the rules asked (only an autoloading '
+                . 'lookup can find it)', false, $nsLoadedBeforeRules);
+            $check('T2 BdAdmRules itself loaded it through the autoloader, by H1 (before this suite names it)',
+                [$NS_FACTS], $autoloadedByRules);
+            $check('T3 the old global name was never declared in this run', false,
+                class_exists('ErpQuoteFacts', false));
+
+            // An upgraded tenant between T2's install and the leftovers one-off:
+            // the OLD global file still sits at the literal path, beside the
+            // namespaced class. A stale stand-in (a sentinel, and no
+            // referenceMaxLength) is put there; the control run, without the
+            // namespaced class, proves the literal include really reaches it.
+            $leftoverRoot = sys_get_temp_dir() . '/bd-t2-leftover-' . getmypid();
+            @mkdir($leftoverRoot . '/custom/modules/Quotes', 0777, true);
+            $leftoverFile = $leftoverRoot . '/custom/modules/Quotes/ErpQuoteFacts.php';
+            file_put_contents($leftoverFile, '<?php $GLOBALS["bd_stale_included"] = true;'
+                . ' class ErpQuoteFacts { public static function companyCode($q) { return "STALE"; } }');
+            $probeFile = $leftoverRoot . '/probe.php';
+            file_put_contents($probeFile, <<<'PROBE'
+<?php
+[, $pkg, $nsRoot, $leftoverRoot] = $argv;
+if ($nsRoot !== '') {
+    spl_autoload_register(function ($class) use ($nsRoot) {
+        $prefix = 'Sugarcrm\\Sugarcrm\\custom\\';
+        if (strncmp($class, $prefix, strlen($prefix)) === 0) {
+            $file = $nsRoot . '/' . str_replace('\\', '/', substr($class, strlen($prefix))) . '.php';
+            if (is_file($file)) {
+                require $file;
+            }
+        }
+    });
+}
+class L { public $e = []; function error($m) { $this->e[] = $m; } }
+$GLOBALS['log'] = new L();
+set_include_path($leftoverRoot . PATH_SEPARATOR . get_include_path());
+chdir($pkg);
+require 'custom/modules/Quotes/BdAdmRules.php';
+$available = BdAdmRules::quoteFactsAvailable();
+$q = new stdClass();
+$q->id = 'q-leftover';
+$q->field_defs = ['erp_reference' => ['erp_max_length' => 10]];
+echo json_encode([$available, isset($GLOBALS['bd_stale_included']),
+    class_exists('Sugarcrm\\Sugarcrm\\custom\\Erp\\ErpQuoteFacts', false),
+    BdAdmRules::referenceMaxLength($q), count($GLOBALS['log']->e)]);
+PROBE);
+            $runProbe = fn(string $root) => json_decode((string) shell_exec(escapeshellarg(PHP_BINARY) . ' '
+                . escapeshellarg($probeFile) . ' ' . escapeshellarg($pkg) . ' ' . escapeshellarg($root) . ' '
+                . escapeshellarg($leftoverRoot) . ' 2>&1'), true);
+            $check('T4 CONTROL an old global file alone at the literal path IS included and answers '
+                . '(it has no referenceMaxLength: limit 0, logged)', [true, true, false, 0, 1], $runProbe(''));
+            $check('T5 beside the namespaced class the leftover is NEVER included; the namespaced class '
+                . 'answers (the field\'s limit, 10; nothing logged)', [true, false, true, 10, 0], $runProbe($nsRoot));
+            @unlink($probeFile);
+            @unlink($leftoverFile);
+            @rmdir($leftoverRoot . '/custom/modules/Quotes');
+            @rmdir($leftoverRoot . '/custom/modules');
+            @rmdir($leftoverRoot . '/custom');
+            @rmdir($leftoverRoot);
+        } else {
+            $check('T0 only the global class installed: the namespaced lookup was asked and missed, and the '
+                . 'global class answered H1-H4', [true, false, true],
+                [in_array($NS_FACTS, $GLOBALS['bd_autoload_asked'], true), class_exists($NS_FACTS, false),
+                 class_exists('ErpQuoteFacts', false)]);
+            // A miss is a file-system lookup on every call (PHP remembers no
+            // negative autoload), so it is made once per save, never per line:
+            // H1's quote has two lines and a Reference to cut.
+            $check('T0b and that lookup is made ONCE per save, not once per line or per fact', 1, $nsAskedByRules);
+        }
     }
 
     // ── report ──────────────────────────────────────────────────────────────

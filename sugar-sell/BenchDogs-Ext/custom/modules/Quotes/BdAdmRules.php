@@ -58,7 +58,19 @@
  * and the reason is logged: they are a convenience, and a Quote save must never
  * fail for them (MLP004).
  *
- * Scanner-safe: no glob, no is_callable, no dynamic dispatch, no call_user_func.
+ * SO IS A NEWER ONE. The Rafael review's T2 (erp-integration-sugar #158) moves
+ * the class to custom/src/Erp as Sugarcrm\Sugarcrm\custom\Erp\ErpQuoteFacts,
+ * found by Sugar's autoloader, and deletes the old file on the tenant; it ships
+ * no global alias. That class is asked for FIRST, with autoloading on (nothing
+ * else is bound to have loaded it before this before_save, so a class_exists
+ * with autoload off would switch the defaults off), and only when it is not
+ * installed is the old global class looked for at its literal path - so a
+ * leftover old file beside the namespaced class is never included. Every call
+ * names one class or the other literally (the facts* helpers); class_alias is on
+ * ModuleScanner's blacklist, and a class held in a variable is dynamic dispatch.
+ *
+ * Scanner-safe: no glob, no is_callable, no dynamic dispatch, no call_user_func,
+ * no class_alias.
  */
 class BdAdmRules
 {
@@ -199,6 +211,11 @@ class BdAdmRules
     /** True when ERP-Epicor's ErpQuoteFacts is loaded or loadable. */
     public static function quoteFactsAvailable(): bool
     {
+        // T2 first, AUTOLOADED (see the class docblock): the installed class
+        // wins over any leftover old file.
+        if (class_exists('Sugarcrm\\Sugarcrm\\custom\\Erp\\ErpQuoteFacts')) {
+            return true;
+        }
         if (!class_exists('ErpQuoteFacts', false)) {
             // The literal path, as ERP-Epicor documents it (MLP001); keep it
             // equal to QUOTE_FACTS_FILE (bd_adm_rules_test.php pins that).
@@ -206,6 +223,36 @@ class BdAdmRules
         }
 
         return class_exists('ErpQuoteFacts', false);
+    }
+
+    /**
+     * True when the ErpQuoteFacts that answers is T2's namespaced one. Autoload
+     * OFF on purpose: quoteFactsAvailable() already asked with it on, and this
+     * runs once per quote line.
+     */
+    private static function factsAreNamespaced(): bool
+    {
+        return class_exists('Sugarcrm\\Sugarcrm\\custom\\Erp\\ErpQuoteFacts', false);
+    }
+
+    /** ErpQuoteFacts::companyCode(), from whichever class is installed. */
+    private static function factsCompanyCode($bean): string
+    {
+        if (self::factsAreNamespaced()) {
+            return \Sugarcrm\Sugarcrm\custom\Erp\ErpQuoteFacts::companyCode($bean);
+        }
+
+        return ErpQuoteFacts::companyCode($bean);
+    }
+
+    /** ErpQuoteFacts::productGroup(), from whichever class is installed. */
+    private static function factsProductGroup($line): string
+    {
+        if (self::factsAreNamespaced()) {
+            return \Sugarcrm\Sugarcrm\custom\Erp\ErpQuoteFacts::productGroup($line);
+        }
+
+        return ErpQuoteFacts::productGroup($line);
     }
 
     // ── G380: Reference defaults to the ship-to's city and state ─────────────
@@ -267,6 +314,10 @@ class BdAdmRules
      */
     public static function referenceMaxLength($bean): int
     {
+        if (self::factsAreNamespaced()) {
+            // T2 (#158) is newer than G530, so the method is there.
+            return \Sugarcrm\Sugarcrm\custom\Erp\ErpQuoteFacts::referenceMaxLength($bean);
+        }
         if (!method_exists('ErpQuoteFacts', 'referenceMaxLength')) {
             if (isset($GLOBALS['log']) && is_object($GLOBALS['log'])) {
                 $GLOBALS['log']->error('BenchDogs-Ext: ERP-Epicor is older than G530 (no '
@@ -381,7 +432,7 @@ class BdAdmRules
 
             return $set;
         }
-        if (!self::isAdmCompany(ErpQuoteFacts::companyCode($bean))) {
+        if (!self::isAdmCompany(self::factsCompanyCode($bean))) {
             return $set;
         }
         if ($needsReference) {
@@ -578,7 +629,7 @@ class BdAdmRules
             if (!empty($line->deleted)) {
                 continue;
             }
-            $groups[] = ErpQuoteFacts::productGroup($line);
+            $groups[] = self::factsProductGroup($line);
         }
 
         return $groups;
