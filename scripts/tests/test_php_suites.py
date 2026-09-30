@@ -46,6 +46,7 @@ SUITES = (
     "bd_adm_rules_test.php",
     "bd_erp_layout_test.php",
     "bd_customer_group_move_test.php",
+    "bd_contact_fields_test.php",
 )
 
 php = shutil.which("php")
@@ -82,6 +83,8 @@ MIN_CHECKS = {
     "bd_adm_rules_test.php": 96,
     "bd_erp_layout_test.php": 18,
     "bd_customer_group_move_test.php": 25,
+    # rc82 (G458): 44 checks at 2026-09-30; floor ~15% under, as above.
+    "bd_contact_fields_test.php": 37,
 }
 #: bd_adm_rules_test.php's second run has no ErpQuoteFacts and is meant to be
 #: tiny: an older ERP-Epicor skips the defaults and never fails a save.
@@ -141,6 +144,14 @@ class PhpSuitesTest(unittest.TestCase):
         them, a fresh rc72 install lands in the same slots, either install order
         ends the same, and uninstall takes them off."""
         self.assert_suite_passes("bd_customer_group_move_test.php", **LANDED)
+
+    def test_bd_contact_fields(self):
+        """G458 (rc82): the five Epicor contact fields the customer's package
+        creates are shown READ-ONLY on the Contacts record view (ERP panel),
+        by a sidecar overlay run the way MetaDataFiles includes it - twice
+        per build - and a tenant WITHOUT that package gets its view back
+        byte for byte (no field it lacks is referenced)."""
+        self.assert_suite_passes("bd_contact_fields_test.php")
 
 
 

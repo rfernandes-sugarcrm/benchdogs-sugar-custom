@@ -127,6 +127,18 @@ KEPT = {
     "custom/Extension/modules/Accounts/Ext/Dependencies/bd_adm_customer_group_required.php":
         "🔒2085b: Cust. Group required in the edit views on an ADM Customer not yet in the ERP "
         "(a view dependency: never served required, never run on save)",
+    # ── G458 (0.9.42-rc82): the owner's 🔒2102b (build the Bench contact
+    # Function / Role / primary flags now, READ-ONLY Epicor -> Sugar) and the
+    # coordinator's brief (2026-09-30: the five fields synced by ext 0.3.6 L807
+    # are on no Contacts view; place them, read-only, guarded). The fields are
+    # the CUSTOMER's (Bench_Dogs_Account_Contact_Fields 1.0.0), so this is a
+    # metadata-time overlay, not a field and not a vardef marker: ERP-Core's
+    # ErpLayoutExtraFields supports Quotes/Accounts only, and a marker on a
+    # field another package owns leaves a typeless phantom def where that
+    # package is absent (see the file's docblock).
+    "custom/Extension/modules/Contacts/Ext/clients/base/views/record/bd_epicor_contact_fields.php":
+        "G458: the customer's five Epicor contact fields shown read-only on the Contacts record "
+        "view (ERP panel), only where the tenant has them (a sidecar overlay; no deployed-view write)",
 }
 
 ONEOFF ="the one-off deletes or blanks it (🔒 1521); re-run it after installing rc69"

@@ -25,6 +25,9 @@ and the package ships no module of its own.
 > stays on an upgraded tenant as an INERT orphan - Module Loader never deletes
 > a file a later build stops shipping (§CW / G37), and nothing rc70 ships
 > requires it; the one-off does not blank it yet (flagged for its owner).
+> **rc82 (G458) adds no layout WRITER either:** one sidecar record-view overlay
+> for five fields a CUSTOMER package owns (below), merged at metadata build; it
+> writes nothing to a deployed view.
 >
 > **rc72 (G507): the Account pair's marker is `panel_overview` after Industry,
 > and both fields are `readonly`.** Moving the pair OUT of the header rc69 put it
@@ -56,6 +59,14 @@ and the package ships no module of its own.
 > | Path | What it is | Why it is here and not in core |
 > |---|---|---|
 > | `custom/Extension/application/Ext/Language/_override_en_us.bd_account_type_suspect.php` | ONE key, `account_type_dom['Suspect']`, set only when absent | Epicor types a customer CUS / PRO / SUS; ERP-Core's dom has two values, so an Epicor SUS shows as Prospect (ADM: 1,022 of 1,132 "Prospects"). Core writes `Suspect` for SUS customers once the ADM connection's `customer_type_extra` is `{"SUS": "Suspect"}`; the value is Bench's (a dom key core cannot add). `_override` so it merges after ERP-Core's whole-array REPLACE assignment (the rc23 lesson) |
+
+> **Grown by G458 (0.9.42-rc82)** (🔒2102b: the Bench contact Function / Role /
+> primary flags, READ-ONLY Epicor → Sugar; the Bench connector extension 0.3.6
+> writes them, level L807). One file, and it is not a field:
+>
+> | Path | What it is | Why it is here and not in core |
+> |---|---|---|
+> | `custom/Extension/modules/Contacts/Ext/clients/base/views/record/bd_epicor_contact_fields.php` | a sidecar overlay on the Contacts record view: `epicor_function_c`, `role_c`, `primary_billing_c`, `primary_purchasing_c`, `primary_shipping_c` at the end of ERP-Core's **ERP** panel (`LBL_RECORDVIEW_PANEL_ERP`, after ERP Contact ID; else `panel_body`; else the first non-header panel with fields), every entry of the five `readonly`, **only the ones the tenant's merged Contact vardefs hold** | The five are Bench Dogs' OWN fields (their package `Bench_Dogs_Account_Contact_Fields` 1.0.0, `custom_fields`), and it ships no layout. The `erp_layout` marker cannot carry them: ERP-Core's `ErpLayoutExtraFields::sync()` supports Quotes/Accounts only, and a marker on a field another package owns is included BEFORE `fields_meta_data` merges (SugarEnt 26.1.0 `VardefManager::refreshVardefs`), so it can neither see the field nor avoid leaving a typeless phantom def where that package is absent. The overlay is merged each metadata build (`MetaDataFiles::getClientFileContents`), follows a Studio-edited view, reaches upgraded tenants, and leaves with uninstall. On Ophir / stock / et (no customer package) it changes nothing |
 
 ## G380 / G381 — what Bench Dogs' ADM company requires (🔒 1705b, 🔒 1724b)
 

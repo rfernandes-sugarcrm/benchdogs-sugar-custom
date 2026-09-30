@@ -37,6 +37,12 @@
  *       🔒 2085b / 🔒 2086b: Cust. Group required in the edit views on an ADM
  *       Customer not yet in the ERP. A VIEW dependency: never served as a
  *       required field and never run on a server save.
+ *   custom/Extension/modules/Contacts/Ext/clients/base/views/record/bd_epicor_contact_fields.php
+ *       G458 (🔒 2102b): a sidecar overlay that shows the customer's five
+ *       Epicor contact fields (their package Bench_Dogs_Account_Contact_Fields
+ *       creates them; the Bench connector extension fills them) read-only on
+ *       the Contacts record view's ERP panel, only where the tenant's merged
+ *       vardefs hold them. Not a field, and no deployed-view write.
  *   custom/clients/base/api/BdBenchDogsActionsApi.php
  *       EMPTY, and the one retirement stub left: it unregisters rc68's
  *       bd-tools/repair-ui route on upgraded tenants (see the file).
@@ -65,7 +71,7 @@
 
 $packageID      = 'sugarai_benchdogs_ext';
 $packageLabel   = 'SugarAI: Bench Dogs Extensions';
-$description    = 'Bench Dogs extensions for Sugar Sell: the two customer-group fields (a Cust. Group picker before the account is in the ERP, required for an ADM Customer and asked for before the quote offers to create an ADM account in the ERP) and the Suspect account type on Accounts, and the ADM company\'s own quote values (Lead Source, Lead Type, Project, Marketing Campaign and Marketing Event pickers, required until the quote is in the ERP and defaulted from the account\'s last quote; Reference and Project defaults; the Reference placement and requirement).';
+$description    = 'Bench Dogs extensions for Sugar Sell: the two customer-group fields (a Cust. Group picker before the account is in the ERP, required for an ADM Customer and asked for before the quote offers to create an ADM account in the ERP) and the Suspect account type on Accounts, and the ADM company\'s own quote values (Lead Source, Lead Type, Project, Marketing Campaign and Marketing Event pickers, required until the quote is in the ERP and defaulted from the account\'s last quote; Reference and Project defaults; the Reference placement and requirement), and the Epicor contact Function, Role and primary flags (Bench Dogs\' own contact fields) shown read-only on the Contacts record view where the tenant has them.';
 $supportedVersionRegex = '(26|25|14)\\..*$';
 $acceptableSugarFlavors = array('ENT', 'ULT', 'PRO');
 

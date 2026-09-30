@@ -1,3 +1,57 @@
+# 0.9.42-rc82 — G458: the Epicor contact Function, Role and primary flags are SHOWN, read-only, on the Contacts record view
+
+Built on rc81 (#38, a14f18f - the tree installed on benchdogs-dev / sandbox;
+stacked on rc80 #36; neither on main yet): rc82 = rc81 + this change only.
+**Requires** ERP-Epicor ≥ 1.1.134 and Partial
+Fulfillment ≥ 1.0.50 (unchanged; nothing here needs a newer ERP-Epicor). The
+fields themselves come from Bench Dogs' OWN package
+`Bench_Dogs_Account_Contact_Fields` 1.0.0 (installed on benchdogs-dev and
+benchdogs-sandbox 2026-09-24); where it is absent this build changes nothing on
+Contacts.
+
+**The defect** (benchdogs-dev, 2026-09-30): the Bench connector extension 0.3.6
+(level L807, live 11:13Z) wrote Epicor CustCnt Func / RoleCode / PrimaryBilling
+/ PrimaryPurchasing / PrimaryShipping onto 1,510 contacts (e.g. JEFFREY SENN,
+ADM__834_3: CONTROLLER / ACPY / Primary Billing), and Codex read "Not shown" for
+all five on five contacts (11:20–11:22Z). Measured read-only through the stage
+core the same day: the Contacts record view on dev AND sandbox has
+`panel_header`, `panel_body` (9 fields) and ERP-Core's `LBL_RECORDVIEW_PANEL_ERP`
+("ERP": write-back status / at / message, ERP Contact ID) and names none of the
+five, while the Contacts vardefs serve all five (`custom_fields`; the three
+primaries readonly by the customer's override, Function and Role editable).
+
+- **One new file, not a field:**
+  `custom/Extension/modules/Contacts/Ext/clients/base/views/record/bd_epicor_contact_fields.php`,
+  a sidecar record-view overlay. Sugar concatenates it into the Contacts
+  `record.ext.php` and includes it after the record viewdef (base, ERP-Core's
+  or Studio's) at every metadata build, so nothing is written to a deployed
+  view. It appends Function, Role, Primary Billing, Primary Purchasing, Primary
+  Shipping (that order) to the **ERP** panel after ERP Contact ID; without that
+  panel, the end of `panel_body`; without either, the first non-header panel
+  with fields; never the header. Every entry of the five on the view is
+  `readonly` (🔒2102b: Epicor → Sugar only; L807 would overwrite a Sugar edit),
+  including one an admin placed, which is not moved.
+- **Guarded:** a field is placed only when the Contact vardefs MERGED with
+  `fields_meta_data` (`VardefManager::loadVardef`) hold it with a type; unread
+  vardefs, a malformed list or any Throwable leave the view exactly as read. On
+  Ophir / stock / et (no customer package) the overlay is a no-op.
+- **Why not the `erp_layout` marker** this package uses for its own fields:
+  ERP-Core's `ErpLayoutExtraFields::sync()` supports Quotes and Accounts only,
+  and a marker on a field ANOTHER package owns cannot be guarded — Ext vardefs
+  are included before `fields_meta_data` merges (SugarEnt 26.1.0), so a guard
+  there is always false, and without the customer's package the marker would
+  leave a typeless phantom Contact field. Extending sync() to Contacts is an
+  ERP-Core change + ERP-Epicor release; not needed for this.
+- No lifecycle change: `install_extensions()` rebuilds every module's
+  extensions and the install ends with `MetaDataManager::clearAPICache()`;
+  uninstall deletes the file (`uninstall_copy`) and rebuilds/clears the same way.
+- Tests: `scripts/tests/bd_contact_fields_test.php` (44 checks, wired into
+  `test_php_suites.py`) runs the file the way `getClientFileContents` does —
+  twice and three times per build — on the view benchdogs-dev serves. Red on an
+  empty overlay (today's behaviour): 11 of 42 fail, A1 showing the ERP panel
+  ending at `erp_display_sync_key`. Mutants 16/16 killed. `test_g280` KEPT
+  gains the one path.
+
 # 0.9.42-rc81 — G809: each quote default comes from the account's newest quote holding a value ADM still offers; Project is defaulted too
 
 Built on rc80 (#36, 43ec7f1, not yet on main). **Requires** ERP-Epicor ≥ 1.1.134
