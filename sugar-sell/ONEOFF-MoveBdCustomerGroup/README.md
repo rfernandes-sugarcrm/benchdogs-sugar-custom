@@ -1,4 +1,6 @@
-# ONEOFF-MoveBdCustomerGroup 1.0.0 (G507)
+# ONEOFF-MoveBdCustomerGroup 1.0.1 (G507)
+
+> **1.0.1** (MLP026, 🔒2161b): its post_execute header comment is one line of why. Comments only: 1.0.0's zip stays its own tree, and a tenant that already ran 1.0.0 needs nothing.
 
 A **disposable** layout repair for a tenant **with Bench Dogs**. Install it, read its line in the
 install log, uninstall it. It is not part of the shipped Bench Dogs package and must never become
@@ -66,7 +68,7 @@ field or button. No `dependencies`: it works under Bench Dogs rc69 or rc72.
 `{name, label}`. On screen: the header shows the name, the credit badge (+ inactive badge) and the
 buttons; the Overview tab shows "Customer Group" and "Customer Group Code" with values, not
 editable in Edit (the `readonly` comes from rc72's vardef). The install log line:
-`ONEOFF-MoveBdCustomerGroup 1.0.0 (G507): MOVED - …` in `package_install.log`.
+`ONEOFF-MoveBdCustomerGroup 1.0.1 (G507): MOVED - …` (the version is read from the manifest) in `package_install.log`.
 
 **If it were broken** the header would still list the pair, or the first tab would not.
 
