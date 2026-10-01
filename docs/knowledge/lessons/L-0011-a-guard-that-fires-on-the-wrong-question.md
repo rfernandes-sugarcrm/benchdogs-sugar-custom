@@ -11,6 +11,9 @@ paths:
 
 # A guard that fires on the wrong question is worse than no guard
 
+> *Withdrawn package (owner 🔒2173b, 2026-09-30): `ONEOFF-DropBdQuoteMirrorTables` was archived by G675 and
+> then deleted with every other one-off. The paths above exist only in git history. The lesson stands.*
+
 **What happened.** A one-off package existed to drop the Bench Dogs quote **mirror** tables. Its candidate list
 also named `bd01_erp_quote_cost`, `bd01_erp_quote_cost_cstm` and `bd01_erp_line_costs_c` — **the cost
 worksheet, 473 rows that exist nowhere else.** The package carried an ordering guard, so the hazard looked

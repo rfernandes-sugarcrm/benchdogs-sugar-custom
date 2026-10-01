@@ -901,6 +901,387 @@ class TestMetadataParserUsage(RuleTest):
         self.assertQuiet("MLP019")
 
 
+class TestAutoloadedClassLoadedByPath(RuleTest):
+    """MLP020 — the review of #81 (R1, R2, R15, R19); fixtures are the flagged shapes."""
+
+    def test_dir_relative_require_of_a_custom_include_class_fires(self) -> None:
+        # R1: ErpBookedLineExpression.php:15
+        self.fx.write(
+            "src/custom/include/Expressions/Expression/Numeric/ErpBookedLineExpression.php",
+            "<?php\nif (!class_exists('ErpBookedLineInputs', false)) {\n"
+            "    require_once __DIR__ . '/../../../ErpBookedLineInputs.php';\n}\n",
+        )
+        self.assertFires("MLP020")
+
+    def test_file_exists_probe_of_an_acl_class_fires(self) -> None:
+        # R2: ErpConnectorOwnedFields.php:36-37
+        self.fx.write(
+            "src/custom/include/ErpConnectorOwnedFields.php",
+            "<?php\nif (!class_exists('SugarACLErpOwnedFields', false)\n"
+            "    && file_exists(__DIR__ . '/../data/acl/SugarACLErpOwnedFields.php')) {\n"
+            "    require_once __DIR__ . '/../data/acl/SugarACLErpOwnedFields.php';\n}\n",
+        )
+        self.assertFires("MLP020")
+
+    def test_module_file_requiring_a_custom_include_class_fires(self) -> None:
+        # R19: QuotesApiHelper.php:28-29
+        self.fx.write(
+            "custom/modules/Quotes/QuotesApiHelper.php",
+            "<?php\nrequire_once __DIR__ . '/../../include/ErpConnectorOwnedFields.php';\n",
+        )
+        self.assertFires("MLP020")
+
+    def test_literal_require_of_an_api_class_fires(self) -> None:
+        self.fx.write(
+            "src/custom/clients/base/api/QuoteLinePriceApi.php",
+            "<?php\nrequire_once 'custom/clients/base/api/QuotesErpActionsApi.php';\n",
+        )
+        self.assertFires("MLP020")
+
+    def test_require_of_a_psr4_class_fires(self) -> None:
+        self.fx.write(
+            "custom/src/Erp/Quotes/StageRules.php",
+            "<?php\nnamespace Sugarcrm\\Sugarcrm\\custom\\Erp\\Quotes;\n\nclass StageRules\n{\n}\n",
+        )
+        self.fx.write(
+            "custom/modules/Quotes/clients/base/api/X.php",
+            "<?php\nrequire_once 'custom/src/Erp/Quotes/StageRules.php';\n",
+        )
+        self.assertFires("MLP020")
+
+    def test_global_class_under_custom_src_is_not_autoloaded(self) -> None:
+        # Account-Hierarchy-Dashlet's shape: no namespace, so PSR-4 cannot find it.
+        self.fx.write(
+            "custom/src/SugarAI/Engine/SaahCache.php", "<?php\n\nclass SaahCache\n{\n}\n"
+        )
+        self.fx.write(
+            "custom/modules/Accounts/clients/base/api/A.php",
+            "<?php\nrequire_once 'custom/src/SugarAI/Engine/SaahCache.php';\n",
+        )
+        self.assertQuiet("MLP020")
+
+    def test_a_file_that_is_not_its_class_is_not_flagged(self) -> None:
+        self.fx.write("custom/include/erp_settings.php", "<?php\n$erp = array();\n")
+        self.fx.write(
+            "custom/clients/base/api/ImpexApi.php",
+            "<?php\nrequire_once 'custom/include/erp_settings.php';\n"
+            "require_once __DIR__ . '/../../../src/wsystems/Impex/config.php';\n",
+        )
+        self.assertQuiet("MLP020")
+
+    def test_stock_parent_class_require_is_fine(self) -> None:
+        self.fx.write(
+            "custom/modules/Quotes/QuotesApiHelper.php",
+            "<?php\nrequire_once 'modules/Quotes/QuotesApiHelper.php';\n"
+            "require_once 'include/Sugarpdf/sugarpdf/sugarpdf.pdfmanager.php';\n",
+        )
+        self.assertQuiet("MLP020")
+
+    def test_install_scripts_are_not_checked(self) -> None:
+        self.fx.write(
+            "scripts/post_execute.php",
+            "<?php\nrequire_once 'custom/include/ErpLayoutExtraFields.php';\n"
+            "require_once __DIR__ . '/BaseErpLayout.php';\n",
+        )
+        self.assertQuiet("MLP020")
+
+    def test_install_script_helpers_under_include_scripts_are_not_flagged(self) -> None:
+        self.fx.write(
+            "custom/modules/Quotes/X.php",
+            "<?php\nrequire_once 'custom/include/scripts/BaseErpLayout.php';\n",
+        )
+        self.assertQuiet("MLP020")
+
+    def test_a_comment_naming_the_path_is_fine(self) -> None:
+        self.fx.write(
+            "custom/modules/Quotes/X.php",
+            "<?php\n// was: require_once 'custom/include/ErpConnectorOwnedFields.php';\n$ok = true;\n",
+        )
+        self.assertQuiet("MLP020")
+
+
+class TestCustomCacheClearing(RuleTest):
+    """MLP021 — the review of #81 (R3); the fixture is ErpLayoutExtraFields' old helpers."""
+
+    def test_opcache_invalidate_in_installed_code_fires(self) -> None:
+        self.fx.write(
+            "src/custom/include/ErpLayoutExtraFields.php",
+            "<?php\nclass ErpLayoutExtraFields\n{\n"
+            "    private static function forgetCompiledView(string $module): void\n    {\n"
+            "        if (function_exists('opcache_invalidate')) {\n"
+            "            @opcache_invalidate('custom/modules/' . $module . '/x.php', true);\n"
+            "        }\n    }\n}\n",
+        )
+        self.assertFires("MLP021")
+
+    def test_client_cache_clearing_in_installed_code_fires(self) -> None:
+        self.fx.write(
+            "custom/modules/Quotes/X.php",
+            "<?php\nMetaDataFiles::clearModuleClientCache('Quotes', 'view');\n"
+            "TemplateHandler::clearCache('Quotes');\n",
+        )
+        self.assertFires("MLP021")
+
+    def test_install_scripts_are_not_checked(self) -> None:
+        self.fx.write(
+            "scripts/BaseErpLayout.php",
+            "<?php\n@opcache_invalidate('custom/modules/Quotes/x.php', true);\n"
+            "MetaDataFiles::clearModuleClientCache('Quotes', 'view');\n",
+        )
+        self.assertQuiet("MLP021")
+
+    def test_clearing_its_own_cache_entry_is_fine(self) -> None:
+        self.fx.write(
+            "custom/clients/base/api/PromptsApi.php",
+            "<?php\nsugar_cache_clear('erp_smart_prompts_' . $id);\n",
+        )
+        self.assertQuiet("MLP021")
+
+
+class TestSugarLogicReimplemented(RuleTest):
+    """MLP022 — the review of #81 (R4); the first fixture is the G781 grid override."""
+
+    def test_overriding_the_plugins_dependency_lookup_fires(self) -> None:
+        self.fx.write(
+            "src/custom/modules/ProductBundles/clients/base/views/quote-data-group-list/quote-data-group-list.js",
+            "({\n    _getSugarLogicDependenciesForModel: function(model) {\n"
+            "        var dependencies = this._super('_getSugarLogicDependenciesForModel', [model]);\n"
+            "        return _.reject(dependencies, isPanelAction);\n    },\n})\n",
+        )
+        self.assertFires("MLP022")
+
+    def test_reading_the_plugins_context_fires(self) -> None:
+        self.fx.write(
+            "custom/modules/Quotes/clients/base/views/record/record.js",
+            "({\n    relock: function() {\n        var slContext = this._slCtx;\n    },\n})\n",
+        )
+        self.assertFires("MLP022")
+
+    def test_patching_an_actions_evaluation_fires(self) -> None:
+        self.fx.write(
+            "custom/modules/Quotes/clients/base/views/record/record.js",
+            "({\n    f: function(action) {\n        action.evalExpression = function() { return ''; };\n    },\n})\n",
+        )
+        self.assertFires("MLP022")
+
+    def test_calling_super_and_mentioning_it_in_a_comment_is_fine(self) -> None:
+        self.fx.write(
+            "custom/modules/Quotes/clients/base/views/record/record.js",
+            "({\n    // stock _getSugarLogicDependenciesForModel hands rows the record view rules\n"
+            "    initialize: function(options) {\n        this._super('initialize', [options]);\n"
+            "        if (action.evalExpression === undefined) { return; }\n    },\n})\n",
+        )
+        self.assertQuiet("MLP022")
+
+
+class TestSelfRetirement(RuleTest):
+    """MLP023 — the review of #81 (R20-R22); fixtures are ErpRetiredFiles' shapes."""
+
+    def test_a_package_removing_files_itself_fires(self) -> None:
+        self.fx.write(
+            "scripts/ErpRetiredFiles.php",
+            "<?php\nclass ErpRetiredFiles\n{\n    public static function run($installer, array $retired)\n    {\n"
+            "        $installer->uninstall_new_files(array('from' => $dir, 'to' => $dir), self::NO_BACKUP);\n"
+            "    }\n}\n",
+        )
+        self.assertFires("MLP023")
+
+    def test_a_tombstone_file_fires(self) -> None:
+        self.fx.write(
+            "scripts/tombstones/custom/clients/base/api/QuoteLineRevisionsApi.php",
+            "<?php\n// tombstone\n",
+        )
+        self.assertFires("MLP023")
+
+    def test_a_one_off_package_is_refused_even_with_nothing_in_it(self) -> None:
+        """Owner 🔒2173b: no one-off cleanup packages; the name alone fires."""
+        self.fx.write("scripts/post_execute.php", "<?php\n")
+        pkg = mlp_lint.load_package(self.fx.root, "sugar-sell/ONEOFF-RemoveErpLeftovers")
+        self.assertIn("MLP023", [f.rule for f in mlp_lint.lint_package(pkg)])
+        plain = mlp_lint.load_package(self.fx.root, "sugar-sell/ERP-Epicor")
+        self.assertNotIn("MLP023", [f.rule for f in mlp_lint.lint_package(plain)])
+
+    def test_a_built_one_off_zip_is_refused_like_any_self_removal(self) -> None:
+        """CI lints the built zips too (--zips-from); a one-off zip is no longer exempt."""
+        import tempfile
+        import zipfile
+        with tempfile.TemporaryDirectory() as tmp:
+            for rel, name in (("ONEOFF-RemoveErpLeftovers/releases", "oneoff_remove_erp_leftovers-1.0.0.zip"),
+                              ("ERP-Epicor/releases", "sugarai-erp_epicor-1.0.0.zip")):
+                releases = Path(tmp) / rel
+                releases.mkdir(parents=True)
+                with zipfile.ZipFile(releases / name, "w") as zf:
+                    zf.writestr("manifest.php", "<?php\n$manifest = array();\n")
+                    zf.writestr("scripts/post_execute.php",
+                                "<?php\n$this->uninstall_new_files(array('from' => $d, 'to' => '.'), $x);\n")
+                    zf.writestr("leftovers/custom/include/scripts/tombstones/custom/Old.php", "<?php\n")
+                _, findings = mlp_lint.lint_zip(releases / name)
+                self.assertIn("MLP023", [f.rule for f in findings])
+                if rel.startswith("ONEOFF-"):
+                    self.assertTrue(any("one-off" in f.message for f in findings if f.rule == "MLP023"))
+
+    def test_hiding_a_stock_field_is_an_override_not_a_retirement(self) -> None:
+        self.fx.write(
+            "src/custom/Extension/modules/Accounts/Ext/Vardefs/_override_hide.php",
+            "<?php\nif (isset($dictionary['Account']['fields']['action_new_opportunity'])) {\n"
+            "    unset($dictionary['Account']['fields']['action_new_opportunity']);\n}\n",
+        )
+        self.assertQuiet("MLP023")
+
+
+class TestModuleRootClass(RuleTest):
+    """MLP024 - the review of #81 (R6-R14); fixtures are the moved classes' shapes."""
+
+    def test_a_hook_class_at_a_module_root_fires(self) -> None:
+        self.fx.write(
+            "src/custom/modules/Quotes/ErpBreakGroupHook.php",
+            "<?php\nclass ErpBreakGroupHook\n{\n    public function apply($bean) {}\n}\n",
+        )
+        self.assertFires("MLP024")
+
+    def test_the_same_class_under_custom_src_is_quiet(self) -> None:
+        self.fx.write(
+            "src/custom/src/Erp/ErpBreakGroupHook.php",
+            "<?php\nnamespace Sugarcrm\\Sugarcrm\\custom\\Erp;\n\nclass ErpBreakGroupHook\n{\n}\n",
+        )
+        self.assertQuiet("MLP024")
+
+    def test_sugars_own_root_files_are_quiet(self) -> None:
+        """ApiHelper::getHelper() requires modules/<Module>/<Module>ApiHelper.php by
+        that exact path (include/api/ApiHelper.php:41); controller.php likewise."""
+        self.fx.write(
+            "src/custom/modules/Products/ProductsApiHelper.php",
+            "<?php\nclass CustomProductsApiHelper extends ProductsApiHelper\n{\n}\n",
+        )
+        self.fx.write(
+            "src/custom/modules/Quotes/controller.php",
+            "<?php\nclass CustomQuotesController extends SugarController\n{\n}\n",
+        )
+        self.assertQuiet("MLP024")
+
+    def test_a_root_file_declaring_no_class_is_quiet(self) -> None:
+        self.fx.write("src/custom/modules/Quotes/erp_map.php", "<?php\n$erp_map = array();\n")
+        self.assertQuiet("MLP024")
+
+    def test_a_class_one_level_down_is_not_a_module_root(self) -> None:
+        """The policy seam custom/modules/Quotes/ErpQuoteHooks/<Policy>.php is a
+        per-tenant override point, not a module-root class."""
+        self.fx.write(
+            "src/custom/modules/Quotes/ErpQuoteHooks/BenchPolicy.php",
+            "<?php\nclass BenchPolicy\n{\n}\n",
+        )
+        self.assertQuiet("MLP024")
+
+
+class TestDirectSql(RuleTest):
+    """MLP025 - the review of #81 (R16-R18, T3b); fixtures are the shapes the packages used."""
+
+    def rules_for(self, relpath: str, code: str) -> list[str]:
+        fx = Fixture()
+        self.addCleanup(fx.close)
+        fx.write(relpath, code)
+        return fx.rules()
+
+    def test_every_direct_sql_call_fires_in_install_scripts_and_installed_code(self) -> None:
+        calls = [
+            "$db->query('UPDATE opportunities SET sales_stage = 1');",
+            "$db->limitQuery($sql, 0, 2);",
+            "$conn = $db->getConnection();",
+            "$conn = DBManagerFactory::getConnection();",
+            "$rows = $conn->executeQuery($sql, array($id))->fetchAllAssociative();",
+            "$conn->executeStatement($sql, $params);",
+            "$conn->executeUpdate($sql, $params);",
+            "while ($row = $db->fetchByAssoc($result)) {}",
+            "$builder = $conn->createQueryBuilder();",
+            "$row = $db->fetchOne($sql);",
+            "$n = $GLOBALS['db']->getOne($sql);",
+            "$sql .= ' AND id = ' . $db->quoted($id);",
+            "$rows = $seed->get_full_list('', \"notifications.sync_key = 'k'\");",
+        ]
+        for call in calls:
+            for relpath in ("scripts/Migrations/Backfill.php", "src/custom/src/Erp/Store.php"):
+                with self.subTest(call=call, path=relpath):
+                    self.assertIn("MLP025", self.rules_for(relpath, "<?php\n" + call + "\n"))
+
+    def test_sugarquery_and_dbmanagers_write_api_are_quiet(self) -> None:
+        """The two routes the rule points to: SugarQuery reads, and the DBManager write API
+        Sugar core uses itself (data/SugarBean.php:6657, SugarRelationship.php:268)."""
+        self.fx.write(
+            "src/custom/src/Erp/Store.php",
+            "<?php\n$query = new SugarQuery();\n$query->from(BeanFactory::newBean('Quotes'), array('team_security' => false));\n"
+            "$query->select(array('id'));\n$query->where()->equals('id', $id);\n$rows = $query->execute();\n"
+            "$rate = $query->getOne();\n"
+            "$db->updateParams('quotes', $defs, array('x' => 1), array('id' => $id));\n"
+            "$db->insertParams('quotes_erp_orders', $fields, $row);\n$db->delete($dashboard);\n"
+            "$db->repairTableParams('erp_orders', $bean->field_defs, $bean->getIndices(), true);\n",
+        )
+        self.assertQuiet("MLP025")
+
+    def test_a_comment_naming_the_calls_is_quiet(self) -> None:
+        self.fx.write(
+            "scripts/Modules/Layout.php",
+            "<?php\n// was $db->query($sql) and $conn->executeStatement(): see T3b\n"
+            "/* DBManagerFactory::getConnection()->createQueryBuilder() */\n$x = 1;\n",
+        )
+        self.assertQuiet("MLP025")
+
+    def test_a_waived_line_is_quiet(self) -> None:
+        """Where Sugar has no API (a row lock, a config row delete) the line says why."""
+        self.fx.write(
+            "src/custom/src/Erp/Lock.php",
+            "<?php\n// mlp-lint: ignore MLP025 row lock: Sugar has no lock API\n$builder = $conn->createQueryBuilder();\n",
+        )
+        self.assertQuiet("MLP025")
+
+    def test_vendored_code_is_quiet(self) -> None:
+        self.fx.write("custom/include/vendor/lib/Db.php", "<?php\n$db->query($sql);\n")
+        self.assertQuiet("MLP025")
+
+    def test_a_searchfields_subquery_string_is_quiet(self) -> None:
+        """Stock Module Builder metadata (include/SugarObjects/templates/basic/metadata/SearchFields.php:21)."""
+        self.fx.write(
+            "src/SugarModules/modules/ERP_Orders/metadata/SearchFields.php",
+            "<?php\n$searchFields['ERP_Orders'] = array('favorites_only' => array('query_type' => 'format', "
+            "'operator' => 'subquery', 'subquery' => 'SELECT sugarfavorites.record_id FROM sugarfavorites "
+            "WHERE sugarfavorites.deleted=0'));\n",
+        )
+        self.assertQuiet("MLP025")
+
+
+class TestVerboseComments(RuleTest):
+    """MLP026 - the review of #81 (R23): comments say one short why."""
+
+    def test_an_essay_docblock_fires(self) -> None:
+        self.fx.write(
+            "src/custom/src/Erp/ErpX.php",
+            "<?php\n/**\n * One.\n *\n * Two.\n * Three.\n * Four.\n */\nclass ErpX\n{\n}\n",
+        )
+        self.assertFires("MLP026")
+
+    def test_a_long_run_of_line_comments_fires(self) -> None:
+        self.fx.write(
+            "src/custom/src/Erp/ErpY.php",
+            "<?php\nfunction y() {\n    // a\n    // b\n    // c\n    // d\n    return 1;\n}\n",
+        )
+        self.assertFires("MLP026")
+
+    def test_a_short_why_with_tags_and_a_waiver_is_quiet(self) -> None:
+        self.fx.write(
+            "src/custom/src/Erp/ErpZ.php",
+            "<?php\n/**\n * Why this exists. (G123)\n * @param string $a\n * @return int\n */\n"
+            "function z($a) {\n    // One line of why.\n    // mlp-lint: ignore MLP025 no Sugar API (DBManager.php:1)\n"
+            "    return 1;\n}\n",
+        )
+        self.assertQuiet("MLP026")
+
+    def test_generated_files_are_skipped(self) -> None:
+        self.fx.write(
+            "src/custom/Extension/modules/Quotes/Ext/Vardefs/sugarfield_x.php",
+            "<?php\n// created: 2026-01-01 00:00:00\n// a\n// b\n// c\n// d\n$dictionary = [];\n",
+        )
+        self.assertQuiet("MLP026")
+
+
 class TestRuleMetadata(unittest.TestCase):
     def test_every_rule_has_an_origin_and_explanation(self) -> None:
         self.assertTrue(mlp_lint.RULES)
@@ -1091,8 +1472,8 @@ class TestUnsafeHttpClientFunctionsInAZip(_ZipCase):
         # What 373ef0f did: the fallback became a literal include.
         php = (MLP002_FIXTURES / "g222_refused_shape.php").read_text(encoding="utf-8")
         php = php.replace(
-            ": stream_resolve_include_path('custom/modules/Quotes/ErpQuoteCommentQueue.php');",
-            ": 'custom/modules/Quotes/ErpQuoteCommentQueue.php';",
+            ": stream_resolve_include_path('custom/src/Erp/ErpQuoteCommentQueue.php');",
+            ": 'custom/src/Erp/ErpQuoteCommentQueue.php';",
         )
         _pkg, findings = mlp_lint.lint_zip(self.make_zip({self.PATH: php}))
         self.assertEqual([f for f in findings if f.severity == mlp_lint.BLOCKER], [])

@@ -116,13 +116,14 @@ class CreateOppQuoteButtonRetiredStatic(unittest.TestCase):
         not see it. rc64 empties this package's label file (G276 / 🔒 1504): with
         no Bench button and no Bench button logic, a Bench label could only make
         a retired action read as supported. From rc69 (G280 / 🔒 1567) the file
-        no longer ships at all and the one-off deletes the tenant's copy. Core
+        no longer ships at all (the one-off that deleted the tenant's copy was
+        withdrawn, 🔒2173b). Core
         keeps its own label, so the action the seller actually presses is still
         named.
         """
-        from bd_retirement import assert_retired_by_oneoff
-        assert_retired_by_oneoff(self, str(BD_LABELS.relative_to(PKG)),
-                                 "the Bench button label; core's button owns this action")
+        from bd_retirement import assert_not_shipped
+        assert_not_shipped(self, str(BD_LABELS.relative_to(PKG)),
+                           "the Bench button label; core's button owns this action")
         for php in PKG.rglob("*.php"):
             self.assertNotIn("LBL_BD_CREATE_OPP_QUOTE_BUTTON'] =", php.read_text(encoding="utf-8"),
                              f"{php.name} labels the retired Bench button again")

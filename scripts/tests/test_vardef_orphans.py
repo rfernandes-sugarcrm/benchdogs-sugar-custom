@@ -25,19 +25,23 @@ the files were absent.
 🔁 RE-POINTED 0.9.42-rc69 (G280 / 🔒 1567, 🔒 1521). The lesson above still
 stands - DROPPING a path retires nothing - but the thing that removes the path
 from the tenant is no longer an empty stub this package keeps shipping. It is
-the one-off ONEOFF-RetireBdResidue, which deletes each path through
+the one-off ONEOFF-RetireBdResidue, which deleted each path through
 ModuleInstaller::uninstallExt() and ran on every QA tenant. So each "must ship"
 below became "retired off the tenant": not in the package, not in the built zip,
-and still on the one-off's worklist (bd_retirement.assert_retired_by_oneoff). A
-case that only checked "not shipped" would pass on exactly the defect this file
-was written about.
+and still on the one-off's worklist.
+
+🔁 🔒2173b (2026-09-30) WITHDREW the one-off and deleted its code, so the
+worklist half is gone and each case now checks "not shipped"
+(bd_retirement.assert_not_shipped). Said plainly: that alone passes on exactly
+the defect this file was written about. A tenant the one-off never ran on keeps
+the stale declarations, and nothing in this repository removes them any more.
 """
 
 import re
 import unittest
 from pathlib import Path
 
-from bd_retirement import assert_retired_by_oneoff
+from bd_retirement import assert_not_shipped
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -88,16 +92,14 @@ def strip_comments(source: str) -> str:
 
 
 class ProductsVardefOrphansTest(unittest.TestCase):
-    def test_the_stub_paths_are_retired_off_the_tenant(self):
-        """FAILED ON THE ORIGINAL DEFECT, where the files were simply dropped.
-
-        Absence is not neutral here: a path nobody removes stays on the tenant.
-        Through rc68 the package shipped these paths EMPTY; from rc69 the
-        one-off deletes them, and must still name them."""
+    def test_the_stub_paths_never_ship_again(self):
+        """Absence is not neutral here: a path nobody removes stays on the
+        tenant. Through rc68 the package shipped these paths EMPTY; from rc69
+        the one-off deleted them, until 🔒2173b withdrew it."""
         for filename, field in sorted(ORPHANS.items()):
             with self.subTest(filename):
-                assert_retired_by_oneoff(self, str((VARDEFS / filename).relative_to(PACKAGE)),
-                                         f"the stale Product.{field} declaration")
+                assert_not_shipped(self, str((VARDEFS / filename).relative_to(PACKAGE)),
+                                   f"the stale Product.{field} declaration")
 
     def test_the_declaration_does_not_reappear_anywhere_in_the_package(self):
         """🛑 DO NOT RE-ADD. Catches a re-declaration under any filename - the
@@ -122,7 +124,7 @@ class ProductsVardefOrphansTest(unittest.TestCase):
 
     def test_the_opportunities_twin_is_still_retired(self):
         """The half that DID land, pinned so a later cleanup cannot undo it."""
-        assert_retired_by_oneoff(
+        assert_not_shipped(
             self, "custom/Extension/modules/Opportunities/Ext/Vardefs/bd_governing_origin.php",
             "Opportunity.bd_governing_origin")
 
@@ -132,11 +134,11 @@ class QuotesVardefOrphansTest(unittest.TestCase):
 
     FAILS ON THE OLD BEHAVIOUR: before this change none of these files shipped."""
 
-    def test_every_quote_stub_is_retired_off_the_tenant(self):
+    def test_no_quote_stub_ships_again(self):
         for filename, field in sorted(QUOTE_ORPHANS.items()):
             with self.subTest(filename):
-                assert_retired_by_oneoff(self, str((QUOTE_VARDEFS / filename).relative_to(PACKAGE)),
-                                         f"the stale Quote.{field} declaration")
+                assert_not_shipped(self, str((QUOTE_VARDEFS / filename).relative_to(PACKAGE)),
+                                   f"the stale Quote.{field} declaration")
 
     def test_the_retired_quote_fields_are_declared_nowhere(self):
         pattern = re.compile(
@@ -157,13 +159,13 @@ class LiveKpiFieldsMustKeepShippingTest(unittest.TestCase):
     connector, so the vardef had to keep shipping. Then OWNER RULING (2026-09-19):
     *"make sure you retire this bd_quoted / bd_date_quoted"*, after PR #8 reduced
     the Bench connector to exactly TWO written fields. The file shipped EMPTY
-    through rc68; from rc69 the one-off deletes it."""
+    through rc68; from rc69 the one-off deleted it (withdrawn, 🔒2173b)."""
 
     VARDEF = QUOTE_VARDEFS / "bd_erp_kpi_inputs.php"
 
-    def test_the_kpi_vardef_is_retired_off_the_tenant(self):
-        assert_retired_by_oneoff(self, str(self.VARDEF.relative_to(PACKAGE)),
-                                 "bd_quoted / bd_date_quoted / bd_erp_stage_code")
+    def test_the_kpi_vardef_never_ships_again(self):
+        assert_not_shipped(self, str(self.VARDEF.relative_to(PACKAGE)),
+                           "bd_quoted / bd_date_quoted / bd_erp_stage_code")
 
     def test_nothing_in_the_package_declares_them_now(self):
         """Neither they nor 🔒 1045's bd_erp_stage_code may come back under any

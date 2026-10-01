@@ -42,11 +42,11 @@ HERE = Path(__file__).resolve().parent
 # test_every_php_suite_in_this_directory_is_named_above.
 SUITES = (
     "bench_panel_retired_test.php",
-    "bench_governing_origin_retired_test.php",
     "bd_adm_rules_test.php",
     "bd_erp_layout_test.php",
     "bd_customer_group_move_test.php",
     "bd_contact_fields_test.php",
+    "bd_seller_discounts_hidden_test.php",
 )
 
 php = shutil.which("php")
@@ -87,16 +87,23 @@ ERP_AUTOLOADER = str(shared_sugar.resolve("sugar_autoloader.php"))
 #: check trips them and a re-count does not. Raise a floor when a suite
 #: grows; lowering one is a decision to name in the pull request.
 MIN_CHECKS = {
-    "bench_panel_retired_test.php": 20,
-    "bench_governing_origin_retired_test.php": 15,
+    # 🔒2173b (2026-09-30): the one-off's K-2 cases went with its code; 9 checks
+    # left (was 24), all on this package. bench_governing_origin_retired_test.php
+    # is gone: it ran only the one-off's K-3, and test_governing_marker.py holds
+    # its package checks. Floors ~15% under, as above.
+    "bench_panel_retired_test.php": 7,
     # rc78 (G809 + G804): 113 checks (+30: sections Q, R, S, M9, M10); floor
     # ~15% under, as above. T2 (2026-09-30): 121 checks in the global run
     # (+T0, T0b), 124 in the namespaced run (+T1-T5); floor ~15% under 121.
     "bd_adm_rules_test.php": 102,
     "bd_erp_layout_test.php": 18,
-    "bd_customer_group_move_test.php": 25,
+    # 🔒2173b: the one-off ONEOFF-MoveBdCustomerGroup's cases (M1-M12, L2, L5)
+    # went with its code; 10 checks left (was 29), all on this package.
+    "bd_customer_group_move_test.php": 8,
     # rc82 (G458): 44 checks at 2026-09-30; floor ~15% under, as above.
     "bd_contact_fields_test.php": 37,
+    # rc85 (G848, 🔒2159b): 136 checks at 2026-09-30 (rc84: 109); floor ~15% under, as above.
+    "bd_seller_discounts_hidden_test.php": 115,
 }
 #: bd_adm_rules_test.php's second run has no ErpQuoteFacts and is meant to be
 #: tiny: an older ERP-Epicor skips the defaults and never fails a save.
@@ -116,7 +123,8 @@ class PhpSuitesTest(unittest.TestCase):
         counts = _CHECKS.findall(report)
         self.assertTrue(counts, f"{name} reported no 'N checks, M failed' line:\n{report}")
         checks = int(counts[-1][0])
-        floor = (MIN_CHECKS_NO_QUOTE_FACTS if env.get("BD_NO_QUOTE_FACTS")
+        # rc87 (🔒2167b): below ERP-Epicor 1.2.0 (no class, or 1.1's global one) the suite runs only its refusal checks.
+        floor = (MIN_CHECKS_NO_QUOTE_FACTS if env.get("BD_NO_QUOTE_FACTS") or env.get("BD_QUOTE_FACTS")
                  else MIN_CHECKS[name])
         self.assertGreaterEqual(
             checks, floor,
@@ -124,13 +132,10 @@ class PhpSuitesTest(unittest.TestCase):
             f"stopped running checks is documentation, not a guard.")
 
     def test_bench_panel_retired(self):
-        """The Bench Dogs panel is removed from the Quotes record view."""
+        """Nothing the retired Bench Dogs Quotes panel carried ships again: its
+        fields, its remover, the duplicate notifier. (The removal itself was the
+        one-off's K-2, withdrawn with its code by 🔒2173b.)"""
         self.assert_suite_passes("bench_panel_retired_test.php")
-
-    def test_bench_governing_origin_retired(self):
-        """G116: bd_governing_origin is taken off the Opportunity record view
-        on install, and never put back."""
-        self.assert_suite_passes("bench_governing_origin_retired_test.php")
 
     def test_bd_adm_rules(self):
         """G380/G381 (🔒 1724b): the Bench Dogs ADM rules (which companies are
@@ -153,13 +158,12 @@ class PhpSuitesTest(unittest.TestCase):
         self.assert_suite_passes("bd_erp_layout_test.php", **LANDED)
 
     def test_bd_customer_group_move(self):
-        """G507: the one-off takes the customer-group pair out of the Account
-        HEADER (where rc69 put it on a view with no panel_body - reproduced with
-        rc69's real writer) onto the first tab, after Industry, labelled; keeps an
-        admin's placement; places nothing without a vardef; writes once. Beside
-        rc72's real scripts and ERP-Core's real sync(): rc72 alone does not move
-        them, a fresh rc72 install lands in the same slots, either install order
-        ends the same, and uninstall takes them off."""
+        """G507: rc69 put the customer-group pair in the Account HEADER on a
+        view with no panel_body (reproduced with rc69's real writer). With
+        rc72's real scripts and ERP-Core's real sync(): an upgrade does not move
+        them (the one-off that did was withdrawn, 🔒2173b), a fresh install puts
+        them on the first tab after Industry, labelled, and uninstall takes them
+        off."""
         self.assert_suite_passes("bd_customer_group_move_test.php", **LANDED)
 
     def test_bd_contact_fields(self):
@@ -169,6 +173,23 @@ class PhpSuitesTest(unittest.TestCase):
         per build - and a tenant WITHOUT that package gets its view back
         byte for byte (no field it lacks is referenced)."""
         self.assert_suite_passes("bd_contact_fields_test.php")
+
+    def test_bd_seller_discounts_hidden(self):
+        """G848 (rc84, 🔒2151b): no discount on a Bench quote - ERP-Epicor's
+        Discount panel, the totals' Order Level Discount, the grid's Line
+        Discount column and the line page's discount - by five sidecar
+        overlays run the way MetaDataFiles includes them and compiled the way
+        mergeExtensionFiles compiles them, over ERP-Epicor's OWN panel and
+        totals definitions; the fetch list and every other entry untouched.
+
+        ERP-Epicor's QuotesLayout is the PIN (1.2.0, 280e0929), not the sibling
+        checkout: the rc this ships in is built against 1.2.0, and a sibling
+        left on an older build branch would grade it against a layout no
+        Bench tenant runs."""
+        self.assert_suite_passes(
+            "bd_seller_discounts_hidden_test.php",
+            BD_QUOTES_LAYOUT=str(shared_sugar.pinned_path("QuotesLayout.php")),
+            BD_BASE_ERP_LAYOUT=str(shared_sugar.pinned_path("BaseErpLayout.php")))
 
 
 

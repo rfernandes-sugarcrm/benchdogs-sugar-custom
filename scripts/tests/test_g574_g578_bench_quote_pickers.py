@@ -66,13 +66,13 @@ ROWS = [
 ]
 
 PHP_INPUT = r"""
-require 'custom/modules/Quotes/BdAdmRules.php';
+require 'custom/src/BenchDogs/BdAdmRules.php';
 $dictionary = [];
 include 'custom/Extension/modules/Quotes/Ext/Vardefs/bd_adm_required_fields.php';
 $rows = json_decode($argv[1], true);
 echo json_encode([
     'def' => $dictionary['Quote']['fields']['bd_project_id'],
-    'options_json' => json_encode(BdAdmRules::optionsFromRows($rows)),
+    'options_json' => json_encode(\Sugarcrm\Sugarcrm\custom\BenchDogs\BdAdmRules::optionsFromRows($rows)),
 ]);
 """
 

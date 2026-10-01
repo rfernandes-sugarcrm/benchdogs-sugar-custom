@@ -7,10 +7,10 @@ class QuotesErpActionsApiShape
 {
     private function loadQueue()
     {
-        $installed = __DIR__ . '/../../../modules/Quotes/ErpQuoteCommentQueue.php';
+        $installed = __DIR__ . '/../../../src/Erp/ErpQuoteCommentQueue.php';
         $path = file_exists($installed)
             ? $installed
-            : stream_resolve_include_path('custom/modules/Quotes/ErpQuoteCommentQueue.php');
+            : stream_resolve_include_path('custom/src/Erp/ErpQuoteCommentQueue.php');
         if ($path !== false && $path !== '' && file_exists($path)) {
             require_once $path;
         }
@@ -20,11 +20,11 @@ class QuotesErpActionsApiShape
 
     private function loadRatchetTheWay373ef0fDoes()
     {
-        $installed = __DIR__ . '/../../../modules/Quotes/ErpPricedStageRatchet.php';
+        $installed = __DIR__ . '/../../../src/Erp/ErpPricedStageRatchet.php';
         if (file_exists($installed)) {
             require_once $installed;
         } else {
-            @include_once 'custom/modules/Quotes/ErpPricedStageRatchet.php';
+            @include_once 'custom/src/Erp/ErpPricedStageRatchet.php';
         }
     }
 }

@@ -37,7 +37,8 @@ REFRESH = "python3 scripts/refresh_mlp_lint.py"
 # A floor, not a mirror. Re-pinning to an older upstream commit would pass the
 # hash check, since the hashes are re-recorded with it; this is what refuses
 # that. MLP018 and MLP019 are exactly the two rules G318 was about.
-REQUIRED_RULES = frozenset(f"MLP{n:03d}" for n in range(1, 20))
+# 🔒2161b: Rafael's rules MLP020-MLP026 (refactor/rafael-review) apply on Bench too.
+REQUIRED_RULES = frozenset(f"MLP{n:03d}" for n in range(1, 27))
 
 # The files CI actually executes. Pinning a subset that leaves one of these out
 # would leave that one free to drift.
