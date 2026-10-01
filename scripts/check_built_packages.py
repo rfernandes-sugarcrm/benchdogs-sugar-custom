@@ -157,22 +157,13 @@ RUN_BY_NAME = frozenset({
 })
 
 
-#: What a one-off cleanup package (sugar-sell/ONEOFF-*, the only packages mlp_lint
-#: MLP023 lets call uninstall_new_files) ships for its post_execute to READ, not
-#: install: the path list, and the placeholder tree handed to uninstall_new_files
-#: as `from`, whose relative paths are the instance files it removes.
-ONEOFF_INPUTS = ("scripts/leftovers.php", "leftovers/")
-
-
-def members_never_installed(names: list[str], installdefs: dict, oneoff: bool = False) -> list[str]:
+def members_never_installed(names: list[str], installdefs: dict) -> list[str]:
     """Zip members no installdefs entry reaches and Module Loader does not run
     by name. manifest.php is the loader's own; directory entries are not files."""
     prefixes = installed_prefixes(installdefs)
     dead: list[str] = []
     for m in names:
         if m == "manifest.php" or m.endswith("/") or m in RUN_BY_NAME:
-            continue
-        if oneoff and any(m == p or (p.endswith("/") and m.startswith(p)) for p in ONEOFF_INPUTS):
             continue
         if any(m == p or m.startswith(p.rstrip("/") + "/") for p in prefixes):
             continue
@@ -223,7 +214,7 @@ def check_zip(path: Path, expected_version: str | None) -> list[str]:
     if isinstance(installdefs, str):
         problems.append(f"cannot tell which members install: {installdefs}")
     else:
-        dead = members_never_installed(names, installdefs, path.parent.parent.name.startswith("ONEOFF-"))
+        dead = members_never_installed(names, installdefs)
         if dead:
             shown = ", ".join(dead[:8]) + (f", … {len(dead) - 8} more" if len(dead) > 8 else "")
             problems.append(

@@ -1296,7 +1296,7 @@ class Package:
     # source directory it was built from is not there to look at - so rules that
     # ask whether a file EXISTS cannot be answered from one, and must sit out.
     from_zip: bool = False
-    # A one-off cleanup package (MLP023): sugar-sell/ONEOFF-*, built as oneoff_*.zip.
+    # A one-off cleanup package (sugar-sell/ONEOFF-*, built as oneoff_*.zip), which MLP023 refuses.
     oneoff: bool = False
 
     @property
@@ -2363,15 +2363,15 @@ still defined. The reviewer: that is what the Module Loader's install and
 uninstall are for, and the extra logic clutters the package and is hard to
 maintain.
 
-A package ships what it installs and nothing that deletes. When an upgrade has
-to take files away, a separate one-off package with a hardcoded path list does
-it (owner 🔒2126b); packages whose directory starts with ONEOFF- (built as
-oneoff_<id>-<version>.zip) are exempt.
+A package ships what it installs and nothing that deletes. A separate one-off
+cleanup package is not the way around that either: the owner had them all
+uninstalled and their code deleted (🔒2173b, superseding 🔒2126b).
 
-Sees, in every other package: calls to uninstall_new_files,
-uninstall_customizations or uninstall_relationship, and any file under a
-tombstones/ directory. Not an unset() in a vardef: hiding a stock field that way
-is an override the package's uninstall reverses.""",
+Sees: calls to uninstall_new_files, uninstall_customizations or
+uninstall_relationship, any file under a tombstones/ directory, and any package
+whose directory starts with ONEOFF- (or a zip named oneoff_*). Not an unset() in
+a vardef: hiding a stock field that way is an override the package's uninstall
+reverses.""",
 )
 
 SELF_REMOVAL_RE = re.compile(
@@ -2380,16 +2380,20 @@ SELF_REMOVAL_RE = re.compile(
 
 
 def check_self_retirement(pkg: Package) -> list[Finding]:
-    """MLP023. Retirement machinery outside a one-off package."""
-    if pkg.oneoff:
-        return []
+    """MLP023. Retirement machinery, or a one-off cleanup package."""
     findings: list[Finding] = []
+    if pkg.oneoff:
+        findings.append(Finding(
+            "MLP023", REQUIRED, pkg.name, 0,
+            "is a one-off cleanup package; one-off packages are not allowed (owner 🔒2173b)",
+            "Delete the package; leftovers are the Module Loader's to remove",
+        ))
     for f in pkg.files:
         if "tombstones" in f.parts:
             findings.append(Finding(
                 "MLP023", REQUIRED, rel(f, pkg.root), 0,
                 "ships a tombstone file, which exists only so the package can delete another file",
-                "Stop shipping it; remove leftovers with a one-off package",
+                "Stop shipping it; leftovers are the Module Loader's to remove",
             ))
     for f in pkg.php_files:
         if is_vendored(f):
@@ -2403,7 +2407,7 @@ def check_self_retirement(pkg: Package) -> list[Finding]:
                 "MLP023", REQUIRED, rel(f, pkg.root), line_no,
                 f"retires files or fields itself ({what}); the Module Loader's install and "
                 f"uninstall own that",
-                "Remove the retirement logic; take leftovers away with a one-off package",
+                "Remove the retirement logic; leftovers are the Module Loader's to remove",
             ))
     return findings
 

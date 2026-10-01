@@ -1093,17 +1093,16 @@ class TestSelfRetirement(RuleTest):
         )
         self.assertFires("MLP023")
 
-    def test_a_one_off_package_may_remove_files(self) -> None:
-        self.fx.write(
-            "scripts/post_execute.php",
-            "<?php\n$this->uninstall_new_files(array('from' => $this->base_dir . '/leftovers', 'to' => '.'), $x);\n",
-        )
+    def test_a_one_off_package_is_refused_even_with_nothing_in_it(self) -> None:
+        """Owner 🔒2173b: no one-off cleanup packages; the name alone fires."""
+        self.fx.write("scripts/post_execute.php", "<?php\n")
         pkg = mlp_lint.load_package(self.fx.root, "sugar-sell/ONEOFF-RemoveErpLeftovers")
-        self.assertNotIn("MLP023", [f.rule for f in mlp_lint.lint_package(pkg)])
+        self.assertIn("MLP023", [f.rule for f in mlp_lint.lint_package(pkg)])
+        plain = mlp_lint.load_package(self.fx.root, "sugar-sell/ERP-Epicor")
+        self.assertNotIn("MLP023", [f.rule for f in mlp_lint.lint_package(plain)])
 
-    def test_a_built_one_off_zip_may_remove_files_and_list_old_tombstones(self) -> None:
-        """CI lints the built zips too (--zips-from), where the package is named after
-        its zip; the removal list may name an old tombstone path."""
+    def test_a_built_one_off_zip_is_refused_like_any_self_removal(self) -> None:
+        """CI lints the built zips too (--zips-from); a one-off zip is no longer exempt."""
         import tempfile
         import zipfile
         with tempfile.TemporaryDirectory() as tmp:
@@ -1117,11 +1116,9 @@ class TestSelfRetirement(RuleTest):
                                 "<?php\n$this->uninstall_new_files(array('from' => $d, 'to' => '.'), $x);\n")
                     zf.writestr("leftovers/custom/include/scripts/tombstones/custom/Old.php", "<?php\n")
                 _, findings = mlp_lint.lint_zip(releases / name)
-                rules = [f.rule for f in findings]
+                self.assertIn("MLP023", [f.rule for f in findings])
                 if rel.startswith("ONEOFF-"):
-                    self.assertNotIn("MLP023", rules)
-                else:
-                    self.assertIn("MLP023", rules)
+                    self.assertTrue(any("one-off" in f.message for f in findings if f.rule == "MLP023"))
 
     def test_hiding_a_stock_field_is_an_override_not_a_retirement(self) -> None:
         self.fx.write(

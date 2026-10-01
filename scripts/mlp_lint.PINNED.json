@@ -3,18 +3,18 @@
   "upstream": {
     "repository": "sugarcrm/erp-integration-sugar",
     "branch": "refactor/rafael-review",
-    "commit": "cf52eace8a5aa027c292ef0fbbd6d4115d9fda76"
+    "commit": "b1f7dac59a91d6f2c80efbbf5a16703a35fea8c0"
   },
   "files": {
     "scripts/mlp_lint.py": {
-      "sha256": "68317ba9c47464346ff9a4b8b16142d6761e0a2967f59922f990459128ab5eec",
-      "git_blob": "da23c5b492549c6a5fa471e6a4189c3b08c33067",
-      "bytes": 128126
+      "sha256": "f7ae2d0da91e3e50ecd172eec3e4e201854b40f70a1a2e7087a7a1a75a9d29d2",
+      "git_blob": "5e60310530f63756cefd490870b1ac96c771a0ed",
+      "bytes": 128395
     },
     "scripts/check_built_packages.py": {
-      "sha256": "6c09b42871dfc47b3e3a8250e26afdd44814de6f6a0ff4c8bc42e8b2c26794db",
-      "git_blob": "7d5a8b95d1ae71dd7ee5482f7001e7c5fc6b3827",
-      "bytes": 11458
+      "sha256": "2ee95aebafa5426a07a2839b94364c4e2903161cd4fafb6804331cf26246a690",
+      "git_blob": "7d4f3f9da667b5e4f47fefc0f0ba82ac1eb8857d",
+      "bytes": 10895
     },
     "scripts/regen_denylist.py": {
       "sha256": "eab257b631b5dcac6fb74f23d5dfe7a1da97de6775f7b976b0320fe733cf92ef",
@@ -22,9 +22,9 @@
       "bytes": 9093
     },
     "scripts/tests/test_mlp_lint.py": {
-      "sha256": "94311d89e6556a72cd39f1e9d182f5565c3f673612efb2d2f3ed12a2b5126a66",
-      "git_blob": "7374d588efcd9388cbc1a73fc92a795f93c3473f",
-      "bytes": 77830,
+      "sha256": "15e90c8f49b9b8aee72eefbb318b221548176c1495b1288a7c3fa9fd39b4910c",
+      "git_blob": "9088642108f97b7d09c388d54b18590b8cff507b",
+      "bytes": 77880,
       "local_delta": {
         "reason": "test_mlp002_agrees_with_the_scanner_on_every_php_file_here floors the files it checked at erp-integration-sugar's size (100). This repository had 61 PHP files at rc67 (floor 40); G280 / decision 1567 cut BenchDogs-Ext to 7 at rc69, leaving 18 in all, so the floor is 12: still proves the oracle walked the real tree.",
         "upstream": "        self.assertGreater(checked, 100)\n",
