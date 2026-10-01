@@ -108,28 +108,28 @@ jobs:
       # that has moved.
       #
       # Every package under sugar-sell that has a builder, not just the main
-      # one. The disposable one-off repairs are real packages that install into
-      # a live instance, and a builder that nothing exercises is a builder that
-      # breaks quietly and is discovered at the worst moment - halfway through
-      # fixing a broken instance.
+      # one: a builder that nothing exercises breaks quietly. Since 🔒2173b
+      # (2026-09-30) that is BenchDogs-Ext alone - the one-off repair packages
+      # and archive/ were withdrawn and deleted, and the vendored linter's
+      # MLP023 refuses any ONEOFF-* package that comes back.
       # Every shipped .php file parses under the PHP the instances run. A
       # parse error in a logic hook is a white screen for every seller on the
       # next install, and nothing here looked for it: pack.php zips bytes, the
       # linter reads the ASTs its rules target, the PHP suites load the files
-      # they name (8 of the 21 shipped files are loaded by none). 27 files
-      # today, 0 failures, ~2s. archive/ is included: its one-off is excluded
-      # from build and lint on purpose, never from parsing. The count of
-      # "No syntax errors" lines is asserted against the file count — the
-      # population, not the exit code — so a wrong search reads as an error.
+      # they name (8 of the 21 shipped files are loaded by none). 26 files
+      # since 🔒2173b deleted the one-offs and archive/ (was 38), 0 failures,
+      # ~2s. The count of "No syntax errors" lines is asserted against the file
+      # count — the population, not the exit code — so a wrong search reads as
+      # an error.
       - name: Every shipped PHP file parses (php -l)
         run: |
-          find sugar-sell archive -name '*.php' -not -path '*/releases/*' -print0 | sort -z > php-files.zlist
+          find sugar-sell -name '*.php' -not -path '*/releases/*' -print0 | sort -z > php-files.zlist
           total=$(tr -cd '\0' < php-files.zlist | wc -c | tr -d ' ')
           xargs -0 -n 1 sh -c 'php -l "$0" 2>&1 || true' < php-files.zlist > php-l.out
           ok=$(grep -c '^No syntax errors detected' php-l.out || true)
           echo "php files: $total, parsed clean: $ok"
           if [ "$total" -lt 20 ]; then
-            echo "::error::only $total .php files found under sugar-sell/archive; the search is wrong"
+            echo "::error::only $total .php files found under sugar-sell; the search is wrong"
             exit 1
           fi
           if [ "$ok" -ne "$total" ]; then

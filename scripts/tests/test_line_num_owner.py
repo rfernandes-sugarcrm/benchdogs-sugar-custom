@@ -97,19 +97,19 @@ class BenchKeepsNoCopyOfTheErpLineNumber(unittest.TestCase):
         }
         self.assertEqual(offenders, {}, offenders)
 
-    def test_the_vardef_is_retired_off_the_tenant(self):
+    def test_the_vardef_never_ships_again(self):
         """Through rc68 the file was KEPT, emptied, so an upgrade overwrote the
         old declaration on a tenant that already had it - dropping it would
         leave that tenant declaring a field with no writer and no reader. From
-        rc69 (G280 / 🔒 1567, 🔒 1521) the one-off deletes the path instead, so
-        the package stops shipping it."""
-        from bd_retirement import assert_retired_by_oneoff
-        assert_retired_by_oneoff(self, str(VARDEF.relative_to(PKG)),
-                                 "the tenant would keep declaring bd_erp_line_num")
+        rc69 (G280 / 🔒 1567, 🔒 1521) the one-off deleted the path instead (until
+        🔒2173b withdrew it), so the package stops shipping it."""
+        from bd_retirement import assert_not_shipped
+        assert_not_shipped(self, str(VARDEF.relative_to(PKG)),
+                           "the tenant would declare bd_erp_line_num again")
 
     def test_the_retired_label_is_gone(self):
-        from bd_retirement import assert_retired_by_oneoff
-        assert_retired_by_oneoff(self, str(LABELS.relative_to(PKG)), "LBL_BD_ERP_LINE_NUM")
+        from bd_retirement import assert_not_shipped
+        assert_not_shipped(self, str(LABELS.relative_to(PKG)), "LBL_BD_ERP_LINE_NUM")
         offenders = [
             str(p.relative_to(ROOT))
             for p in _php_sources()

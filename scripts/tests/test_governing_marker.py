@@ -38,17 +38,21 @@ evidence for "has run" is the tenant's own install log, quoted on the case.
 
 🔁 0.9.42-rc69 (G280 / 🔒 1567, 🔒 1521) TAKES THE MARKER REMOVER OUT OF THE
 PACKAGE, for the same reason rc66 took the report remover: it is a one-shot that
-has run. The one-off ONEOFF-RetireBdResidue carries its own copy of
+has run. The one-off ONEOFF-RetireBdResidue carried its own copy of
 BdOpportunitiesLayoutExtensions (K-3) and ran it on every QA tenant, and it
-deletes both 1044 stubs. So post_install and pre_uninstall no longer call it,
+deleted both 1044 stubs. So post_install and pre_uninstall no longer call it,
 and the class no longer ships. The BUILDER guards stay - no placement, no label,
 no saved report, anywhere in the package - because that is the duty owed to a
 seller.
 
 THE BEHAVIOURAL HALF RAN IN PHP through rc68
-(scripts/tests/bench_governing_origin_retired_test.php); it now runs against the
-one-off's K-3 copy, the only one left, wired into CI by
-scripts/tests/test_php_suites.py.
+(scripts/tests/bench_governing_origin_retired_test.php), and from rc69 against
+the one-off's K-3 copy.
+
+🔁 🔒2173b (2026-09-30) WITHDREW the one-off and deleted its code, and that PHP
+suite with it: it ran nothing else. So nothing in this repository takes the
+marker off a deployed Opportunities view any more; a tenant K-3 never ran on
+keeps it. The BUILDER guards below are this package's whole duty now.
 """
 
 import re
@@ -60,9 +64,6 @@ ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = ROOT / "sugar-sell" / "BenchDogs-Ext"
 REPORT = PACKAGE / "custom" / "modules" / "Opportunities" / "BdAutoSelectedReport.php"
 LAYOUT = PACKAGE / "custom" / "modules" / "Opportunities" / "BdOpportunitiesLayoutExtensions.php"
-ONEOFF = ROOT / "sugar-sell" / "ONEOFF-RetireBdResidue"
-#: 1.0.6: K-3 runs inline in the one-off's post_execute (Rafael's one-off layout: no classes of its own).
-ONEOFF_POST = ONEOFF / "scripts" / "post_execute.php"
 POST_INSTALL = PACKAGE / "scripts" / "post_execute.php"
 PRE_UNINSTALL = PACKAGE / "scripts" / "bd_pre_uninstall.php"
 
@@ -85,7 +86,8 @@ class TheRetiredFieldHasNoWriterLeftTest(unittest.TestCase):
         """FAILS ON THE OLD BEHAVIOUR: rc56 named the field in three places —
         the record-view writer, the report's display column and the report's
         filter. Through rc68 one was left, the name remove() strips; from rc69
-        the remover is the one-off's, and the package names the field nowhere.
+        the remover was the one-off's (withdrawn, 🔒2173b), and the package
+        names the field nowhere.
 
         Scoped to the whole package rather than to the files that had it,
         because the miss that produced G116 was a census that looked at one
@@ -99,8 +101,6 @@ class TheRetiredFieldHasNoWriterLeftTest(unittest.TestCase):
                 if re.search(r"\b" + FIELD + r"\b", line):
                     found.append((str(path.relative_to(ROOT)), line.strip()))
         self.assertEqual(found, [], found)
-        # ...and the one-off's copy is the one that still strips it.
-        self.assertIn("=== 'bd_governing_origin'", code(ONEOFF_POST))
 
     def test_the_label_the_placement_rendered_is_named_by_nothing(self):
         """`LBL_BD_GOVERNING_ORIGIN` is a 1044 stub that defines no label, so
@@ -113,36 +113,32 @@ class TheRetiredFieldHasNoWriterLeftTest(unittest.TestCase):
                 offenders.append(str(path.relative_to(ROOT)))
         self.assertEqual(offenders, [])
 
-    def test_both_halves_of_the_field_are_retired_off_the_tenant(self):
+    def test_neither_half_of_the_field_ships_again(self):
         """§CW / G37: a dropped custom/Extension file is not retired. Through
         rc68 both stubs shipped EMPTY and overwrote the tenant's copy; from rc69
-        the one-off deletes both paths."""
-        from bd_retirement import assert_retired_by_oneoff
+        the one-off deleted both paths, until 🔒2173b withdrew it."""
+        from bd_retirement import assert_not_shipped
         for rel in ("custom/Extension/modules/Opportunities/Ext/Vardefs/bd_governing_origin.php",
                     "custom/Extension/modules/Opportunities/Ext/Language/en_us.bd_governing_origin.php"):
             with self.subTest(file=rel):
-                assert_retired_by_oneoff(self, rel, "Opportunity.bd_governing_origin")
+                assert_not_shipped(self, rel, "Opportunity.bd_governing_origin")
 
 
 class TheInstallRemovesRatherThanPlacesTest(unittest.TestCase):
-    def test_the_placement_writer_is_GONE_from_the_remover_that_is_left(self):
+    def test_the_placement_writer_class_no_longer_ships(self):
         """A member that can never run reads as live machinery. The package no
-        longer ships the class at all (rc69); the one-off's K-3 copy is the one
-        remover left, and it must not have grown a writer back."""
-        self.assertFalse(LAYOUT.exists(), f"{LAYOUT.name} ships again; K-3 is the one-off's")
-        layout = code(ONEOFF_POST)
-        self.assertNotIn("writeGoverningOriginField", layout)
-        # One save of the Opportunities view, and it only ever drops the marker (tests/harness.php runs it).
-        self.assertEqual(layout.count("'Opportunities', 'base', 'record')"), 1, layout)
+        longer ships the class at all (rc69); K-3 was the one-off's, withdrawn
+        with it by 🔒2173b."""
+        self.assertFalse(LAYOUT.exists(), f"{LAYOUT.name} ships again")
 
     def test_the_install_neither_writes_nor_removes_the_marker_any_more(self):
         """FAILED ON THE ORIGINAL BEHAVIOUR: post_install.php:191 called
         writeGoverningOriginField() on every install. rc57-rc68 called remove()
-        instead; rc69 calls neither - the removal is spent (one-off K-3)."""
+        instead; rc69 calls neither - the removal was spent (one-off K-3,
+        withdrawn by 🔒2173b)."""
         post = code(POST_INSTALL)
         self.assertNotIn("writeGoverningOriginField", post)
         self.assertNotIn("BdOpportunitiesLayoutExtensions", post)
-        self.assertIn("saveViewdef($bdRecord, 'Opportunities', 'base', 'record')", code(ONEOFF_POST))
 
     def test_the_package_builds_no_saved_report_at_all(self):
         """THE DUTY THAT SURVIVES rc66, and the only one that was ever about a

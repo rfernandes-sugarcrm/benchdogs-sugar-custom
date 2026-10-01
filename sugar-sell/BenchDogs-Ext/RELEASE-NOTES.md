@@ -1,6 +1,28 @@
+# (repository change, no release) — every one-off withdrawn (🔒2173b); BenchDogs-Ext unchanged at 0.9.42-rc88
+
+Owner, 2026-09-30: *"remove all the one offs I dont want that code"*. Mirrors erp-integration-sugar #172.
+**BenchDogs-Ext is not changed and keeps its version (0.9.42-rc88, deployed);** a zip CI builds from this tree is
+rc88 with a different `published_date`, and is not a release.
+
+- **Deleted:** `sugar-sell/ONEOFF-RetireBdResidue` (1.0.7), `sugar-sell/ONEOFF-MoveBdCustomerGroup` (1.0.1) and
+  `archive/` (`ONEOFF-DropBdQuoteMirrorTables`, `ONEOFF-RetireBdActionsApi`, `ONEOFF-RetireBdQuoteMirror`). They
+  remain in git history. They install no files through `copy` and ship no uninstall script, so uninstalling one
+  from a tenant restores nothing.
+- **Linter:** the vendored `mlp_lint.py` / `check_built_packages.py` are re-pinned to refactor/rafael-review
+  `b1f7dac5`, where MLP023 refuses any `ONEOFF-*` package or `oneoff_*.zip` and the `leftovers/` exemption is gone.
+- **What a tenant keeps:** Module Loader never deletes a file a later build stops shipping, so a tenant a one-off
+  never ran on keeps what it would have removed (the retired stubs, the orphaned REST stub, the Bench Dogs Quotes
+  panel, the governing marker, the customer-group pair in the Account header). Accepted under the ruling.
+- **Tests:** the retirement checks keep their package side (not in the source, not in the built zip) and drop the
+  one-off worklist half. `test_oneoff_retire_bd_residue.py` and `bench_governing_origin_retired_test.php` are
+  deleted; `bench_panel_retired_test.php` and `bd_customer_group_move_test.php` keep only their BenchDogs-Ext
+  checks. The rc45-rc64 release-stage policy body moved to `scripts/tests/fixtures/g594/`.
+- The install steps below that name a one-off are marked withdrawn; the rest of each entry stands as shipped.
+
 # 0.9.42-rc88 — Rafael's delta review of #41 @98034ea5; ONEOFF-RetireBdResidue 1.0.7
 
 rc88 = rc87 (98034ea5, zip 592a8dd0…, its own tree) + these changes only. No behaviour change in this package. Install order on a Bench tenant: ERP-Epicor >= 1.2.0 → PF → rc88 (or rc87) → ONEOFF-RetireBdResidue 1.0.7.
+*Withdrawn (owner 🔒2173b): the one-off's code is deleted. Skip this step.*
 
 - Each of the six discount overlays carries one more comment line, `// Guarded: the compiled ext outlives the class for one step of an uninstall.`, above the autoloading `class_exists` it explains (kept).
 - **ONEOFF-RetireBdResidue 1.0.7:**
@@ -18,6 +40,7 @@ rc88 = rc87 (98034ea5, zip 592a8dd0…, its own tree) + these changes only. No b
 # 0.9.42-rc87 — Rafael's review of #41 (🔒2167b); ONEOFF-RetireBdResidue 1.0.6
 
 rc87 = rc86 (12702b66, zip 627dc550…, its own tree) + the review fixes. Install order on a Bench tenant: ERP-Epicor >= 1.2.0 → PF → rc87 → ONEOFF-RetireBdResidue 1.0.6.
+*Withdrawn (owner 🔒2173b): the one-off's code is deleted. Skip this step.*
 
 - **ERP-Epicor >= 1.2.0 required (the blocker, owner 🔒2167b).** BdAdmRules imports `Sugarcrm\Sugarcrm\custom\Erp\ErpQuoteFacts`; the path include, `QUOTE_FACTS_FILE`, `factsAreNamespaced()`, `factsCompanyCode()`/`factsProductGroup()` and the pre-G530 `method_exists` branch are gone. Below 1.2.0 the manifest refuses the install, and if the class is ever missing at run time the ADM defaults are skipped with a logged error naming the 1.2.0 requirement (never a silent fallback to 1.1's global class).
 - **The REST stub is no longer shipped** (`custom/clients/base/api/BdBenchDogsActionsApi.php`); the one-off deletes the tenant's copy.
@@ -32,6 +55,7 @@ rc87 = rc86 (12702b66, zip 627dc550…, its own tree) + the review fixes. Instal
 # 0.9.42-rc86 — Rafael's MLP rules on Bench (MLP020–MLP026, 🔒2161b)
 
 rc86 = rc85 (9d9e2acc, zip 99a2aa91…, its own tree) + these changes only. No behaviour change. **Requires** unchanged; install **before** ONEOFF-RetireBdResidue 1.0.5.
+*Withdrawn (owner 🔒2173b): the one-off's code is deleted. Skip this step.*
 
 - The vendored MLP linter is re-pinned to erp-integration-sugar `refactor/rafael-review` (280e0929) with `scripts/refresh_mlp_lint.py`, and `test_mlp_lint_pin.py` floors it at MLP001–MLP026. Bench carries no baseline: its first run found 88 findings (87 × MLP026, 1 × MLP024), all fixed here.
 - MLP026: every flagged PHP comment block is one line of why, keeping its G-number / 🔒 reference (as erp-integration-sugar #164 did), in BenchDogs-Ext and both one-offs. Comments only.
@@ -622,7 +646,9 @@ Ophir; its marker would also have resolved `panel_body` to the ERP tab there.
 **Built on rc70, not rc71.** rc71 (G450, the Bench-only "Suspect" account type) is VOID (🔒 1775b: the customer does not need it; Customer Type is left alone) and was never shipped; rc72 does NOT carry `_override_en_us.bd_account_type_suspect.php`, and rc71's number is never reused.
 
 **Close path on Ophir: rc72 + the one-off, either order** (pinned both ways in
-`scripts/tests/bd_customer_group_move_test.php` L2/L5). **Known limit:** on a view
+`scripts/tests/bd_customer_group_move_test.php` L2/L5). *Withdrawn (owner 🔒2173b):
+`ONEOFF-MoveBdCustomerGroup`'s code is deleted, and L2/L5 and the
+one-off's unit cases with it.* **Known limit:** on a view
 with `panel_body` and no `panel_overview` (stock 26.1.0 GA), a first-ever placement
 by the marker falls back to the ERP tab (ERP-Core's order: named → ERP panel →
 `panel_body`); pinned in `bd_erp_layout_test.php` T3. The one-off itself uses the

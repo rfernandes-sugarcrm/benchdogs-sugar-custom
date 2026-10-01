@@ -12,8 +12,8 @@ Sugar loads this fragment by path from every tenant that ever installed one
 carrying it and Module Loader deletes nothing (§CW / G37) - merely leaving it out
 of the build would have left the old styles live and two packages styling one
 key. From rc69 (G280 / 🔒 1567, 🔒 1521) the one-off ONEOFF-RetireBdResidue
-DELETES the path on the tenant, so the package stops shipping it; the cases
-below assert both halves of that.
+DELETED the path on the tenant, so the package stops shipping it. 🔒2173b
+withdrew that one-off; the cases below assert the package side.
 """
 
 import json
@@ -59,12 +59,12 @@ echo json_encode($app_dropdowns_style['sales_stage_dom_style']);
                                   "applyFormatting": True},
                          "this package is styling stage keys again; PF owns them")
 
-    def test_the_style_fragment_is_retired_off_the_tenant(self):
-        """Not shipped, not in the built zip, and still on the one-off's
-        worklist - dropping the path alone would leave the old Bench styles live
-        on every tenant that has it."""
-        from bd_retirement import assert_retired_by_oneoff
-        assert_retired_by_oneoff(self, str(STYLE.relative_to(PACKAGE)), "the old Bench stage styles")
+    def test_the_style_fragment_never_ships_again(self):
+        """Not shipped, not in the built zip. Dropping the path alone leaves
+        the old Bench styles live on every tenant that has it; the one-off that
+        deleted it there was withdrawn (🔒2173b)."""
+        from bd_retirement import assert_not_shipped
+        assert_not_shipped(self, str(STYLE.relative_to(PACKAGE)), "the old Bench stage styles")
 
     def test_core_ships_the_styles_now(self):
         """The control: if PF stopped shipping them, the two stages would render

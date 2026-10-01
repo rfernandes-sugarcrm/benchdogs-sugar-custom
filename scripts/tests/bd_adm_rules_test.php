@@ -1239,9 +1239,9 @@ GFV);
             $check('T3 the old global name was never declared in this run', false,
                 class_exists('ErpQuoteFacts', false));
 
-            // An upgraded tenant between T2's install and the leftovers one-off:
-            // the OLD global file still sits at the literal path, beside the
-            // namespaced class. A stale stand-in (a sentinel, and no
+            // An upgraded tenant after T2's install: the OLD global file still
+            // sits at the literal path, beside the namespaced class (ERP-Epicor's
+            // leftovers one-off, which removed it, was withdrawn by 🔒2173b). A stale stand-in (a sentinel, and no
             // referenceMaxLength) is put there; the control run, without the
             // namespaced class, proves the literal include really reaches it.
             $leftoverRoot = sys_get_temp_dir() . '/bd-t2-leftover-' . getmypid();

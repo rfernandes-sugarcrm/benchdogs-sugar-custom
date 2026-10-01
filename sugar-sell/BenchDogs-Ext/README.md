@@ -15,7 +15,7 @@ and the package ships no module of its own.
 > |---|---|---|
 > | `custom/Extension/modules/Accounts/Ext/Vardefs/bd_customer_group.php` | `bd_customer_group_code` (Epicor `Customer.GroupCode`) and `bd_customer_group` (`CustGrup.GroupDesc`) on Account | Bench's customer category (REQ-19). Core has no such field, and core's schema enforcement dead-letters the Bench connector's `erp_customers` writes without the vardef |
 > | `custom/Extension/modules/Accounts/Ext/Language/en_us.bd_customer_group.php` | their two labels | — |
-> | ~~`custom/clients/base/api/BdBenchDogsActionsApi.php`~~ | **no longer shipped (rc87)** | the emptied REST stub; ONEOFF-RetireBdResidue 1.0.6+ deletes the tenant's copy |
+> | ~~`custom/clients/base/api/BdBenchDogsActionsApi.php`~~ | **no longer shipped (rc87)** | the emptied REST stub; ONEOFF-RetireBdResidue 1.0.6+ deleted the tenant's copy (*withdrawn, 🔒2173b: a tenant it never ran on keeps its copy*) |
 > | `scripts/post_execute.php`, `scripts/bd_pre_uninstall.php`, `scripts/post_uninstall.php` | the lifecycle: rebuild + have ERP-Core place the marked fields + the G294 step report; proof of life; rebuild + have ERP-Core retire the marked fields | — |
 >
 > **rc70 (🔒 1724b): this package ships NO layout code.** Its fields carry
@@ -24,7 +24,7 @@ and the package ships no module of its own.
 > takes them off once their vardef is gone). `BdAccountsLayoutExtensions.php`
 > stays on an upgraded tenant as an INERT orphan - Module Loader never deletes
 > a file a later build stops shipping (§CW / G37), and nothing rc70 ships
-> requires it; the one-off does not blank it yet (flagged for its owner).
+> requires it; nothing removes it (the one-offs were withdrawn, 🔒2173b).
 > **rc82 (G458) adds no layout WRITER either:** one sidecar record-view overlay
 > for five fields a CUSTOMER package owns (below), merged at metadata build; it
 > writes nothing to a deployed view.
@@ -37,8 +37,9 @@ and the package ships no module of its own.
 > **rc72 (G507): the Account pair's marker is `panel_overview` after Industry,
 > and both fields are `readonly`.** Moving the pair OUT of the header rc69 put it
 > in (on a view with no `panel_body`, e.g. Ophir) is not this package's job - a
-> placed field is never moved by `sync()` and this package writes no layout - it
-> is the disposable one-off `sugar-sell/ONEOFF-MoveBdCustomerGroup`.
+> placed field is never moved by `sync()` and this package writes no layout. It
+> was the disposable one-off `ONEOFF-MoveBdCustomerGroup`, *withdrawn and deleted
+> by 🔒2173b (2026-09-30)*: nothing in this repository moves the pair any more.
 >
 > `scripts/tests/test_g280_minimal_footprint.py` pins this list against the
 > source tree AND the built zip, so it cannot grow silently.
@@ -200,12 +201,19 @@ connection, `lookup_code_lists` (and, until core's short-page fix G424 is in,
 
 ## What rc69 removed, and where each piece lives now
 
+> **🔒2173b (owner, 2026-09-30): "remove all the one offs I dont want that code".** Every one-off package
+> (`ONEOFF-RetireBdResidue`, `ONEOFF-MoveBdCustomerGroup`, and the three under `archive/`) was withdrawn and
+> its code deleted, mirroring erp-integration-sugar #172, whose `mlp_lint` MLP023 now refuses any `ONEOFF-*`
+> package. The rows and steps below that name the one-off are kept as the record of what was done. Module
+> Loader never deletes a file a later build stops shipping, so a tenant the one-off never ran on keeps
+> whatever it left; that is the accepted state under the ruling.
+
 | Removed | Now owned by | Evidence the removal changes nothing a seller sees |
 |---|---|---|
 | `custom/modules/Quotes/ErpQuoteHooks/OpportunityContribution.php` | **Partial Fulfillment ≥ 1.0.41** — same path, same class, same all-alternative preserve gate (G282 / 🔒 1511) | `scripts/tests/test_governing_contribution.py` runs every scenario through rc68's Bench body and PF 1.0.43's; the amount ERP-Core writes is identical in all of them. One recorded divergence: a failed line-role READ (rc68 preserved, PF answers from the quote total) |
 | post_install's write of `erp_integration.partial_order_sales_stage` | **Partial Fulfillment ≥ 1.0.43** — the same value, `'Partial Production Ordered'`, as a reader-side default (G305 / 🔒 1519) | a tenant that already has the row keeps it; one without it behaves as though it had been written |
-| the Bench Dogs Quotes panel removal (K-2), the `bd_governing_origin` marker removal (K-3), the `zz_bd_stage_doms` fragment removal (K-5), and their helper classes `BdQuotesLayoutExtensions` / `BdOpportunitiesLayoutExtensions` | **the one-off `ONEOFF-RetireBdResidue`** (🔒 1521) | spent: the one-off ran on every QA tenant — et 1.0.0 2026-09-22 22:22Z; stock and Ophir 1.0.1 2026-09-23 00:58Z; failed 0 (G234 CLOSED) — and nothing re-adds any of them |
-| the 39 emptied `custom/Extension` stubs (retired `bd_*` vardefs, labels, hook registrations, the stage style, the country lookup label, the orphan `LBL_RECORDVIEW_PANEL_BENCHDOGS`) and the `BdKineticOpportunityHook` tombstone | **the one-off** — it DELETES each Extension path and BLANKS the tombstone | every path is still on the one-off's worklist (asserted by `scripts/tests/bd_retirement.py`) |
+| the Bench Dogs Quotes panel removal (K-2), the `bd_governing_origin` marker removal (K-3), the `zz_bd_stage_doms` fragment removal (K-5), and their helper classes `BdQuotesLayoutExtensions` / `BdOpportunitiesLayoutExtensions` | **the one-off `ONEOFF-RetireBdResidue`** (🔒 1521; *withdrawn with its code, 🔒2173b*) | spent: the one-off ran on every QA tenant — et 1.0.0 2026-09-22 22:22Z; stock and Ophir 1.0.1 2026-09-23 00:58Z; failed 0 (G234 CLOSED) — and nothing re-adds any of them |
+| the 39 emptied `custom/Extension` stubs (retired `bd_*` vardefs, labels, hook registrations, the stage style, the country lookup label, the orphan `LBL_RECORDVIEW_PANEL_BENCHDOGS`) and the `BdKineticOpportunityHook` tombstone | **the one-off** — it DELETED each Extension path and BLANKED the tombstone (*withdrawn, 🔒2173b*) | every path was on the one-off's worklist until 🔒2173b; `scripts/tests/bd_retirement.py` now asserts only that none ships again |
 | the `bd-tools/repair-ui` admin route | nothing — it re-ran K-2/K-3 (spent) and the placement `post_execute.php` already runs | the file ships empty, so the route is unregistered on upgraded tenants too |
 | the relationship / TableDictionary rebuild and the language rebuild in the lifecycle scripts | Module Loader itself (`install_extensions()` rebuilds languages before `post_execute`) | this package declares no relationship and no longer empties any language fragment |
 
@@ -224,9 +232,10 @@ Module Loader never deletes a file a later build stops shipping (§CW / G37), an
    Dogs build AFTER the one-off last ran (rc67/rc68 re-copied the empty stubs).
    It removes them and reports `REMOVED`/`already gone` per path; a second run
    reads `NOTHING LEFT TO REMOVE`.
+   *Withdrawn (owner 🔒2173b): the one-off's code is deleted. Skip this step.*
 3. Not covered by either, and inert: `BdQuotesLayoutExtensions.php` and
    `BdOpportunitiesLayoutExtensions.php` stay on an upgraded tenant's disk with
-   nothing calling them. The one-off's owner can add both to its blank list.
+   nothing calling them. (*The one-off was withdrawn, 🔒2173b; nothing removes them.*)
 
 Install order is unchanged: **ERP-Epicor → Partial Fulfillment ≥ 1.0.43 → Bench
 Dogs last.** The manifest refuses an older PF (`ERR_UW_NO_DEPENDENCY`).

@@ -22,7 +22,7 @@ ModuleInstaller::post_execute() does):
 2.  NO FRAGMENT REMOVAL. Deleting the accumulated
     en_us.zz_bd_stage_doms.php through `uninstall_languages()` was a one-shot;
     it moved to the one-off ONEOFF-RetireBdResidue (K-5), which ran on every QA
-    tenant.
+    tenant, and was withdrawn with that one-off's code by 🔒2173b.
 
 3.  NEVER INSTALL A LANGUAGE FRAGMENT AGAIN. `install_languages()` must not be
     called at all: PF owns the keys.
@@ -182,14 +182,12 @@ class PostInstallStageLanguagesTest(unittest.TestCase):
     # ---- 2/3. no fragment removal, and no new declaration -------------------
 
     def test_no_longer_removes_the_fragment_itself(self):
-        """Spent: the one-off's K-5 makes the same call, with the same id_name,
-        and ran on every QA tenant."""
+        """Spent: the one-off's K-5 did the removal and ran on every QA tenant
+        (withdrawn since, 🔒2173b)."""
         observed = self.execute()
         calls = [e for e in observed["events"]
                  if isinstance(e, list) and e[0] == "uninstall_languages"]
         self.assertEqual(calls, [])
-        oneoff = (ROOT / "sugar-sell/ONEOFF-RetireBdResidue/scripts/leftovers.php").read_text()
-        self.assertIn("'custom/Extension/application/Ext/Language/en_us.zz_bd_stage_doms.php'", oneoff)
 
     def test_declares_no_language_fragment(self):
         observed = self.execute()
@@ -255,7 +253,7 @@ class OpportunitiesOnlyRepairContractTest(unittest.TestCase):
     🔒 1567) retires the route: the api file ships empty."""
 
     def test_the_repair_endpoint_is_gone(self):
-        # rc87: the emptied endpoint file no longer ships at all; the one-off deletes the tenant's copy.
+        # rc87: the emptied endpoint file no longer ships at all (the one-off that deleted the tenant's copy is withdrawn).
         self.assertFalse((PACKAGE / "custom/clients/base/api/BdBenchDogsActionsApi.php").exists())
 
 

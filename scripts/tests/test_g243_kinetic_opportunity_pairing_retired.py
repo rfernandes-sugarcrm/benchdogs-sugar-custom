@@ -60,10 +60,11 @@ both rather than reading them:
 every QA tenant took a build carrying them, and then the one-off
 ONEOFF-RetireBdResidue DELETED the registration and BLANKED the tombstone on all
 three (et 2026-09-22 22:22Z; stock and Ophir 2026-09-23 00:58Z; failed 0). So
-rc69 ships neither, and the suite now asserts the retirement the one-off
-performs - not in the source, not in the built zip, still on its worklist, in
-the right order (registration before class) - plus that NOTHING this package
-ships registers a hook or reaches the Opportunities bean layer at all.
+rc69 ships neither. 🔒2173b (2026-09-30) withdrew the one-off and deleted its
+code, so the suite asserts that neither path is in the source or the built zip,
+plus that NOTHING this package ships registers a hook or reaches the
+Opportunities bean layer at all. A tenant that still carries either path keeps
+it; nothing in this repository removes it any more.
 
 MUTATION-VERIFIED at rc60-rc68 (each applied, suite re-run, failure observed):
   restore either ``$hook_array[...][] = array(2, ... 'pairOnSave')``
@@ -88,7 +89,7 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from bd_retirement import assert_retired_by_oneoff, oneoff_worklist
+from bd_retirement import assert_not_shipped
 
 import shared_sugar
 
@@ -111,7 +112,6 @@ MUST_OVERWRITE = (
 #: No shipped file may create an Opportunity any more. Until rc68 the one
 #: exemption was BdBenchDogsActionsApi.php (the retired account action's
 #: endpoint); rc69 ships that path EMPTY, so the exemption is gone too.
-ONEOFF_LIB = ROOT / "sugar-sell/ONEOFF-RetireBdResidue"
 
 #: ERP-Epicor lives in a sibling checkout; the control is only assertable when
 #: it is present, so that case skips rather than fails when it is not.
@@ -265,13 +265,13 @@ class TheRegistrationRegistersNothing(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, code)
 
-    def test_rc39s_registration_is_retired_off_the_tenant(self):
+    def test_rc39s_registration_never_ships_again(self):
         """An ABSENT file retires nothing: rc39's copy simply survives - which
         is exactly how the writer outlived the package that shipped it. Through
-        rc68 an empty file OVERWROTE it; from rc69 the one-off DELETES it."""
+        rc68 an empty file OVERWROTE it; from rc69 the one-off DELETED it. That
+        one-off is withdrawn (🔒2173b), so this holds only the package side."""
         rel = str(REGISTRATION.relative_to(PACKAGE))
-        assert_retired_by_oneoff(self, rel, "rc39's pairOnSave / pairOnAccountLink registration")
-        self.assertEqual(oneoff_worklist()[rel], "deleted")
+        assert_not_shipped(self, rel, "rc39's pairOnSave / pairOnAccountLink registration")
 
 
 # ── 2. The class creates nothing ────────────────────────────────────────────
@@ -280,25 +280,13 @@ class TheRegistrationRegistersNothing(unittest.TestCase):
 
 class TheClassCreatesNoOpportunity(unittest.TestCase):
     """The second half. Through rc68 the tombstone class was CALLED here against
-    a BeanFactory that counted bean creation. From rc69 the tenant's copy is
-    BLANKED by the one-off with leftovers/emptied.php, so what has to hold is that the
-    blank body defines nothing at all - and that the registration goes first, so
-    no compiled hook entry is left pointing at a class that is no longer there
-    (LogicHook::loadHookClass() fails soft on that anyway, 26.1.0
-    include/utils/LogicHook.php:203-222, but that is a log line per save)."""
+    a BeanFactory that counted bean creation. From rc69 the one-off took the
+    tenant's copy away (blanked, then from 1.0.6 deleted); 🔒2173b withdrew it,
+    so what is left to hold is that the package never ships the class again."""
 
-    def test_the_tombstone_is_retired_off_the_tenant(self):
+    def test_the_tombstone_never_ships_again(self):
         rel = str(TOMBSTONE.relative_to(PACKAGE))
-        assert_retired_by_oneoff(self, rel, "BdKineticOpportunityHook")
-        # 1.0.6: deleted through uninstall_new_files, not blanked.
-        self.assertEqual(oneoff_worklist()[rel], "deleted")
-
-    def test_the_registration_and_the_class_leave_in_one_pass(self):
-        """1.0.6: both are on the one-off's list and removed by one uninstall_new_files call; Module Loader
-        rebuilds the hooks after post_execute, so no compiled entry is left pointing at the class."""
-        work = oneoff_worklist()
-        self.assertEqual(work.get(str(TOMBSTONE.relative_to(PACKAGE))), "deleted")
-        self.assertEqual(work.get("custom/Extension/modules/Quotes/Ext/LogicHooks/bd_kinetic_opportunity.php"), "deleted")
+        assert_not_shipped(self, rel, "BdKineticOpportunityHook")
 
 
 # ── 3. Both files actually ship ─────────────────────────────────────────────
@@ -352,8 +340,8 @@ class TheRetirementShipsAndOverwrites(unittest.TestCase):
 
     def test_neither_path_ships_any_more(self):
         """Turned around at rc69: a copy entry for either path would put a body
-        back over the one-off's removal on every install, and hand Module
-        Loader a backup to restore on uninstall."""
+        back on every install, and hand Module Loader a backup to restore on
+        uninstall."""
         for target in MUST_OVERWRITE:
             with self.subTest(target=target):
                 self.assertNotIn(target, self.names)

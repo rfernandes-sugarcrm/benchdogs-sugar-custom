@@ -113,13 +113,13 @@ class QuoteLineOnlyPackageTest(unittest.TestCase):
             # 🛑 bd_deliverable_key's vardef was retired by SHIPPING ITS PATH
             # EMPTY through rc68, not by absence: it is a fragment Sugar loads by
             # path from every tenant that ever had it. From rc69 (G280 / 🔒 1567,
-            # 🔒 1521) the one-off deletes that path, so the package stops
-            # shipping it - and the one-off must still name it, or a tenant that
-            # has it keeps it.
+            # 🔒 1521) the one-off deleted that path, so the package stops
+            # shipping it. 🔒2173b withdrew the one-off: a tenant it never ran
+            # on keeps the path.
             self.assertNotIn(RETIREMENT_STUB, names)
-        from bd_retirement import assert_retired_by_oneoff
-        assert_retired_by_oneoff(self, RETIREMENT_STUB, "RevenueLineItem.bd_deliverable_key")
-        assert_retired_by_oneoff(
+        from bd_retirement import assert_not_shipped
+        assert_not_shipped(self, RETIREMENT_STUB, "RevenueLineItem.bd_deliverable_key")
+        assert_not_shipped(
             self, "custom/Extension/application/Ext/DropdownsStyle/sales_stage_dom_style.php",
             "the Bench stage styles")
 

@@ -35,7 +35,7 @@ WHY EVERY ASSERTION BELOW IS SHAPED THE WAY IT IS
     deregistered on upgrade -- which is the whole removal mechanism.  With the
     key ABSENT the fragment is never touched, the PREVIOUS install's fragment
     survives verbatim, all three modules stay registered forever, and
-    `ONEOFF-RetireBdQuoteMirror` refuses to run for exactly that reason.  A
+    `ONEOFF-RetireBdQuoteMirror` (withdrawn, 🔒2173b) refused to run for exactly that reason.  A
     package that omits the key looks cleaner in the diff and removes nothing.
 
 4.  **PHP source is comment-stripped before it is searched.**  The retirement
@@ -309,17 +309,17 @@ class LiveGoverningSurfacesSurvive(unittest.TestCase):
 
         `erp_governing` is Partial Fulfillment's field (decision 87(b) layer 2)
         and this package must not declare it. `bd_governing_origin` was retired
-        by 🔒 1044; its two stubs no longer ship, and the one-off removes both
-        paths from any tenant that still has them."""
+        by 🔒 1044; its two stubs no longer ship (the one-off that removed both
+        paths from tenants was withdrawn, 🔒2173b)."""
         for path in _shipped_php_files():
             code = _strip_php_comments(path.read_text(encoding="utf-8"))
             with self.subTest(file=str(path.relative_to(PACKAGE))):
                 self.assertNotIn(LIVE_SHARED_FLAG, code, "Bench declares PF's governing flag")
                 self.assertNotIn(LIVE_BENCH_MARKER, code, "the retired marker is back")
-        from bd_retirement import assert_retired_by_oneoff
+        from bd_retirement import assert_not_shipped
         for rel in ("custom/Extension/modules/Opportunities/Ext/Vardefs/bd_governing_origin.php",
                     "custom/Extension/modules/Opportunities/Ext/Language/en_us.bd_governing_origin.php"):
-            assert_retired_by_oneoff(self, rel, "the retired governing marker")
+            assert_not_shipped(self, rel, "the retired governing marker")
 
     def test_the_retired_header_label_is_not_resurrected(self):
         """Decision 29 / gate G5.  `erp_governing_line` is RETIRED.  Note it is
@@ -351,8 +351,8 @@ if __name__ == "__main__":  # pragma: no cover
 # manifest mentions, 0 bd01 files). Assertions that the worksheet "still ships"
 # therefore fail because the design changed, not because something regressed.
 # They also reference ONEOFF-DropRetiredQuoteMirrorTables, a package the tree no
-# longer has (both ONEOFF-RetireBdQuoteMirror and ONEOFF-DropBdQuoteMirrorTables
-# are spent and sit under archive/ since G675).
+# longer has (ONEOFF-RetireBdQuoteMirror and ONEOFF-DropBdQuoteMirrorTables were
+# spent, archived under archive/ by G675, and deleted with it by 🔒2173b).
 #
 # WHAT SURVIVES IS THE PART THAT MATTERS, and it PASSES against the current tree:
 # the structural guard that the mirror never returns — no module tree, no custom
