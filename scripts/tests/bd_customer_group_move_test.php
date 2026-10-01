@@ -1,8 +1,8 @@
 <?php
 
 /**
- * G507: the Bench Dogs customer-group fields leave the Account HEADER and land,
- * labelled and read-only, on the record's first tab ("Overview" on Ophir).
+ * G507: the Bench Dogs customer-group fields belong, labelled and read-only, on
+ * the Account record's first tab ("Overview" on Ophir), not in its HEADER.
  *
  * Run:  BD_LAYOUT_FIELDS=<ERP-Core's custom/include/ErpLayoutExtraFields.php> \
  *       php scripts/tests/bd_customer_group_move_test.php
@@ -10,11 +10,10 @@
  *       when present, else the pin under fixtures/shared-sugar)
  * Exit: 0 all passed, 1 one or more failed.
  *
- * WHAT IS REAL: the one-off's scripts/post_execute.php
- * (sugar-sell/ONEOFF-MoveBdCustomerGroup), run the way Module Loader runs it;
- * BenchDogs-Ext rc72's vardef and its post_execute / bd_pre_uninstall /
- * post_uninstall scripts; ERP-Core's ErpLayoutExtraFields; rc69's REAL writer
- * and vardef (fixtures/rc69, byte copies of the rc69 cut). WHAT IS FAKED: the
+ * WHAT IS REAL: BenchDogs-Ext rc72's vardef and its post_execute /
+ * bd_pre_uninstall / post_uninstall scripts (this build's files); ERP-Core's
+ * ErpLayoutExtraFields; rc69's REAL writer and vardef (fixtures/rc69, byte
+ * copies of the rc69 cut). WHAT IS FAKED: the
  * deployed viewdefs, the config table and the extension compiler (as in
  * bd_erp_layout_test.php: compiled vardefs change only on rebuildExtensions()).
  *
@@ -27,8 +26,19 @@
  * modules/Accounts/clients/base/views/record/record.php panel list, with
  * panel_body made a tab by ERP-Epicor's setPanelBodyAsNewTab().
  *
- * If the one-off were broken the reading would be: panels[0] (the header) still
- * lists bd_customer_group / bd_customer_group_code, or panel_overview does not.
+ * 🔁 🔒2173b (2026-09-30: "remove all the one offs I dont want that code"). Until
+ * then the move of an UPGRADED tenant's fields out of the header was the
+ * disposable one-off ONEOFF-MoveBdCustomerGroup's, and this suite ran it (cases
+ * M1-M12, L2, L5). The owner withdrew every one-off and its code went, so those
+ * cases went with it. What is left is BenchDogs-Ext's own part, and L1 says the
+ * consequence plainly: on a tenant rc69 put the fields in the header, this
+ * package does NOT move them (sync() never moves a placed field), and nothing
+ * in this repository does any more. A FRESH install places them on the first
+ * tab (L4).
+ *
+ * If this package were broken the reading would be: a fresh install does not
+ * put both fields on panel_overview after Industry (L4), or an uninstall leaves
+ * them on a view (L6, L7).
  */
 
 namespace Sugarcrm\Sugarcrm\MetaData {
@@ -205,7 +215,6 @@ namespace {
 
     $repo = realpath(__DIR__ . '/../..');
     $pkg = "$repo/sugar-sell/BenchDogs-Ext";
-    $oneOff = "$repo/sugar-sell/ONEOFF-MoveBdCustomerGroup/scripts/post_execute.php";
     $rc72Accounts = file_get_contents("$pkg/custom/Extension/modules/Accounts/Ext/Vardefs/bd_customer_group.php");
     $rc72Quotes = file_get_contents("$pkg/custom/Extension/modules/Quotes/Ext/Vardefs/bd_adm_required_fields.php");
     $rc69Accounts = file_get_contents(__DIR__ . '/fixtures/rc69/bd_customer_group.php.txt');
@@ -252,22 +261,6 @@ namespace {
         $list = json_decode($GLOBALS['bd_config']['erp_layout']['extra_fields_Accounts'] ?? '[]', true);
         sort($list);
         return $list;
-    };
-    // Run the one-off exactly as Module Loader does: require (not _once - the
-    // cases run it repeatedly) inside a method scope with $manifest extracted.
-    $runOneOff = function () use ($oneOff) {
-        $manifest = ['version' => '1.0.0-TEST'];
-        ob_start();
-        require $oneOff;
-        ob_end_clean();
-    };
-    $lastOutcome = function () {
-        foreach (array_reverse($GLOBALS['log']->lines) as [$level, $line]) {
-            if (str_starts_with($line, 'ONEOFF-MoveBdCustomerGroup')) {
-                return $line;
-            }
-        }
-        return '';
     };
     $lifecycle = function (string $script) use ($pkg) {
         $manifest = ['version' => '0.9.42-rcTEST'];
@@ -354,109 +347,6 @@ namespace {
     $check('R2 control: on a stock view (panel_body present) it put them in panel_body',
         [$HEADER_CLEAN, true], [$names($panelOf('panel_header')), in_array('bd_customer_group', $names($panelOf('panel_body')), true)]);
 
-    // ── M: the one-off, unit cases ─────────────────────────────────────────
-    $reset($ophir(array_merge($headerStock, $rc69Header)), $DEFS_WITH_BD);
-    $before = ViewdefManager::$views['Accounts'];
-    $runOneOff();
-    $after = ViewdefManager::$views['Accounts'];
-    $check('M1a the header loses both fields and keeps everything else, in order', $HEADER_CLEAN, $names($panelOf('panel_header')));
-    $check('M1b both land on panel_overview (the first tab), after Industry, name then code', $OVERVIEW_MOVED, $names($panelOf('panel_overview')));
-    $check('M1c each is a NEW labelled entry, not the header entry moved (no baked type)',
-        [['name' => 'bd_customer_group', 'label' => 'LBL_BD_CUSTOMER_GROUP'],
-         ['name' => 'bd_customer_group_code', 'label' => 'LBL_BD_CUSTOMER_GROUP_CODE']],
-        [$entry('panel_overview', 'bd_customer_group'), $entry('panel_overview', 'bd_customer_group_code')]);
-    $check('M1d exactly one write, and the Accounts caches cleared', [['Accounts'], ['Accounts/view', 'Accounts/layout'], ['Accounts']],
-        [ViewdefManager::$saves, MetaDataFiles::$cleared, TemplateHandler::$cleared]);
-    $untouched = [];
-    foreach ($after['panels'] as $i => $p) {
-        if (!in_array($p['name'], ['panel_header', 'panel_overview'], true)) {
-            $untouched[] = $p === $before['panels'][$i];
-        }
-    }
-    $check('M1e buttons and every other panel are byte-identical', [true, array_fill(0, count($before['panels']) - 2, true)],
-        [$after['buttons'] === $before['buttons'], $untouched]);
-    $check('M1f the log names the outcome', true, str_contains($lastOutcome(), '(G507): MOVED - bd_customer_group: moved from the header to panel_overview (after industry)'));
-
-    $runOneOff();
-    $check('M2 a second run writes nothing and says ALREADY CLEAN', [[['Accounts']], true],
-        [[ViewdefManager::$saves], str_contains($lastOutcome(), 'ALREADY CLEAN')]);
-
-    // An admin put both on the phone panel; rc69's header copies are still there.
-    $admin = $ophir(array_merge($headerStock, $rc69Header));
-    $admin['panels'][2]['fields'][] = ['name' => 'bd_customer_group'];
-    $admin['panels'][2]['fields'][] = ['name' => 'bd_customer_group_code'];
-    $reset($admin, $DEFS_WITH_BD);
-    $runOneOff();
-    $check('M3 admin placement elsewhere is KEPT; only the header duplicates go; nothing added to Overview',
-        [$HEADER_CLEAN, $OVERVIEW_STOCK, ['last_interaction_date', 'action_log_activity', 'phone_office', 'phone_fax',
-          'phone_alternate', 'website', 'billing_address', '', 'bd_customer_group', 'bd_customer_group_code'], true],
-        [$names($panelOf('panel_header')), $names($panelOf('panel_overview')), $names($panelOf('panel_phone_and_address')),
-         str_contains($lastOutcome(), 'RETIRED FROM HEADER')]);
-
-    // Mixed: the code is admin-placed inside a FIELDSET on the phone panel.
-    $mixed = $ophir(array_merge($headerStock, $rc69Header));
-    $mixed['panels'][2]['fields'][] = ['name' => 'bd_group_pair', 'fields' => ['bd_customer_group_code']];
-    $reset($mixed, $DEFS_WITH_BD);
-    $runOneOff();
-    $check('M4 a fieldset member counts as placed: only the name moves to Overview (after Industry)',
-        [$HEADER_CLEAN, ['parent_name', 'assigned_user_name', 'account_type', 'industry', 'bd_customer_group',
-          'last_opportunity_date', '', 'description', 'tag']],
-        [$names($panelOf('panel_header')), $names($panelOf('panel_overview'))]);
-
-    // Bench Dogs absent (stock / et shape): no vardef for either field.
-    $reset($ophir(array_merge($headerStock, $rc69Header)), ['id' => ['name' => 'id'], 'name' => ['name' => 'name']]);
-    $runOneOff();
-    $check('M5 no vardef: retired from the header, placed NOWHERE (never an orphan placement)',
-        [$HEADER_CLEAN, $OVERVIEW_STOCK, true],
-        [$names($panelOf('panel_header')), $names($panelOf('panel_overview')), str_contains($lastOutcome(), 'NOT placed (no vardef')]);
-
-    $reset($ophir(array_merge($headerStock, $rc69Header)), ['bd_customer_group' => []]);
-    $runOneOff();
-    $check('M6 vardefs that look unread (no id/name): SKIPPED, nothing written', [[], true],
-        [ViewdefManager::$saves, str_contains($lastOutcome(), 'SKIPPED')]);
-
-    $reset($stock(array_merge($headerStock, $rc69Header)), $DEFS_WITH_BD);
-    $runOneOff();
-    $check('M7 stock-shaped view: the first tab is panel_body; after Industry there',
-        [$HEADER_CLEAN, ['website', 'industry', 'bd_customer_group', 'bd_customer_group_code', 'parent_name',
-          'account_type', 'assigned_user_name', 'phone_office', 'tag', '']],
-        [$names($panelOf('panel_header')), $names($panelOf('panel_body'))]);
-
-    $noTabs = $ophir(array_merge($headerStock, $rc69Header));
-    foreach ($noTabs['panels'] as $i => $p) {
-        unset($noTabs['panels'][$i]['newTab']);
-    }
-    $reset($noTabs, $DEFS_WITH_BD);
-    $runOneOff();
-    $check('M8 no tab at all: the first non-header panel with fields', $OVERVIEW_MOVED, $names($panelOf('panel_overview')));
-
-    $reset(['buttons' => $BUTTONS, 'panels' => [['name' => 'panel_header', 'header' => true,
-        'fields' => array_merge($headerStock, $rc69Header)]]], $DEFS_WITH_BD);
-    $runOneOff();
-    $check('M9 no panel can take them: SKIPPED, the header left exactly as it was',
-        [[], array_merge($HEADER_CLEAN, ['bd_customer_group', 'bd_customer_group_code']), true],
-        [ViewdefManager::$saves, $names($panelOf('panel_header')), str_contains($lastOutcome(), 'SKIPPED')]);
-
-    $reset($ophir(array_merge($headerStock, ['bd_customer_group_code', 'bd_customer_group'])), $DEFS_WITH_BD);
-    $runOneOff();
-    $check('M10 plain-string header entries are evicted too, and placed in canonical order', [$HEADER_CLEAN, $OVERVIEW_MOVED],
-        [$names($panelOf('panel_header')), $names($panelOf('panel_overview'))]);
-
-    $noIndustry = $ophir(array_merge($headerStock, $rc69Header));
-    $noIndustry['panels'][1]['fields'] = ['parent_name', 'account_type'];
-    $reset($noIndustry, $DEFS_WITH_BD);
-    $runOneOff();
-    $check('M11 no Industry on the tab: appended at its end, name then code',
-        ['parent_name', 'account_type', 'bd_customer_group', 'bd_customer_group_code'], $names($panelOf('panel_overview')));
-
-    // A non-tab panel with fields sits ABOVE the first tab: the first TAB wins.
-    $intro = $ophir(array_merge($headerStock, $rc69Header));
-    array_splice($intro['panels'], 1, 0, [['name' => 'panel_intro', 'fields' => ['website']]]);
-    $reset($intro, $DEFS_WITH_BD);
-    $runOneOff();
-    $check('M12 a non-tab panel above the first tab is skipped: they go to panel_overview',
-        [['website'], $OVERVIEW_MOVED], [$names($panelOf('panel_intro')), $names($panelOf('panel_overview'))]);
-
     // ── L: the tenant's life, with BenchDogs-Ext's REAL scripts ────────────
     unset($GLOBALS['mv_field_defs']);
     $GLOBALS['bd_config'] = [];
@@ -473,41 +363,29 @@ namespace {
         [array_merge($HEADER_CLEAN, ['bd_customer_group', 'bd_customer_group_code']), [], ['bd_customer_group', 'bd_customer_group_code']],
         [$names($panelOf('panel_header')), array_values(array_filter(ViewdefManager::$saves, fn($m) => $m === 'Accounts')), $recorded()]);
 
-    // L2: the one-off.
-    $runOneOff();
-    $check('L2 the one-off moves them: header clean, Overview after Industry', [$HEADER_CLEAN, $OVERVIEW_MOVED],
-        [$names($panelOf('panel_header')), $names($panelOf('panel_overview'))]);
-    $afterOneOff = ViewdefManager::$views['Accounts'];
-
-    // L3: rc72 reinstalled.
+    // L3: rc72 reinstalled over that tenant.
     ViewdefManager::$saves = [];
     $lifecycle('post_execute.php');
     $check('L3 a reinstall writes no Accounts view', [], array_values(array_filter(ViewdefManager::$saves, fn($m) => $m === 'Accounts')));
 
-    // L4: a FRESH Ophir-shaped tenant, rc72 installed: the marker gives the same slots.
+    // L4: a FRESH Ophir-shaped tenant, rc72 installed: the marker places both on the first tab,
+    // after Industry, each a new labelled entry (no baked type); the header is untouched.
     $GLOBALS['bd_config'] = [];
-    $reset($ophir($headerStock), null);
+    $fresh = $ophir($headerStock);
+    $expectedOverview = $fresh['panels'][1];
+    array_splice($expectedOverview['fields'], array_search('industry', $expectedOverview['fields'], true) + 1, 0, [
+        ['name' => 'bd_customer_group', 'label' => 'LBL_BD_CUSTOMER_GROUP'],
+        ['name' => 'bd_customer_group_code', 'label' => 'LBL_BD_CUSTOMER_GROUP_CODE'],
+    ]);
+    $reset($fresh, null);
     unset($GLOBALS['mv_field_defs']);
     $lifecycle('post_execute.php');
-    $check('L4 fresh install via the rc72 marker == upgraded tenant via the one-off (same panel, same slots, same entries)',
-        [$afterOneOff['panels'][0], $afterOneOff['panels'][1]],
-        [ViewdefManager::$views['Accounts']['panels'][0], ViewdefManager::$views['Accounts']['panels'][1]]);
-
-    // L5: one-off FIRST (still on rc69 vardefs, no marker), then rc72.
-    $GLOBALS['bd_config'] = [];
-    $install([$AV . 'bd_customer_group.php' => $rc69Accounts]);
-    $reset($ophir(array_merge($headerStock, $rc69Header)), null);
-    unset($GLOBALS['mv_field_defs']);
-    $runOneOff();
-    $install([$AV . 'bd_customer_group.php' => $rc72Accounts]);
-    ViewdefManager::$saves = [];
-    $lifecycle('post_execute.php');
-    $check('L5 order-independent: one-off on rc69, then rc72 - same view, and rc72 writes nothing more',
-        [$afterOneOff['panels'][0], $afterOneOff['panels'][1], []],
+    $check('L4 a fresh install via the rc72 marker: header untouched, both on panel_overview after Industry, labelled',
+        [$fresh['panels'][0], $expectedOverview, $OVERVIEW_MOVED],
         [ViewdefManager::$views['Accounts']['panels'][0], ViewdefManager::$views['Accounts']['panels'][1],
-         array_values(array_filter(ViewdefManager::$saves, fn($m) => $m === 'Accounts'))]);
+         $names($panelOf('panel_overview'))]);
 
-    // L6: uninstall rc72 (fresh: no rc69 backup restored).
+    // L6: uninstall rc72 from that fresh tenant (no rc69 backup restored).
     $lifecycle('bd_pre_uninstall.php');
     unlink($AV . 'bd_customer_group.php');
     unlink($QV . 'bd_adm_required_fields.php');
@@ -516,8 +394,8 @@ namespace {
         [$HEADER_CLEAN, $OVERVIEW_STOCK, []],
         [$names($panelOf('panel_header')), $names($panelOf('panel_overview')), $recorded()]);
 
-    // Uninstall over a tenant whose fields are still in the header (rc72 without
-    // the one-off): sync() retires from EVERY panel, the header included.
+    // Uninstall over a tenant whose fields are still in the header (an upgraded
+    // rc69 tenant, L1): sync() retires from EVERY panel, the header included.
     $GLOBALS['bd_config'] = [];
     $install([$AV . 'bd_customer_group.php' => $rc72Accounts, $QV . 'bd_adm_required_fields.php' => $rc72Quotes]);
     $reset($ophir(array_merge($headerStock, $rc69Header)), null);

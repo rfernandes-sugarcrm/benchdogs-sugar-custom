@@ -327,7 +327,7 @@ namespace {
     // shape, which has no panel_overview, so ERP-Core's fallback (named panel ->
     // the module's ERP panel -> panel_body) puts a FIRST-EVER placement on the ERP
     // tab. Pinned so the day ERP-Core takes an ordered list of panels this flips
-    // visibly. Ophir's shape - the header, the one-off, a fresh install - is
+    // visibly. Ophir's shape - the header an upgrade leaves, a fresh install - is
     // bd_customer_group_move_test.php's.
     $erpEpicorLayouts();
     $check('T3 ERP-Epicor\'s own sync() puts every Bench field back; on a GA-shaped view (no panel_overview) the Account pair falls back to the ERP tab',

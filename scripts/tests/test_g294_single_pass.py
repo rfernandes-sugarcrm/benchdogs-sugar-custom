@@ -156,6 +156,8 @@ class ModuleInstaller {
 '''
 
 HARNESS = r'''<?php
+// SugarAutoLoader's $dirMap rule for a global class: custom/include/Foo.php (rc87: the scripts autoload ErpLayoutExtraFields).
+spl_autoload_register(function ($c) { if (is_file("custom/include/$c.php")) { require_once "custom/include/$c.php"; } });
 $MODE = MODE_JSON;
 $PKG = PKG_JSON;
 $FAIL_ON_CALL = FAIL_JSON;          // [helper, nth call] or null

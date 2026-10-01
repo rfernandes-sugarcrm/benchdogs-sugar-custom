@@ -29,92 +29,91 @@ checkouts -- the owner's, and every local run these tests have ever had -- it
 compares the pin against the real file and fails the moment they diverge,
 naming this script as the fix. Staleness is loud, never silent.
 
-Run:  python3 scripts/refresh_shared_fixtures.py
+THE PIN IS ONE COMMIT, NAMED (0.9.42-rc83)
+-----------------------------------------
+Every file is read from ONE commit's object (`git show <commit>:<path>`), never
+from the sibling's working tree and never from a branch name: a branch moves,
+and a dirty tree pins bytes no commit holds. The commit is recorded in full in
+PINNED.json. Each pin is written at the SAME relative path under
+fixtures/shared-sugar/ as in the sibling (see shared_sugar.py for why), and a
+file left there that is no longer pinned is removed, so the tree holds exactly
+the manifest.
+
+The list of files is shared_sugar.SOURCES - one list, which the tests and this
+script both read, so the two cannot disagree.
+
+Run:  python3 scripts/refresh_shared_fixtures.py <commit>
+      (the sibling checkout must have that commit; fetch it first)
 """
 from __future__ import annotations
 
 import hashlib
 import json
 import pathlib
+import re
 import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-WORKSPACE = ROOT.parent
-SIBLING = WORKSPACE / "erp-integration-sugar"
-FIXTURES = ROOT / "scripts/tests/fixtures/shared-sugar"
+sys.path.insert(0, str(ROOT / "scripts/tests"))
+import shared_sugar  # noqa: E402  (resolves the sibling even from a worktree)
 
-# Every file this repo's tests require out of the sibling checkout.
-PINNED = {
-    "QuoteOpportunityAmount.php":
-        "sugar-sell/ERP-Core/src/custom/modules/Quotes/QuoteOpportunityAmount.php",
-    "ErpOpportunityValuation.php":
-        "sugar-sell/ERP-Epicor-PartialFulfillment/custom/modules/Quotes/"
-        "ErpOpportunityValuation.php",
-    "ErpQuoteLineRollup.php":
-        "sugar-sell/ERP-Epicor-PartialFulfillment/custom/modules/Quotes/"
-        "ErpQuoteLineRollup.php",
-    "QuotePrimaryQuoteSoleEnforcer.php":
-        "sugar-sell/ERP-Core/src/custom/modules/Quotes/QuotePrimaryQuoteSoleEnforcer.php",
-    "ErpAccountCountryGuard.php":
-        "sugar-sell/ERP-Core/src/custom/modules/Accounts/ErpAccountCountryGuard.php",
-    "AccountsErpActionsApi.php":
-        "sugar-sell/ERP-Epicor/src/custom/clients/base/api/AccountsErpActionsApi.php",
-    "en_us.erp_create_opp_quote.php":
-        "sugar-sell/ERP-Epicor/src/custom/Extension/modules/Accounts/Ext/Language/en_us.erp_create_opp_quote.php",
-    "BaseErpLayout.php":
-        "sugar-sell/ERP-Core/scripts/BaseErpLayout.php",
-    "QuotesLayout.php":
-        "sugar-sell/ERP-Epicor/scripts/Modules/QuotesLayout.php",
-    "ErpQuoteFacts.php":
-        "sugar-sell/ERP-Epicor/src/custom/modules/Quotes/ErpQuoteFacts.php",
-    "ErpLayoutExtraFields.php":
-        "sugar-sell/ERP-Core/src/custom/include/ErpLayoutExtraFields.php",
-    "erp_reference.php":
-        "sugar-sell/ERP-Core/src/custom/Extension/modules/Quotes/Ext/Vardefs/erp_reference.php",
-    "account_type_dom.replace.php":
-        "sugar-sell/ERP-Core/src/custom/dropdowntemplates/account_type_dom.replace.php",
-}
+SIBLING = shared_sugar.SIBLING
+FIXTURES = shared_sugar.FIXTURES
+MANIFEST = FIXTURES / "PINNED.json"
 
 
-def upstream_commit() -> str:
-    try:
-        return subprocess.run(
-            ["git", "-C", str(SIBLING), "rev-parse", "HEAD"],
-            capture_output=True, text=True, check=True,
-        ).stdout.strip()
-    except Exception:
-        return "unknown"
+def git(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", "-C", str(SIBLING), *args], capture_output=True)
 
 
-def main() -> int:
+def main(argv: list[str]) -> int:
+    if len(argv) != 1:
+        print(__doc__.split("Run:")[-1].strip(), file=sys.stderr)
+        return 2
     if not SIBLING.is_dir():
         print(f"error: sibling checkout not found at {SIBLING}", file=sys.stderr)
         print("This script can only run where erp-integration-sugar is present.",
               file=sys.stderr)
         return 1
+    found = git("rev-parse", "--verify", "--quiet", f"{argv[0]}^{{commit}}")
+    commit = found.stdout.decode().strip()
+    if found.returncode != 0 or not re.fullmatch(r"[0-9a-f]{40}", commit):
+        print(f"error: {argv[0]} is not a commit in {SIBLING}; fetch it first",
+              file=sys.stderr)
+        return 1
 
-    FIXTURES.mkdir(parents=True, exist_ok=True)
-    manifest = {"upstream_commit": upstream_commit(), "files": {}}
-
-    for name, rel in PINNED.items():
-        src = SIBLING / rel
-        if not src.is_file():
-            print(f"error: {rel} missing from the sibling checkout", file=sys.stderr)
+    manifest = {"upstream_commit": commit, "files": {}}
+    for name, rel in shared_sugar.SOURCES.items():
+        shown = git("show", f"{commit}:{rel}")
+        if shown.returncode != 0:
+            print(f"error: {rel} is not in {commit}", file=sys.stderr)
             return 1
-        data = src.read_bytes()
-        (FIXTURES / name).write_bytes(data)
+        data = shown.stdout
+        dest = shared_sugar.pinned_path(name)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(data)
         manifest["files"][name] = {
             "source": rel,
             "sha256": hashlib.sha256(data).hexdigest(),
             "bytes": len(data),
         }
-        print(f"pinned {name}  ({len(data)} bytes)")
+        print(f"pinned {rel}  ({len(data)} bytes)")
 
-    (FIXTURES / "PINNED.json").write_text(json.dumps(manifest, indent=2) + "\n")
-    print(f"\nupstream commit: {manifest['upstream_commit']}")
+    keep = {shared_sugar.pinned_path(n).resolve() for n in shared_sugar.SOURCES}
+    keep.add(MANIFEST.resolve())
+    for stale in sorted(p for p in FIXTURES.rglob("*") if p.is_file()):
+        if stale.resolve() not in keep:
+            stale.unlink()
+            print(f"removed {stale.relative_to(FIXTURES)} (no longer pinned)")
+    for d in sorted((p for p in FIXTURES.rglob("*") if p.is_dir()), reverse=True):
+        if not any(d.iterdir()):
+            d.rmdir()
+
+    MANIFEST.write_text(json.dumps(manifest, indent=2) + "\n")
+    print(f"\nupstream commit: {commit}")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

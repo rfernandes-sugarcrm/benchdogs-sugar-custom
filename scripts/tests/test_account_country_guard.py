@@ -8,14 +8,15 @@ package ever installed the guard or its label at must be off the tenant.
 Until rc68 that meant "keep shipping an empty stub", because dropping a
 custom/Extension file from the build leaves the installed copy live on a hosted
 tenant (§CW / G37). From rc69 (G280 / 🔒 1567, 🔒 1521) the stubs are gone from
-the package and the one-off ONEOFF-RetireBdResidue deletes those paths instead;
-see bd_retirement.assert_retired_by_oneoff for the three halves checked.
+the package and the one-off ONEOFF-RetireBdResidue deleted those paths on the
+tenants it ran on. 🔒2173b withdrew that one-off, so what is pinned now is that
+the package never ships them again (bd_retirement.assert_not_shipped).
 """
 
 from pathlib import Path
 
 import shared_sugar
-from bd_retirement import assert_retired_by_oneoff, oneoff_worklist
+from bd_retirement import assert_not_shipped
 import re
 import subprocess
 import unittest
@@ -35,10 +36,11 @@ class AccountCountryGuardPackagingTest(unittest.TestCase):
         owns the billing-country guard (ErpAccountCountryGuard), and two guards
         on one field can disagree with the seller seeing whichever ran last, so
         this package registers none. Through rc68 that was an emptied stub the
-        package kept shipping; from rc69 the one-off deletes the path.
+        package kept shipping; from rc69 the one-off deleted the path (one-offs
+        withdrawn, 🔒2173b).
         """
-        assert_retired_by_oneoff(self, str(HOOK.relative_to(PKG)),
-                                 "the tenant would keep the old guard registration")
+        assert_not_shipped(self, str(HOOK.relative_to(PKG)),
+                           "the tenant would get the old guard registration back")
 
     def test_the_guard_class_no_longer_ships_and_core_owns_the_check(self):
         """0.9.42-rc65, G280 / 🔒 1507. The class had no registration left - the
@@ -66,8 +68,8 @@ class AccountCountryGuardPackagingTest(unittest.TestCase):
         it. The retirement is what has to be asserted, not the absence of a
         string in a file that may not exist.
         """
-        assert_retired_by_oneoff(self, str(LANG.relative_to(PKG)),
-                                 "the tenant would keep 'Country (Bench Dogs)'")
+        assert_not_shipped(self, str(LANG.relative_to(PKG)),
+                           "the tenant would get 'Country (Bench Dogs)' back")
 
     def test_the_retirement_names_the_exact_path_the_label_was_installed_at(self):
         # A removal only reaches the copy at its own path - so the name cannot
@@ -77,7 +79,6 @@ class AccountCountryGuardPackagingTest(unittest.TestCase):
         # ERP-Epicor's accumulated whole-array erp_lookup_type_list kept wiping
         # this key until `_override*` put it last.
         self.assertEqual(LANG.name, "_override_en_us.bd_country_lookup.php")
-        self.assertIn(str(LANG.relative_to(PKG)), oneoff_worklist())
 
     def test_no_fragment_anywhere_republishes_the_bd_country_label(self):
         offenders = sorted(str(p.relative_to(PKG)) for p in PKG.rglob("*.php")
@@ -94,12 +95,13 @@ class AccountCountryGuardPackagingTest(unittest.TestCase):
         and once ERP-Core stopped assigning the whole list it published
         'Country (Bench Dogs)' again. Bench showed it live under rc58.
 
-        BOTH paths must be off the tenant - from rc69, by the one-off.
+        BOTH paths must stay out of the package. From rc69 the one-off deleted
+        both on the tenants it ran on; it was withdrawn (🔒2173b).
         """
         for name in ("en_us.bd_country_lookup.php", "_override_en_us.bd_country_lookup.php"):
             with self.subTest(name=name):
-                assert_retired_by_oneoff(self, f"custom/Extension/application/Ext/Language/{name}",
-                                         "the tenant keeps its copy of the label")
+                assert_not_shipped(self, f"custom/Extension/application/Ext/Language/{name}",
+                                   "the tenant would get its copy of the label back")
 
 
 if __name__ == "__main__":

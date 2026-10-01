@@ -60,14 +60,11 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      # G318. The linter below is upstream's, byte for byte, at the commit
-      # scripts/mlp_lint.PINNED.json names, and has all 19 rules. A hand edit,
-      # a partial sync or a stale copy fails HERE, before the audit can pass
-      # on the strength of a linter that no longer checks what it claims to.
+      # G318: the linter is upstream's, byte for byte, at the commit scripts/mlp_lint.PINNED.json names, with all 26 rules (MLP001-MLP026).
       - name: The linter is upstream's, unedited
         run: |
           python3 scripts/tests/test_mlp_lint_pin.py -v
-          python3 scripts/mlp_lint.py --explain MLP019
+          python3 scripts/mlp_lint.py --explain MLP026
 
       # The linter's own tests. A linter nobody trusts gets disabled, and the
       # way it loses trust is a false positive, so every rule is tested on a
@@ -111,28 +108,28 @@ jobs:
       # that has moved.
       #
       # Every package under sugar-sell that has a builder, not just the main
-      # one. The disposable one-off repairs are real packages that install into
-      # a live instance, and a builder that nothing exercises is a builder that
-      # breaks quietly and is discovered at the worst moment - halfway through
-      # fixing a broken instance.
+      # one: a builder that nothing exercises breaks quietly. Since 🔒2173b
+      # (2026-09-30) that is BenchDogs-Ext alone - the one-off repair packages
+      # and archive/ were withdrawn and deleted, and the vendored linter's
+      # MLP023 refuses any ONEOFF-* package that comes back.
       # Every shipped .php file parses under the PHP the instances run. A
       # parse error in a logic hook is a white screen for every seller on the
       # next install, and nothing here looked for it: pack.php zips bytes, the
       # linter reads the ASTs its rules target, the PHP suites load the files
-      # they name (8 of the 21 shipped files are loaded by none). 27 files
-      # today, 0 failures, ~2s. archive/ is included: its one-off is excluded
-      # from build and lint on purpose, never from parsing. The count of
-      # "No syntax errors" lines is asserted against the file count — the
-      # population, not the exit code — so a wrong search reads as an error.
+      # they name (8 of the 21 shipped files are loaded by none). 26 files
+      # since 🔒2173b deleted the one-offs and archive/ (was 38), 0 failures,
+      # ~2s. The count of "No syntax errors" lines is asserted against the file
+      # count — the population, not the exit code — so a wrong search reads as
+      # an error.
       - name: Every shipped PHP file parses (php -l)
         run: |
-          find sugar-sell archive -name '*.php' -not -path '*/releases/*' -print0 | sort -z > php-files.zlist
+          find sugar-sell -name '*.php' -not -path '*/releases/*' -print0 | sort -z > php-files.zlist
           total=$(tr -cd '\0' < php-files.zlist | wc -c | tr -d ' ')
           xargs -0 -n 1 sh -c 'php -l "$0" 2>&1 || true' < php-files.zlist > php-l.out
           ok=$(grep -c '^No syntax errors detected' php-l.out || true)
           echo "php files: $total, parsed clean: $ok"
           if [ "$total" -lt 20 ]; then
-            echo "::error::only $total .php files found under sugar-sell/archive; the search is wrong"
+            echo "::error::only $total .php files found under sugar-sell; the search is wrong"
             exit 1
           fi
           if [ "$ok" -ne "$total" ]; then
@@ -186,8 +183,19 @@ jobs:
       # are NOT COLLECTED here (why, and which, at the skip ceiling below).
       # `-rs` names every skip that remains, so a new one shows up by name in
       # this log instead of as one more `s` in a row of dots.
+      #
+      # 🛑 `shell: bash` + `set -euo pipefail`, NOT the default. This job runs
+      # in a container, and there a `run:` step with no `shell:` gets
+      # `sh -e {0}` - no pipefail - so the step's status was `tee`'s and a red
+      # suite passed the job (read off main's run 36634108204: "shell: sh -e
+      # {0}"). GitHub's `bash -e -o pipefail` default applies only when
+      # `shell: bash` is named. The same hole was proven and closed in
+      # erp-integration-sugar (#124), where staging had shown "3 failed" green.
       - name: The whole test suite
-        run: python3 -m pytest scripts/tests -q -rs -m "not sugarent_tree" | tee pytest.out
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pytest scripts/tests -q -rs -m "not sugarent_tree" | tee pytest.out
 
       # A collected-count floor. Asserting the exit code alone cannot see a
       # runner that silently stops collecting - exactly how the 652-of-892 hole
@@ -311,8 +319,8 @@ jobs:
       # Raise this number only with a reason written beside it.
       - name: The suite did not go quiet
         run: |
-          # Read off the run above (tee'd to pytest.out; pipefail is GitHub's
-          # default for `run`, so tee hides no red) rather than re-running the
+          # Read off the run above (tee'd to pytest.out; that step names bash
+          # and sets pipefail itself, so tee hides no red) rather than re-running the
           # whole suite — which doubled the job's time and was fail-OPEN: a
           # pytest crash in the re-run yielded SKIPPED=0 and passed.
           [ -s pytest.out ] || { echo "::error::pytest.out is missing or empty; the suite step did not run"; exit 1; }

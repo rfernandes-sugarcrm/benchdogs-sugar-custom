@@ -66,9 +66,9 @@ class RetiredProviderDoesNotShip(unittest.TestCase):
             POLICY.exists(),
             f"{POLICY_REL} is shipping again — either the deletion was reverted "
             "or something re-created it; if a tenant genuinely still holds the "
-            "OLD deciding provider, run ONEOFF-RetireBdResidue >= 1.0.3, which "
-            "deletes every body Bench Dogs shipped there (G594) - never ship a "
-            "stub or an empty file from this package")
+            "OLD deciding provider (G594), nothing here removes it any more: the "
+            "one-off that did was withdrawn (🔒2173b). Never ship a stub or an "
+            "empty file from this package")
 
     def test_no_file_anywhere_in_the_package_defines_the_class(self):
         """The off-switch guard. A file at ANY path that declares the class

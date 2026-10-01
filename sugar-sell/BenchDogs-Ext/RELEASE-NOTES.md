@@ -1,3 +1,208 @@
+# (repository change, no release) — every one-off withdrawn (🔒2173b); BenchDogs-Ext unchanged at 0.9.42-rc88
+
+Owner, 2026-09-30: *"remove all the one offs I dont want that code"*. Mirrors erp-integration-sugar #172.
+**BenchDogs-Ext is not changed and keeps its version (0.9.42-rc88, deployed);** a zip CI builds from this tree is
+rc88 with a different `published_date`, and is not a release.
+
+- **Deleted:** `sugar-sell/ONEOFF-RetireBdResidue` (1.0.7), `sugar-sell/ONEOFF-MoveBdCustomerGroup` (1.0.1) and
+  `archive/` (`ONEOFF-DropBdQuoteMirrorTables`, `ONEOFF-RetireBdActionsApi`, `ONEOFF-RetireBdQuoteMirror`). They
+  remain in git history. They install no files through `copy` and ship no uninstall script, so uninstalling one
+  from a tenant restores nothing.
+- **Linter:** the vendored `mlp_lint.py` / `check_built_packages.py` are re-pinned to refactor/rafael-review
+  `b1f7dac5`, where MLP023 refuses any `ONEOFF-*` package or `oneoff_*.zip` and the `leftovers/` exemption is gone.
+- **What a tenant keeps:** Module Loader never deletes a file a later build stops shipping, so a tenant a one-off
+  never ran on keeps what it would have removed (the retired stubs, the orphaned REST stub, the Bench Dogs Quotes
+  panel, the governing marker, the customer-group pair in the Account header). Accepted under the ruling.
+- **Tests:** the retirement checks keep their package side (not in the source, not in the built zip) and drop the
+  one-off worklist half. `test_oneoff_retire_bd_residue.py` and `bench_governing_origin_retired_test.php` are
+  deleted; `bench_panel_retired_test.php` and `bd_customer_group_move_test.php` keep only their BenchDogs-Ext
+  checks. The rc45-rc64 release-stage policy body moved to `scripts/tests/fixtures/g594/`.
+- The install steps below that name a one-off are marked withdrawn; the rest of each entry stands as shipped.
+
+# 0.9.42-rc88 — Rafael's delta review of #41 @98034ea5; ONEOFF-RetireBdResidue 1.0.7
+
+rc88 = rc87 (98034ea5, zip 592a8dd0…, its own tree) + these changes only. No behaviour change in this package. Install order on a Bench tenant: ERP-Epicor >= 1.2.0 → PF → rc88 (or rc87) → ONEOFF-RetireBdResidue 1.0.7.
+*Withdrawn (owner 🔒2173b): the one-off's code is deleted. Skip this step.*
+
+- Each of the six discount overlays carries one more comment line, `// Guarded: the compiled ext outlives the class for one step of an uninstall.`, above the autoloading `class_exists` it explains (kept).
+- **ONEOFF-RetireBdResidue 1.0.7:**
+  - **Hardcoded dependency:** it requires `sugarai_benchdogs_ext` >= **0.9.42-rc87**. That is a literal in its pack.php, changed only with a one-off version bump; the build reads nothing outside its own package (N1). rc87 is the first release that ships none of the listed paths.
+  - **Separate sweep tree:** step 1 sweeps only `leftovers/custom/`. The three guarded paths live in `leftovers/if-bench/`, beside that tree, so the unconditional sweep never walks them (N3). They stay inside `leftovers/` because the vendored check_built_packages (G665) admits only `scripts/leftovers.php` and `leftovers/` in a one-off.
+  - **Subtrees named by path:** each guarded subtree is `leftovers/if-bench/<path>/<basename>` (N4). Before, they were matched by position, and two orders of the list deleted another writer's policy beside the Bench adapter.
+  - **No "0" segments:** the build refuses a listed path with a segment named "0". Sugar's `dir_get_files` (`while ($e = $d->read())`) stops reading a directory at such an entry, which is also why 1.0.6's sweep happened not to list `if-bench/0/`.
+  - **README:** rewritten for what it does now (N5). It notes that a tenant with leftovers but no Bench Dogs package (et) can no longer run it (N2).
+- CI: the suite step is main's text (#37: `shell: bash`, `set -euo pipefail`), replacing rc87's own wording of the same fix.
+- Tests:
+  - The harness has 62 checks. New checks: the build reads no sibling version, the dependency bounds, the sweep reaches exactly the plain list, each guarded call reaches one path, all six orders of the guarded list, and the "0" refusal.
+  - Red first on 1.0.6: the build fails without `../BenchDogs-Ext`, the sweep tree holds the three guarded paths, and 4 of 6 orders delete the wrong file.
+  - Mutations: 9/9 killed.
+
+# 0.9.42-rc87 — Rafael's review of #41 (🔒2167b); ONEOFF-RetireBdResidue 1.0.6
+
+rc87 = rc86 (12702b66, zip 627dc550…, its own tree) + the review fixes. Install order on a Bench tenant: ERP-Epicor >= 1.2.0 → PF → rc87 → ONEOFF-RetireBdResidue 1.0.6.
+*Withdrawn (owner 🔒2173b): the one-off's code is deleted. Skip this step.*
+
+- **ERP-Epicor >= 1.2.0 required (the blocker, owner 🔒2167b).** BdAdmRules imports `Sugarcrm\Sugarcrm\custom\Erp\ErpQuoteFacts`; the path include, `QUOTE_FACTS_FILE`, `factsAreNamespaced()`, `factsCompanyCode()`/`factsProductGroup()` and the pre-G530 `method_exists` branch are gone. Below 1.2.0 the manifest refuses the install, and if the class is ever missing at run time the ADM defaults are skipped with a logged error naming the 1.2.0 requirement (never a silent fallback to 1.1's global class).
+- **The REST stub is no longer shipped** (`custom/clients/base/api/BdBenchDogsActionsApi.php`); the one-off deletes the tenant's copy.
+- **One body for the six discount overlays:** `custom/src/BenchDogs/BdHiddenFields::strip(array $panels, array $names, array $panelNames): array`, with its try/catch inside. Each overlay is three lines, calls it by its full name (no `use`, the fragments are concatenated), and runs only on a panel list and only when the class autoloads.
+- **Admin > Quotes Configuration** saves the summary columns into the deployed views, but the overlays strip the discount fields at render: an admin who re-adds Discount sees it saved and never drawn on a Bench tenant.
+- **The picker option sources are static methods on BdAdmRules** (`'function' => array('name' => 'Sugarcrm\\Sugarcrm\\custom\\BenchDogs\\BdAdmRules::leadSourceOptions')`, no include). Checked against Sugar 26.1: `getOptionsFromVardef` → `getFunctionValue` (no function_bean) resolves the string with `is_callable`/`call_user_func_array`, and ModuleScanner accepts a string name (an array name is refused as "wrong format"). `custom/modules/Quotes/BdAdmLookupOptions.php` is retired; the one-off deletes it.
+- **ErpLayoutExtraFields is autoloaded** in post_execute and post_uninstall (a plain `class_exists`); the step report's MISSING and NOT-LOADED outcomes are one: "MISSING: class ErpLayoutExtraFields".
+- **pack.php** narrative comments are one line each; `mlp-lint.yml` says 26 rules and explains MLP026; the carried linter is refactor/rafael-review's at cf52eace.
+- **ONEOFF-RetireBdResidue 1.0.6** (Rafael's one-off layout): the zip is `scripts/post_execute.php`, `scripts/leftovers.php` and an empty placeholder under `leftovers/` per listed path; everything is DELETED through `uninstall_new_files` (nothing is blanked, `emptied.php` is gone), the three paths other writers share (the stage style, the release-stage policy, the order adapter) only when they hold a Bench body, each from its own placeholder subtree; the retired directories through `uninstall_customizations`; K-2 and K-3 inline through `ViewdefManager`, no cache calls (Module Loader rebuilds after post_execute). It requires the Bench Dogs release built from the same tree.
+- Tests: the ADM suite runs its refusal checks below 1.2.0 (O1-O6) and a getFunctionValue probe (M9); the overlay suite checks the new shape (I4-I8); the one-off harness runs the real pack.php zip over a census-seeded tenant (56 checks). Mutations: item 1 4/4, overlays 11/11, option sources 5/5, one-off 15/15, autoload 1/1.
+
+# 0.9.42-rc86 — Rafael's MLP rules on Bench (MLP020–MLP026, 🔒2161b)
+
+rc86 = rc85 (9d9e2acc, zip 99a2aa91…, its own tree) + these changes only. No behaviour change. **Requires** unchanged; install **before** ONEOFF-RetireBdResidue 1.0.5.
+*Withdrawn (owner 🔒2173b): the one-off's code is deleted. Skip this step.*
+
+- The vendored MLP linter is re-pinned to erp-integration-sugar `refactor/rafael-review` (280e0929) with `scripts/refresh_mlp_lint.py`, and `test_mlp_lint_pin.py` floors it at MLP001–MLP026. Bench carries no baseline: its first run found 88 findings (87 × MLP026, 1 × MLP024), all fixed here.
+- MLP026: every flagged PHP comment block is one line of why, keeping its G-number / 🔒 reference (as erp-integration-sugar #164 did), in BenchDogs-Ext and both one-offs. Comments only.
+- MLP024: `BdAdmRules` moved from `custom/modules/Quotes/` to `custom/src/BenchDogs/BdAdmRules.php` as `Sugarcrm\Sugarcrm\custom\BenchDogs\BdAdmRules`. Sugar autoloads it: the two before_save hooks (Quotes defaults, Accounts Cust. Group name) register the class with no file, and `BdAdmLookupOptions.php` imports it instead of `require_once`-ing a path. G840's ADM quote defaults are unchanged (bd_adm_rules_test.php, all three ERP-Epicor shapes).
+- An upgraded tenant keeps the old `custom/modules/Quotes/BdAdmRules.php` (Module Loader never deletes a file a later build stops shipping); nothing rc86 ships loads it. ONEOFF-RetireBdResidue **1.0.5** blanks it, only once rc86's class is on disk.
+- Tests: the hook checks (R11, N1, test_g243's allowed list) now read the namespaced class at its PSR-4 path; each was shown red against a broken registration (class, method, path) before the move.
+
+# 0.9.42-rc85 — G848 extended: the list preview, and Subtotal / Total (🔒2159b)
+
+rc85 = rc84 (95692e90, zip d3243486…, its own tree) + these three files only. **Requires** unchanged.
+
+- `custom/Extension/modules/Quotes/Ext/clients/base/views/preview/_override_zz_bd_hide_seller_discounts.php`: the Quotes LIST preview draws no `deal_tot` ("Order Discount"); the same body as rc84's five overlays (six now; the shared-body marker reads "every file").
+- `custom/Extension/modules/Quotes/Ext/Language/_override_en_us.bd_hide_seller_discounts.php`: `LBL_NEW_SUB` = "Subtotal" (ERP-Core: "Line Items Discounted Subtotal"; also the Bench quote PDF's subtotal caption).
+- `custom/Extension/modules/Products/Ext/Language/_override_en_us.bd_hide_seller_discounts.php`: `LBL_ERP_DISCOUNTED_TOTAL` = "Total" (ERP-Core: "Discounted Total", the grid column).
+- en_us only (other languages keep ERP-Core's text); `_override` merges after ERP-Core's plain files in either install order.
+- Tests: `bd_seller_discounts_hidden_test.php` 136 checks (rc84: 109): section J (the stock-shaped preview), section K (ERP-Core's two language files pinned from 280e0929, merged with the Bench overrides in Sugar's order, the Bench file OLDER than ERP-Core's). 20 red with the three files absent; 7/7 mutations killed.
+- Not done (carried): mobile viewdefs, PDF templates' discount rows, Admin > Quotes Configuration's discount_field, no API-side refusal (🔒2151b (d)).
+
+# 0.9.42-rc84 — G848: a Bench Dogs seller sees no discount on a quote (🔒2151b)
+
+Built on rc83 (#40, 2ad8de2, open against #38's branch; #39 is merged into
+#38, and #38 and #36 are open against main): rc84 = rc83 + this change only.
+**Requires** ERP-Epicor ≥ 1.1.134 and Partial Fulfillment ≥ 1.0.50
+(unchanged). Every name hidden here was read on ERP-Epicor 1.1.179
+(erp-integration-sugar staging-2) and 1.2.0 (280e0929); a name a tenant does
+not serve is simply not there to hide.
+
+**The order** (owner, 2026-09-30 21:17Z, 🔒2151b): *"benchdog dont want seller
+to apply discount so both the discount pannel and the line item doscounts
+should be not vissible on benchdog MLP"*. His screenshot (benchdogs-sandbox,
+quote "1-800-FLOWERS - Sep 30, 2026") showed ERP-Epicor's **DISCOUNT** panel
+("Apply a discount", "Whole order", % / amount, 0.00, Apply) and the totals
+strip's **"Order Level Discount $0.00"**; the grid's **"Line Discount"** column
+sits right of Stock Availability (G175's served order).
+
+**Measured before building** (erp-integration-sugar staging-2 fa3a861a and the
+1.2.0 pin 280e0929 agree on every name; SugarEnt 26.1.0 for stock):
+
+| Surface (view) | Field / panel | Label a seller reads | Written by |
+|---|---|---|---|
+| Quotes `record` (and create) | panel `LBL_RECORDVIEW_PANEL_ERP_DISCOUNT`, field `erp_discount_panel` (type `erp-discount`) | "Discount" / "Apply a discount" | ERP-Epicor `QuotesLayout::erpDiscountPanel()` |
+| Quotes `quote-data-grand-totals-header` | `deal_tot` | "Order Level Discount" (`LBL_ERP_DOCUMENT_DISCOUNT_AMOUNT`) | ERP-Epicor `erpTotalsHeaderFields()` (🔒 1544a) |
+| Quotes `quote-data-grand-totals-footer` | `erp_document_discount_amount` (drawn only when ≠ 0) | "Order Level Discount" | ERP-Epicor `erpTotalsFooterFields()` |
+| Products `quote-data-group-list` (rows, edit row, column headers) | fieldset `discount_field` = `discount_amount` + `discount_select` | "Line Discount" (`LBL_ERP_LINE_DISCOUNT`) | stock, relabelled by ERP-Core (🔒 1439) |
+| Products `record` (the line page the line number opens, G605) | fieldset `discount_field` | "Discount Amount" | stock |
+
+- **Five new files, one body**, each
+  `custom/Extension/modules/<Module>/Ext/clients/base/views/<view>/_override_zz_bd_hide_seller_discounts.php`:
+  sidecar view overlays that take those entries out of the served view (from
+  every panel, and from a fieldset one level down), plus - defensively - the
+  same quote-level or line-level discount figures if an admin placed one
+  (`deal_tot_usdollar`, `deal_tot_discount_percentage`, `discount`,
+  `erp_document_discount_percent`; `discount_rate_percent`,
+  `discount_amount_usdollar`, `discount_amount_signed`, `deal_calc`,
+  `deal_calc_usdollar`). The Discount panel goes once it is empty; an admin's
+  own field in it keeps it. **Never** `discount_price` or `discount_usdollar`:
+  those are the Unit Price.
+- **Hide only.** No field, setting or dropdown value (🔒1810b); no deployed
+  viewdef written (Sugar includes the overlay after the deployed viewdef at
+  every metadata build, and `ViewdefManager::loadViewdef()` skips `.ext.`
+  paths, so ERP-Epicor's installer, Quotes Configuration and Studio never save
+  the hidden view). The quote's nested fetch list is never entered, so lines are
+  still read with `discount_amount` / `discount_select`, and a discount Epicor
+  sends still lands in the line and quote totals. ERP-Epicor's SetVisibility
+  rules for the panel are left as deployed (Sugar's action returns at a missing
+  target). The ERP panel's Discount Warning (`erp_discount_refusal`, read-only)
+  stays. No server-side refusal of an API-typed discount (🔒2151b (d)).
+- **Either install order; uninstall restores.** `_override` merges after any
+  plain fragment in the same directory. Module Loader rebuilds every module's
+  extensions on install and on uninstall and clears the API metadata cache, so
+  the lifecycle scripts are unchanged (their Accounts/Quotes rebuild is for the
+  vardef sync, not for these). Stock and et (no Bench package) keep every
+  discount field.
+- **Tests.** `scripts/tests/bd_seller_discounts_hidden_test.php` (109 checks,
+  wired into `test_php_suites.py`): each overlay run the way
+  `MetaDataFiles::getClientFileContents()` runs it (method scope, up to three
+  inclusions), on the views a Bench tenant serves built from ERP-Epicor's own
+  definitions read off the pinned `QuotesLayout` by reflection, and compiled
+  the way `ModuleInstaller::mergeExtensionFiles()` compiles a sidecar directory
+  (tags stripped, `_override` last) beside a sibling fragment that puts a
+  discount back. **Red first** on rc83: 75 of 109 fail (A1 the Discount panel
+  is there, B1 `deal_tot`, C1, D1 `discount_field`, E1). **Mutations, 14 of 14
+  killed** (applied to all five bodies): removal short-circuited; fieldset
+  members kept; panels or fields left keyed (a JSON object, not a list);
+  the sweep widened into the fetch list; the empty Discount panel kept;
+  `deal_tot` / `erp_document_discount_amount` / `erp_discount_panel` /
+  `discount_select` dropped from a list; `$viewdefs` assigned when nothing
+  changed; no `unset`; the panel name dropped; a plain (non-`_override`)
+  name. Sugar 26.1.0's own ModuleScanner: no finding on the five;
+  `mlp_lint.py` source and built zip clean.
+- **Proposed, not done:** with no discount visible, "Line Items Discounted
+  Subtotal" (ERP-Core `LBL_NEW_SUB`) and the grid's "Discounted Total"
+  (`LBL_ERP_DISCOUNTED_TOTAL`) still say "Discounted". Relabelling them is a
+  language override this package would have to own; left for the owner.
+
+# 0.9.42-rc83 — G840: the ADM quote defaults keep working on ERP-Epicor 1.2.0, whose ErpQuoteFacts is namespaced
+
+Built on rc82 (#39, bc2d24a; stacked on rc81 #38; neither on main yet): rc83 =
+rc82 + #40 (c0b7030, the one shipped change) + the test re-pin below.
+**Requires** ERP-Epicor ≥ 1.1.134 and Partial Fulfillment ≥ 1.0.50 (unchanged).
+It runs on BOTH sides of ERP-Epicor 1.2.0, so it goes on a tenant BEFORE 1.2.0
+(🔒2142b); on 1.1.x it behaves exactly as rc82.
+
+**The defect** (G840): ERP-Epicor 1.2.0 (erp-integration-sugar
+`refactor/rafael-review` @ 280e0929, tree 206337c9; T2 of the Rafael review,
+#158) moves ErpQuoteFacts to `custom/src/Erp` as
+`Sugarcrm\Sugarcrm\custom\Erp\ErpQuoteFacts`, autoloaded, deletes the old
+`custom/modules/Quotes/ErpQuoteFacts.php` on the tenant
+(ONEOFF-RemoveErpLeftovers) and ships no global alias. rc82's BdAdmRules asked
+only for the global class (autoload off), then the old literal path - so on
+1.2.0 every ADM quote default (Reference, Project, G809's Lead Source / Lead
+Type / Project / Campaign + Event) would silently stop, logging
+"custom/modules/Quotes/ErpQuoteFacts.php is missing" on each save.
+
+- **`BdAdmRules::quoteFactsAvailable()`** asks for the namespaced class first,
+  WITH autoload, and only then the global class at its literal path, so a
+  leftover old file beside the namespaced class is never included. The three
+  calls (`companyCode`, `productGroup`, `referenceMaxLength`) go through
+  helpers that name one class or the other literally: no `class_alias`
+  (ModuleScanner blacklist), no class held in a variable (MLP017).
+- **Nothing else here names what 1.2.0 moved.** All 74 classes 1.2.0 puts in
+  `custom/src/Erp`, and every `custom/...` path this package names, were
+  checked against Sugar staging (a7737052, ERP-Epicor 1.1.179) and 280e0929:
+  only ErpQuoteFacts. No field type, view or layout this package names is
+  removed; the provider paths under `custom/modules/Quotes/ErpQuoteHooks/` are
+  unchanged; the package id `sugarai_erp_epicor` is the same, and 1.2.0
+  satisfies the ≥ 1.1.134 dependency.
+- **Tests re-pinned to 1.2.0.** `fixtures/shared-sugar/` is now taken from ONE
+  commit (280e0929, named in full in `PINNED.json`) and mirrors the sibling's
+  paths; the four moved pins (QuoteOpportunityAmount,
+  QuotePrimaryQuoteSoleEnforcer, ErpAccountCountryGuard - ERP-Core's - and
+  ErpQuoteFacts - ERP-Epicor's) are loaded through ERP-Core's own autoloader
+  stand-in (`tests/support/sugar_autoloader.php`, pinned too), never by
+  require. The global ErpQuoteFacts a 1.1 tenant still runs is pinned to its
+  last commit (a7737052, 1.1.179) under `fixtures/erp-epicor-1.1/`.
+  `bd_adm_rules_test.php` runs three times: 1.1's global class (121 checks),
+  no class (4), 1.2.0's namespaced class through the stand-in (124).
+- **Red first.** Against a sibling checkout of 280e0929 the drift guard failed
+  12 of its 13 pins (4 moved, 8 changed). With rc82's BdAdmRules (bc2d24a) and
+  the 280e0929 pin: 1.2.0 run 25 of 124 fail, 1.1 run 2 of 121, no-class run 1
+  of 4; with rc83, 0 in all three. Five controls fire and revert: a byte flipped
+  in a 1.2.0 pin and in the 1.1 pin, a pin path put back to the old location,
+  the harness naming the global class, the pinned enforcer removed.
+- Whole suite (`-m "not sugarent_tree"`): with the 280e0929 sibling 363
+  passed, 4 skipped; pins only (CI's shape) 358 passed, 9 skipped (the nine the
+  workflow names).
+
 # 0.9.42-rc82 — G458: the Epicor contact Function, Role and primary flags are SHOWN, read-only, on the Contacts record view
 
 Built on rc81 (#38, a14f18f - the tree installed on benchdogs-dev / sandbox;
@@ -441,7 +646,9 @@ Ophir; its marker would also have resolved `panel_body` to the ERP tab there.
 **Built on rc70, not rc71.** rc71 (G450, the Bench-only "Suspect" account type) is VOID (🔒 1775b: the customer does not need it; Customer Type is left alone) and was never shipped; rc72 does NOT carry `_override_en_us.bd_account_type_suspect.php`, and rc71's number is never reused.
 
 **Close path on Ophir: rc72 + the one-off, either order** (pinned both ways in
-`scripts/tests/bd_customer_group_move_test.php` L2/L5). **Known limit:** on a view
+`scripts/tests/bd_customer_group_move_test.php` L2/L5). *Withdrawn (owner 🔒2173b):
+`ONEOFF-MoveBdCustomerGroup`'s code is deleted, and L2/L5 and the
+one-off's unit cases with it.* **Known limit:** on a view
 with `panel_body` and no `panel_overview` (stock 26.1.0 GA), a first-ever placement
 by the marker falls back to the ERP tab (ERP-Core's order: named → ERP panel →
 `panel_body`); pinned in `bd_erp_layout_test.php` T3. The one-off itself uses the

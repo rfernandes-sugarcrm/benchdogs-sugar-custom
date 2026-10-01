@@ -73,8 +73,9 @@ line is ordered, so on the FINAL release PF's `policy_valid` branch wins and
 G346's Closed Won is never reached. benchdogs-dev is that tenant (rc60 -> rc68
 kit -> rc69 -> rc72 -> rc74): quote #8's completing order 27600 left its
 Opportunity at Partial Production Ordered / 90. Case E below runs PF's real
-resolver over that exact body (pinned by the residue one-off, which deletes it
-from 1.0.3 on); `ONEOFF-RetireBdResidue` >= 1.0.3 is the fix, not a shipped stub.
+resolver over that exact body (fixtures/g594). The fix was deleting the path:
+`ONEOFF-RetireBdResidue` >= 1.0.3 did that until the owner withdrew every one-off
+(🔒2173b), so nothing in this repository removes it from a tenant any more.
 """
 
 from __future__ import annotations
@@ -98,10 +99,9 @@ ROOT = HERE.parents[1]
 RC65_STUB = HERE / "fixtures/rc65/OpportunityReleaseStagePolicy.rc65.php"
 
 #: G594: the body BenchDogs-Ext rc45-rc64 shipped (md5 e5e6e3ff..., the one
-#: benchdogs-dev still holds from rc60). Pinned ONCE, by the residue one-off that
-#: deletes it (1.0.3 step 4c), and read from there so the two cannot drift apart.
-RC45_RC64_BODY = ROOT / ("sugar-sell/ONEOFF-RetireBdResidue/tests/fixtures/release-stage-policy/"
-                         "OpportunityReleaseStagePolicy.rc45-rc64.php.txt")
+#: benchdogs-dev still holds from rc60). Moved here from the withdrawn residue
+#: one-off's fixtures (🔒2173b); provenance in fixtures/g594/PROVENANCE.md.
+RC45_RC64_BODY = HERE / "fixtures/g594/OpportunityReleaseStagePolicy.rc45-rc64.php.txt"
 
 POLICY_REL = "custom/modules/Quotes/ErpQuoteHooks/OpportunityReleaseStagePolicy.php"
 
@@ -337,7 +337,7 @@ class ProviderAbsentMatchesProviderNull(unittest.TestCase):
 
     def test_e_deleting_it_is_what_reaches_closed_won(self):
         """E, against B. The same final release with NOTHING at the path - what
-        ONEOFF-RetireBdResidue 1.0.3 leaves behind - reaches Closed Won / 100,
+        deleting the residue leaves behind - reaches Closed Won / 100,
         while the partial release is unchanged. So deleting the residue changes
         exactly the one decision G594 is about."""
         self.assertNotEqual(self.with_rc45_rc64["final"]["decision"], self.with_no_file["final"]["decision"])
