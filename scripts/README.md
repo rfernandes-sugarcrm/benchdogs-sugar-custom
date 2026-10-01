@@ -21,9 +21,10 @@ python3 scripts/mlp_lint.py --zips-from sugar-sell
 ```
 
 Every directory under `sugar-sell` with a `pack.php` is a package the loader
-will be handed, the disposable one-off repairs included, so build them all.
-CI does the same. A builder nothing exercises is one that breaks quietly and is
-found halfway through fixing a broken instance.
+will be handed, so build them all. CI does the same. A builder nothing exercises
+is one that breaks quietly. Since 🔒2173b (2026-09-30) that is BenchDogs-Ext
+alone: the disposable one-off repair packages were withdrawn and deleted, and
+`mlp_lint` MLP023 refuses any `ONEOFF-*` package or `oneoff_*.zip`.
 
 `pack.php` needs PHP's `zip` extension. The stock `php:8.2-cli` image does not
 ship it; `composer:2` does, which is the quickest way to build locally.

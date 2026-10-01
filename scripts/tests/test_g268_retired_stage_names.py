@@ -28,9 +28,14 @@ by the cloud scanner). The retired pair goes with the file that carried it.
 🔁 rc69 (G280 / 🔒 1567, 🔒 1521): that one-shot deletion MOVED to the one-off
 ONEOFF-RetireBdResidue (its K-5, the same uninstall_languages() call with the
 same id_name and template path), which ran on every QA tenant; and the emptied
-en_us.bd_stage_doms.php stopped shipping (the one-off deletes that path too).
+en_us.bd_stage_doms.php stopped shipping (the one-off deleted that path too).
 The model below therefore serves Bench's fragment as the EMPTY body every tenant
 carried through rc68 - equivalent, for the merge, to the file being gone.
+
+🔁 🔒2173b (2026-09-30) WITHDREW that one-off and deleted its code. It had run on
+every QA tenant; a tenant it never ran on keeps the accumulated fragment, and
+nothing in this repository removes it any more. What this package still owes is
+that its own install neither declares stage keys nor installs languages.
 
 The cases below EXECUTE Sugar's own merge: the fragments are concatenated with a
 verbatim copy of `getExtensionFileContents()` (drift-checked against the source
@@ -266,8 +271,8 @@ class RetiredStageNames(unittest.TestCase):
                                  f"{name} drifted from Partial Fulfillment; re-pin it")
 
     def fragments(self):
-        # rc65-rc68 shipped this fragment EMPTY; rc69 ships nothing and the
-        # one-off deletes it. Both contribute nothing to the merge.
+        # rc65-rc68 shipped this fragment EMPTY; rc69 ships nothing (the
+        # one-off deleted it, until 🔒2173b). Both contribute nothing to the merge.
         frags = {"bd_stage_doms": "<?php\n",
                  "erp_replace": ERP_LEGACY}
         if self.pf:
@@ -337,20 +342,11 @@ class RetiredStageNames(unittest.TestCase):
         self.assertEqual(observed["style"], {"sales_stage_dom_style": {"SEED": 1}},
                          "a shipped fragment still declares a stage style")
 
-    def test_the_removal_is_wired_into_the_one_off(self):
-        """The behaviour above only happens if something actually calls it.
-        Through rc68 that was this package's post_install; from rc69 it is the
-        one-off's K-5, which ran on every QA tenant. Pins the id_name and the
-        template path, because a different one deletes a different file - and
-        that post_install no longer does it (or, worse, INSTALLS languages)."""
-        oneoff = (ROOT / "sugar-sell/ONEOFF-RetireBdResidue/scripts/post_execute.php").read_text()
-        code = re.sub(r"/\*.*?\*/", "", oneoff, flags=re.S)
-        code = re.sub(r"(^|\s)//[^\n]*", r"\1", code)
-        # 1.0.6: the fragment and its template are plain deletions from the one-off's list.
-        from bd_retirement import oneoff_worklist
-        self.assertEqual(oneoff_worklist().get("custom/Extension/application/Ext/Language/en_us.zz_bd_stage_doms.php"), "deleted")
-        self.assertEqual(oneoff_worklist().get("custom/dropdowntemplates/bd_stage_doms.append.php"), "deleted")
-        self.assertIn("uninstall_new_files", code)
+    def test_post_install_never_installs_languages(self):
+        """Through rc68 this package's post_install deleted the accumulated
+        fragment; from rc69 the one-off's K-5 did, and 🔒2173b withdrew that
+        one-off. What this package still owes: its post_install neither does the
+        removal nor, worse, INSTALLS languages."""
         post = (PKG / "scripts/post_execute.php").read_text()
         post = re.sub(r"/\*.*?\*/", "", post, flags=re.S)
         post = re.sub(r"(^|\s)//[^\n]*", r"\1", post)

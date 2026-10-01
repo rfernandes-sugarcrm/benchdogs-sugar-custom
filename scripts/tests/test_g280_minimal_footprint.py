@@ -24,8 +24,14 @@ WHAT SHIPS (0.9.42-rc69), and why each item cannot live upstream:
   scripts/post_execute.php, bd_pre_uninstall.php, post_uninstall.php
       the lifecycle of the above.
 
-Everything else is REMOVED, and every removed path has a named route off a
-tenant that already carries it - asserted below, not assumed.
+Everything else is REMOVED, and every removed path is held out of the source
+and the built zip - asserted below, not assumed. Through 2026-09-30 each also
+had a named route off a tenant that already carried it (the one-off
+ONEOFF-RetireBdResidue's worklist, or "inert", or "Partial Fulfillment owns the
+path"). 🔒2173b withdrew every one-off and deleted its code, so a tenant that
+still carries a removed path keeps it: Module Loader never deletes a file a
+later build stops shipping. That is the owner's accepted state, and the reasons
+below are kept as the record of why each path went.
 
 GROWN ONCE SINCE, WITH CONSENT: G380 / G381 (🔒 1705b, the per-item consent
 🔒 1520 asks for) add files for Bench Dogs' ADM company's required quote values.
@@ -48,8 +54,6 @@ MUTATION-VERIFIED (each applied, this file re-run, the named case observed red):
       -> test_post_install_runs_exactly_the_two_steps
   lower the Partial Fulfillment floor back to 1.0.40
       -> test_partial_fulfillment_is_new_enough_to_own_what_this_stopped_doing
-  drop an entry from the one-off's Extension worklist
-      -> test_every_removed_path_has_a_route_off_the_tenant
 """
 from __future__ import annotations
 
@@ -62,7 +66,7 @@ import tempfile
 import unittest
 import zipfile
 
-from bd_retirement import PKG, built_zip, oneoff_worklist, zip_names
+from bd_retirement import PKG, built_zip, zip_names
 
 #: The whole package. A new entry here is a new override on a customer tenant,
 #: and under 🔒 1520 it needs the owner's item-by-item consent first.
@@ -142,8 +146,7 @@ KEPT = {
     # item doscounts should be not vissible on benchdog MLP"; the coordinator's
     # assumption (c) records that it supersedes 🔒 1508's trim for this item).
     # Five sidecar overlays, one body: they HIDE (no field, no setting, no
-    # deployed-view write), only in this package, under a name
-    # ONEOFF-RetireBdResidue does not delete.
+    # deployed-view write), only in this package.
     "custom/Extension/modules/Quotes/Ext/clients/base/views/record/_override_zz_bd_hide_seller_discounts.php":
         "G848: ERP-Epicor's Discount panel (erp_discount_panel) off the quote record/create view",
     "custom/Extension/modules/Quotes/Ext/clients/base/views/quote-data-grand-totals-header/"
@@ -166,15 +169,16 @@ KEPT = {
         "G848: ERP-Core's 'Discounted Total' grid column (LBL_ERP_DISCOUNTED_TOTAL) reads 'Total' on Bench",
 }
 
-ONEOFF ="the one-off deletes or blanks it (🔒 1521); re-run it after installing rc69"
+ONEOFF = ("the one-off ONEOFF-RetireBdResidue deleted it (🔒 1521) until 🔒2173b "
+          "withdrew it; a tenant it never ran on keeps its copy")
 INERT = ("nothing shipped calls it any more; the copy an upgraded tenant keeps is "
-         "unreachable (the one-off does not blank it yet - flagged for its owner)")
+         "unreachable")
 PF_OWNS = ("Partial Fulfillment ships the SAME path (>= 1.0.41 with the G282 preserve "
            "gate); reinstall PF after rc69 so PF's body is the one on disk (G282)")
 
 
 #: Every path rc68 shipped that rc69 does not, and every path rc69 shipped that
-#: rc70 does not, with the route off a tenant.
+#: rc70 does not (and later cuts), with why it went.
 REMOVED = {
     # rc70 (🔒 1724b): ERP-Core's ErpLayoutExtraFields places the fields now.
     # Module Loader never deletes a file a later build stops shipping (§CW /
@@ -190,7 +194,7 @@ REMOVED = {
     # rc87 (Rafael's review of #41): the emptied REST stub and the option functions (now BdAdmRules methods).
     "custom/clients/base/api/BdBenchDogsActionsApi.php": ONEOFF,
     "custom/modules/Quotes/BdAdmLookupOptions.php": ONEOFF,
-    # rc86 (MLP024): the class moved to custom/src/BenchDogs; the one-off (1.0.5) blanks the old path once rc86 is installed.
+    # rc86 (MLP024): the class moved to custom/src/BenchDogs; the one-off (1.0.5) blanked the old path.
     "custom/modules/Quotes/BdAdmRules.php": ONEOFF,
     "custom/Extension/application/Ext/DropdownsStyle/sales_stage_dom_style.php": ONEOFF,
     "custom/Extension/application/Ext/Language/_override_en_us.bd_country_lookup.php": ONEOFF,
@@ -282,22 +286,6 @@ class EveryRemovedPathLeavesTheTenant(unittest.TestCase):
                 self.assertFalse((PKG / rel).exists(), f"{rel} is back in the source")
                 self.assertNotIn(rel, names, f"{rel} is back in the built zip")
 
-    def test_every_removed_path_has_a_route_off_the_tenant(self):
-        """A dropped path is NOT a retirement by itself: Module Loader never
-        deletes a file a later build stops shipping. So each one has to be
-        reachable by something that does remove it, or be provably inert."""
-        worklist = oneoff_worklist()
-        for rel, route in REMOVED.items():
-            with self.subTest(path=rel):
-                if route is ONEOFF:
-                    self.assertIn(rel, worklist, "the one-off does not remove it")
-                elif route is PF_OWNS:
-                    self.assertNotIn(rel, worklist,
-                                     "the one-off must never blank a provider path (G280)")
-                else:
-                    self.assertIs(route, INERT)
-                    self.assertNotIn(rel, worklist)
-
     def test_nothing_shipped_still_names_a_removed_class(self):
         """An inert file stays inert only while nothing reaches for it. A
         require_once of a file this build no longer ships is a compile fatal no
@@ -312,11 +300,11 @@ class EveryRemovedPathLeavesTheTenant(unittest.TestCase):
 
 
 class TheApiStubIsRetired(unittest.TestCase):
-    """rc87 (Rafael's review of #41): the emptied REST stub no longer ships; the one-off deletes the tenant's copy."""
+    """rc87 (Rafael's review of #41): the emptied REST stub no longer ships. The one-off that deleted the
+    tenant's copy was withdrawn (🔒2173b)."""
 
     def test_the_api_stub_no_longer_ships(self):
         self.assertFalse((PKG / "custom/clients/base/api").exists())
-        self.assertEqual(oneoff_worklist().get("custom/clients/base/api/BdBenchDogsActionsApi.php"), "deleted")
 
 
 @unittest.skipUnless(shutil.which("php"), "requires php")

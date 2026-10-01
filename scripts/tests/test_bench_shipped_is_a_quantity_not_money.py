@@ -62,11 +62,16 @@ live, where all three fields it retired read absent on the tenant.
 did their job: every QA tenant has taken a build that overwrote them, and the
 one-off ONEOFF-RetireBdResidue - which DELETES each path through platform code
 (ModuleInstaller::uninstallExt(), from post_execute, no copy list) - ran on all
-three. So the package stops shipping them, and "retired" is asserted as the
-three halves in bd_retirement.assert_retired_by_oneoff: not in the source, not
-in the built zip, and still on the one-off's worklist. A test that checked only
-"absent" would pass on exactly rc24's defect; the worklist half is what stops
-that.
+three. So the package stops shipping them. Through 2026-09-30 "retired" was
+asserted as three halves: not in the source, not in the built zip, and still on
+the one-off's worklist.
+
+🔁 🔒2173b (2026-09-30) WITHDREW the one-off and deleted its code, so the third
+half is gone and bd_retirement.assert_not_shipped checks the first two. Said
+plainly: "absent" alone is exactly what passed on rc24's defect. A tenant that
+still carries one of these paths keeps it, and nothing in this repository
+removes it any more. That is the owner's accepted state, not a property this
+file proves.
 
 A filename ban would forbid exactly the mechanism that delivers the fix. So
 the ban is now on **DECLARATIONS, not names**, and emptiness is asserted
@@ -98,7 +103,7 @@ import tempfile
 import unittest
 import zipfile
 
-from bd_retirement import assert_retired_by_oneoff, oneoff_worklist
+from bd_retirement import assert_not_shipped
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -110,7 +115,7 @@ CORE_ORDER_MODULES = ("ERP_OrderLines", "ERP_Orders")
 
 #: The six fragments decision 59 retired, each mapped to the probe mode that
 #: proved it inert while it shipped as a stub (through rc68). From rc69 they are
-#: not shipped at all; the one-off deletes them from the tenant.
+#: not shipped at all (the one-off that deleted them was withdrawn, 🔒2173b).
 RETIRED_STUBS = {
     "custom/Extension/modules/ERP_OrderLines/Ext/Vardefs/"
     "bd_shipped_value.php": "vardefs",
@@ -164,26 +169,18 @@ class BenchShippedIsAQuantityNotMoneyTest(unittest.TestCase):
 
     # ------------------------------------------ the retirement must HAPPEN
 
-    def test_the_six_retired_fragments_are_retired_off_the_tenant(self):
-        """Absence alone would be a NON-delivery - rc24's defect.
+    def test_the_six_retired_fragments_never_ship_again(self):
+        """Absence alone was a NON-delivery - rc24's defect.
 
         Deleting these files from the build leaves them on every installed
         tenant, where Quick Repair recompiles the field straight back. Through
         rc68 shipping them as stubs is what retired them; from rc69 the one-off
-        deletes them, so its worklist must still carry every one.
+        deleted them. 🔒2173b withdrew it, so what is left to hold is that the
+        package never ships them again.
         """
         for rel in sorted(RETIRED_STUBS):
             with self.subTest(path=rel):
-                assert_retired_by_oneoff(self, rel, "bd_shipped_value money on an order")
-
-    def test_the_one_off_deletes_the_fragments_rather_than_blanking_them(self):
-        """An Extension fragment is compiled by path, so the route off the
-        tenant is DELETION through uninstallExt(); blanking is the one-off's
-        route for class files, not for fragments."""
-        worklist = oneoff_worklist()
-        for rel in sorted(RETIRED_STUBS):
-            with self.subTest(path=rel):
-                self.assertEqual(worklist.get(rel), "deleted")
+                assert_not_shipped(self, rel, "bd_shipped_value money on an order")
 
     #: A real declaration of each shape, written here rather than recovered from
     #: a historical archive. Each one is what the corresponding stub looked like
@@ -383,14 +380,15 @@ foreach ($viewdefs['ERP_OrderLines']['base']['view']['record']['panels'] as $i =
         """THE MECHANISM, turned around at rc69. Through rc68 a stub that was
         not in the manifest's ``copy`` array was never written to the tenant,
         so the ORIGINAL stayed on disk - rc24's defect. From rc69 the one-off
-        removes the path, and a copy entry here would put a body BACK after it
-        ran (and give Module Loader a backup to restore on uninstall)."""
+        removed the path (withdrawn since, 🔒2173b), and a copy entry here would
+        put a body BACK (and give Module Loader a backup to restore on
+        uninstall)."""
         with zipfile.ZipFile(self._archive()) as archive:
             manifest = archive.read("manifest.php").decode("utf-8")
         for rel in sorted(RETIRED_STUBS):
             with self.subTest(path=rel):
                 self.assertFalse(f"'to' => '{rel}'" in manifest,
-                                 f"{rel} is copied again, over the one-off's removal")
+                                 f"{rel} is copied again")
 
 
 if __name__ == "__main__":

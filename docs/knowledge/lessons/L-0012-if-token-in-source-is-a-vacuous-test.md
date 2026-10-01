@@ -15,6 +15,9 @@ pins:
 
 # `if token in source` converts "I could not find it" into "there is nothing to check"
 
+> *Withdrawn package (owner 🔒2173b, 2026-09-30): `ONEOFF-DropBdQuoteMirrorTables` was archived by G675 and
+> then deleted with every other one-off. The paths above exist only in git history. The lesson stands.*
+
 **What happened.** A test named
 `test_the_superseded_drop_package_refuses_before_it_can_do_anything` asserted that a disarm precedes every
 destructive call:

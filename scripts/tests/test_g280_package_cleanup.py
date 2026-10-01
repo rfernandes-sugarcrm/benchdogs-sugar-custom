@@ -21,12 +21,14 @@ Each case below says which of the two it is asserting.
 
 🔁 0.9.42-rc69 (G280 / 🔒 1567, 🔒 1521) MOVED THE FIRST HALF. The emptied
 stubs have done their job - every QA tenant took a build that overwrote them -
-and the one-off ONEOFF-RetireBdResidue now DELETES those paths on the tenant
-(it ran on all three), so the package stops shipping them. What stays true is
-the lesson: a dropped path retires nothing by itself, so each former stub is
-asserted as retired OFF THE TENANT (bd_retirement.assert_retired_by_oneoff),
-never merely "absent". The one path the one-off does not cover and the platform
-loads by path is the REST api file - see NoRouteIsRegistered.
+and the one-off ONEOFF-RetireBdResidue DELETED those paths on the tenant (it
+ran on all three), so the package stops shipping them. What stays true is the
+lesson: a dropped path retires nothing by itself.
+
+🔁 🔒2173b (2026-09-30) WITHDREW the one-off and deleted its code, so nothing in
+this repository takes a former stub off a tenant any more; a tenant it never ran
+on keeps its copy. What is asserted now is the package side only
+(bd_retirement.assert_not_shipped): not in the source, not in the built zip.
 
 MUTATION-VERIFIED (each applied, suite re-run, listed failure observed):
   restore any deleted class file        -> the matching "no longer ships" case fails
@@ -49,7 +51,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from bd_retirement import assert_retired_by_oneoff, oneoff_worklist
+from bd_retirement import assert_not_shipped
 
 ROOT = Path(__file__).resolve().parents[2]
 PKG = Path(os.environ.get("BD_PKG", ROOT / "sugar-sell/BenchDogs-Ext"))
@@ -67,7 +69,8 @@ DELETED_CLASSES = {
 }
 
 #: Paths the platform loads BY PATH. Through rc68 they SHIPPED and declared
-#: NOTHING; from rc69 they do not ship and the one-off deletes them.
+#: NOTHING; from rc69 they do not ship (the one-off that deleted them was
+#: withdrawn, 🔒2173b).
 EMPTY_STUBS = {
     "custom/Extension/modules/Products/Ext/Language/en_us.bd_line_order.php":
         "LBL_BD_TO_ORDER / LBL_BD_ORDERED over stubbed vardefs whose columns the "
@@ -110,22 +113,14 @@ class DeletedBecauseNothingCanLoadThem(unittest.TestCase):
         self.assertEqual(offenders, [], "a deleted class is still named in shipped code")
 
 
-class RetiredOffTheTenantBecauseThePlatformLoadsThemByPath(unittest.TestCase):
-    def test_every_former_stub_is_retired_off_the_tenant(self):
-        """The half that actually retires anything. A dropped file leaves the
-        tenant's copy in place and the retirement never happens - so each path
-        must still be on the one-off's worklist."""
+class FormerStubsThePlatformLoadsByPath(unittest.TestCase):
+    def test_no_former_stub_ships_again(self):
+        """A dropped file leaves the tenant's copy in place. Until 🔒2173b each
+        path also had to be on the one-off's worklist; now only the package side
+        is held: none of them ships again."""
         for rel, why in EMPTY_STUBS.items():
             with self.subTest(file=rel):
-                assert_retired_by_oneoff(self, rel, why)
-
-    def test_the_one_off_deletes_each_one_rather_than_blanking_it(self):
-        """A fragment is compiled by path: the only complete removal is the
-        file going, which is uninstallExt()'s route, not a blank body."""
-        worklist = oneoff_worklist()
-        for rel in EMPTY_STUBS:
-            with self.subTest(file=rel):
-                self.assertEqual(worklist.get(rel), "deleted")
+                assert_not_shipped(self, rel, why)
 
     def test_control_the_grid_logic_that_backed_this_stub_is_gone(self):
         """🛑 REPLACES rc65's "the legacy column sweep still names its columns".
@@ -161,14 +156,11 @@ class RetiredOffTheTenantBecauseThePlatformLoadsThemByPath(unittest.TestCase):
 class NoRouteIsRegistered(unittest.TestCase):
     """rc87 (Rafael's review of #41, item 2): the emptied REST stub no longer ships. A tenant keeps its copy
     (Module Loader never deletes a file a later build stops shipping), whatever body it holds - the empty one
-    rc69-rc86 installed, or rc68's with bd-tools/repair-ui - until the one-off deletes the path; the one-off
-    requires rc87 or newer, so it runs after this build."""
+    rc69-rc86 installed, or rc68's with bd-tools/repair-ui. ONEOFF-RetireBdResidue >= 1.0.6 deleted it; 🔒2173b
+    withdrew that one-off, so a tenant it never ran on keeps whichever body it has."""
 
     def test_the_file_no_longer_ships(self):
         self.assertFalse((PKG / "custom/clients/base/api/BdBenchDogsActionsApi.php").exists())
-
-    def test_the_one_off_deletes_it_whatever_its_body(self):
-        self.assertEqual(oneoff_worklist().get("custom/clients/base/api/BdBenchDogsActionsApi.php"), "deleted")
 
     def test_the_client_halves_are_gone(self):
         for rel in ("custom/modules/Quotes/clients/base/fields/bd-best-pricing",
