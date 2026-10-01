@@ -1,3 +1,28 @@
+# 0.9.42-rc89 — G860: ADM's Ship Via named in ERP-Epicor's one pre-send order refusal (🔒2179b)
+
+rc89 = rc88 + these changes only. Install order on a Bench tenant: **ERP-Epicor >= 1.2.4** → PF → rc89 (the manifest now
+refuses an ERP-Epicor below 1.2.4: earlier ones never ask the new slot, so the rule would sit installed and unread).
+
+- **New:** `custom/modules/Quotes/ErpQuoteHooks/OrderRequirements.php` (the adapter ERP-Epicor 1.2.4 instantiates) and
+  `custom/src/BenchDogs/BdAdmOrderRequirements.php` (the rule). On an ADM quote whose order converts the ADM ERP quote
+  and whose quote has no Ship Via, Submit Order and Order Selected Lines are refused before anything is sent, in the
+  same refusal as ERP-Epicor's FOB: *"This quote has no FOB and its customer has no default FOB in the ERP, so it
+  cannot be ordered. Pick an FOB on the quote, then submit again. Nothing was sent to the ERP. This quote has no Ship
+  Via and its ERP quote 8720 has none either, so it cannot be ordered. Pick a Ship Via on the quote, then submit
+  again. Nothing was sent to the ERP."* A quote missing one names just that one.
+- **Not judged in Sugar: a Sales Order** (no line converts an ERP quote). Kinetic takes the customer's Ship Via there,
+  and Sugar does not hold it: core never syncs `Customer.ShipViaCode` onto the Account's Ship Via relate. On that route
+  the seller still sees the FOB first and the extension's Ship Via refusal after (G860 stays open there until the
+  customer's Ship Via reaches the Account).
+- **Fails open:** a read that fails, or a class that cannot load, answers "nothing missing" and logs
+  `BenchDogs-Ext: ADM order requirements skipped for quote …`; the connector extension checks the Ship Via again
+  before the send (G829, G852).
+- **Known direction of error:** the quote's Ship Via relate is the last read-back of the ERP quote's ShipViaCode. A
+  Ship Via the estimator set in the ERP and Sugar has not synced yet is refused here, and the seller picks one or syncs.
+- Tests: `scripts/tests/bd_order_requirements_test.php` (33 checks; run by `test_php_suites.py` against ERP-Epicor's
+  real `ErpQuoteFacts`). Mutations: 7/7 killed (ADM gate removed, 2-part key converts, Sales Order judged, quote Ship
+  Via ignored, adapter lets a failure through, a code-less row counts, a zero QuoteLine converts).
+
 # (repository change, no release) — every one-off withdrawn (🔒2173b); BenchDogs-Ext unchanged at 0.9.42-rc88
 
 Owner, 2026-09-30: *"remove all the one offs I dont want that code"*. Mirrors erp-integration-sugar #172.
