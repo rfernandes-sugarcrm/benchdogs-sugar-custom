@@ -27,25 +27,22 @@ if (empty($version)) {
     die("Usage: {$argv[0]} [version]\n");
 }
 
-// Only after the Bench Dogs release built from this same tree: before it, some listed files are still that version's own.
-$benchVersion = trim((string) @file_get_contents(__DIR__ . '/../BenchDogs-Ext/version'));
-if ($benchVersion === '') {
-    die("Error: cannot read ../BenchDogs-Ext/version.\n");
-}
+// The first Bench Dogs release that ships none of the listed paths; change it only with a version bump of this one-off.
+$benchVersion = '0.9.42-rc87';
 
 $leftovers = require __DIR__ . '/scripts/leftovers.php';
 $placeholders = array();
 foreach ($leftovers['remove'] as $path) {
     $placeholders[] = 'leftovers/' . $path;
 }
-// Each guarded path gets its own subtree, so post_execute can remove it alone (scripts/post_execute.php step 2).
-$guard = 0;
+// Each guarded path gets a subtree named by the path, outside the swept leftovers/custom/ (scripts/post_execute.php steps 1-2).
 foreach (array_keys($leftovers['remove_if_bench']) as $path) {
-    $placeholders[] = 'leftovers/if-bench/' . $guard++ . '/' . $path;
+    $placeholders[] = 'leftovers/if-bench/' . $path . '/' . basename($path);
 }
+// Sugar's dir_get_files stops reading a directory at an entry named "0" (`while ($e = $d->read())`), so no segment may be one.
 foreach (array_merge($leftovers['remove'], array_keys($leftovers['remove_if_bench'])) as $path) {
-    if (strpos($path, 'custom/') !== 0 || strpos($path, '..') !== false) {
-        die("Error: {$path} is not a path under custom/.\n");
+    if (strpos($path, 'custom/') !== 0 || strpos($path, '..') !== false || in_array('0', explode('/', $path), true)) {
+        die("Error: {$path} is not a path under custom/ that Module Loader can list.\n");
     }
 }
 

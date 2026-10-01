@@ -1,3 +1,20 @@
+# 0.9.42-rc88 — Rafael's delta review of #41 @98034ea5; ONEOFF-RetireBdResidue 1.0.7
+
+rc88 = rc87 (98034ea5, zip 592a8dd0…, its own tree) + these changes only. No behaviour change in this package. Install order on a Bench tenant: ERP-Epicor >= 1.2.0 → PF → rc88 (or rc87) → ONEOFF-RetireBdResidue 1.0.7.
+
+- Each of the six discount overlays carries one more comment line, `// Guarded: the compiled ext outlives the class for one step of an uninstall.`, above the autoloading `class_exists` it explains (kept).
+- **ONEOFF-RetireBdResidue 1.0.7:**
+  - **Hardcoded dependency:** it requires `sugarai_benchdogs_ext` >= **0.9.42-rc87**. That is a literal in its pack.php, changed only with a one-off version bump; the build reads nothing outside its own package (N1). rc87 is the first release that ships none of the listed paths.
+  - **Separate sweep tree:** step 1 sweeps only `leftovers/custom/`. The three guarded paths live in `leftovers/if-bench/`, beside that tree, so the unconditional sweep never walks them (N3). They stay inside `leftovers/` because the vendored check_built_packages (G665) admits only `scripts/leftovers.php` and `leftovers/` in a one-off.
+  - **Subtrees named by path:** each guarded subtree is `leftovers/if-bench/<path>/<basename>` (N4). Before, they were matched by position, and two orders of the list deleted another writer's policy beside the Bench adapter.
+  - **No "0" segments:** the build refuses a listed path with a segment named "0". Sugar's `dir_get_files` (`while ($e = $d->read())`) stops reading a directory at such an entry, which is also why 1.0.6's sweep happened not to list `if-bench/0/`.
+  - **README:** rewritten for what it does now (N5). It notes that a tenant with leftovers but no Bench Dogs package (et) can no longer run it (N2).
+- CI: the suite step is main's text (#37: `shell: bash`, `set -euo pipefail`), replacing rc87's own wording of the same fix.
+- Tests:
+  - The harness has 62 checks. New checks: the build reads no sibling version, the dependency bounds, the sweep reaches exactly the plain list, each guarded call reaches one path, all six orders of the guarded list, and the "0" refusal.
+  - Red first on 1.0.6: the build fails without `../BenchDogs-Ext`, the sweep tree holds the three guarded paths, and 4 of 6 orders delete the wrong file.
+  - Mutations: 9/9 killed.
+
 # 0.9.42-rc87 — Rafael's review of #41 (🔒2167b); ONEOFF-RetireBdResidue 1.0.6
 
 rc87 = rc86 (12702b66, zip 627dc550…, its own tree) + the review fixes. Install order on a Bench tenant: ERP-Epicor >= 1.2.0 → PF → rc87 → ONEOFF-RetireBdResidue 1.0.6.
@@ -10,7 +27,7 @@ rc87 = rc86 (12702b66, zip 627dc550…, its own tree) + the review fixes. Instal
 - **ErpLayoutExtraFields is autoloaded** in post_execute and post_uninstall (a plain `class_exists`); the step report's MISSING and NOT-LOADED outcomes are one: "MISSING: class ErpLayoutExtraFields".
 - **pack.php** narrative comments are one line each; `mlp-lint.yml` says 26 rules and explains MLP026; the carried linter is refactor/rafael-review's at cf52eace.
 - **ONEOFF-RetireBdResidue 1.0.6** (Rafael's one-off layout): the zip is `scripts/post_execute.php`, `scripts/leftovers.php` and an empty placeholder under `leftovers/` per listed path; everything is DELETED through `uninstall_new_files` (nothing is blanked, `emptied.php` is gone), the three paths other writers share (the stage style, the release-stage policy, the order adapter) only when they hold a Bench body, each from its own placeholder subtree; the retired directories through `uninstall_customizations`; K-2 and K-3 inline through `ViewdefManager`, no cache calls (Module Loader rebuilds after post_execute). It requires the Bench Dogs release built from the same tree.
-- Tests: the ADM suite runs its refusal checks below 1.2.0 (O1-O6) and a getFunctionValue probe (M9); the overlay suite checks the new shape (I4-I8); the one-off harness runs the real pack.php zip over a census-seeded tenant (58 checks). Mutations: item 1 4/4, overlays 11/11, option sources 5/5, one-off 15/15, autoload 1/1.
+- Tests: the ADM suite runs its refusal checks below 1.2.0 (O1-O6) and a getFunctionValue probe (M9); the overlay suite checks the new shape (I4-I8); the one-off harness runs the real pack.php zip over a census-seeded tenant (56 checks). Mutations: item 1 4/4, overlays 11/11, option sources 5/5, one-off 15/15, autoload 1/1.
 
 # 0.9.42-rc86 — Rafael's MLP rules on Bench (MLP020–MLP026, 🔒2161b)
 

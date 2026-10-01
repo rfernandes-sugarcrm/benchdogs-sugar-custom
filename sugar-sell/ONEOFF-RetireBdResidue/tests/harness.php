@@ -188,6 +188,36 @@ class HarnessInstaller
     }
 }
 
+// Records the instance path of every file under each uninstall_new_files `from`, then runs the verbatim copy above.
+// Listed independently of dir_get_files, whose `while ($e = $d->read())` stops at an entry named "0" and so hid 1.0.6's if-bench/0/.
+class RecordingInstaller extends HarnessInstaller
+{
+    public static $reached = array();
+
+    public function uninstall_new_files($cp, $backup_path)
+    {
+        $targets = array();
+        if (is_dir($cp['from'])) {
+            foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($cp['from'], FilesystemIterator::SKIP_DOTS)) as $f) {
+                $targets[] = preg_replace('#^\./#', '', $cp['to'] . substr((string) $f, strlen($cp['from'])));
+            }
+        }
+        self::$reached[] = array('from' => substr($cp['from'], strlen($this->base_dir) + 1), 'targets' => $targets);
+        parent::uninstall_new_files($cp, $backup_path);
+    }
+}
+
+function copy_tree(string $from, string $to): void
+{
+    @mkdir($to, 0775, true);
+    foreach (scandir($from) as $e) {
+        if ($e === '.' || $e === '..') {
+            continue;
+        }
+        is_dir("$from/$e") ? copy_tree("$from/$e", "$to/$e") : copy("$from/$e", "$to/$e");
+    }
+}
+
 $fail = 0;
 function check(string $name, bool $ok, string $detail = '')
 {
@@ -204,15 +234,25 @@ if (is_dir($tmp)) {
     rmdir_recursive($tmp);
 }
 mkdir($tmp . '/ONEOFF-RetireBdResidue/scripts', 0775, true);
-mkdir($tmp . '/BenchDogs-Ext', 0775, true);
+// No ../BenchDogs-Ext beside the copy: the build reads nothing outside this package (one version = one tree).
 foreach (array('pack.php', 'version', 'scripts/post_execute.php', 'scripts/leftovers.php') as $f) {
     copy("$src/$f", "$tmp/ONEOFF-RetireBdResidue/$f");
 }
-copy("$src/../BenchDogs-Ext/version", "$tmp/BenchDogs-Ext/version");
 $built = shell_exec('cd ' . escapeshellarg("$tmp/ONEOFF-RetireBdResidue") . ' && ' . escapeshellarg(PHP_BINARY) . ' pack.php 2>&1');
 $version = trim((string) file_get_contents("$src/version"));
 $zipPath = "$tmp/ONEOFF-RetireBdResidue/releases/oneoff_retire_bd_residue-$version.zip";
 check('the real pack.php built the zip', is_file($zipPath), (string) $built);
+// A path with a segment named "0" would be skipped silently by Sugar's dir_get_files, so the build refuses it.
+mkdir("$tmp/zero/scripts", 0775, true);
+foreach (array('pack.php', 'version', 'scripts/post_execute.php') as $f) {
+    copy("$src/$f", "$tmp/zero/$f");
+}
+$zeroList = require "$src/scripts/leftovers.php";
+$zeroList['remove'][] = 'custom/modules/0/BdRetired.php';
+file_put_contents("$tmp/zero/scripts/leftovers.php", "<?php\nreturn " . var_export($zeroList, true) . ";\n");
+$zeroOut = shell_exec('cd ' . escapeshellarg("$tmp/zero") . ' && ' . escapeshellarg(PHP_BINARY) . ' pack.php 2>&1');
+check('the build refuses a listed path with a segment named "0"', !glob("$tmp/zero/releases/*.zip")
+    && strpos((string) $zeroOut, 'custom/modules/0/BdRetired.php') !== false, (string) $zeroOut);
 $pkg = "$tmp/unpacked";
 $zip = new ZipArchive();
 $zip->open($zipPath);
@@ -228,9 +268,8 @@ $expected = array('manifest.php', 'scripts/post_execute.php', 'scripts/leftovers
 foreach ($leftovers['remove'] as $p) {
     $expected[] = 'leftovers/' . $p;
 }
-$g = 0;
 foreach (array_keys($leftovers['remove_if_bench']) as $p) {
-    $expected[] = 'leftovers/if-bench/' . $g++ . '/' . $p;
+    $expected[] = 'leftovers/if-bench/' . $p . '/' . basename($p);
 }
 sort($members);
 sort($expected);
@@ -239,19 +278,26 @@ check('the zip holds only the two scripts, the manifest and one placeholder per 
 $manifest = null;
 $installdefs = null;
 include "$pkg/manifest.php";
-check('the manifest requires the Bench Dogs release built from this same tree',
-    ($manifest['dependencies'][0] ?? null) === array('id_name' => 'sugarai_benchdogs_ext',
-        'version' => trim((string) file_get_contents("$src/../BenchDogs-Ext/version"))), json_encode($manifest['dependencies'] ?? null));
+$dep = $manifest['dependencies'][0] ?? array();
+$benchNow = trim((string) file_get_contents("$src/../BenchDogs-Ext/version"));
+check('the manifest requires Bench Dogs, by its installdefs id', ($dep['id_name'] ?? null) === 'sugarai_benchdogs_ext' && count($manifest['dependencies']) === 1,
+    json_encode($manifest['dependencies'] ?? null));
+check('that version is installable on the Bench Dogs this tree ships', version_compare((string) ($dep['version'] ?? ''), $benchNow, '<='),
+    ($dep['version'] ?? '?') . ' vs ' . $benchNow);
+// rc87 retired the last paths on the list (the REST stub and BdAdmLookupOptions.php); an older Bench still installs them.
+check('and no older than rc87, which stopped shipping the last listed paths', version_compare((string) ($dep['version'] ?? ''), '0.9.42-rc87', '>='),
+    $dep['version'] ?? '?');
 
 // One run of the unpacked package over $tenant; returns [echo output, fatal lines].
 function runOnce(string $tenant, string $pkg, array $manifest): array
 {
     $GLOBALS['log'] = new HarnessLog();
+    RecordingInstaller::$reached = array();
     $cwd = getcwd();
     chdir($tenant);
-    $out = (new HarnessInstaller($pkg))->runPostExecute($manifest);
+    $out = (new RecordingInstaller($pkg))->runPostExecute($manifest);
     chdir($cwd);
-    return array($out, $GLOBALS['log']->fatals);
+    return array($out, $GLOBALS['log']->fatals, RecordingInstaller::$reached);
 }
 
 function seed(string $root, string $rel, string $body): void
@@ -297,11 +343,30 @@ seed($tenant, 'custom/modules/Quotes/clients/base/views/record/record.php',
 seed($tenant, 'custom/modules/Opportunities/clients/base/views/record/record.php',
     "<?php\n\$viewdefs['Opportunities']['base']['view']['record'] = array('panels' => array(array('name' => 'panel_body', 'fields' => array('name', array('name' => 'bd_governing_origin'), 'amount'))));\n");
 
-[$out1, $fatal1] = runOnce($tenant, $pkg, $manifest);
+[$out1, $fatal1, $reached1] = runOnce($tenant, $pkg, $manifest);
 [$out2, $fatal2] = runOnce($tenant, $pkg, $manifest);
 echo "=== RUN 1 ===\n{$out1}\n=== RUN 2 ===\n{$out2}\n";
 preg_match('/REMOVED \((\d+)\)/', $out1, $m1);
 preg_match('/REMOVED \((\d+)\)/', $out2, $m2);
+$sweep = array();
+$guardedCalls = array();
+foreach ($reached1 as $call) {
+    if (strpos($call['from'], 'leftovers/if-bench/') === 0) {
+        $guardedCalls[$call['from']] = $call['targets'];
+    } else {
+        $sweep = array_merge($sweep, $call['targets']);
+    }
+}
+$plain = $leftovers['remove'];
+sort($sweep);
+sort($plain);
+check('the unconditional sweep reaches exactly the plain list, and no guarded path', $sweep === $plain,
+    json_encode(array_values(array_diff($sweep, $plain))) . ' / ' . json_encode(array_values(array_diff($plain, $sweep))));
+$ownOnly = count($guardedCalls) === count($leftovers['remove_if_bench']);
+foreach ($guardedCalls as $from => $targets) {
+    $ownOnly = $ownOnly && count($targets) === 1 && isset($leftovers['remove_if_bench'][$targets[0]]);
+}
+check('each guarded call reaches exactly one guarded path', $ownOnly, json_encode($guardedCalls));
 check('run 1 removed something', (int) ($m1[1] ?? -1) > 0, $out1);
 check('run 2 removed NOTHING', (int) ($m2[1] ?? -1) === 0, $out2);
 check('run 2 says NOTHING LEFT TO REMOVE', strpos($out2, 'NOTHING LEFT TO REMOVE') !== false);
@@ -383,6 +448,28 @@ check('CONTROL: a Sugar-written stage style (not a Bench body) is LEFT in place,
 check('CONTROL: a Bench body with one byte changed is LEFT', file_exists("$r/$styleRel"), $o);
 [$r, $o] = guardedTenant('two-in-one-dir', array($adapterRel => $benchAdapter, $policyRel => "<?php\n// Partial Fulfillment's own policy\n"), $pkg, $manifest, $tmp);
 check('CONTROL: deleting the adapter never takes the foreign policy beside it', !file_exists("$r/$adapterRel") && file_exists("$r/$policyRel"), $o);
+
+$order = array_keys($leftovers['remove_if_bench']);
+$wrong = array();
+foreach (array(array(0, 1, 2), array(0, 2, 1), array(1, 0, 2), array(1, 2, 0), array(2, 0, 1), array(2, 1, 0)) as $n => $perm) {
+    $permPkg = "$tmp/unpacked-perm-$n";
+    copy_tree($pkg, $permPkg);
+    $permuted = $leftovers;
+    $permuted['remove_if_bench'] = array();
+    foreach ($perm as $i) {
+        $permuted['remove_if_bench'][$order[$i]] = $leftovers['remove_if_bench'][$order[$i]];
+    }
+    file_put_contents("$permPkg/scripts/leftovers.php", "<?php\nreturn " . var_export($permuted, true) . ";\n");
+    $root = "$tmp/guard-perm-$n";
+    seed($root, $adapterRel, $benchAdapter);
+    seed($root, $policyRel, "<?php\n// Partial Fulfillment's own policy\n");
+    seed($root, $styleRel, $sugarStyle);
+    [$o] = runOnce($root, $permPkg, $manifest);
+    if (file_exists("$root/$adapterRel") || !file_exists("$root/$policyRel") || (string) @file_get_contents("$root/$styleRel") !== $sugarStyle) {
+        $wrong[] = implode(',', $perm);
+    }
+}
+check('in every order of the guarded list, the Bench adapter goes and the foreign policy and Sugar style stay', $wrong === array(), json_encode($wrong));
 
 rmdir_recursive($tmp);
 echo $fail === 0 ? "ALL CHECKS PASSED\n" : "{$fail} CHECK(S) FAILED\n";

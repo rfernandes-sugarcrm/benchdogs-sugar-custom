@@ -15,7 +15,7 @@ and the package ships no module of its own.
 > |---|---|---|
 > | `custom/Extension/modules/Accounts/Ext/Vardefs/bd_customer_group.php` | `bd_customer_group_code` (Epicor `Customer.GroupCode`) and `bd_customer_group` (`CustGrup.GroupDesc`) on Account | Bench's customer category (REQ-19). Core has no such field, and core's schema enforcement dead-letters the Bench connector's `erp_customers` writes without the vardef |
 > | `custom/Extension/modules/Accounts/Ext/Language/en_us.bd_customer_group.php` | their two labels | — |
-> | ~~`custom/clients/base/api/BdBenchDogsActionsApi.php`~~ | **no longer shipped (rc87)** | the emptied REST stub; ONEOFF-RetireBdResidue 1.0.6 deletes the tenant's copy |
+> | ~~`custom/clients/base/api/BdBenchDogsActionsApi.php`~~ | **no longer shipped (rc87)** | the emptied REST stub; ONEOFF-RetireBdResidue 1.0.6+ deletes the tenant's copy |
 > | `scripts/post_execute.php`, `scripts/bd_pre_uninstall.php`, `scripts/post_uninstall.php` | the lifecycle: rebuild + have ERP-Core place the marked fields + the G294 step report; proof of life; rebuild + have ERP-Core retire the marked fields | — |
 >
 > **rc70 (🔒 1724b): this package ships NO layout code.** Its fields carry
@@ -96,7 +96,7 @@ and the package ships no module of its own.
 > ERP-Core's plain files whichever package is installed last (ModuleInstaller sorts `_override*` last, then mtime).
 > Other languages keep ERP-Core's text. Uninstall returns ERP-Core's captions.
 >
-> rc87: the six overlays are three lines each; the shared rule is `custom/src/BenchDogs/BdHiddenFields.php` (`BdHiddenFields::strip()`, which keeps its own try/catch so a bad panel never breaks a view). An overlay runs only on a panel list, and only when the class autoloads; otherwise the view is served as read.
+> rc87: the six overlays are three lines each (rc88 adds one comment line on why the `class_exists` guard stays: the compiled ext outlives the class for one step of an uninstall); the shared rule is `custom/src/BenchDogs/BdHiddenFields.php` (`BdHiddenFields::strip()`, which keeps its own try/catch so a bad panel never breaks a view). An overlay runs only on a panel list, and only when the class autoloads; otherwise the view is served as read.
 >
 > **Admin > Quotes Configuration.** That screen saves the Quotes summary columns into the deployed views, but these overlays strip the discount fields at render. An admin who re-adds Discount there sees the setting saved and never drawn on a Bench tenant. That is by design (🔒2151b); nothing stored changes.
 >

@@ -183,12 +183,18 @@ jobs:
       # are NOT COLLECTED here (why, and which, at the skip ceiling below).
       # `-rs` names every skip that remains, so a new one shows up by name in
       # this log instead of as one more `s` in a row of dots.
-      # 🛑 pipefail is set HERE, by hand. A `run` with no `shell:` gets `bash -e {0}`, which has NO pipefail, so
-      # `pytest | tee` exited with tee's 0: rc86's run 36788088858 was green with "2 failed, 396 passed".
+      #
+      # 🛑 `shell: bash` + `set -euo pipefail`, NOT the default. This job runs
+      # in a container, and there a `run:` step with no `shell:` gets
+      # `sh -e {0}` - no pipefail - so the step's status was `tee`'s and a red
+      # suite passed the job (read off main's run 36634108204: "shell: sh -e
+      # {0}"). GitHub's `bash -e -o pipefail` default applies only when
+      # `shell: bash` is named. The same hole was proven and closed in
+      # erp-integration-sugar (#124), where staging had shown "3 failed" green.
       - name: The whole test suite
         shell: bash
         run: |
-          set -o pipefail
+          set -euo pipefail
           python3 -m pytest scripts/tests -q -rs -m "not sugarent_tree" | tee pytest.out
 
       # A collected-count floor. Asserting the exit code alone cannot see a
@@ -313,8 +319,8 @@ jobs:
       # Raise this number only with a reason written beside it.
       - name: The suite did not go quiet
         run: |
-          # Read off the run above (tee'd to pytest.out; that step sets pipefail
-          # itself, so tee hides no red) rather than re-running the
+          # Read off the run above (tee'd to pytest.out; that step names bash
+          # and sets pipefail itself, so tee hides no red) rather than re-running the
           # whole suite — which doubled the job's time and was fail-OPEN: a
           # pytest crash in the re-run yielded SKIPPED=0 and passed.
           [ -s pytest.out ] || { echo "::error::pytest.out is missing or empty; the suite step did not run"; exit 1; }

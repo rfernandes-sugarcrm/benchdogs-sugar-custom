@@ -277,7 +277,7 @@ class TheReleaseStagePolicyStep(unittest.TestCase):
 
     def test_the_one_off_is_1_0_6(self):
         # 1.0.6: Rafael's one-off layout (scripts/leftovers.php + placeholders), everything deleted, nothing blanked.
-        self.assertEqual((ONEOFF / "version").read_text().strip(), "1.0.6")
+        self.assertEqual((ONEOFF / "version").read_text().strip(), "1.0.7")
 
 
 class TheStageStyleIsDeletedOnlyWhenItIsABenchBody(unittest.TestCase):

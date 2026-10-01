@@ -11,7 +11,7 @@ $bdAlreadyGone = array();
 $bdSkipped = array();
 $bdFailed = array();
 
-// 1. Every listed file, by its placeholder under leftovers/ (ModuleScanner denies unlink()).
+// 1. Every listed file, by its placeholder under leftovers/custom/ (ModuleScanner denies unlink()); the guarded subtrees sit beside it.
 $bdPresent = array();
 foreach ($bdLeftovers['remove'] as $bdPath) {
     if (file_exists($bdPath)) {
@@ -22,7 +22,7 @@ foreach ($bdLeftovers['remove'] as $bdPath) {
 }
 try {
     $this->uninstall_new_files(
-        array('from' => $this->base_dir . '/leftovers', 'to' => '.'),
+        array('from' => $this->base_dir . '/leftovers/custom', 'to' => 'custom'),
         $this->base_dir . '/no-backup'
     );
 } catch (Throwable $e) {
@@ -36,12 +36,11 @@ foreach ($bdPresent as $bdPath) {
     }
 }
 
-// 2. Shared paths, deleted only when they hold a body Bench Dogs shipped; each has its own placeholder subtree under leftovers/if-bench/. (G599, G594)
+// 2. Shared paths, deleted only when they hold a body Bench Dogs shipped; each from the subtree named by its path, leftovers/if-bench/<path>/. (G599, G594)
 $bdPlanner = 'custom/modules/Quotes/BdSubmitOrderPlan.php';
 $bdAdapter = 'custom/modules/Quotes/ErpQuoteHooks/ResolveOrderableLines.php';
-$bdGuardIndex = 0;
 foreach ($bdLeftovers['remove_if_bench'] as $bdPath => $bdBenchMd5) {
-    $bdSubtree = $this->base_dir . '/leftovers/if-bench/' . $bdGuardIndex++ . '/' . dirname($bdPath);
+    $bdSubtree = $this->base_dir . '/leftovers/if-bench/' . $bdPath;
     if (!file_exists($bdPath)) {
         $bdAlreadyGone[] = $bdPath;
         continue;
@@ -68,7 +67,7 @@ foreach ($bdLeftovers['remove_if_bench'] as $bdPath => $bdBenchMd5) {
     }
 }
 
-// 3. Whole directories nothing else writes.
+// 3. Whole directories; every uninstall_customizations entry is a Bench-only name (bd01_* modules, bd-* button fields).
 $bdDirsPresent = array();
 foreach ($bdLeftovers['directories'] as $bdDir) {
     if (file_exists('custom/modules/' . $bdDir)) {
