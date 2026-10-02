@@ -53,7 +53,7 @@ and the package ships no module of its own.
 > | Path | What it is | Why it is here and not in core |
 > |---|---|---|
 > | `custom/Extension/modules/Quotes/Ext/Vardefs/bd_adm_required_fields.php` + `.../Language/en_us.bd_adm_required_fields.php` | Quote pickers `bd_lead_source`, `bd_lead_type`, `bd_project_id`, and (G460) `bd_marketing_campaign`, `bd_marketing_event` (each `erp_layout`-marked for the ERP panel, after Reference), and their labels | ADM's own UD columns (`LeadSrc_c`, `LeadType_c`), ADM's one-project-per-quote rule, and ADM's required marketing pair; no other company asks for them |
-> | `custom/Extension/modules/Quotes/Ext/LogicHooks/bd_adm_quote_defaults.php` | before_save: fills an EMPTY `erp_reference` (ship-to city + state, shortened to the ERP's limit, G530) and an EMPTY Project (product-group default) on an unsent ADM quote; exits before loading anything for a quote it cannot touch | ADM-only defaults; creates nothing (🔒 1499 still holds, `test_g243…` pins it) |
+> | `custom/Extension/modules/Quotes/Ext/LogicHooks/bd_adm_quote_defaults.php` | before_save: fills an EMPTY `erp_reference` (ship-to city + state, shortened to the ERP's limit, G530) and an EMPTY Project (product-group default) on an unsent ADM quote, and on a NEW quote an EMPTY Lead Source, Lead Type, Project and Campaign + Event pair from the account's newest quotes still offering them (rc78/rc81); exits before loading anything for a quote it cannot touch | ADM-only defaults; creates nothing (🔒 1499 still holds, `test_g243…` pins it) |
 > | `custom/Extension/application/Ext/Language/en_us.bd_adm_lists.php` | labels for the five `ERP_LookupValues` types, and ONE tenant list: `bd_adm_project_by_group_list` | Bench data, edited in Dropdown Editor |
 > | `custom/src/BenchDogs/BdAdmRules.php` (`Sugarcrm\Sugarcrm\custom\BenchDogs\BdAdmRules`, autoloaded; before rc86 `custom/modules/Quotes/BdAdmRules.php`) | the rules (which companies are ADM, the two defaults) and, since rc87, the pickers' option sources as static methods (`BdAdmRules::leadSourceOptions` etc., named by the vardefs with no include; `BdAdmLookupOptions.php` is retired) | — |
 
@@ -137,7 +137,7 @@ Group is required. Project ID is required."* EPIC06 enforces none of it.
 | Part | core's own part-number resolution; a part-less line is refused per company | core; ERP-Epicor (`ERP_Companies.erp_order_requires_part_number`, set on ADM) |
 | Group | the catalog part's product group | core |
 | Project ID | `bd_project_id`, one per quote | **this package** (field + default); the Bench connector extension (sends it) |
-| Marketing Campaign / Marketing Event (G460; quote header AND every order line) | the seller's picks, `bd_marketing_campaign` / `bd_marketing_event` | **this package** (fields, no default); the Bench connector extension (publishes the lists, sends `MktgCampaignID` / `MktgEvntSeq`) |
+| Marketing Campaign / Marketing Event (G460; quote header AND every order line) | the seller's picks, `bd_marketing_campaign` / `bd_marketing_event` | **this package** (fields; a new quote copies the pair from the account's newest quote, rc81); the Bench connector extension (publishes the lists, sends `MktgCampaignID` / `MktgEvntSeq`) |
 
 **What this package does (Sugar side):**
 
@@ -145,7 +145,8 @@ Group is required. Project ID is required."* EPIC06 enforces none of it.
   ADM's own ACTIVE codes (user-code types `LEADSRC` / `LEADTYPE`, 🔒 1710b),
   which core publishes into `ERP_LookupValues` (types `BdLeadSources` /
   `BdLeadTypes`) from the ADM connection's own `lookup_code_lists` config.
-  Never defaulted.
+  A NEW quote copies each from the account's newest quote holding a value the
+  picker still offers (rc78, per field since rc81); otherwise the seller picks.
 - **Reference** (`erp_reference`, ERP-Epicor's field) defaults to the ship-to's
   city and state (`WAYNE NJ`) when empty, on an ADM quote not yet sent; the
   seller may change it. The ship-to is the QUOTE's (`shipping_address_city` /
@@ -161,9 +162,11 @@ Group is required. Project ID is required."* EPIC06 enforces none of it.
 - **Project** is a picker of ADM's active projects (`BdProjects`), pre-filled
   when every line's product group maps to the same project in
   `bd_adm_project_by_group_list`.
-- **Marketing Campaign / Marketing Event (G460)** are pickers the SELLER fills,
-  NEVER defaulted (ADM defines no default event: `DefMktgEvntSeq` 0 and
-  `isDefault` false everywhere, measured 2026-09-25). Their rows are ADM's own
+- **Marketing Campaign / Marketing Event (G460)** are pickers the SELLER fills.
+  ADM defines no default event (`DefMktgEvntSeq` 0 and `isDefault` false
+  everywhere, measured 2026-09-25), so the only prefill is the account's
+  history: a NEW quote copies the pair from the account's newest quote holding
+  an offered campaign and its own event (rc81). Their rows are ADM's own
   `MktgCamps` / `MktgEvnts`, published by the Bench connector extension (types
   `BdMarketingCampaigns` / `BdMarketingEvents`, ADM connection only). Only
   ACTIVE PAIRS are offered: a campaign with at least one active event (25 of
