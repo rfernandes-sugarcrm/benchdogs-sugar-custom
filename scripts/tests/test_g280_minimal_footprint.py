@@ -103,6 +103,14 @@ KEPT = {
         "the ADM rules themselves: which companies are ADM, the two defaults, options (rc86: namespaced, MLP024)",
     "custom/src/BenchDogs/BdHiddenFields.php":
         "G848 (rc87): the one body the six discount overlays call (Rafael's review of #41, item 3)",
+    # ── G860 (0.9.42-rc89): the owner's per-item consent is 🔒2179b (2026-10-01,
+    # "it's a Bench Dogs thing"): no new field; the Bench package supplies ADM's
+    # Ship Via rule so ERP-Epicor's one pre-send refusal names FOB and Ship Via.
+    "custom/modules/Quotes/ErpQuoteHooks/OrderRequirements.php":
+        "G860: the adapter at ERP-Epicor 1.2.4's OrderRequirements slot (a global class ERP-Epicor "
+        "instantiates by name, like PF's ErpQuoteHooks adapters)",
+    "custom/src/BenchDogs/BdAdmOrderRequirements.php":
+        "G860: ADM's Ship Via requirement on an order that converts an ADM ERP quote (the extension's G852 rule)",
     # ── G450 (0.9.42-rc74): the owner's per-item consent is his Yes to "a
     # Bench-only third type Suspect, alongside the stock Customer/Prospect,
     # never renaming them" (GAPS.md G450 row; register ~06:55Z 2026-09-24),
@@ -387,7 +395,8 @@ class TheLifecycleDoesOnlyTheKeptWork(unittest.TestCase):
         # (erp_reference.erp_max_length, ErpQuoteFacts::referenceMaxLength()),
         # which the Reference default is shortened to.
         # rc87 (🔒2167b): BdAdmRules asks ERP-Epicor 1.2.0's namespaced ErpQuoteFacts only.
-        self.assertEqual(epicor.group(1), "1.2.0")
+        # rc89 (G860, 🔒2179b): 1.2.4 is the first ERP-Epicor that asks OrderRequirements.php.
+        self.assertEqual(epicor.group(1), "1.2.4")
 
 
 if __name__ == "__main__":

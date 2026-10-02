@@ -111,6 +111,15 @@ and the package ships no module of its own.
 > sends still lands in the line and quote totals; nothing here refuses a
 > discount sent through the API (🔒2151b (d)).
 
+> **Grown by G860 (0.9.42-rc89)** (owner 🔒2179b, 2026-10-01: no new field, *"it's a
+> Bench Dogs thing"*: the Bench package supplies ADM's Ship Via rule, so ERP-Epicor's
+> one pre-send order refusal names the FOB AND the Ship Via). Two files, no field:
+>
+> | Path | What it is | Why it is here and not in core |
+> |---|---|---|
+> | `custom/modules/Quotes/ErpQuoteHooks/OrderRequirements.php` | the adapter at ERP-Epicor 1.2.4's `OrderRequirements` slot: the global class `ErpQuoteOrderRequirementsHook` ERP-Epicor instantiates by name; any failure answers "nothing missing" and is logged (the connector extension checks again before the send) | the slot is ERP-Epicor's generic contract (`ERP-Epicor/docs/order-requirements-hook.md`); the rule is ADM's |
+> | `custom/src/BenchDogs/BdAdmOrderRequirements.php` | on an ADM quote whose order CONVERTS the ADM ERP quote (a line keyed `<CO>__<QuoteNum>_<QuoteLine>_<QtyNum>`, core's G304 route) and whose quote has no Ship Via (its relate is the read-back of the ERP quote's ShipViaCode): *"This quote has no Ship Via and its ERP quote N has none either, so it cannot be ordered. Pick a Ship Via on the quote, then submit again. Nothing was sent to the ERP."* | the connector extension's own G852 rule (ext 0.3.7), asked before the send instead of after the FOB is fixed. A **Sales Order is not judged here**: Kinetic takes the customer's Ship Via there, and Sugar does not hold it (core never syncs `Customer.ShipViaCode` onto the Account), so the extension's write-back check stays the only judge of that route |
+
 ## G380 / G381 — what Bench Dogs' ADM company requires (🔒 1705b, 🔒 1724b)
 
 Measured on stage t7 (benchdogs-dev → ADM), 2026-09-23: ADM refuses Send to

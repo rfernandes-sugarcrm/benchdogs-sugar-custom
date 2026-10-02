@@ -47,6 +47,7 @@ SUITES = (
     "bd_customer_group_move_test.php",
     "bd_contact_fields_test.php",
     "bd_seller_discounts_hidden_test.php",
+    "bd_order_requirements_test.php",
 )
 
 php = shutil.which("php")
@@ -104,6 +105,8 @@ MIN_CHECKS = {
     "bd_contact_fields_test.php": 37,
     # rc85 (G848, 🔒2159b): 136 checks at 2026-09-30 (rc84: 109); floor ~15% under, as above.
     "bd_seller_discounts_hidden_test.php": 115,
+    # rc89 (G860, 🔒2179b): 33 checks at 2026-10-01; floor ~15% under, as above.
+    "bd_order_requirements_test.php": 28,
 }
 #: bd_adm_rules_test.php's second run has no ErpQuoteFacts and is meant to be
 #: tiny: an older ERP-Epicor skips the defaults and never fails a save.
@@ -191,6 +194,15 @@ class PhpSuitesTest(unittest.TestCase):
             BD_QUOTES_LAYOUT=str(shared_sugar.pinned_path("QuotesLayout.php")),
             BD_BASE_ERP_LAYOUT=str(shared_sugar.pinned_path("BaseErpLayout.php")))
 
+
+    def test_bd_order_requirements(self):
+        """G860 (rc89, 🔒2179b): ADM's Ship Via requirement at ERP-Epicor 1.2.4's
+        OrderRequirements slot - an order converting an ADM ERP quote with no
+        Ship Via is named in the one pre-send refusal; a Sales Order, another
+        company, a 2-part key and a failing read are not; and a half-installed
+        package answers nothing rather than refusing every order. Against
+        ERP-Epicor's real ErpQuoteFacts, found by ERP-Core's autoloader."""
+        self.assert_suite_passes("bd_order_requirements_test.php", BD_ERP_AUTOLOADER=ERP_AUTOLOADER)
 
 
 class PhpSuiteCoverageTest(unittest.TestCase):
