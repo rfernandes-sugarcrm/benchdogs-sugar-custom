@@ -96,7 +96,8 @@ MIN_CHECKS = {
     # rc78 (G809 + G804): 113 checks (+30: sections Q, R, S, M9, M10); floor
     # ~15% under, as above. T2 (2026-09-30): 121 checks in the global run
     # (+T0, T0b), 124 in the namespaced run (+T1-T5); floor ~15% under 121.
-    "bd_adm_rules_test.php": 102,
+    # rc90: 138 in the namespaced run (+14: section V, the lead baseline); floor ~15% under.
+    "bd_adm_rules_test.php": 117,
     "bd_erp_layout_test.php": 18,
     # 🔒2173b: the one-off ONEOFF-MoveBdCustomerGroup's cases (M1-M12, L2, L5)
     # went with its code; 10 checks left (was 29), all on this package.

@@ -120,6 +120,14 @@ and the package ships no module of its own.
 > | `custom/modules/Quotes/ErpQuoteHooks/OrderRequirements.php` | the adapter at ERP-Epicor 1.2.4's `OrderRequirements` slot: the global class `ErpQuoteOrderRequirementsHook` ERP-Epicor instantiates by name; any failure answers "nothing missing" and is logged (the connector extension checks again before the send) | the slot is ERP-Epicor's generic contract (`ERP-Epicor/docs/order-requirements-hook.md`); the rule is ADM's |
 > | `custom/src/BenchDogs/BdAdmOrderRequirements.php` | on an ADM quote whose order CONVERTS the ADM ERP quote (a line keyed `<CO>__<QuoteNum>_<QuoteLine>_<QtyNum>`, core's G304 route) and whose quote has no Ship Via (its relate is the read-back of the ERP quote's ShipViaCode): *"This quote has no Ship Via and its ERP quote N has none either, so it cannot be ordered. Pick a Ship Via on the quote, then submit again. Nothing was sent to the ERP."* | the connector extension's own G852 rule (ext 0.3.7), asked before the send instead of after the FOB is fixed. A **Sales Order is not judged here**: Kinetic takes the customer's Ship Via there, and Sugar does not hold it (core never syncs `Customer.ShipViaCode` onto the Account), so the extension's write-back check stays the only judge of that route |
 
+> **Grown by the lead baseline (0.9.42-rc90)** (the owner approved one hidden
+> field on 2026-10-02 to replace the connector extension's own state file).
+> Two files, one field on no layout:
+>
+> | Path | What it is | Why it is here and not in core |
+> |---|---|---|
+> | `custom/Extension/modules/Quotes/Ext/Vardefs/bd_lead_baseline.php` + `.../Language/en_us.bd_lead_baseline.php` | hidden `Quotes.bd_lead_baseline` (JSON): per Lead Source, Lead Type, Mktg Campaign and Marketing Event, the value Sugar and the ERP last agreed and the last ERP value. The quote before_save (`BdAdmRules::stampLeadBaseline`) stamps it on the connector's save that first gives the quote its ERP key (Send to Estimation; told by the `sugarai_erp_connector` platform, never by user); the Bench connector extension (0.3.9) rewrites it with each value it reads back from the ERP | the four fields and their ERP read-back are Bench's; the read-back keeps a seller's edit over a later ERP change only by knowing what was agreed |
+
 ## G380 / G381 — what Bench Dogs' ADM company requires (🔒 1705b, 🔒 1724b)
 
 Measured on stage t7 (benchdogs-dev → ADM), 2026-09-23: ADM refuses Send to

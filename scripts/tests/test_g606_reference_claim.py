@@ -29,6 +29,8 @@ PICKERS = [
     "bd_marketing_campaign",
     "bd_marketing_event",
 ]
+#: The one Bench Quotes field on no panel: the ERP read-back's hidden lead baseline.
+HIDDEN = ["bd_lead_baseline"]
 
 HARNESS = r"""<?php
 namespace Sugarcrm\Sugarcrm\MetaData {
@@ -148,7 +150,8 @@ def test_claim_survives_either_install_order_without_redefining_field(bench_newe
     assert {k: v for k, v in field.items() if k != "erp_layout"} == core["fields"][
         "erp_reference"
     ]
-    assert set(result["fields"]) - set(core["fields"]) == set(PICKERS)
+    assert set(result["fields"]) - set(core["fields"]) == set(PICKERS) | set(HIDDEN)
+    # The hidden field is placed nowhere: the panel holds the pickers and nothing else.
     assert (
         panel_names(result, 1)
         == ["erp_quotes_ship_via_name", "erp_reference"] + PICKERS

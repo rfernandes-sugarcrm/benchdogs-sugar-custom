@@ -1,6 +1,24 @@
-# Unreleased — wording only: the quote defaults hook label names the account-history fill
+# 0.9.42-rc90 — the lead baseline on the quote (one hidden field, owner-approved 2026-10-02)
 
-Version unchanged; the coordinator cuts the release. Ships in the next rc build.
+rc90 = rc89 + these changes only. Install order on a Bench tenant: unchanged (ERP-Epicor >= 1.2.4 → PF → rc90).
+Pairs with the connector extension 0.3.9, which reads and rewrites the field; install rc90 FIRST, then refresh
+core's schema snapshot for the tenant, then move the extension's old memory onto the quotes (the extension's
+`scripts/migrate_lead_memory_to_quotes.py`), then roll the extension.
+
+- **New field, hidden:** `Quotes.bd_lead_baseline` (`text`, on no layout, not audited, reported, imported,
+  mass-updated, copied with the quote, nor offered in Studio), with its label. It holds, as JSON, what Sugar and the
+  ERP last agreed for Lead Source, Lead Type, Mktg Campaign and Marketing Event, plus the last ERP value of each. It
+  replaces the SQLite file the connector extension kept in its container.
+- **Stamped here:** the quote before_save records the four values (each non-blank one, trimmed) as agreed by both
+  sides on the save that first gives the quote its ERP key, which is core's create during Send to Estimation. Only
+  a save on the connector's platform (`sugarai_erp_connector`) counts, never a seller's: the platform tells them
+  apart, not the user, because a connector may write as the same admin user sellers use. A quote created with its
+  key (made from the ERP) is not stamped; a quote keyed again after its key was cleared is stamped afresh. A failure
+  here is logged (`BenchDogs-Ext: lead baseline not stamped for quote …`) and never fails the save.
+- Tests: `scripts/tests/bd_adm_rules_test.php` section V (14 checks, written first: all red on rc89), including the
+  exact JSON the extension's own suite pins.
+
+# (in rc90) — wording only: the quote defaults hook label names the account-history fill
 
 - The Quotes before_save hook's label is now `Bench Dogs: ADM quote defaults (Reference, Project, account history)`
   (was `(Reference, Project)`), and its comment names the new-quote fill from the account's newest quotes that

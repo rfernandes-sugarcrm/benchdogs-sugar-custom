@@ -97,6 +97,13 @@ KEPT = {
         "their five labels, in ADM's own words",
     "custom/Extension/modules/Quotes/Ext/LogicHooks/bd_adm_quote_defaults.php":
         "G380/G381: before_save fills an EMPTY Reference / Project on an unsent ADM quote",
+    # The owner approved this one hidden field (2026-10-02) to replace the
+    # connector extension's own state file: it holds what both systems last
+    # agreed for the four lead fields, so the ERP read-back keeps a seller's edit.
+    "custom/Extension/modules/Quotes/Ext/Vardefs/bd_lead_baseline.php":
+        "the hidden lead baseline on Quote (no layout), stamped by the before_save above",
+    "custom/Extension/modules/Quotes/Ext/Language/en_us.bd_lead_baseline.php":
+        "its one label",
     "custom/Extension/application/Ext/Language/en_us.bd_adm_lists.php":
         "the five lookup-type labels + the one tenant list (group->project)",
     "custom/src/BenchDogs/BdAdmRules.php":
