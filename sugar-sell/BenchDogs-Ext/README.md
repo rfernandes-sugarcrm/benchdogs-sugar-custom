@@ -15,7 +15,7 @@ and the package ships no module of its own.
 > |---|---|---|
 > | `custom/Extension/modules/Accounts/Ext/Vardefs/bd_customer_group.php` | `bd_customer_group_code` (Epicor `Customer.GroupCode`) and `bd_customer_group` (`CustGrup.GroupDesc`) on Account | Bench's customer category (REQ-19). Core has no such field, and core's schema enforcement dead-letters the Bench connector's `erp_customers` writes without the vardef |
 > | `custom/Extension/modules/Accounts/Ext/Language/en_us.bd_customer_group.php` | their two labels | — |
-> | `custom/clients/base/api/BdBenchDogsActionsApi.php` | **EMPTY** — declares no class, registers no route | the one retirement stub left: an api file is loaded by path on every REST dictionary rebuild, so dropping it would leave rc68's `bd-tools/repair-ui` registered on upgraded tenants. Droppable once every tenant carrying Bench Dogs has taken rc69 |
+> | ~~`custom/clients/base/api/BdBenchDogsActionsApi.php`~~ | **no longer shipped (rc87)** | the emptied REST stub; ONEOFF-RetireBdResidue 1.0.6+ deleted the tenant's copy (*withdrawn, 🔒2173b: a tenant it never ran on keeps its copy*) |
 > | `scripts/post_execute.php`, `scripts/bd_pre_uninstall.php`, `scripts/post_uninstall.php` | the lifecycle: rebuild + have ERP-Core place the marked fields + the G294 step report; proof of life; rebuild + have ERP-Core retire the marked fields | — |
 >
 > **rc70 (🔒 1724b): this package ships NO layout code.** Its fields carry
@@ -24,13 +24,22 @@ and the package ships no module of its own.
 > takes them off once their vardef is gone). `BdAccountsLayoutExtensions.php`
 > stays on an upgraded tenant as an INERT orphan - Module Loader never deletes
 > a file a later build stops shipping (§CW / G37), and nothing rc70 ships
-> requires it; the one-off does not blank it yet (flagged for its owner).
+> requires it; nothing removes it (the one-offs were withdrawn, 🔒2173b).
+> **rc82 (G458) adds no layout WRITER either:** one sidecar record-view overlay
+> for five fields a CUSTOMER package owns (below), merged at metadata build; it
+> writes nothing to a deployed view.
+> **rc84 (G848) adds none either:** five sidecar view overlays that stop a
+> quote DRAWING a discount (below), merged at metadata build; they write
+> nothing to a deployed view and change no stored value.
+> **rc85 (G848, 🔒2159b) adds none either:** a sixth overlay (the Quotes list
+> preview) and two en_us language overrides of existing ERP-Core keys.
 >
 > **rc72 (G507): the Account pair's marker is `panel_overview` after Industry,
 > and both fields are `readonly`.** Moving the pair OUT of the header rc69 put it
 > in (on a view with no `panel_body`, e.g. Ophir) is not this package's job - a
-> placed field is never moved by `sync()` and this package writes no layout - it
-> is the disposable one-off `sugar-sell/ONEOFF-MoveBdCustomerGroup`.
+> placed field is never moved by `sync()` and this package writes no layout. It
+> was the disposable one-off `ONEOFF-MoveBdCustomerGroup`, *withdrawn and deleted
+> by 🔒2173b (2026-09-30)*: nothing in this repository moves the pair any more.
 >
 > `scripts/tests/test_g280_minimal_footprint.py` pins this list against the
 > source tree AND the built zip, so it cannot grow silently.
@@ -46,7 +55,7 @@ and the package ships no module of its own.
 > | `custom/Extension/modules/Quotes/Ext/Vardefs/bd_adm_required_fields.php` + `.../Language/en_us.bd_adm_required_fields.php` | Quote pickers `bd_lead_source`, `bd_lead_type`, `bd_project_id`, and (G460) `bd_marketing_campaign`, `bd_marketing_event` (each `erp_layout`-marked for the ERP panel, after Reference), and their labels | ADM's own UD columns (`LeadSrc_c`, `LeadType_c`), ADM's one-project-per-quote rule, and ADM's required marketing pair; no other company asks for them |
 > | `custom/Extension/modules/Quotes/Ext/LogicHooks/bd_adm_quote_defaults.php` | before_save: fills an EMPTY `erp_reference` (ship-to city + state, shortened to the ERP's limit, G530) and an EMPTY Project (product-group default) on an unsent ADM quote; exits before loading anything for a quote it cannot touch | ADM-only defaults; creates nothing (🔒 1499 still holds, `test_g243…` pins it) |
 > | `custom/Extension/application/Ext/Language/en_us.bd_adm_lists.php` | labels for the five `ERP_LookupValues` types, and ONE tenant list: `bd_adm_project_by_group_list` | Bench data, edited in Dropdown Editor |
-> | `custom/modules/Quotes/BdAdmRules.php`, `BdAdmLookupOptions.php` | the rules (which companies are ADM, the two defaults) and the pickers' option functions | — |
+> | `custom/src/BenchDogs/BdAdmRules.php` (`Sugarcrm\Sugarcrm\custom\BenchDogs\BdAdmRules`, autoloaded; before rc86 `custom/modules/Quotes/BdAdmRules.php`) | the rules (which companies are ADM, the two defaults) and, since rc87, the pickers' option sources as static methods (`BdAdmRules::leadSourceOptions` etc., named by the vardefs with no include; `BdAdmLookupOptions.php` is retired) | — |
 
 > **Grown by G450 (0.9.42-rc74), with the owner's per-item consent** (his Yes to
 > a Bench-only third account type "Suspect" beside the stock Customer/Prospect,
@@ -56,6 +65,60 @@ and the package ships no module of its own.
 > | Path | What it is | Why it is here and not in core |
 > |---|---|---|
 > | `custom/Extension/application/Ext/Language/_override_en_us.bd_account_type_suspect.php` | ONE key, `account_type_dom['Suspect']`, set only when absent | Epicor types a customer CUS / PRO / SUS; ERP-Core's dom has two values, so an Epicor SUS shows as Prospect (ADM: 1,022 of 1,132 "Prospects"). Core writes `Suspect` for SUS customers once the ADM connection's `customer_type_extra` is `{"SUS": "Suspect"}`; the value is Bench's (a dom key core cannot add). `_override` so it merges after ERP-Core's whole-array REPLACE assignment (the rc23 lesson) |
+
+> **Grown by G458 (0.9.42-rc82)** (🔒2102b: the Bench contact Function / Role /
+> primary flags, READ-ONLY Epicor → Sugar; the Bench connector extension 0.3.6
+> writes them, level L807). One file, and it is not a field:
+>
+> | Path | What it is | Why it is here and not in core |
+> |---|---|---|
+> | `custom/Extension/modules/Contacts/Ext/clients/base/views/record/bd_epicor_contact_fields.php` | a sidecar overlay on the Contacts record view: `epicor_function_c`, `role_c`, `primary_billing_c`, `primary_purchasing_c`, `primary_shipping_c` at the end of ERP-Core's **ERP** panel (`LBL_RECORDVIEW_PANEL_ERP`, after ERP Contact ID; else `panel_body`; else the first non-header panel with fields), every entry of the five `readonly`, **only the ones the tenant's merged Contact vardefs hold** | The five are Bench Dogs' OWN fields (their package `Bench_Dogs_Account_Contact_Fields` 1.0.0, `custom_fields`), and it ships no layout. The `erp_layout` marker cannot carry them: ERP-Core's `ErpLayoutExtraFields::sync()` supports Quotes/Accounts only, and a marker on a field another package owns is included BEFORE `fields_meta_data` merges (SugarEnt 26.1.0 `VardefManager::refreshVardefs`), so it can neither see the field nor avoid leaving a typeless phantom def where that package is absent. The overlay is merged each metadata build (`MetaDataFiles::getClientFileContents`), follows a Studio-edited view, reaches upgraded tenants, and leaves with uninstall. On Ophir / stock / et (no customer package) it changes nothing |
+
+> **Grown by G848 (0.9.42-rc84)** (owner 🔒2151b, 2026-09-30: *"benchdog dont
+> want seller to apply discount so both the discount pannel and the line item
+> doscounts should be not vissible on benchdog MLP"*). Five files, one body
+> (`scripts/tests/bd_seller_discounts_hidden_test.php` holds them byte-equal),
+> none a field or a setting:
+>
+> | Path (`custom/Extension/modules/…/Ext/clients/base/views/…/_override_zz_bd_hide_seller_discounts.php`) | Not drawn | Left alone |
+> |---|---|---|
+> | `Quotes/…/record/` (also the create form, which is built from the record meta) | ERP-Epicor's **Discount** panel `LBL_RECORDVIEW_PANEL_ERP_DISCOUNT` and its one field `erp_discount_panel` ("Apply a discount / Whole order / % / Apply"); any quote-level discount figure an admin placed | the nested fetch list (lines still READ `discount_amount` / `discount_select`), the ERP panel's Discount Warning, ERP-Epicor's SetVisibility rules |
+> | `Quotes/…/quote-data-grand-totals-header/` | `deal_tot` ("Order Level Discount") | Line Items Discounted Subtotal, Tax (via ERP), Shipping, Grand Total |
+> | `Quotes/…/quote-data-grand-totals-footer/` | `erp_document_discount_amount` ("Order Level Discount", shown by ERP-Epicor only when non-zero) | every other row; the stored figure and its recalculation |
+> | `Products/…/quote-data-group-list/` (rows, edit row, column headers) | `discount_field` ("Line Discount": `discount_amount` + the % / amount toggle `discount_select`) and the line-discount figures derived from them | `discount_price` (Unit Price), `discount_usdollar`, Extended Price, Discounted Total |
+> | `Products/…/record/` (the line page the line number opens) | the same `discount_field` | everything else |
+> | `Quotes/…/preview/` (rc85, 🔒2159b: the Quotes LIST preview) | `deal_tot` ("Order Discount") | Subtotal, Tax, Shipping, Grand Total and every other entry |
+>
+> rc85 also relabels two ERP-Core captions on Bench only, as en_us overrides of the EXISTING keys (no new label, no field):
+> `custom/Extension/modules/Quotes/Ext/Language/_override_en_us.bd_hide_seller_discounts.php` sets `LBL_NEW_SUB` to
+> **"Subtotal"** (ERP-Core: "Line Items Discounted Subtotal"; the Bench quote PDF's subtotal caption reads the same key),
+> and `custom/Extension/modules/Products/Ext/Language/_override_en_us.bd_hide_seller_discounts.php` sets
+> `LBL_ERP_DISCOUNTED_TOTAL` to **"Total"** (ERP-Core: "Discounted Total", the grid column). `_override` merges them after
+> ERP-Core's plain files whichever package is installed last (ModuleInstaller sorts `_override*` last, then mtime).
+> Other languages keep ERP-Core's text. Uninstall returns ERP-Core's captions.
+>
+> rc87: the six overlays are three lines each (rc88 adds one comment line on why the `class_exists` guard stays: the compiled ext outlives the class for one step of an uninstall); the shared rule is `custom/src/BenchDogs/BdHiddenFields.php` (`BdHiddenFields::strip()`, which keeps its own try/catch so a bad panel never breaks a view). An overlay runs only on a panel list, and only when the class autoloads; otherwise the view is served as read.
+>
+> **Admin > Quotes Configuration.** That screen saves the Quotes summary columns into the deployed views, but these overlays strip the discount fields at render. An admin who re-adds Discount there sees the setting saved and never drawn on a Bench tenant. That is by design (🔒2151b); nothing stored changes.
+>
+> Why an overlay and not a layout write (decision 803): Sugar includes these
+> right after whatever viewdef is deployed, at every metadata build, so they
+> follow ERP-Epicor's layout in either install order, and nothing ever saves
+> the hidden view (`ViewdefManager::loadViewdef()` skips `.ext.` paths).
+> `_override` merges them after any plain fragment another package adds. A
+> tenant without this package keeps every discount field; uninstall deletes the
+> files and Module Loader's rebuild gives the fields back. A discount Epicor
+> sends still lands in the line and quote totals; nothing here refuses a
+> discount sent through the API (🔒2151b (d)).
+
+> **Grown by G860 (0.9.42-rc89)** (owner 🔒2179b, 2026-10-01: no new field, *"it's a
+> Bench Dogs thing"*: the Bench package supplies ADM's Ship Via rule, so ERP-Epicor's
+> one pre-send order refusal names the FOB AND the Ship Via). Two files, no field:
+>
+> | Path | What it is | Why it is here and not in core |
+> |---|---|---|
+> | `custom/modules/Quotes/ErpQuoteHooks/OrderRequirements.php` | the adapter at ERP-Epicor 1.2.4's `OrderRequirements` slot: the global class `ErpQuoteOrderRequirementsHook` ERP-Epicor instantiates by name; any failure answers "nothing missing" and is logged (the connector extension checks again before the send) | the slot is ERP-Epicor's generic contract (`ERP-Epicor/docs/order-requirements-hook.md`); the rule is ADM's |
+> | `custom/src/BenchDogs/BdAdmOrderRequirements.php` | on an ADM quote whose order CONVERTS the ADM ERP quote (a line keyed `<CO>__<QuoteNum>_<QuoteLine>_<QtyNum>`, core's G304 route) and whose quote has no Ship Via (its relate is the read-back of the ERP quote's ShipViaCode): *"This quote has no Ship Via and its ERP quote N has none either, so it cannot be ordered. Pick a Ship Via on the quote, then submit again. Nothing was sent to the ERP."* | the connector extension's own G852 rule (ext 0.3.7), asked before the send instead of after the FOB is fixed. A **Sales Order is not judged here**: Kinetic takes the customer's Ship Via there, and Sugar does not hold it (core never syncs `Customer.ShipViaCode` onto the Account), so the extension's write-back check stays the only judge of that route |
 
 ## G380 / G381 — what Bench Dogs' ADM company requires (🔒 1705b, 🔒 1724b)
 
@@ -147,12 +210,19 @@ connection, `lookup_code_lists` (and, until core's short-page fix G424 is in,
 
 ## What rc69 removed, and where each piece lives now
 
+> **🔒2173b (owner, 2026-09-30): "remove all the one offs I dont want that code".** Every one-off package
+> (`ONEOFF-RetireBdResidue`, `ONEOFF-MoveBdCustomerGroup`, and the three under `archive/`) was withdrawn and
+> its code deleted, mirroring erp-integration-sugar #172, whose `mlp_lint` MLP023 now refuses any `ONEOFF-*`
+> package. The rows and steps below that name the one-off are kept as the record of what was done. Module
+> Loader never deletes a file a later build stops shipping, so a tenant the one-off never ran on keeps
+> whatever it left; that is the accepted state under the ruling.
+
 | Removed | Now owned by | Evidence the removal changes nothing a seller sees |
 |---|---|---|
 | `custom/modules/Quotes/ErpQuoteHooks/OpportunityContribution.php` | **Partial Fulfillment ≥ 1.0.41** — same path, same class, same all-alternative preserve gate (G282 / 🔒 1511) | `scripts/tests/test_governing_contribution.py` runs every scenario through rc68's Bench body and PF 1.0.43's; the amount ERP-Core writes is identical in all of them. One recorded divergence: a failed line-role READ (rc68 preserved, PF answers from the quote total) |
 | post_install's write of `erp_integration.partial_order_sales_stage` | **Partial Fulfillment ≥ 1.0.43** — the same value, `'Partial Production Ordered'`, as a reader-side default (G305 / 🔒 1519) | a tenant that already has the row keeps it; one without it behaves as though it had been written |
-| the Bench Dogs Quotes panel removal (K-2), the `bd_governing_origin` marker removal (K-3), the `zz_bd_stage_doms` fragment removal (K-5), and their helper classes `BdQuotesLayoutExtensions` / `BdOpportunitiesLayoutExtensions` | **the one-off `ONEOFF-RetireBdResidue`** (🔒 1521) | spent: the one-off ran on every QA tenant — et 1.0.0 2026-09-22 22:22Z; stock and Ophir 1.0.1 2026-09-23 00:58Z; failed 0 (G234 CLOSED) — and nothing re-adds any of them |
-| the 39 emptied `custom/Extension` stubs (retired `bd_*` vardefs, labels, hook registrations, the stage style, the country lookup label, the orphan `LBL_RECORDVIEW_PANEL_BENCHDOGS`) and the `BdKineticOpportunityHook` tombstone | **the one-off** — it DELETES each Extension path and BLANKS the tombstone | every path is still on the one-off's worklist (asserted by `scripts/tests/bd_retirement.py`) |
+| the Bench Dogs Quotes panel removal (K-2), the `bd_governing_origin` marker removal (K-3), the `zz_bd_stage_doms` fragment removal (K-5), and their helper classes `BdQuotesLayoutExtensions` / `BdOpportunitiesLayoutExtensions` | **the one-off `ONEOFF-RetireBdResidue`** (🔒 1521; *withdrawn with its code, 🔒2173b*) | spent: the one-off ran on every QA tenant — et 1.0.0 2026-09-22 22:22Z; stock and Ophir 1.0.1 2026-09-23 00:58Z; failed 0 (G234 CLOSED) — and nothing re-adds any of them |
+| the 39 emptied `custom/Extension` stubs (retired `bd_*` vardefs, labels, hook registrations, the stage style, the country lookup label, the orphan `LBL_RECORDVIEW_PANEL_BENCHDOGS`) and the `BdKineticOpportunityHook` tombstone | **the one-off** — it DELETED each Extension path and BLANKED the tombstone (*withdrawn, 🔒2173b*) | every path was on the one-off's worklist until 🔒2173b; `scripts/tests/bd_retirement.py` now asserts only that none ships again |
 | the `bd-tools/repair-ui` admin route | nothing — it re-ran K-2/K-3 (spent) and the placement `post_execute.php` already runs | the file ships empty, so the route is unregistered on upgraded tenants too |
 | the relationship / TableDictionary rebuild and the language rebuild in the lifecycle scripts | Module Loader itself (`install_extensions()` rebuilds languages before `post_execute`) | this package declares no relationship and no longer empties any language fragment |
 
@@ -171,9 +241,10 @@ Module Loader never deletes a file a later build stops shipping (§CW / G37), an
    Dogs build AFTER the one-off last ran (rc67/rc68 re-copied the empty stubs).
    It removes them and reports `REMOVED`/`already gone` per path; a second run
    reads `NOTHING LEFT TO REMOVE`.
+   *Withdrawn (owner 🔒2173b): the one-off's code is deleted. Skip this step.*
 3. Not covered by either, and inert: `BdQuotesLayoutExtensions.php` and
    `BdOpportunitiesLayoutExtensions.php` stay on an upgraded tenant's disk with
-   nothing calling them. The one-off's owner can add both to its blank list.
+   nothing calling them. (*The one-off was withdrawn, 🔒2173b; nothing removes them.*)
 
 Install order is unchanged: **ERP-Epicor → Partial Fulfillment ≥ 1.0.43 → Bench
 Dogs last.** The manifest refuses an older PF (`ERR_UW_NO_DEPENDENCY`).

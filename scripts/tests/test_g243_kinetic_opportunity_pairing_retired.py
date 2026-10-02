@@ -60,10 +60,11 @@ both rather than reading them:
 every QA tenant took a build carrying them, and then the one-off
 ONEOFF-RetireBdResidue DELETED the registration and BLANKED the tombstone on all
 three (et 2026-09-22 22:22Z; stock and Ophir 2026-09-23 00:58Z; failed 0). So
-rc69 ships neither, and the suite now asserts the retirement the one-off
-performs - not in the source, not in the built zip, still on its worklist, in
-the right order (registration before class) - plus that NOTHING this package
-ships registers a hook or reaches the Opportunities bean layer at all.
+rc69 ships neither. 🔒2173b (2026-09-30) withdrew the one-off and deleted its
+code, so the suite asserts that neither path is in the source or the built zip,
+plus that NOTHING this package ships registers a hook or reaches the
+Opportunities bean layer at all. A tenant that still carries either path keeps
+it; nothing in this repository removes it any more.
 
 MUTATION-VERIFIED at rc60-rc68 (each applied, suite re-run, failure observed):
   restore either ``$hook_array[...][] = array(2, ... 'pairOnSave')``
@@ -88,7 +89,7 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from bd_retirement import assert_retired_by_oneoff, oneoff_worklist
+from bd_retirement import assert_not_shipped
 
 import shared_sugar
 
@@ -111,7 +112,6 @@ MUST_OVERWRITE = (
 #: No shipped file may create an Opportunity any more. Until rc68 the one
 #: exemption was BdBenchDogsActionsApi.php (the retired account action's
 #: endpoint); rc69 ships that path EMPTY, so the exemption is gone too.
-ONEOFF_LIB = ROOT / "sugar-sell/ONEOFF-RetireBdResidue"
 
 #: ERP-Epicor lives in a sibling checkout; the control is only assertable when
 #: it is present, so that case skips rather than fails when it is not.
@@ -214,8 +214,9 @@ class TheRegistrationRegistersNothing(unittest.TestCase):
     #:  - G804 (🔒 2081b): on an Account not in the ERP, the Cust. Group name
     #:    follows the picked Group Code.
     #: In the order the harness sees them (Accounts' fragment first).
-    ALLOWED = [["before_save", "custom/modules/Quotes/BdAdmRules.php", "BdAdmRules", "accountBeforeSave"],
-               ["before_save", "custom/modules/Quotes/BdAdmRules.php", "BdAdmRules", "beforeSave"]]
+    # rc86 (MLP024): the namespaced class, no file - Sugar autoloads it from custom/src/BenchDogs.
+    ALLOWED = [["before_save", None, "Sugarcrm\\Sugarcrm\\custom\\BenchDogs\\BdAdmRules", "accountBeforeSave"],
+               ["before_save", None, "Sugarcrm\\Sugarcrm\\custom\\BenchDogs\\BdAdmRules", "beforeSave"]]
 
     def test_no_shipped_fragment_registers_a_hook(self):
         """Every Extension fragment this package ships, INCLUDED into a harness
@@ -255,20 +256,22 @@ class TheRegistrationRegistersNothing(unittest.TestCase):
     def test_the_one_allowed_hook_creates_and_saves_nothing(self):
         """The allowed hook's class, code only: it may set fields on the bean
         it is handed (before_save), and must never create or save a record."""
-        body = (PACKAGE / self.ALLOWED[0][1]).read_text(encoding="utf-8")
+        # rc86: the class is registered with no file; Sugar's PSR-4 rule for custom/ names its path.
+        cls = self.ALLOWED[0][2].removeprefix("Sugarcrm\\Sugarcrm\\custom\\").replace("\\", "/")
+        body = (PACKAGE / "custom/src" / f"{cls}.php").read_text(encoding="utf-8")
         code = re.sub(r"/\*.*?\*/", "", body, flags=re.S)
         code = re.sub(r"(?m)(^|\s)//[^\n]*", r"\1", code)
         for forbidden in ("->save(", "::newBean('Opportunities'", "Opportunit"):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, code)
 
-    def test_rc39s_registration_is_retired_off_the_tenant(self):
+    def test_rc39s_registration_never_ships_again(self):
         """An ABSENT file retires nothing: rc39's copy simply survives - which
         is exactly how the writer outlived the package that shipped it. Through
-        rc68 an empty file OVERWROTE it; from rc69 the one-off DELETES it."""
+        rc68 an empty file OVERWROTE it; from rc69 the one-off DELETED it. That
+        one-off is withdrawn (🔒2173b), so this holds only the package side."""
         rel = str(REGISTRATION.relative_to(PACKAGE))
-        assert_retired_by_oneoff(self, rel, "rc39's pairOnSave / pairOnAccountLink registration")
-        self.assertEqual(oneoff_worklist()[rel], "deleted")
+        assert_not_shipped(self, rel, "rc39's pairOnSave / pairOnAccountLink registration")
 
 
 # ── 2. The class creates nothing ────────────────────────────────────────────
@@ -277,32 +280,13 @@ class TheRegistrationRegistersNothing(unittest.TestCase):
 
 class TheClassCreatesNoOpportunity(unittest.TestCase):
     """The second half. Through rc68 the tombstone class was CALLED here against
-    a BeanFactory that counted bean creation. From rc69 the tenant's copy is
-    BLANKED by the one-off with lib/emptied.php, so what has to hold is that the
-    blank body defines nothing at all - and that the registration goes first, so
-    no compiled hook entry is left pointing at a class that is no longer there
-    (LogicHook::loadHookClass() fails soft on that anyway, 26.1.0
-    include/utils/LogicHook.php:203-222, but that is a log line per save)."""
+    a BeanFactory that counted bean creation. From rc69 the one-off took the
+    tenant's copy away (blanked, then from 1.0.6 deleted); 🔒2173b withdrew it,
+    so what is left to hold is that the package never ships the class again."""
 
-    def test_the_tombstone_is_retired_off_the_tenant(self):
+    def test_the_tombstone_never_ships_again(self):
         rel = str(TOMBSTONE.relative_to(PACKAGE))
-        assert_retired_by_oneoff(self, rel, "BdKineticOpportunityHook")
-        self.assertEqual(oneoff_worklist()[rel], "blanked")
-
-    def test_the_blank_body_defines_nothing(self):
-        emptied = ONEOFF_LIB / "lib/emptied.php"
-        done = subprocess.run(
-            [_php(), "-r", "$c = get_declared_classes(); $f = get_defined_functions()['user'];"
-             " require $argv[1]; echo json_encode(['classes' => array_values(array_diff("
-             "get_declared_classes(), $c)), 'functions' => array_values(array_diff("
-             "get_defined_functions()['user'], $f))]);", str(emptied)],
-            capture_output=True, text=True, check=True)
-        self.assertEqual(json.loads(done.stdout), {"classes": [], "functions": []})
-
-    def test_the_registration_is_removed_before_the_class_is_blanked(self):
-        source = (ONEOFF_LIB / "scripts/post_execute.php").read_text(encoding="utf-8")
-        self.assertLess(source.index("$bdInstaller->uninstallExt('bd_residue', $bdSubdir);"),
-                        source.index("$bdInstaller->copy_path($bdEmptySource, $bdOrphan);"))
+        assert_not_shipped(self, rel, "BdKineticOpportunityHook")
 
 
 # ── 3. Both files actually ship ─────────────────────────────────────────────
@@ -356,8 +340,8 @@ class TheRetirementShipsAndOverwrites(unittest.TestCase):
 
     def test_neither_path_ships_any_more(self):
         """Turned around at rc69: a copy entry for either path would put a body
-        back over the one-off's removal on every install, and hand Module
-        Loader a backup to restore on uninstall."""
+        back on every install, and hand Module Loader a backup to restore on
+        uninstall."""
         for target in MUST_OVERWRITE:
             with self.subTest(target=target):
                 self.assertNotIn(target, self.names)

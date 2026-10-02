@@ -1,0 +1,14 @@
+{
+  "why": "ERP-Epicor before 1.2.0 ships ErpQuoteFacts as a GLOBAL class at custom/modules/Quotes/ErpQuoteFacts.php, which BdAdmRules includes by that literal path. 1.2.0 (erp-integration-sugar 280e0929, the Rafael review's T2) moves it to custom/src/Erp as Sugarcrm\\Sugarcrm\\custom\\Erp\\ErpQuoteFacts, so the global file is gone from the sibling tree and can no longer be a shared-sugar pin (test_shared_fixture_drift.py compares those to the sibling's CURRENT path). But BdAdmRules must keep working on every tenant still on 1.1.x until it upgrades, so bd_adm_rules_test.php's first run keeps using the global class: this COPY of the last one ERP-Epicor shipped, pinned to that commit. test_erp_epicor_1_1_fixture_pin.py holds it to its sha256 everywhere and to the commit's own object wherever the sibling has it. The copy sits at its docroot path, as on a tenant.",
+  "files": {
+    "custom/modules/Quotes/ErpQuoteFacts.php": {
+      "repository": "sugarcrm/erp-integration-sugar",
+      "source": "sugar-sell/ERP-Epicor/src/custom/modules/Quotes/ErpQuoteFacts.php",
+      "commit": "a7737052397da92ccd19de71fe9f273e379c3d3d",
+      "branch": "staging",
+      "note": "build: ERP-Epicor 1.1.179 (#147), 2026-09-30T07:27:26Z - staging's head when 1.2.0 was cut from it (280e0929 descends from it); the last ERP-Epicor that ships the global class",
+      "sha256": "451722f4bfeb62185dc15a8e3bdb3f8d10b910ada4492138967abf934bd1c408",
+      "bytes": 17316
+    }
+  }
+}

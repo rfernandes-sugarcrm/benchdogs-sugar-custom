@@ -43,7 +43,7 @@ reverses it before hashing, so the vendored file is still proven to be the
 upstream file plus exactly that line and nothing else.
 
 Run (from anywhere; needs the sibling checkout, fetched):
-    git -C ../erp-integration-sugar fetch origin fix/order-selected-lines-hide-once-submitted
+    git -C ../erp-integration-sugar fetch origin refactor/rafael-review
     python3 scripts/refresh_mlp_lint.py              # branch head
     python3 scripts/refresh_mlp_lint.py --ref <sha>  # an exact commit
 then run the whole suite and commit the refreshed files with the pin.
@@ -63,7 +63,7 @@ import shared_sugar  # noqa: E402  (resolves the sibling even from a worktree)
 
 PIN = ROOT / "scripts/mlp_lint.PINNED.json"
 REPOSITORY = "sugarcrm/erp-integration-sugar"
-BRANCH = "fix/order-selected-lines-hide-once-submitted"
+BRANCH = "refactor/rafael-review"
 
 # Vendored as a set. The tests are what make the linter trustworthy, so a rule
 # is never taken without its test, and a test never without its fixtures.

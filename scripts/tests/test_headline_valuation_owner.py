@@ -60,6 +60,15 @@ REPO = ROOT.name
 # different org), and skipping these rather than running them would have made
 # a green check mean nothing - see scripts/refresh_shared_fixtures.py.
 SHARED_HOOK = shared_sugar.resolve("QuoteOpportunityAmount.php")
+# 0.9.42-rc83 (ERP-Epicor 1.2.0, erp-integration-sugar 280e0929): the hook is
+# Sugarcrm\Sugarcrm\custom\Erp\QuoteOpportunityAmount in ERP-Core's custom/src
+# and AUTOLOADS its neighbour QuotePrimaryQuoteSoleEnforcer (it no longer
+# require_once's it). So the harness requires ERP-Core's own autoloader stand-in
+# - the sibling's, or the pin whose roots are the pinned packages - rather than
+# the file, and names the class in full. The stand-ins below stay global: the
+# hook imports SugarBean, BeanFactory, Opportunity and SugarCurrency with `use`.
+ERP_AUTOLOADER = shared_sugar.resolve("sugar_autoloader.php")
+HOOK_CLASS = "\\Sugarcrm\\Sugarcrm\\custom\\Erp\\QuoteOpportunityAmount"
 FIXTURE = r'''
 #[AllowDynamicProperties]
 class SugarBean {
@@ -77,7 +86,7 @@ class SugarBean {
         // Simulate the registered shared after_save hook, not native
         // SugarLogic calculations (which real SugarBean::save does invoke).
         if ($this->id === 'owned-quote' && !empty($GLOBALS['quote_save_hook'])) {
-            (new QuoteOpportunityAmount())->refresh($this, 'after_save');
+            (new __HOOK_CLASS__())->refresh($this, 'after_save');
         }
     }
 }
@@ -124,7 +133,7 @@ $GLOBALS['log'] = new class {
 };
 $GLOBALS['relationship_reads'] = [];
 $GLOBALS['new_bean_modules'] = [];
-require '__SHARED_HOOK__';
+require '__ERP_AUTOLOADER__';
 $opp = new Opportunity();
 $opp->id = 'owned-opportunity';
 $opp->amount = 0;
@@ -150,13 +159,14 @@ BeanFactory::$beans = [
     'Opportunities' => [$opp->id => $opp],
     'Quotes' => [$quote->id => $quote],
 ];
-$shared = new QuoteOpportunityAmount();
+$shared = new __HOOK_CLASS__();
 $trace = [];
 '''
 
 
 # Bind the resolved path into the fixture (absolute, so cwd stops mattering).
-FIXTURE = FIXTURE.replace("__SHARED_HOOK__", str(SHARED_HOOK))
+FIXTURE = (FIXTURE.replace("__ERP_AUTOLOADER__", str(ERP_AUTOLOADER))
+           .replace("__HOOK_CLASS__", HOOK_CLASS))
 
 
 @unittest.skipUnless(shutil.which("php"), "requires PHP 8.2 build-test image")
@@ -221,6 +231,28 @@ $quote->currency_id = 'owned-other-currency';
 $shared->refresh($quote);
 ''')
         self.assertEqual(observed["amount"], 560, observed)
+
+    def test_the_hook_under_test_is_the_resolved_file_and_autoloads_its_enforcer(self):
+        """0.9.42-rc83: an autoloader decides which file answers, so prove it
+        is the one resolved (the sibling's, else the pin) and that the enforcer
+        came in through the same rule. Broken looks like: a class served from
+        another tree, or QuotePrimaryQuoteSoleEnforcer never loaded."""
+        result = subprocess.run(
+            ["php", "-r", FIXTURE + r'''
+$shared->refresh($quote);
+$enforcer = '\Sugarcrm\Sugarcrm\custom\Erp\QuotePrimaryQuoteSoleEnforcer';
+echo json_encode([
+    realpath((new \ReflectionClass($shared))->getFileName()),
+    class_exists($enforcer, false) ? realpath((new \ReflectionClass($enforcer))->getFileName()) : null,
+]);
+'''],
+            cwd=WORKSPACE, capture_output=True, text=True, check=True,
+        )
+        self.assertEqual(result.stderr, "", result.stderr)
+        self.assertEqual(json.loads(result.stdout), [
+            str(SHARED_HOOK.resolve()),
+            str(shared_sugar.resolve("QuotePrimaryQuoteSoleEnforcer.php").resolve()),
+        ])
 
 
 if __name__ == "__main__":

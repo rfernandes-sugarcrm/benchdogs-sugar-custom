@@ -35,8 +35,9 @@ WHAT THIS SUITE PINS.
     red/green on its own.
 3.  CONTROL: Bench Dogs' other layout work still runs - the REQ-19 customer
     group fields are still placed. (Through rc68 the retired Bench Dogs panel
-    was also removed here; from rc69 that removal is the one-off's K-2, spent
-    on every QA tenant, and the install does not touch the Quotes view at all.)
+    was also removed here; from rc69 that removal was the one-off's K-2, spent
+    on every QA tenant and withdrawn with its code by 🔒2173b, and the install
+    does not touch the Quotes view at all.)
 4.  No shipped PHP or JS reads or writes a record-view ``buttons`` array, calls
     a button writer, or touches the stash (comments stripped), and neither
     layout class still has a button method.
@@ -125,6 +126,8 @@ namespace Sugarcrm\Sugarcrm\MetaData {
     }
 }
 namespace {
+// SugarAutoLoader's $dirMap rule for a global class: custom/include/Foo.php (rc87: the scripts autoload ErpLayoutExtraFields).
+spl_autoload_register(function ($c) { if (is_file("custom/include/$c.php")) { require_once "custom/include/$c.php"; } });
     use Sugarcrm\Sugarcrm\MetaData\ViewdefManager;
     $GLOBALS['logged'] = [];
     class TestLog { public function __call($m, $a) { $GLOBALS['logged'][] = (string) ($a[0] ?? ''); } }
@@ -256,13 +259,11 @@ class BenchDogsInstallLeavesButtonsAlone(unittest.TestCase):
         """rc69 (G280 / 🔒 1567): the Bench Dogs panel removal moved to the
         one-off's K-2, which ran on every QA tenant, so the install writes
         nothing to Quotes - not even a removal. The panel given here is left
-        exactly as it came; its route off a tenant is the one-off."""
+        exactly as it came. 🔒2173b withdrew the one-off, so a tenant it never
+        ran on keeps the panel; nothing in this repository removes it any more."""
         self.assertNotIn("Quotes", self.full["saves"])
         panels = [p["name"] for p in self.full["defs"]["Quotes"]["panels"]]
         self.assertEqual(panels, [p["name"] for p in QUOTES_PANELS])
-        oneoff = (ROOT / "sugar-sell/ONEOFF-RetireBdResidue/scripts/post_execute.php").read_text()
-        self.assertIn("BdQuotesLayoutExtensions::write();", oneoff,
-                      "nothing removes the retired Bench Dogs panel any more")
 
     def test_control_the_install_asks_erp_core_to_place_the_fields(self):
         """ANTI-VACUITY: the install really ran. Since rc70 (🔒 1724b) it places
@@ -310,20 +311,20 @@ class NoButtonLogicShipped(unittest.TestCase):
                 offenders.append(f"{path.relative_to(PKG)}: {m.group(0)}")
         self.assertEqual(offenders, [], "record-view button logic is still shipped")
 
-    def test_the_button_label_files_are_retired_off_the_tenant(self):
+    def test_the_button_label_files_never_ship_again(self):
         """A label with no action behind it keeps a retired button reading as
         supported in Studio, the report builder and column pickers. Through
         rc68 both files shipped EMPTY so they overwrote the tenant's copy; from
-        rc69 the one-off deletes them (bd_retirement)."""
-        from bd_retirement import assert_retired_by_oneoff
+        rc69 the one-off deleted them (withdrawn, 🔒2173b; bd_retirement)."""
+        from bd_retirement import assert_not_shipped
         for rel in ("custom/Extension/modules/Quotes/Ext/Language/en_us.bd_action_buttons.php",
                     "custom/Extension/modules/Accounts/Ext/Language/en_us.bd_action_buttons.php"):
             with self.subTest(file=rel):
-                assert_retired_by_oneoff(self, rel, "labels for retired buttons")
+                assert_not_shipped(self, rel, "labels for retired buttons")
 
     def test_neither_layout_class_ships(self):
-        # The Quotes class no longer ships at all (rc69); the one-off carries
-        # its own copy for K-2. The Accounts class went at rc70 (🔒 1724b):
+        # The Quotes class no longer ships at all (rc69; K-2 was the one-off's
+        # until 🔒2173b withdrew it). The Accounts class went at rc70 (🔒 1724b):
         # ERP-Core's ErpLayoutExtraFields places the fields from their marker.
         self.assertFalse((PKG / "custom/modules/Quotes/BdQuotesLayoutExtensions.php").exists())
         self.assertFalse((PKG / "custom/modules/Accounts/BdAccountsLayoutExtensions.php").exists())

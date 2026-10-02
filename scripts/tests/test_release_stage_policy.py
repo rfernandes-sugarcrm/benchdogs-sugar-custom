@@ -66,9 +66,9 @@ class RetiredProviderDoesNotShip(unittest.TestCase):
             POLICY.exists(),
             f"{POLICY_REL} is shipping again — either the deletion was reverted "
             "or something re-created it; if a tenant genuinely still holds the "
-            "OLD deciding provider, run ONEOFF-RetireBdResidue >= 1.0.3, which "
-            "deletes every body Bench Dogs shipped there (G594) - never ship a "
-            "stub or an empty file from this package")
+            "OLD deciding provider (G594), nothing here removes it any more: the "
+            "one-off that did was withdrawn (🔒2173b). Never ship a stub or an "
+            "empty file from this package")
 
     def test_no_file_anywhere_in_the_package_defines_the_class(self):
         """The off-switch guard. A file at ANY path that declares the class
@@ -94,9 +94,13 @@ class RetiredProviderDoesNotShip(unittest.TestCase):
         🔁 The unreleased G380/G381 branch (🔒 1705b) brought the directory back
         with two ordering hook adapters; 🔒 1724b moved that rule into
         ERP-Epicor (a per-company switch), so the whole `ErpQuoteHooks/` tree is
-        gone again - never this provider path or PF's OpportunityContribution."""
+        gone again - never this provider path or PF's OpportunityContribution.
+
+        🔁 rc89 (G860, 🔒2179b): one adapter is back, at ERP-Epicor 1.2.4's
+        OrderRequirements slot (ADM's Ship Via). Still never this provider path."""
         hooks = PKG / "custom/modules/Quotes/ErpQuoteHooks"
-        self.assertEqual(sorted(p.name for p in hooks.iterdir()) if hooks.exists() else [], [])
+        self.assertEqual(sorted(p.name for p in hooks.iterdir()) if hooks.exists() else [],
+                         ["OrderRequirements.php"])
         self.assertTrue((PKG / "pack.php").is_file(), "PKG is not the package - the cases above prove nothing")
         self.assertIn("sugarai_benchdogs_ext", (PKG / "pack.php").read_text(encoding="utf-8"))
 

@@ -202,7 +202,8 @@ standards forbid, whether or not today's inputs happen to be package
 constants. The review trigger that would catch a later widening of those
 inputs does not exist, so the injection arrives unreviewed.
 
-Use the query builder with bound parameters. Sees: a SQL verb in a PHP string
+Bind the values: SugarQuery for a read, DBManager updateParams()/insertParams()
+for a write (MLP025). Sees: a SQL verb in a PHP string
 on a line that also concatenates a variable or interpolates one.""",
 )
 
@@ -1295,6 +1296,8 @@ class Package:
     # source directory it was built from is not there to look at - so rules that
     # ask whether a file EXISTS cannot be answered from one, and must sit out.
     from_zip: bool = False
+    # A one-off cleanup package (sugar-sell/ONEOFF-*, built as oneoff_*.zip), which MLP023 refuses.
+    oneoff: bool = False
 
     @property
     def php_files(self) -> list[Path]:
@@ -1583,10 +1586,10 @@ def _hook_methods(pkg: Package) -> set[tuple[str, str]]:
             continue
         # Manifest form: 'class' => 'X', 'function' => 'y'
         for m in re.finditer(
-            r"['\"]class['\"]\s*=>\s*['\"](\w+)['\"].*?['\"]function['\"]\s*=>\s*['\"](\w+)['\"]",
+            r"['\"]class['\"]\s*=>\s*['\"]([\w\\]+)['\"].*?['\"]function['\"]\s*=>\s*['\"](\w+)['\"]",
             text, re.DOTALL,
         ):
-            pairs.add((m.group(1), m.group(2)))
+            pairs.add((m.group(1).split("\\")[-1], m.group(2)))
         # Ext fragment form:
         #   $hook_array['after_save'][] = array(
         #       1, 'description', 'path/To/Class.php', 'Class', 'method',
@@ -1602,7 +1605,8 @@ def _hook_methods(pkg: Package) -> set[tuple[str, str]]:
         ):
             strings = re.findall(r"['\"]([^'\"]+)['\"]", m.group(1))
             if len(strings) >= 2:
-                pairs.add((strings[-2], strings[-1]))
+                # A namespaced class is matched by its short name.
+                pairs.add((strings[-2].split("\\")[-1], strings[-1]))
     return pairs
 
 
@@ -1682,7 +1686,7 @@ def check_sql_concat(pkg: Package) -> list[Finding]:
                 "MLP005", REQUIRED, rel(f, pkg.root), line_no,
                 "assembles SQL by concatenation or interpolation instead of "
                 "binding parameters",
-                "Use the connection's query builder with setParameter()",
+                "Bind the values: SugarQuery for a read, DBManager updateParams()/insertParams() for a write",
             ))
     return findings
 
@@ -2108,6 +2112,488 @@ include of modules/ModuleBuilder/parsers/views/. Cannot see: a class name built
 at runtime.""",
 )
 
+rule(
+    "MLP020", REQUIRED,
+    "A class Sugar autoloads is loaded by path",
+    "Review of erp-integration-sugar #81, 2026-09-30 (R1, R2, R15, R19)",
+    """Installed package code required its own classes by path, usually as
+`if (!class_exists('X', false) && file_exists(__DIR__ . '/../../include/X.php'))
+require_once ...`. The reviewer's verdict: this filesystem behaviour does not
+belong in a SugarCloud package. It also hides a trap: class_exists('X', false)
+never autoloads, so the guard reads a class as missing whenever this file runs
+first.
+
+Sugar resolves these classes by name (SugarEnt 26.1.0
+include/utils/autoloader.php): $dirMap maps a class Foo to
+custom/include/Foo.php and custom/clients/base/api/Foo.php, $prefixMap maps
+SugarACLFoo to custom/data/acl/SugarACLFoo.php, and the PSR-4 prefix
+Sugarcrm\\Sugarcrm\\custom\\ maps to custom/src/
+(vendor/composer/autoload_psr4.php). The Module Loader rebuilds the class
+cache on every install (ModuleInstaller::install -> SugarAutoLoader::
+buildCache), so a class installed with the package is found by name.
+
+Sees: literal require/include/file_exists paths, __DIR__-relative or
+Sugar-root-relative, in files the package installs under custom/, whose
+resolved target is a class file in one of those autoloaded locations. Install
+scripts under scripts/ are not checked. Stock parent classes (a require of
+modules/... or include/...) are not flagged. Cannot see: a path built at
+runtime.""",
+)
+
+LOAD_RE = re.compile(
+    r"\b(?:require|include)(?:_once)?\b[\s(]*(__DIR__\s*\.\s*)?['\"]([^'\"]+\.php)['\"]"
+    r"|\bfile_exists\(\s*(__DIR__\s*\.\s*)?['\"]([^'\"]+\.php)['\"]"
+)
+AUTOLOADED_CLASS_DIRS = ("custom/include", "custom/clients/base/api", "custom/data/acl")
+
+
+def installed_path(path: Path) -> str | None:
+    """Sugar-root-relative path a runtime file installs at, or None for install scripts."""
+    parts = path.parts
+    if "custom" not in parts:
+        return None
+    at = parts.index("custom")
+    if "scripts" in parts[:at]:
+        return None
+    return "/".join(parts[at:])
+
+
+def literal_loads(path: Path, code: str):
+    """Sugar-root-relative targets of the literal loads in one line of code."""
+    here = installed_path(path)
+    for m in LOAD_RE.finditer(code):
+        relative = m.group(1) or m.group(3)
+        literal = m.group(2) or m.group(4)
+        if relative:
+            if here is None:
+                continue
+            yield os.path.normpath(os.path.dirname(here) + "/" + literal.lstrip("/"))
+        else:
+            yield literal
+
+
+NAMESPACE_RE = re.compile(r"^\s*namespace\s+([\w\\]+)\s*;", re.M)
+CLASS_DECL_RE = re.compile(r"^\s*(?:abstract\s+|final\s+)*(?:class|interface|trait)\s+(\w+)", re.M)
+CLASS_LIKE_NAME_RE = re.compile(r"^[A-Z][A-Za-z0-9]*$")
+
+
+def is_autoloaded_class_file(target: str, installed: dict[str, Path]) -> bool:
+    """Would Sugar's autoloader find the class this target file declares?
+
+    Verified against the file when the package ships it: the class must be named
+    after the file, and under custom/src it must sit in the PSR-4 namespace for its
+    directory. A target outside the package is judged by its location and name alone.
+    """
+    stem = os.path.splitext(os.path.basename(target))[0]
+    in_class_dir = os.path.dirname(target) in AUTOLOADED_CLASS_DIRS
+    in_src = target.startswith("custom/src/")
+    if not (in_class_dir or in_src) or is_vendored(Path(target)):
+        return False
+    source = installed.get(target)
+    if source is None:
+        return in_class_dir and bool(CLASS_LIKE_NAME_RE.match(stem))
+    text = read(source)
+    if stem not in CLASS_DECL_RE.findall(text):
+        return False
+    namespace = NAMESPACE_RE.search(text)
+    if in_class_dir:
+        return namespace is None
+    expected = "Sugarcrm\\Sugarcrm\\custom\\" + "\\".join(os.path.dirname(target).split("/")[2:])
+    return namespace is not None and namespace.group(1).rstrip("\\") == expected.rstrip("\\")
+
+
+NO_AUTOLOAD_GUARD_RE = re.compile(
+    r"\b(?:class|interface)_exists\(\s*['\"]\\?([\w\\]+)['\"]\s*,\s*false\s*\)", re.I
+)
+
+
+def autoloaded_class_names(installed: dict[str, Path]) -> set[str]:
+    """Classes the package installs where Sugar's autoloader finds them by name."""
+    names: set[str] = set()
+    for target, source in installed.items():
+        if not is_autoloaded_class_file(target, installed):
+            continue
+        stem = os.path.splitext(os.path.basename(target))[0]
+        namespace = NAMESPACE_RE.search(read(source))
+        names.add(f"{namespace.group(1)}\\{stem}" if namespace else stem)
+    return names
+
+
+def check_autoloaded_class_loaded_by_path(pkg: Package) -> list[Finding]:
+    """MLP020. Installed code requiring a class the autoloader already resolves."""
+    findings: list[Finding] = []
+    installed = {p: f for f in pkg.php_files if (p := installed_path(f)) is not None}
+    autoloaded = autoloaded_class_names(installed)
+    for f in pkg.php_files:
+        if installed_path(f) is None or is_vendored(f):
+            continue
+        text = read(f)
+        if is_generated(text):
+            continue
+        for line_no, line, code, window in code_lines(text):
+            for m in NO_AUTOLOAD_GUARD_RE.finditer(code):
+                name = m.group(1).replace("\\\\", "\\")
+                if name in autoloaded and not ignored(window, "MLP020"):
+                    findings.append(Finding(
+                        "MLP020", REQUIRED, rel(f, pkg.root), line_no,
+                        f"class_exists('{name}', false) never autoloads, so it reads "
+                        f"an autoloaded class as missing whenever nothing loaded it first",
+                        "Reference the class directly, or drop the false argument",
+                    ))
+            for target in literal_loads(f, code):
+                if not is_autoloaded_class_file(target, installed) or ignored(window, "MLP020"):
+                    continue
+                findings.append(Finding(
+                    "MLP020", REQUIRED, rel(f, pkg.root), line_no,
+                    f"loads {target} by path; Sugar's autoloader resolves that class by name",
+                    "Delete the require/file_exists (and any class_exists(..., false) guard "
+                    "around it) and reference the class directly",
+                ))
+    return findings
+
+
+rule(
+    "MLP021", REQUIRED,
+    "Installed code clears Sugar's caches itself",
+    "Review of erp-integration-sugar #81, 2026-09-30 (R3)",
+    """ErpLayoutExtraFields invalidated PHP's compiled copy of a record view
+(opcache_invalidate) and cleared the client metadata and template caches
+(MetaDataFiles::clearModuleClientCache, TemplateHandler::clearCache) after
+writing it. The reviewer: this goes against best practice, and Quick Repair and
+Rebuild already clears these caches; the Module Loader runs that rebuild at the
+end of every install.
+
+Package code that runs at request time has no business resetting platform
+caches. Install-time layout writers under scripts/ are not checked: they mirror
+what Sugar's own ModuleBuilder deploy does mid-install (and G718 measured why
+the viewdef reader there must not read PHP's stale compiled copy). A package
+clearing an entry it stored itself with sugar_cache_put() is not flagged.
+
+Sees: opcache_invalidate/opcache_reset, MetaDataFiles::clearModuleClientCache,
+TemplateHandler::clearCache, MetaDataManager::clearAPICache and RepairAndClear
+in files the package installs under custom/, comments stripped.""",
+)
+
+CACHE_CLEAR_RE = re.compile(
+    r"\b(opcache_invalidate|opcache_reset|MetaDataFiles::clearModuleClientCache|"
+    r"TemplateHandler::clearCache|MetaDataManager::clearAPICache|RepairAndClear)\b"
+)
+
+
+def check_custom_cache_clearing(pkg: Package) -> list[Finding]:
+    """MLP021. Installed code resetting platform caches."""
+    findings: list[Finding] = []
+    for f in pkg.php_files:
+        if installed_path(f) is None or is_vendored(f):
+            continue
+        text = read(f)
+        if is_generated(text):
+            continue
+        for line_no, line, code, window in code_lines(text):
+            m = CACHE_CLEAR_RE.search(code)
+            if not m or ignored(window, "MLP021"):
+                continue
+            findings.append(Finding(
+                "MLP021", REQUIRED, rel(f, pkg.root), line_no,
+                f"calls {m.group(1)}; installed code does not clear Sugar's caches, "
+                f"the Module Loader's rebuild does",
+                "Delete the call; if a value must be re-read in the same request, "
+                "keep it in memory instead of reading the file back",
+            ))
+    return findings
+
+
+rule(
+    "MLP022", REQUIRED,
+    "Package JavaScript re-implements SugarLogic",
+    "Review of erp-integration-sugar #81, 2026-09-30 (R4)",
+    """The quote line grid overrode the SugarLogic plugin's
+_getSugarLogicDependenciesForModel() to filter the dependencies stock hands a
+row. The reviewer: this redefines SugarLogicDependency handling instead of
+using it. Dependencies belong in metadata (vardef formulas, the view's
+`dependencies`, Ext/Dependencies), evaluated by the stock plugin; a sidecar
+file that overrides the plugin's methods, reads its private context or patches
+an action's evaluation forks the platform's behaviour and breaks on upgrade.
+
+Sees, in JavaScript the package installs under custom/ (comments stripped):
+a definition of _getSugarLogicDependenciesForModel,
+setupSugarLogicForModelOrCollection, initSugarLogic, startSugarLogic or
+stopSugarLogic; the plugin's private context (._slCtx); and an assignment to
+an action's evalExpression.""",
+)
+
+SUGARLOGIC_INTERNALS_RE = re.compile(
+    r"\b(_getSugarLogicDependenciesForModel|setupSugarLogicForModelOrCollection|initSugarLogic|"
+    r"startSugarLogic|stopSugarLogic)\s*(?::\s*function\b|=\s*function\b|\([^)]*\)\s*\{)"
+    r"|\.(_slCtx)\b"
+    r"|\.(evalExpression)\s*=(?!=)"
+)
+
+
+def check_sugarlogic_reimplemented(pkg: Package) -> list[Finding]:
+    """MLP022. Sidecar code overriding or patching the SugarLogic plugin."""
+    findings: list[Finding] = []
+    for f in pkg.js_files:
+        if installed_path(f) is None or is_vendored(f):
+            continue
+        for line_no, line, code, window in code_lines(read(f)):
+            m = SUGARLOGIC_INTERNALS_RE.search(code)
+            if not m or ignored(window, "MLP022"):
+                continue
+            what = m.group(1) or m.group(2) or m.group(3)
+            findings.append(Finding(
+                "MLP022", REQUIRED, rel(f, pkg.root), line_no,
+                f"touches SugarLogic's internals ({what}); the stock plugin evaluates "
+                f"dependencies, package code declares them",
+                "Express the rule as a dependency in metadata and let the stock "
+                "SugarLogic plugin run it",
+            ))
+    return findings
+
+
+rule(
+    "MLP023", REQUIRED,
+    "A package retires files or fields itself",
+    "Review of erp-integration-sugar #81, 2026-09-30 (R20, R21, R22)",
+    """ERP-Epicor carried its own retirement machinery: an append-only list of
+files earlier versions shipped, removed at install through
+ModuleInstaller::uninstall_new_files(), "tombstone" files installed only so that
+call could reach a single file, and a vardef that unset() a field an old file
+still defined. The reviewer: that is what the Module Loader's install and
+uninstall are for, and the extra logic clutters the package and is hard to
+maintain.
+
+A package ships what it installs and nothing that deletes. A separate one-off
+cleanup package is not the way around that either: the owner had them all
+uninstalled and their code deleted (🔒2173b, superseding 🔒2126b).
+
+Sees: calls to uninstall_new_files, uninstall_customizations or
+uninstall_relationship, any file under a tombstones/ directory, and any package
+whose directory starts with ONEOFF- (or a zip named oneoff_*). Not an unset() in
+a vardef: hiding a stock field that way is an override the package's uninstall
+reverses.""",
+)
+
+SELF_REMOVAL_RE = re.compile(
+    r"\b(uninstall_new_files|uninstall_customizations|uninstall_relationship)\s*\("
+)
+
+
+def check_self_retirement(pkg: Package) -> list[Finding]:
+    """MLP023. Retirement machinery, or a one-off cleanup package."""
+    findings: list[Finding] = []
+    if pkg.oneoff:
+        findings.append(Finding(
+            "MLP023", REQUIRED, pkg.name, 0,
+            "is a one-off cleanup package; one-off packages are not allowed (owner 🔒2173b)",
+            "Delete the package; leftovers are the Module Loader's to remove",
+        ))
+    for f in pkg.files:
+        if "tombstones" in f.parts:
+            findings.append(Finding(
+                "MLP023", REQUIRED, rel(f, pkg.root), 0,
+                "ships a tombstone file, which exists only so the package can delete another file",
+                "Stop shipping it; leftovers are the Module Loader's to remove",
+            ))
+    for f in pkg.php_files:
+        if is_vendored(f):
+            continue
+        for line_no, line, code, window in code_lines(read(f)):
+            m = SELF_REMOVAL_RE.search(code)
+            if not m or ignored(window, "MLP023"):
+                continue
+            what = m.group(1)
+            findings.append(Finding(
+                "MLP023", REQUIRED, rel(f, pkg.root), line_no,
+                f"retires files or fields itself ({what}); the Module Loader's install and "
+                f"uninstall own that",
+                "Remove the retirement logic; leftovers are the Module Loader's to remove",
+            ))
+    return findings
+
+
+rule(
+    "MLP024", REQUIRED,
+    "A class file at the root of custom/modules/<Module>/",
+    "Review of erp-integration-sugar #81, 2026-09-30 (R6-R14)",
+    """ERP-Core and ERP-Epicor kept their hook and rule classes at the root of
+custom/modules/Quotes/, custom/modules/Products/ and friends. The reviewer:
+Sugar has predefined paths for loading files, and a module's root is not a
+place for a package's classes. Nothing autoloads a class there, so every caller
+had to require it by path.
+
+A package class lives under custom/src/ in the PSR-4 namespace
+Sugarcrm\\Sugarcrm\\custom\\ (vendor/composer/autoload_psr4.php), where
+Sugar's autoloader finds it by name; a logic hook names it with a null file
+(include/utils/LogicHook.php loadHookClass() ignores the file for a namespaced
+class).
+
+Two root files are Sugar's own and are not flagged: <Module>ApiHelper.php, which
+ApiHelper::getHelper() loads with
+requireWithCustom('modules/<Module>/<Module>ApiHelper.php')
+(include/api/ApiHelper.php:41), and controller.php.
+
+Sees: a .php file directly under custom/modules/<Module>/ that declares a
+class, interface or trait.""",
+)
+
+MODULE_ROOT_RE = re.compile(r"^custom/modules/([^/]+)/([^/]+\.php)$")
+
+
+def check_module_root_class(pkg: Package) -> list[Finding]:
+    """MLP024. A package class kept at a module's root instead of custom/src."""
+    findings: list[Finding] = []
+    for f in pkg.php_files:
+        path = installed_path(f)
+        m = MODULE_ROOT_RE.match(path or "")
+        if not m or is_vendored(f):
+            continue
+        module, name = m.groups()
+        if name in (f"{module}ApiHelper.php", "controller.php"):
+            continue
+        declared = CLASS_DECL_RE.findall(read(f))
+        if not declared:
+            continue
+        findings.append(Finding(
+            "MLP024", REQUIRED, rel(f, pkg.root), 0,
+            f"declares {declared[0]} at the root of custom/modules/{module}/, where nothing autoloads it",
+            "Move it to custom/src/ in the Sugarcrm\\Sugarcrm\\custom\\ namespace and reference it by name",
+        ))
+    return findings
+
+
+rule(
+    "MLP025", REQUIRED,
+    "Package PHP runs SQL directly",
+    "Review of erp-integration-sugar #81, 2026-09-30 (R16-R18, T3b)",
+    """ERP-Core and ERP-Epicor read and wrote tables through DBManager::query(),
+the DBAL connection and its query builder. The reviewer: direct queries go
+against Sugar's best practices and some of them are blocked in SugarCloud; use
+SugarBean for this. A read goes through SugarQuery (or BeanFactory for one
+record), which applies the bean's table, custom table, deleted and visibility
+rules unless told otherwise (from() options add_deleted / team_security). A
+write goes through the bean's save(), or - where a save must not run (no hooks,
+no base_rate re-stamp, a soft-deleted row, a compare-and-set WHERE) - through
+DBManager's own write API, updateParams() / insertParams() / delete($bean),
+which Sugar core itself uses and which this rule does not flag.
+
+Where Sugar has no API at all (a row lock, a config row delete) the line keeps
+`mlp-lint: ignore MLP025` with its reason.
+
+Sees, in every package PHP file (install scripts included), comments stripped:
+->query(, ->limitQuery(, ->getConnection( and DBManagerFactory::getConnection(,
+->executeQuery(, ->executeStatement(, ->executeUpdate(, ->fetchByAssoc(,
+createQueryBuilder(, a DBManager's fetchOne()/getOne() ($db, $this->db,
+$GLOBALS['db']), quote()/quoted() (a value spliced into SQL text), and the
+legacy list APIs that take a raw WHERE, get_full_list() / get_list(). Not
+repairTableParams (schema repair) and not a SQL string in metadata such as a
+SearchFields subquery.""",
+)
+
+DIRECT_SQL_RE = re.compile(
+    r"->\s*(query|limitQuery|getConnection|executeQuery|executeStatement|executeUpdate|fetchByAssoc"
+    r"|get_full_list|get_list)\s*\("
+    r"|\b(createQueryBuilder)\s*\("
+    r"|\bDBManagerFactory::\s*(getConnection)\s*\("
+    r"|\$(?:db|this->db|GLOBALS\[['\"]db['\"]\])\s*->\s*(fetchOne|getOne|fetchRow)\s*\("
+    r"|\$\w+\s*->\s*(quoted?)\s*\("
+)
+
+
+def check_direct_sql(pkg: Package) -> list[Finding]:
+    """MLP025. Package code running SQL instead of going through SugarQuery / SugarBean."""
+    findings: list[Finding] = []
+    for f in pkg.php_files:
+        if is_vendored(f):
+            continue
+        for line_no, line, code, window in code_lines(read(f)):
+            m = DIRECT_SQL_RE.search(code)
+            if not m or ignored(window, "MLP025"):
+                continue
+            what = next(g for g in m.groups() if g)
+            findings.append(Finding(
+                "MLP025", REQUIRED, rel(f, pkg.root), line_no,
+                f"runs SQL directly ({what}); Sugar's best practice is SugarQuery / SugarBean, "
+                f"and SugarCloud blocks some direct queries",
+                "Read through SugarQuery (or BeanFactory::retrieveBean for one record); write with the "
+                "bean's save(), or DBManager updateParams()/insertParams()/delete($bean) where a save must not run",
+            ))
+    return findings
+
+
+rule(
+    "MLP026", REQUIRED,
+    "A PHP comment block longer than a short why",
+    "Review of erp-integration-sugar #81, 2026-09-30 (R23, T7)",
+    """The reviewer: "the comments on .php files are way too verbose for a scripting
+language, we should strip them down and keep it short." ERP-Core, ERP-Epicor and
+Partial Fulfillment carried about 36,000 comment lines - measured incidents,
+rulings and history - against about 30,000 lines of code. The owner ruled that a
+comment says one line of why and keeps its G-number or ruling reference as the
+pointer; the narrative lives in git history, validation/decision-register.md and
+docs/knowledge lessons (🔒2129b).
+
+Sees: a comment block (a /* */ or /** */ docblock, or consecutive // or # lines)
+with more than three lines of prose. PHPDoc tag lines (@param, @return, ...) and
+mlp-lint markers are not prose. Generated Studio/ModuleBuilder files are skipped.""",
+)
+
+MAX_COMMENT_PROSE = 3
+
+
+def _prose(line: str) -> bool:
+    t = line.strip()
+    for lead in ("/**", "/*", "*/", "*", "//", "#"):
+        if t.startswith(lead):
+            t = t[len(lead):].strip()
+            break
+    t = t.removesuffix("*/").strip()
+    return bool(t) and not t.startswith("@") and "mlp-lint:" not in t
+
+
+def comment_blocks(text: str):
+    """Yield (first line number, [lines]) for each comment block in PHP text."""
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        t = lines[i].strip()
+        if t.startswith("/*"):
+            start = i
+            while "*/" not in lines[i] and i + 1 < len(lines):
+                i += 1
+            yield start + 1, lines[start:i + 1]
+        elif t.startswith("//") or (t.startswith("#") and not t.startswith("#[")):
+            start = i
+            while i + 1 < len(lines) and (lines[i + 1].strip().startswith("//")
+                                          or (lines[i + 1].strip().startswith("#")
+                                              and not lines[i + 1].strip().startswith("#["))):
+                i += 1
+            yield start + 1, lines[start:i + 1]
+        i += 1
+
+
+def check_verbose_comments(pkg: Package) -> list[Finding]:
+    """MLP026. A comment block with more than a short why."""
+    findings: list[Finding] = []
+    for f in pkg.php_files:
+        if is_vendored(f):
+            continue
+        text = read(f)
+        if is_generated(text):
+            continue
+        for line_no, block in comment_blocks(text):
+            prose = sum(1 for line in block if _prose(line))
+            if prose <= MAX_COMMENT_PROSE or ignored("\n".join(block), "MLP026"):
+                continue
+            findings.append(Finding(
+                "MLP026", REQUIRED, rel(f, pkg.root), line_no,
+                f"a comment block with {prose} lines of prose; keep one short why",
+                "Cut it to one line of why and keep its G-number or ruling reference; "
+                "the history belongs in git, the decision register or a docs/knowledge lesson",
+            ))
+    return findings
+
+
 PARSER_CLASS_RE = re.compile(
     r"\b(AbstractMetaDataImplementation|DeployedMetaDataImplementation|"
     r"DeployedSidecarSubpanelImplementation|MetaDataImplementationInterface|"
@@ -2151,6 +2637,13 @@ def check_metadata_parser_usage(pkg: Package) -> list[Finding]:
 
 SOURCE_RULES = [
     check_class_redeclare,
+    check_autoloaded_class_loaded_by_path,
+    check_custom_cache_clearing,
+    check_sugarlogic_reimplemented,
+    check_self_retirement,
+    check_module_root_class,
+    check_verbose_comments,
+    check_direct_sql,
     check_metadata_parser_usage,
     check_dynamic_dispatch,
     check_uninstall_symmetry,
@@ -2191,7 +2684,9 @@ def load_package(root: Path, name: str | None = None) -> Package:
         f = root / candidate
         if f.is_file():
             manifest += read(f)
-    return Package(name or root.name, root, files, manifest, unshipped)
+    pkg = Package(name or root.name, root, files, manifest, unshipped)
+    pkg.oneoff = pkg.name.split("/")[-1].startswith("ONEOFF-")
+    return pkg
 
 
 def discover(repo: Path) -> list[Package]:
@@ -2240,6 +2735,7 @@ def lint_zip(path: Path) -> tuple[Package, list[Finding]]:
             zf.extractall(dest)
         pkg = load_package(dest, path.name)
         pkg.from_zip = True
+        pkg.oneoff = path.parent.parent.name.startswith("ONEOFF-") or path.name.startswith("oneoff_")
         findings = lint_package(pkg)
         if any(n.strip("/").lower().endswith(".md5") for n in names):
             findings.append(Finding(

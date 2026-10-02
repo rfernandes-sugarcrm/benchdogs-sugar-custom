@@ -24,8 +24,14 @@ WHAT SHIPS (0.9.42-rc69), and why each item cannot live upstream:
   scripts/post_execute.php, bd_pre_uninstall.php, post_uninstall.php
       the lifecycle of the above.
 
-Everything else is REMOVED, and every removed path has a named route off a
-tenant that already carries it - asserted below, not assumed.
+Everything else is REMOVED, and every removed path is held out of the source
+and the built zip - asserted below, not assumed. Through 2026-09-30 each also
+had a named route off a tenant that already carried it (the one-off
+ONEOFF-RetireBdResidue's worklist, or "inert", or "Partial Fulfillment owns the
+path"). 🔒2173b withdrew every one-off and deleted its code, so a tenant that
+still carries a removed path keeps it: Module Loader never deletes a file a
+later build stops shipping. That is the owner's accepted state, and the reasons
+below are kept as the record of why each path went.
 
 GROWN ONCE SINCE, WITH CONSENT: G380 / G381 (🔒 1705b, the per-item consent
 🔒 1520 asks for) add files for Bench Dogs' ADM company's required quote values.
@@ -48,8 +54,6 @@ MUTATION-VERIFIED (each applied, this file re-run, the named case observed red):
       -> test_post_install_runs_exactly_the_two_steps
   lower the Partial Fulfillment floor back to 1.0.40
       -> test_partial_fulfillment_is_new_enough_to_own_what_this_stopped_doing
-  drop an entry from the one-off's Extension worklist
-      -> test_every_removed_path_has_a_route_off_the_tenant
 """
 from __future__ import annotations
 
@@ -62,7 +66,7 @@ import tempfile
 import unittest
 import zipfile
 
-from bd_retirement import PKG, built_zip, oneoff_worklist, zip_names
+from bd_retirement import PKG, built_zip, zip_names
 
 #: The whole package. A new entry here is a new override on a customer tenant,
 #: and under 🔒 1520 it needs the owner's item-by-item consent first.
@@ -73,8 +77,6 @@ KEPT = {
         "the customer category (REQ-19): the two Account fields",
     "custom/Extension/modules/Accounts/Ext/Language/en_us.bd_customer_group.php":
         "their two labels",
-    "custom/clients/base/api/BdBenchDogsActionsApi.php":
-        "EMPTY: unregisters rc68's bd-tools/repair-ui on upgraded tenants",
     "scripts/post_execute.php": "lifecycle",
     "scripts/bd_pre_uninstall.php": "lifecycle",
     "scripts/post_uninstall.php": "lifecycle",
@@ -97,10 +99,18 @@ KEPT = {
         "G380/G381: before_save fills an EMPTY Reference / Project on an unsent ADM quote",
     "custom/Extension/application/Ext/Language/en_us.bd_adm_lists.php":
         "the five lookup-type labels + the one tenant list (group->project)",
-    "custom/modules/Quotes/BdAdmRules.php":
-        "the ADM rules themselves: which companies are ADM, the two defaults, options",
-    "custom/modules/Quotes/BdAdmLookupOptions.php":
-        "the pickers' option functions (vardef 'function' needs a plain function)",
+    "custom/src/BenchDogs/BdAdmRules.php":
+        "the ADM rules themselves: which companies are ADM, the two defaults, options (rc86: namespaced, MLP024)",
+    "custom/src/BenchDogs/BdHiddenFields.php":
+        "G848 (rc87): the one body the six discount overlays call (Rafael's review of #41, item 3)",
+    # ── G860 (0.9.42-rc89): the owner's per-item consent is 🔒2179b (2026-10-01,
+    # "it's a Bench Dogs thing"): no new field; the Bench package supplies ADM's
+    # Ship Via rule so ERP-Epicor's one pre-send refusal names FOB and Ship Via.
+    "custom/modules/Quotes/ErpQuoteHooks/OrderRequirements.php":
+        "G860: the adapter at ERP-Epicor 1.2.4's OrderRequirements slot (a global class ERP-Epicor "
+        "instantiates by name, like PF's ErpQuoteHooks adapters)",
+    "custom/src/BenchDogs/BdAdmOrderRequirements.php":
+        "G860: ADM's Ship Via requirement on an order that converts an ADM ERP quote (the extension's G852 rule)",
     # ── G450 (0.9.42-rc74): the owner's per-item consent is his Yes to "a
     # Bench-only third type Suspect, alongside the stock Customer/Prospect,
     # never renaming them" (GAPS.md G450 row; register ~06:55Z 2026-09-24),
@@ -127,17 +137,56 @@ KEPT = {
     "custom/Extension/modules/Accounts/Ext/Dependencies/bd_adm_customer_group_required.php":
         "🔒2085b: Cust. Group required in the edit views on an ADM Customer not yet in the ERP "
         "(a view dependency: never served required, never run on save)",
+    # ── G458 (0.9.42-rc82): the owner's 🔒2102b (build the Bench contact
+    # Function / Role / primary flags now, READ-ONLY Epicor -> Sugar) and the
+    # coordinator's brief (2026-09-30: the five fields synced by ext 0.3.6 L807
+    # are on no Contacts view; place them, read-only, guarded). The fields are
+    # the CUSTOMER's (Bench_Dogs_Account_Contact_Fields 1.0.0), so this is a
+    # metadata-time overlay, not a field and not a vardef marker: ERP-Core's
+    # ErpLayoutExtraFields supports Quotes/Accounts only, and a marker on a
+    # field another package owns leaves a typeless phantom def where that
+    # package is absent (see the file's docblock).
+    "custom/Extension/modules/Contacts/Ext/clients/base/views/record/bd_epicor_contact_fields.php":
+        "G458: the customer's five Epicor contact fields shown read-only on the Contacts record "
+        "view (ERP panel), only where the tenant has them (a sidecar overlay; no deployed-view write)",
+    # ── G848 (0.9.42-rc84): the owner's order 🔒2151b (2026-09-30: "benchdog dont
+    # want seller to apply discount so both the discount pannel and the line
+    # item doscounts should be not vissible on benchdog MLP"; the coordinator's
+    # assumption (c) records that it supersedes 🔒 1508's trim for this item).
+    # Five sidecar overlays, one body: they HIDE (no field, no setting, no
+    # deployed-view write), only in this package.
+    "custom/Extension/modules/Quotes/Ext/clients/base/views/record/_override_zz_bd_hide_seller_discounts.php":
+        "G848: ERP-Epicor's Discount panel (erp_discount_panel) off the quote record/create view",
+    "custom/Extension/modules/Quotes/Ext/clients/base/views/quote-data-grand-totals-header/"
+    "_override_zz_bd_hide_seller_discounts.php":
+        "G848: the totals strip's Order Level Discount (deal_tot) not drawn",
+    "custom/Extension/modules/Quotes/Ext/clients/base/views/quote-data-grand-totals-footer/"
+    "_override_zz_bd_hide_seller_discounts.php":
+        "G848: the footer's Order Level Discount row (erp_document_discount_amount) not drawn",
+    "custom/Extension/modules/Products/Ext/clients/base/views/quote-data-group-list/"
+    "_override_zz_bd_hide_seller_discounts.php":
+        "G848: the grid's Line Discount column / edit-row input (discount_field) not drawn",
+    "custom/Extension/modules/Products/Ext/clients/base/views/record/_override_zz_bd_hide_seller_discounts.php":
+        "G848: the quote line's own page draws no discount_field",
+    # G848 (0.9.42-rc85, 🔒2159b): the list preview's discount, and two captions relabelled (existing keys, en_us).
+    "custom/Extension/modules/Quotes/Ext/clients/base/views/preview/_override_zz_bd_hide_seller_discounts.php":
+        "G848: the Quotes list preview draws no Order Discount (deal_tot)",
+    "custom/Extension/modules/Quotes/Ext/Language/_override_en_us.bd_hide_seller_discounts.php":
+        "G848: ERP-Core's 'Line Items Discounted Subtotal' (LBL_NEW_SUB) reads 'Subtotal' on Bench",
+    "custom/Extension/modules/Products/Ext/Language/_override_en_us.bd_hide_seller_discounts.php":
+        "G848: ERP-Core's 'Discounted Total' grid column (LBL_ERP_DISCOUNTED_TOTAL) reads 'Total' on Bench",
 }
 
-ONEOFF ="the one-off deletes or blanks it (🔒 1521); re-run it after installing rc69"
+ONEOFF = ("the one-off ONEOFF-RetireBdResidue deleted it (🔒 1521) until 🔒2173b "
+          "withdrew it; a tenant it never ran on keeps its copy")
 INERT = ("nothing shipped calls it any more; the copy an upgraded tenant keeps is "
-         "unreachable (the one-off does not blank it yet - flagged for its owner)")
+         "unreachable")
 PF_OWNS = ("Partial Fulfillment ships the SAME path (>= 1.0.41 with the G282 preserve "
            "gate); reinstall PF after rc69 so PF's body is the one on disk (G282)")
 
 
 #: Every path rc68 shipped that rc69 does not, and every path rc69 shipped that
-#: rc70 does not, with the route off a tenant.
+#: rc70 does not (and later cuts), with why it went.
 REMOVED = {
     # rc70 (🔒 1724b): ERP-Core's ErpLayoutExtraFields places the fields now.
     # Module Loader never deletes a file a later build stops shipping (§CW /
@@ -150,6 +199,11 @@ REMOVED = {
     "custom/modules/Quotes/BdQuotesLayoutExtensions.php": INERT,
     "custom/modules/Opportunities/BdOpportunitiesLayoutExtensions.php": INERT,
     "custom/modules/Quotes/BdKineticOpportunityHook.php": ONEOFF,
+    # rc87 (Rafael's review of #41): the emptied REST stub and the option functions (now BdAdmRules methods).
+    "custom/clients/base/api/BdBenchDogsActionsApi.php": ONEOFF,
+    "custom/modules/Quotes/BdAdmLookupOptions.php": ONEOFF,
+    # rc86 (MLP024): the class moved to custom/src/BenchDogs; the one-off (1.0.5) blanked the old path.
+    "custom/modules/Quotes/BdAdmRules.php": ONEOFF,
     "custom/Extension/application/Ext/DropdownsStyle/sales_stage_dom_style.php": ONEOFF,
     "custom/Extension/application/Ext/Language/_override_en_us.bd_country_lookup.php": ONEOFF,
     "custom/Extension/application/Ext/Language/en_us.bd_country_lookup.php": ONEOFF,
@@ -240,22 +294,6 @@ class EveryRemovedPathLeavesTheTenant(unittest.TestCase):
                 self.assertFalse((PKG / rel).exists(), f"{rel} is back in the source")
                 self.assertNotIn(rel, names, f"{rel} is back in the built zip")
 
-    def test_every_removed_path_has_a_route_off_the_tenant(self):
-        """A dropped path is NOT a retirement by itself: Module Loader never
-        deletes a file a later build stops shipping. So each one has to be
-        reachable by something that does remove it, or be provably inert."""
-        worklist = oneoff_worklist()
-        for rel, route in REMOVED.items():
-            with self.subTest(path=rel):
-                if route is ONEOFF:
-                    self.assertIn(rel, worklist, "the one-off does not remove it")
-                elif route is PF_OWNS:
-                    self.assertNotIn(rel, worklist,
-                                     "the one-off must never blank a provider path (G280)")
-                else:
-                    self.assertIs(route, INERT)
-                    self.assertNotIn(rel, worklist)
-
     def test_nothing_shipped_still_names_a_removed_class(self):
         """An inert file stays inert only while nothing reaches for it. A
         require_once of a file this build no longer ships is a compile fatal no
@@ -269,42 +307,12 @@ class EveryRemovedPathLeavesTheTenant(unittest.TestCase):
         self.assertEqual(offenders, [])
 
 
-@unittest.skipUnless(shutil.which("php"), "requires php")
-class TheApiStubRegistersNothing(unittest.TestCase):
-    PROBE = r"""
-namespace Sugarcrm\Sugarcrm\Util\Files { class FileLoader { public static function validateFilePath($p) { return $p; } } }
-namespace {
-    class SugarApi {}
-    @mkdir('custom/clients/base/api', 0777, true);
-    // ERP-Epicor present: the one condition under which rc68 DID define the class.
-    file_put_contents('custom/clients/base/api/BaseErpActionsApi.php', '<?php class BaseErpActionsApi extends SugarApi {}');
-    $before = get_declared_classes();
-    require_once getenv('BD_API_FILE');
-    echo json_encode(['new_classes' => array_values(array_diff(get_declared_classes(), $before)),
-                      'defined' => class_exists('BdBenchDogsActionsApi', false)]);
-}
-"""
+class TheApiStubIsRetired(unittest.TestCase):
+    """rc87 (Rafael's review of #41): the emptied REST stub no longer ships. The one-off that deleted the
+    tenant's copy was withdrawn (🔒2173b)."""
 
-    def test_the_api_stub_registers_no_route(self):
-        """EXECUTED the way ServiceDictionary::buildAllDictionaries() loads it:
-        require_once, then class_exists(<file name>). No class means no route."""
-        api = PKG / "custom/clients/base/api/BdBenchDogsActionsApi.php"
-        with tempfile.TemporaryDirectory(prefix="g280-api-") as tmp:
-            out = subprocess.run(["php", "-r", self.PROBE], cwd=tmp, capture_output=True,
-                                 text=True, env={**os.environ, "BD_API_FILE": str(api)})
-        self.assertEqual(out.returncode, 0, out.stderr + out.stdout)
-        observed = json.loads(out.stdout)
-        self.assertFalse(observed["defined"], "the api stub defines the class again")
-        self.assertEqual(observed["new_classes"], [], observed)
-
-    def test_the_api_stub_carries_no_code_at_all(self):
-        tokens = subprocess.run(
-            ["php", "-r", "foreach (token_get_all(file_get_contents($argv[1])) as $t) {"
-             " if (is_array($t) && in_array($t[0], [T_COMMENT, T_DOC_COMMENT, T_WHITESPACE,"
-             " T_OPEN_TAG], true)) continue; echo is_array($t) ? $t[1] : $t; }",
-             str(PKG / "custom/clients/base/api/BdBenchDogsActionsApi.php")],
-            capture_output=True, text=True, check=True).stdout
-        self.assertEqual(tokens, "")
+    def test_the_api_stub_no_longer_ships(self):
+        self.assertFalse((PKG / "custom/clients/base/api").exists())
 
 
 @unittest.skipUnless(shutil.which("php"), "requires php")
@@ -332,9 +340,12 @@ class TheKeptFieldsAreExactlyTheTwo(unittest.TestCase):
 class TheLifecycleDoesOnlyTheKeptWork(unittest.TestCase):
     def test_post_install_runs_exactly_the_kept_steps(self):
         code = code_only(PKG / "scripts/post_execute.php")
-        steps = sorted(set(re.findall(r"\$bdStepReport\['([a-z_]+)'\]\s*=\s*'ok'", code)))
+        # rc87: the two layout steps share one loop, keyed by their step names.
+        steps = sorted(set(re.findall(r"\$bdStepReport\['([a-z_]+)'\]\s*=\s*'ok'", code))
+                       | set(re.findall(r"'[A-Za-z]+' => '([a-z_]+_erp_layout)'", code)))
         self.assertEqual(steps, ["accounts_erp_layout", "quotes_erp_layout", "repair_rebuild"])
-        self.assertEqual(code.count("ErpLayoutExtraFields::sync("), 2)
+        self.assertEqual(code.count("ErpLayoutExtraFields::sync("), 1)
+        self.assertIn("foreach (array('Accounts' => 'accounts_erp_layout', 'Quotes' => 'quotes_erp_layout')", code)
         self.assertLess(code.index("rebuildExtensions"), code.index("ErpLayoutExtraFields::sync("),
                         "sync() must read the vardefs AFTER the rebuild merged this package's")
         for gone in ("partial_order_sales_stage", "uninstall_languages", "zz_bd_stage_doms",
@@ -383,9 +394,9 @@ class TheLifecycleDoesOnlyTheKeptWork(unittest.TestCase):
         # 1.1.131 since rc73: the release carrying G530's limit on the field
         # (erp_reference.erp_max_length, ErpQuoteFacts::referenceMaxLength()),
         # which the Reference default is shortened to.
-        # 1.1.134 (G571 / G570): the release carrying ERP-Core's
-        # erp-dependent-enum and ErpLayoutExtraFields's erp_layout 'type'.
-        self.assertEqual(epicor.group(1), "1.1.134")
+        # rc87 (🔒2167b): BdAdmRules asks ERP-Epicor 1.2.0's namespaced ErpQuoteFacts only.
+        # rc89 (G860, 🔒2179b): 1.2.4 is the first ERP-Epicor that asks OrderRequirements.php.
+        self.assertEqual(epicor.group(1), "1.2.4")
 
 
 if __name__ == "__main__":
