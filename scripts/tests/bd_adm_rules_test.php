@@ -1217,6 +1217,117 @@ GFV);
             [null, BdAdmRules::class, true, true],
             [array_key_exists(2, $ah) ? $ah[2] : 'missing', $ah[3] ?? '', is_file($psr4($ah[3] ?? '')), method_exists($ah[3] ?? '', $ah[4] ?? '')]);
 
+        // ── V. the lead baseline: stamped on the connector's save that first keys the quote ──
+        // THE CONTRACT with the connector extension: its own suite (benchdogs-erp-custom,
+        // test_lead_readback_keeps_seller_edit.py, STAMPED) pins this same literal.
+        $STAMPED = '{"bd_lead_source":{"agreed":"DIRMAIL","epicor":"DIRMAIL"},'
+            . '"bd_lead_type":{"agreed":"DIRFOOD","epicor":"DIRFOOD"},'
+            . '"bd_marketing_campaign":{"agreed":"26DISCNV","epicor":"26DISCNV"},'
+            . '"bd_marketing_event":{"agreed":"26DISCNV/2","epicor":"26DISCNV/2"}}';
+        $CONNECTOR = 'sugarai_erp_connector';
+        $SENT_VALUES = ['bd_marketing_event' => '26DISCNV/2', 'bd_lead_type' => 'DIRFOOD',
+            'bd_lead_source' => ' DIRMAIL ', 'bd_marketing_campaign' => '26DISCNV', 'bd_project_id' => 'P1'];
+        // The save core's create makes: the ERP key arrives on a quote that had none.
+        $keyed = function (array $extra = [], array $fetched = []) use ($b, $SENT_VALUES) {
+            // Array union keeps the LEFT key: $extra overrides the keyed quote, which overrides the sent values.
+            return $b($extra + ['id' => 'q-v', 'erp_sync_key' => 'ADM__8761', 'erp_display_sync_key' => '8761',
+                'bd_lead_baseline' => '', 'fetched_row' => $fetched + ['id' => 'q-v', 'erp_sync_key' => '',
+                'erp_display_sync_key' => '', 'bd_lead_baseline' => '']] + $SENT_VALUES);
+        };
+        $stamp = function ($bean, string $platform) {
+            try {
+                return method_exists(BdAdmRules::class, 'stampLeadBaseline')
+                    ? BdAdmRules::stampLeadBaseline($bean, $platform) : 'missing stampLeadBaseline';
+            } catch (\Throwable $e) {
+                return 'threw ' . get_class($e) . ': ' . $e->getMessage();
+            }
+        };
+        $q = $keyed();
+        $check('V1 the connector\'s save that first gives the quote its ERP key stamps the four values, agreed by '
+            . 'both sides, in the extension\'s exact format (trimmed, sorted, slash unescaped; Project not part)',
+            [true, $STAMPED], [$stamp($q, $CONNECTOR), $q->bd_lead_baseline]);
+        $q = $keyed();
+        $check('V2 the same key arriving on a SELLER\'s save (platform base) is not a send: nothing stamped',
+            [false, ''], [$stamp($q, 'base'), $q->bd_lead_baseline]);
+        $q = $keyed();
+        $check('V3 nor on a save outside the API (no platform)', [false, ''], [$stamp($q, ''), $q->bd_lead_baseline]);
+        $q = $keyed(['bd_lead_baseline' => 'AS-WRITTEN', 'bd_lead_source' => 'PHONE'],
+            ['erp_sync_key' => 'ADM__8761', 'erp_display_sync_key' => '8761', 'bd_lead_baseline' => 'AS-WRITTEN']);
+        $check('V4 a connector save on a quote that already had its key (the read-back\'s own update) never '
+            . 'stamps: the baseline stays as written', [false, 'AS-WRITTEN'],
+            [$stamp($q, $CONNECTOR), $q->bd_lead_baseline]);
+        $q = $keyed([], []);
+        $q->fetched_row = false;
+        $check('V5 a quote CREATED with its key (Epicor-born, by core) is not a send: nothing stamped',
+            [false, ''], [$stamp($q, $CONNECTOR), $q->bd_lead_baseline]);
+        $q = $keyed(['bd_lead_baseline' => '{"bd_lead_source":{"agreed":"OLD","epicor":"OLD"}}'],
+            ['bd_lead_baseline' => '{"bd_lead_source":{"agreed":"OLD","epicor":"OLD"}}']);
+        $check('V6 a quote keyed again after its key was cleared (a re-send, or a copy) is stamped afresh: an '
+            . 'older baseline is replaced', [true, $STAMPED], [$stamp($q, $CONNECTOR), $q->bd_lead_baseline]);
+        $q = $keyed(['bd_lead_type' => '  ', 'bd_marketing_campaign' => '', 'bd_marketing_event' => null]);
+        $check('V7 a blank value is left out (the extension then fills it from the ERP, as a field never seen)',
+            [true, '{"bd_lead_source":{"agreed":"DIRMAIL","epicor":"DIRMAIL"}}'],
+            [$stamp($q, $CONNECTOR), $q->bd_lead_baseline]);
+        $q = $keyed(['bd_lead_source' => '', 'bd_lead_type' => '', 'bd_marketing_campaign' => '',
+            'bd_marketing_event' => '']);
+        $check('V8 nothing to record: the field is left as it is', [false, ''],
+            [$stamp($q, $CONNECTOR), $q->bd_lead_baseline]);
+        $q = $keyed(['erp_sync_key' => '', 'erp_display_sync_key' => '']);
+        $check('V9 a connector save that does not bring a key stamps nothing', [false, ''],
+            [$stamp($q, $CONNECTOR), $q->bd_lead_baseline]);
+
+        // The before_save entry point reads the platform from the session, as ERP-Epicor's guards do.
+        // Both saves run as the SAME user (admin): only the platform tells the connector from a seller.
+        $GLOBALS['current_user'] = $b(['id' => '1', 'user_name' => 'admin', 'is_admin' => 1]);
+        $_SESSION = ['platform' => $CONNECTOR];
+        $q = $keyed();
+        (new BdAdmRules())->beforeSave($q, 'before_save', ['isUpdate' => true]);
+        $_SESSION = ['platform' => 'base'];
+        $q2 = $keyed();
+        (new BdAdmRules())->beforeSave($q2, 'before_save', ['isUpdate' => true]);
+        $check('V10 before_save stamps on the connector\'s session, not on a seller\'s', [$STAMPED, ''],
+            [$q->bd_lead_baseline, $q2->bd_lead_baseline]);
+        $_SESSION = ['platform' => $CONNECTOR];
+        $GLOBALS['log']->lines = [];
+        $broken = new class (['id' => 'q-broken', 'erp_display_sync_key' => '8761',
+            'fetched_row' => ['erp_display_sync_key' => '', 'erp_sync_key' => '']]) extends BdTestBean {
+            public function __isset($name)
+            {
+                return true;
+            }
+
+            public function __get($name)
+            {
+                throw new \RuntimeException('unreadable ' . $name);
+            }
+        };
+        $threw = null;
+        try {
+            (new BdAdmRules())->beforeSave($broken, 'before_save', ['isUpdate' => true]);
+        } catch (\Throwable $e) {
+            $threw = $e->getMessage();
+        }
+        $check('V11 a failure while stamping never fails the save; it is logged, naming the quote', [null, true],
+            [$threw, (bool) array_filter($GLOBALS['log']->lines, fn($l) => $l[0] === 'error'
+                && str_contains($l[1], 'lead baseline') && str_contains($l[1], 'q-broken'))]);
+        $_SESSION = [];
+        unset($GLOBALS['current_user']);
+
+        $dictionary = [];
+        include 'custom/Extension/modules/Quotes/Ext/Vardefs/bd_lead_baseline.php';
+        $lb = $dictionary['Quote']['fields']['bd_lead_baseline'] ?? [];
+        $check('V12 the field: hidden text, on no layout, never required, audited, reported, imported, mass-updated '
+            . 'or copied with the quote, and kept out of Studio',
+            ['text', 'LBL_BD_LEAD_BASELINE', false, false, false, false, false, 'no', false, false],
+            [$lb['type'] ?? null, $lb['vname'] ?? null, isset($lb['erp_layout']), !empty($lb['required']),
+             $lb['audited'] ?? null, $lb['reportable'] ?? null, $lb['importable'] ?? null,
+             $lb['duplicate_on_record_copy'] ?? null, $lb['massupdate'] ?? null, $lb['studio'] ?? null]);
+        $check('V13 the field is the only one in its file, under the name the extension writes',
+            ['bd_lead_baseline'], array_keys($dictionary['Quote']['fields'] ?? []));
+        $mod_strings = [];
+        include 'custom/Extension/modules/Quotes/Ext/Language/en_us.bd_lead_baseline.php';
+        $check('V14 its label', ['LBL_BD_LEAD_BASELINE' => 'Lead Baseline'], $mod_strings);
+
         // ── N. the before_save registration ─────────────────────────────────
         $hook_array = [];
         include 'custom/Extension/modules/Quotes/Ext/LogicHooks/bd_adm_quote_defaults.php';

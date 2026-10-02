@@ -47,6 +47,13 @@ class BdAdmRules
     /** G809: how many of the account's newest quotes holding a field one history read returns; the FIRST whose value is usable wins. */
     public const HISTORY_SCAN = 20;
 
+    /** The hidden field holding what Sugar and the ERP last agreed for the four lead fields; the connector extension reads and rewrites it. */
+    public const FIELD_LEAD_BASELINE = 'bd_lead_baseline';
+    public const LEAD_BASELINE_FIELDS = array('bd_lead_source', 'bd_lead_type', self::FIELD_CAMPAIGN, self::FIELD_EVENT);
+
+    /** The connector's OAuth platform: its save of a new ERP key is the send. Told by platform, never by user (a connector may write as admin). */
+    public const CONNECTOR_PLATFORM = 'sugarai_erp_connector';
+
     /** Upper bound on the BdLeadSources rows read to learn the ADM companies. */
     public const MAX_LEAD_SOURCE_ROWS = 5000;
 
@@ -200,6 +207,60 @@ class BdAdmRules
             $GLOBALS['log']->error('BenchDogs-Ext: ADM quote defaults failed for quote '
                 . (string) ($bean->id ?? '') . ': ' . $e->getMessage());
         }
+        try {
+            self::stampLeadBaseline($bean, isset($_SESSION['platform']) ? (string) $_SESSION['platform'] : '');
+        } catch (\Throwable $e) {
+            $GLOBALS['log']->error('BenchDogs-Ext: lead baseline not stamped for quote '
+                . (string) ($bean->id ?? '') . ': ' . $e->getMessage());
+        }
+    }
+
+    // ── the lead baseline ────────────────────────────────────────────────────
+
+    /** On the connector's save that first gives the quote an ERP key (the send), record its lead values as what both systems now hold. */
+    public static function stampLeadBaseline($bean, string $platform): bool
+    {
+        if ($platform !== self::CONNECTOR_PLATFORM) {
+            return false;
+        }
+        $fetched = $bean->fetched_row ?? null;
+        if (!is_array($fetched) || $fetched === array()
+            || trim((string) ($fetched['erp_display_sync_key'] ?? '')) !== ''
+            || trim((string) ($fetched['erp_sync_key'] ?? '')) !== '') {
+            return false;
+        }
+        if (self::text($bean, 'erp_display_sync_key') === '' && self::text($bean, 'erp_sync_key') === '') {
+            return false;
+        }
+        $values = array();
+        foreach (self::LEAD_BASELINE_FIELDS as $field) {
+            $values[$field] = self::text($bean, $field);
+        }
+        $baseline = self::leadBaseline($values);
+        if ($baseline === '') {
+            return false;
+        }
+        $bean->{self::FIELD_LEAD_BASELINE} = $baseline;
+
+        return true;
+    }
+
+    /** The baseline text: each non-blank lead value agreed by both sides, as the connector extension writes it (keys sorted, compact JSON). */
+    public static function leadBaseline(array $values): string
+    {
+        $entries = array();
+        foreach (self::LEAD_BASELINE_FIELDS as $field) {
+            $value = trim((string) ($values[$field] ?? ''));
+            if ($value !== '') {
+                $entries[$field] = array('agreed' => $value, 'epicor' => $value);
+            }
+        }
+        if ($entries === array()) {
+            return '';
+        }
+        ksort($entries, SORT_STRING);
+
+        return (string) json_encode($entries, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     }
 
     /** Fill an EMPTY erp_reference and an EMPTY bd_project_id on an ADM quote that has not reached the ERP yet, and (G809, $isCreate only) an EMPTY Lead Source, Lead Type, Project and Campaign + Event pair from the account's newest quote holding a usable value of each. */
