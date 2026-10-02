@@ -4,7 +4,7 @@
 
 $packageID      = 'sugarai_benchdogs_ext';
 $packageLabel   = 'SugarAI: Bench Dogs Extensions';
-$description    = 'Bench Dogs extensions for Sugar Sell: the two customer-group fields (a Cust. Group picker before the account is in the ERP, required for an ADM Customer and asked for before the quote offers to create an ADM account in the ERP) and the Suspect account type on Accounts, and the ADM company\'s own quote values (Lead Source, Lead Type, Project, Marketing Campaign and Marketing Event pickers, required until the quote is in the ERP and defaulted from the account\'s last quote; Reference and Project defaults; the Reference placement and requirement), and the Epicor contact Function, Role and primary flags (Bench Dogs\' own contact fields) shown read-only on the Contacts record view where the tenant has them; and, because Bench Dogs sellers do not apply discounts, no discount panel, order-level discount or line discount shown on a quote or in the Quotes list preview, with the subtotal and line total captioned Subtotal and Total.';
+$description    = 'Bench Dogs extensions for Sugar Sell: the two customer-group fields (a Cust. Group picker before the account is in the ERP, required for an ADM Customer and asked for before the quote offers to create an ADM account in the ERP) and the Suspect account type on Accounts, and the ADM company\'s own quote values (Lead Source, Lead Type, Project, Marketing Campaign and Marketing Event pickers, required until the quote is in the ERP and defaulted from the account\'s last quote; Reference and Project defaults; the Reference placement and requirement; and, when an order converts an ADM ERP quote, ADM\'s Ship Via named in ERP-Epicor\'s one pre-send order refusal beside the FOB), and the Epicor contact Function, Role and primary flags (Bench Dogs\' own contact fields) shown read-only on the Contacts record view where the tenant has them; and, because Bench Dogs sellers do not apply discounts, no discount panel, order-level discount or line discount shown on a quote or in the Quotes list preview, with the subtotal and line total captioned Subtotal and Total.';
 $supportedVersionRegex = '(26|25|14)\\..*$';
 $acceptableSugarFlavors = array('ENT', 'ULT', 'PRO');
 
@@ -39,9 +39,9 @@ $manifest = array(
     // Refuse unsafe install order before copying any file.
     'dependencies'              => array(
         array(
-            // 1.2.0: BdAdmRules asks ERP-Epicor's namespaced ErpQuoteFacts; ERP-Core places the marked fields. (🔒2167b, G380 (g))
+            // 1.2.4: ERP-Epicor asks OrderRequirements.php for ADM's Ship Via (G860, 🔒2179b); 1.2.0 brought the namespaced ErpQuoteFacts. (🔒2167b)
             'id_name' => 'sugarai_erp_epicor',
-            'version' => '1.2.0',
+            'version' => '1.2.4',
         ),
         array(
             'id_name' => 'sugarai_erp_epicor_partialfulfillment',

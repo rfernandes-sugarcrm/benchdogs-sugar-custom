@@ -409,9 +409,10 @@ namespace {
         $check('O5 the rules never include a file by path (no fallback to ERP-Epicor 1.1\'s global class)', 0,
             preg_match('/\b(include|require)(_once)?\b/', (string) preg_replace('~/\*.*?\*/|//[^\n]*~s', '',
                 (string) file_get_contents('custom/src/BenchDogs/BdAdmRules.php'))));
-        $check('O6 the manifest refuses an ERP-Epicor below 1.2.0 (the install-time half)', '1.2.0',
+        // rc89 (G860): the floor is 1.2.4 now, still refusing everything below 1.2.0.
+        $check('O6 the manifest refuses an ERP-Epicor below 1.2.0 (the install-time half)', true,
             preg_match("/'id_name'\\s*=>\\s*'sugarai_erp_epicor',\\s*'version'\\s*=>\\s*'([0-9.]+)'/",
-                (string) file_get_contents('pack.php'), $bdFloor) ? $bdFloor[1] : null);
+                (string) file_get_contents('pack.php'), $bdFloor) === 1 && version_compare($bdFloor[1], '1.2.0', '>='));
         $check('O4 T2: neither class: the namespaced lookup was ASKED of the autoloader and found nothing',
             [true, false], [in_array($NS_FACTS, $GLOBALS['bd_autoload_asked'], true), class_exists($NS_FACTS, false)]);
     } else {
