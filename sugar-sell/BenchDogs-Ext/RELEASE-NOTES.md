@@ -1,3 +1,13 @@
+# Unreleased — wording only: the quote defaults hook label names the account-history fill
+
+Version unchanged; the coordinator cuts the release. Ships in the next rc build.
+
+- The Quotes before_save hook's label is now `Bench Dogs: ADM quote defaults (Reference, Project, account history)`
+  (was `(Reference, Project)`), and its comment names the new-quote fill from the account's newest quotes that
+  rc78/rc81 added. No behaviour change: the hook's class, method and order are unchanged.
+- README: Lead Source / Lead Type and the Campaign + Event pair are no longer described as never defaulted; a new
+  quote copies them from the account's history (rc78/rc81).
+
 # 0.9.42-rc89 — G860: ADM's Ship Via named in ERP-Epicor's one pre-send order refusal (🔒2179b)
 
 rc89 = rc88 + these changes only. Install order on a Bench tenant: **ERP-Epicor >= 1.2.4** → PF → rc89 (the manifest now
