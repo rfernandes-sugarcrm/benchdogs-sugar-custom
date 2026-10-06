@@ -1,42 +1,6 @@
 <?php
 
-/**
- * REQ-19: which customer group Epicor puts this account in.
- *
- * Two fields, not one, because they answer two different questions. The CODE
- * is Epicor's Customer.GroupCode verbatim ('DIST', 'COMM') - a stable key,
- * safe to group and filter a report by, and unchanged when somebody rewords
- * the description. The NAME is CustGrup.GroupDesc for that code
- * ('Distribution') - what a salesperson actually reads. Storing only the code
- * would make every report unreadable; storing only the description would make
- * every report break the day somebody renames a group.
- *
- * ERP-owned. The container extension writes both on the erp_customers sweep;
- * nothing in Sugar should be editing them, which is why they are declared
- * here rather than left to Studio.
- *
- * These declarations are a HARD PREREQUISITE for that extension, not a
- * convenience: core enforces the cached Sugar schema on the delivery path
- * (connector_core/pipeline/schema_enforcement.py), so a record carrying a
- * field name Sugar does not have is dropped BEFORE Sugar, DLQ'd as a
- * schema_violation, and counted failed - measured live on this tenant as 29
- * Accounts records with {'created': 0, 'updated': 0, 'failed': 29}. The
- * per-field exemption decorator is not reachable across the container
- * boundary, so the vardef is the only way through.
- */
-
-$dictionary['Account']['fields']['bd_customer_group_code'] = array(
-    'name' => 'bd_customer_group_code',
-    'vname' => 'LBL_BD_CUSTOMER_GROUP_CODE',
-    'type' => 'varchar',
-    'len' => 10,
-    'comment' => 'Epicor Customer.GroupCode verbatim - the stable key to group and filter on',
-    'reportable' => true,
-    'audited' => true,
-    'importable' => false,
-    'massupdate' => false,
-    'inline_edit' => false,
-);
+/** REQ-19: which customer group Epicor puts this account in (G804, 🔒 2081b, 🔒 1810b, G380 (f)). */
 
 $dictionary['Account']['fields']['bd_customer_group'] = array(
     'name' => 'bd_customer_group',
@@ -49,4 +13,40 @@ $dictionary['Account']['fields']['bd_customer_group'] = array(
     'importable' => false,
     'massupdate' => false,
     'inline_edit' => false,
+    'readonly' => true,
+    'erp_layout' => array(
+        'view' => 'record',
+        'panel' => 'panel_overview',
+        'after' => 'industry',
+    ),
+);
+
+$dictionary['Account']['fields']['bd_customer_group_code'] = array(
+    'name' => 'bd_customer_group_code',
+    'vname' => 'LBL_BD_CUSTOMER_GROUP_CODE',
+    // G804: a picker over ADM's customer groups (see the docblock); the column
+    // is unchanged (an enum is stored as varchar(len)).
+    'type' => 'enum',
+    'len' => 10,
+    'function' => array(
+        'name' => 'Sugarcrm\\Sugarcrm\\custom\\BenchDogs\\BdAdmRules::customerGroupOptions',
+    ),
+    // Never pre-picked by the browser (G574's rule for every Bench picker).
+    'defaultToBlank' => true,
+    'comment' => 'Epicor Customer.GroupCode verbatim - the stable key to group and filter on',
+    'reportable' => true,
+    'audited' => true,
+    'importable' => false,
+    'massupdate' => false,
+    'inline_edit' => false,
+    'readonly' => true,
+    // G804: read-only once the account is in the ERP (either key set).
+    'readonly_formula' => 'not(and(equal($erp_display_sync_key,""),equal($erp_sync_key,"")))',
+    // G817 (🔒 2086b): the create-in-ERP prompt reads this key through ERP-Core's erp-customer-create-requirements, so an ADM account with no group is told to set Cust. Group first.
+    'erp_customer_create_required_formula' => 'equal(related($erp_companies_accounts,"erp_sync_key"),"ADM")',
+    'erp_layout' => array(
+        'view' => 'record',
+        'panel' => 'panel_overview',
+        'after' => 'bd_customer_group',
+    ),
 );

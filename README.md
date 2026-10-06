@@ -11,7 +11,6 @@ built independently per product and installed via Module Loader.
 | Directory | Product | Description |
 |-----------|---------|-------------|
 | [sugar-sell/](sugar-sell/) | Sugar Sell | BenchDogs' custom extension package for the CRM/sales platform |
-| [sugar-predict/](sugar-predict/) | Sugar Predict | BenchDogs' custom extension package for sales intelligence (placeholder) |
 
 ## How It Works
 

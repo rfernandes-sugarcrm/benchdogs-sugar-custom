@@ -1,0 +1,21 @@
+{
+  "why": "G280 / decision 1567: rc69 stops shipping Bench Dogs' OpportunityContribution.php, so the body on disk becomes Partial Fulfillment's (same path, same class). These are COPIES of the two bodies, pinned so test_governing_contribution.py can run the same scenarios through BOTH and prove the Opportunity amount ERP-Core writes does not change - in CI too, where neither history is reachable (the sibling repo is private; CI checks out one commit). Where the source commit IS reachable, the same test file compares each pin to it, so a stale pin is loud.",
+  "files": {
+    "pf_opportunity_contribution.php": {
+      "repository": "erp-integration-sugar",
+      "source": "sugar-sell/ERP-Epicor-PartialFulfillment/custom/modules/Quotes/ErpQuoteHooks/OpportunityContribution.php",
+      "commit": "0f8bebbd1c1e994fe101c70ae265b9ba853a6e98",
+      "note": "the body Partial Fulfillment 1.0.43 installs (built from 0f8bebb by version override, per 1dfb374); byte-identical on fix/order-selected-lines-hide-once-submitted at 0dafd57",
+      "sha256": "9703a8d6674636e82a561fd40bf137cc458b0b42433d90eec3ecdd61bf75327f",
+      "bytes": 8927
+    },
+    "bench_opportunity_contribution.rc68.php": {
+      "repository": "benchdogs-sugar-custom",
+      "source": "sugar-sell/BenchDogs-Ext/custom/modules/Quotes/ErpQuoteHooks/OpportunityContribution.php",
+      "commit": "019fbe143f42c0be2ceba1b16ae95aafa4df7560",
+      "note": "the body Bench Dogs 0.9.42-rc68 shipped at the same path - the one rc69 stops shipping",
+      "sha256": "f8e50d3129312ad5f5635e46e1888692d8bc062efbe7ce7bef43c112d74d8a4c",
+      "bytes": 10615
+    }
+  }
+}

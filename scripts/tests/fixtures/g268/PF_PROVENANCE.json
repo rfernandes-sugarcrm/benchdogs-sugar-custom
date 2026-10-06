@@ -1,0 +1,17 @@
+{
+  "why": "PF 1.0.40 ships the two release stages and their styles (G278 / 1506). These are COPIES, pinned so the controls that prove core still serves them run in CI, where the private sibling repo is not checked out. They are not in fixtures/shared-sugar because that mechanism's drift guard fails on a file absent from the sibling WORKING TREE, and these live on a branch. test_g268_retired_stage_names.py compares them to the live files whenever those are reachable.",
+  "files": {
+    "pf_sales_stage_override.php": {
+      "source": "sugar-sell/ERP-Epicor-PartialFulfillment/custom/Extension/application/Ext/Language/_override_en_us.partial_fulfillment_sales_stage.php",
+      "commit": "280e092999e575604a4c5798597150f637ddc798",
+      "sha256": "5398f49e10c0803b8589eb908afd2219d5e7b34150efb7bb27aaf4f3ef979c3b",
+      "bytes": 408
+    },
+    "pf_sales_stage_style.php": {
+      "source": "sugar-sell/ERP-Epicor-PartialFulfillment/custom/Extension/application/Ext/DropdownsStyle/partial_fulfillment_sales_stage_style.php",
+      "commit": "280e092999e575604a4c5798597150f637ddc798",
+      "sha256": "f86ff9ed8c863c6592874509ed577ddfad3a698cceade35044048d5ab47e7a26",
+      "bytes": 1300
+    }
+  }
+}
