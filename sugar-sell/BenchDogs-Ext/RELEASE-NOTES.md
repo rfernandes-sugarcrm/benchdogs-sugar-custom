@@ -1,3 +1,44 @@
+# 0.9.46-rc133 — each relationship has a link on both modules, so the relates save and read back
+
+rc133 = rc132 + one fix. rc132 registered the relationships (the link POST answered 200) but the relates read back
+empty and the id fields did not save: the package declared each relationship's link on the holding module only. ERP-Core's
+working `erp_quotes_fob` declares a link on BOTH modules (the lookup side `side` left, `link-type` many), and Sugar needs
+the left link to write the join row. rc133 restores them: `erp_products_sales_cat` and `erp_orderlines_sales_cat` on
+ERP_LookupValues, `erp_companies_products` on ERP_Companies, `erp_orderlines_prodcat` on ProductCategories. Everything
+else compared equal to the FOB definitions (metadata arrays, link, relate and id vardefs, join key naming). Guard:
+`test_relationships_are_registered.py` checks both links and that every id_name is a join key.
+
+# 0.9.46-rc132 — the package registers its relationships, so the relate fields save
+
+rc132 = rc131 + one fix. rc129 to rc131 shipped the four relationship files (`erp_companies_products`,
+`erp_products_sales_cat`, `erp_orderlines_sales_cat`, `erp_orderlines_prodcat`) that Sugar never registered: they
+were only copied into `custom/metadata`, so the relate fields loaded but never saved, and linking answered 404
+"Could not find a relationship named". `pack.php` now lists every `custom/metadata/*MetaData.php` as a manifest
+`relationships` entry (`meta_data`), the way ERP-Epicor does, so the install writes the TableDictionary entry and
+rebuilds the relationship cache. Guard: `test_relationships_are_registered.py`.
+
+# 0.9.46-rc131 — the order-line category fields finally load (vardef filed under the right dictionary key)
+
+rc131 = rc130 + one fix. rc129 and rc130 shipped `ERP_OrderLines` Sales Category and Product Category under
+`$dictionary['ERP_OrderLines']` (the module name); ERP-Core's bean and dictionary key is `ERP_OrderLine`, so Sugar
+silently ignored the vardef and the fields installed cleanly but never loaded. rc131 files all six definitions under
+`ERP_OrderLine`. A guard test (`test_vardef_dictionary_keys.py`) now fails any vardef extension filed under a key that
+is not its module's object name. Every other Bench vardef extension already used the right key.
+
+# 0.9.46-rc130 — the order line's Product Category relates to the standard ProductCategories module
+
+rc130 = rc129 + this change only. Install order on a Bench tenant: unchanged.
+
+- **What changes.** `ERP_OrderLines.e_product_category_c` (read-only, same place in the record view) now relates to the
+  standard `ProductCategories` module, which ERP Core already syncs company-scoped, through the new relationship
+  `erp_orderlines_prodcat` (join table `erp_orderlines_prodcat_c`). Quote lines add nothing: Products already carry the
+  out-of-box category link. Sales Category stays on ERP_LookupValues.
+- **Removed.** The rc129 `BdProductCategories` lookup relate (`erp_orderlines_product_cat`), the
+  `BdProductCategories` type label, and `BdAdmRules::TYPE_PRODUCT_CATEGORIES` / `productCategoryOptions`.
+- **Upgrade.** The old join table `erp_orderlines_product_cat_c` is not dropped: its rows stay, unread. Order lines show an
+  empty Product Category until the connector writes the ProductCategories id through the new relationship.
+- **Tests:** footprint KEPT list names the new metadata file in place of the old one.
+
 # 0.9.46-rc128 — the Sales Category picker and read-only ERP Order Line categories (SUG-17)
 
 rc128 = rc127 + these changes only. Install order on a Bench tenant: unchanged (ERP-Epicor → PF → rc128).
