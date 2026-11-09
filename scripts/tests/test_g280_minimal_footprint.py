@@ -77,6 +77,10 @@ KEPT = {
         "the customer category (REQ-19): the two Account fields",
     "custom/Extension/modules/Accounts/Ext/Language/en_us.bd_customer_group.php":
         "their two labels",
+    "custom/Extension/modules/Products/Ext/Vardefs/bd_sales_category.php":
+        "the quote line's Sales Category (e_sales_category_c): an enum picker of ADM's BdSalesCategories lookup values, replacing the free-text field the Bench connector writes SalesCatID into (owner-approved 2026-11-09)",
+    "custom/Extension/modules/Products/Ext/Language/en_us.bd_sales_category.php":
+        "its label",
     "scripts/post_execute.php": "lifecycle",
     "scripts/bd_pre_uninstall.php": "lifecycle",
     "scripts/post_uninstall.php": "lifecycle",

@@ -24,6 +24,9 @@ class BdAdmRules
      */
     public const TYPE_CUSTOMER_GROUPS = 'BdCustomerGroups';
     public const FIELD_GROUP_CODE = 'bd_customer_group_code';
+
+    /** ADM's sales categories (Epicor SalesCats: SalesCatID -> Description), published by the Bench connector extension. */
+    public const TYPE_SALES_CATEGORIES = 'BdSalesCategories';
     public const FIELD_GROUP_NAME = 'bd_customer_group';
 
     /** G460: an event's picker key is "<campaign>/<seq>" (26DISCNV/2), split at the LAST separator - the contract with the connector extension (adm_rules.EVENT_KEY_SEPARATOR), which splits the seller's pick the same way and refuses a pair whose event is not the campaign's. */
@@ -568,6 +571,12 @@ class BdAdmRules
     public static function customerGroupOptions(...$ignored): array
     {
         return self::lookupOptions(self::TYPE_CUSTOMER_GROUPS);
+    }
+
+    /** ADM's sales categories (Epicor SalesCats), for a quote line's Sales Category pick. */
+    public static function salesCategoryOptions(...$ignored): array
+    {
+        return self::lookupOptions(self::TYPE_SALES_CATEGORIES);
     }
 
     /** The pure half of lookupOptions(), so it can be tested without a database. */
