@@ -294,6 +294,16 @@ foreach ($viewdefs['ERP_OrderLines']['base']['view']['record']['panels'] as $i =
         retired stubs. From rc69 it ships nothing for them at all. Anything new
         is a deliberate act that has to change this test and explain itself.
         """
+        # The one owner-approved exception (SUG-17, 2026-11-09): the two read-only
+        # category fields on an order line, which carry no shipped quantity or value.
+        # Named exactly, so any other file under these modules still fails here.
+        approved = {
+            "ERP_OrderLines": [
+                "custom/Extension/modules/ERP_OrderLines/Ext/Vardefs/bd_order_categories.php",
+                "custom/Extension/modules/ERP_OrderLines/Ext/Language/en_us.bd_order_categories.php",
+                "custom/Extension/modules/ERP_OrderLines/Ext/clients/base/views/record/bd_order_categories.php",
+            ],
+        }
         for module in CORE_ORDER_MODULES:
             # ``**/*`` and not ``*``: the fragments would live several
             # directories down, so a single-level glob matches only the ``Ext``
@@ -304,7 +314,7 @@ foreach ($viewdefs['ERP_OrderLines']['base']['view']['record']['panels'] as $i =
                 if p.is_file()
             )
             with self.subTest(module=module):
-                self.assertEqual([], found)
+                self.assertEqual(sorted(approved.get(module, [])), found)
 
     def test_no_order_module_fragment_defaults_a_field_to_zero(self):
         """A vardef default manufactures data before the connector speaks.
