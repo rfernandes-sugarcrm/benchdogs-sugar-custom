@@ -1,20 +1,48 @@
 <?php
 
-/** Bench Dogs: the quote line's Sales Category, a picker of ADM's sales categories (BdSalesCategories, published by the Bench connector extension as ERP_LookupValues). Sent to Kinetic as SalesCatID by erp_adm_quote_line_updates. */
+/** Bench Dogs: the quote line's Sales Category, a relate to ERP_LookupValues (BdSalesCategories), filtered by the line's ERP company. The Bench connector extension writes the lookup id for Kinetic's SalesCatID. */
 
-// The name is the one the Bench connector extension reads and writes (Products.e_sales_category_c <-> QuoteDtl.SalesCatID).
+$dictionary['Product']['fields']['erp_products_sales_cat'] = array(
+    'name' => 'erp_products_sales_cat',
+    'type' => 'link',
+    'relationship' => 'erp_products_sales_cat',
+    'source' => 'non-db',
+    'module' => 'ERP_LookupValues',
+    'bean_name' => 'ERP_LookupValue',
+    'side' => 'right',
+    'vname' => 'LBL_ERP_PRODUCTS_SALES_CAT_TITLE',
+    'id_name' => 'erp_products_sales_catlookupvalues_idb',
+    'link-type' => 'one',
+);
+
 $dictionary['Product']['fields']['e_sales_category_c'] = array(
     'name' => 'e_sales_category_c',
+    'type' => 'relate',
+    'source' => 'non-db',
     'vname' => 'LBL_E_SALES_CATEGORY_C',
-    'type' => 'enum',
-    'len' => 50,
-    'function' => array(
-        'name' => 'Sugarcrm\\Sugarcrm\\custom\\BenchDogs\\BdAdmRules::salesCategoryOptions',
-    ),
-    'comment' => 'ERP QuoteDtl.SalesCatID: an ADM sales category code the seller picks',
-    'reportable' => true,
-    'audited' => true,
+    'save' => true,
+    'id_name' => 'erp_products_sales_catlookupvalues_idb',
+    'link' => 'erp_products_sales_cat',
+    'table' => 'erp_lookupvalues',
+    'module' => 'ERP_LookupValues',
+    'rname' => 'name',
+    'prefilter_field' => 'erp_companies_products_name',
+    'prefilter_conditions' => '[{"type":{"$in":["BdSalesCategories"]}},{"is_active":{"$equals":"1"}}]',
+);
+
+$dictionary['Product']['fields']['erp_products_sales_catlookupvalues_idb'] = array(
+    'name' => 'erp_products_sales_catlookupvalues_idb',
+    'type' => 'id',
+    'source' => 'non-db',
+    'vname' => 'LBL_ERP_PRODUCTS_SALES_CAT_ID',
+    'id_name' => 'erp_products_sales_catlookupvalues_idb',
+    'link' => 'erp_products_sales_cat',
+    'table' => 'erp_lookupvalues',
+    'module' => 'ERP_LookupValues',
+    'rname' => 'id',
+    'reportable' => false,
+    'side' => 'right',
     'massupdate' => false,
-    // Never pre-picked by the browser, as the other ADM pickers.
-    'defaultToBlank' => true,
+    'duplicate_merge' => 'disabled',
+    'hideacl' => true,
 );

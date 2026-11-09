@@ -87,6 +87,16 @@ KEPT = {
         "their two labels",
     "custom/Extension/modules/ERP_OrderLines/Ext/clients/base/views/record/bd_order_categories.php":
         "their read-only placement on the order line's record view",
+    "custom/metadata/erp_products_sales_catMetaData.php":
+        "the quote line's link to ERP_LookupValues (Sales Category), the shape of ERP-Core's erp_quotes_fob",
+    "custom/metadata/erp_orderlines_sales_catMetaData.php":
+        "the order line's link to ERP_LookupValues (Sales Category)",
+    "custom/metadata/erp_orderlines_product_catMetaData.php":
+        "the order line's link to ERP_LookupValues (Product Category)",
+    "custom/metadata/erp_companies_productsMetaData.php":
+        "the quote line's ERP company link, the pre-filter anchor for its lookup relates",
+    "custom/Extension/modules/Products/Ext/Vardefs/bd_quote_line_company.php":
+        "the quote line's ERP company relate, copied from the quote",
     "scripts/post_execute.php": "lifecycle",
     "scripts/bd_pre_uninstall.php": "lifecycle",
     "scripts/post_uninstall.php": "lifecycle",
