@@ -1,6 +1,6 @@
 <?php
 
-/** Bench Dogs: the order line's two read-only categories, relates to ERP_LookupValues (BdSalesCategories and BdProductCategories), filtered by the line's ERP company. The Bench connector extension writes the lookup ids from Kinetic's OrderDtl. Read-only in Sugar: Kinetic is the only writer. */
+/** Bench Dogs: the order line's two read-only categories, relates to ERP_LookupValues (SalesCategories and BdProductCategories), filtered by the line's ERP company. The Bench connector extension writes the lookup ids from Kinetic's OrderDtl. Read-only in Sugar: Kinetic is the only writer. */
 
 $dictionary['ERP_OrderLines']['fields']['erp_orderlines_sales_cat'] = array(
     'name' => 'erp_orderlines_sales_cat',
@@ -28,7 +28,7 @@ $dictionary['ERP_OrderLines']['fields']['e_sales_category_c'] = array(
     'rname' => 'name',
     'readonly' => true,
     'prefilter_field' => 'erp_companies_erp_orderlines_name',
-    'prefilter_conditions' => '[{"type":{"$in":["BdSalesCategories"]}},{"is_active":{"$equals":"1"}}]',
+    'prefilter_conditions' => '[{"type":{"$in":["SalesCategories"]}},{"is_active":{"$equals":"1"}}]',
 );
 
 $dictionary['ERP_OrderLines']['fields']['erp_orderlines_sales_catlookupvalues_idb'] = array(

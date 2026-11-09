@@ -1,15 +1,15 @@
 # 0.9.46-rc128 — the Sales Category picker and read-only ERP Order Line categories (SUG-17)
 
 rc128 = rc127 + these changes only. Install order on a Bench tenant: unchanged (ERP-Epicor → PF → rc128).
-Pairs with the connector extension that publishes the BdSalesCategories and BdProductCategories values
+Pairs with the connector extension that publishes the SalesCategories and BdProductCategories values
 (`erp_adm_sales_categories`, `erp_adm_product_categories`, `erp_adm_order_lines`).
 
-- **Sales Category picker:** `Products.e_sales_category_c` becomes an enum over `BdSalesCategories`
+- **Sales Category picker:** `Products.e_sales_category_c` becomes an enum over `SalesCategories`
   (`BdAdmRules::salesCategoryOptions`). The field name is the one the connector reads and writes.
 - **Read-only order-line categories:** `ERP_OrderLines.e_sales_category_c` and `e_product_category_c`, enums over
-  `BdSalesCategories` and `BdProductCategories`, read-only in the vardef and in the record view. Kinetic is the only
+  `SalesCategories` and `BdProductCategories`, read-only in the vardef and in the record view. Kinetic is the only
   writer (the connector's `erp_adm_order_lines`). Owner-approved 2026-11-09 (the ERP_OrderLines guard exception).
-- **Labels:** `BdSalesCategories`, `BdProductCategories`, and the field labels.
+- **Labels:** `SalesCategories`, `BdProductCategories`, and the field labels.
 - **Tests:** footprint KEPT list updated for the new files; the decision-59 test names the approved ERP_OrderLines
   fragments alongside the approved ERP_Orders fragments.
 
