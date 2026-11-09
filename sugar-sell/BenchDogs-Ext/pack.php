@@ -164,6 +164,16 @@ foreach (filesUnder('custom') as $file) {
     );
 }
 
+// Every relationship file is also REGISTERED, the way ERP-Epicor's pack.php does it ('relationships' => meta_data): the installer
+// then writes the TableDictionary entry that puts the relationship in Sugar's relationship cache. A file that is only copied
+// into custom/metadata loads its link fields and never saves or links (404 "Could not find a relationship").
+$installdefs['relationships'] = array();
+foreach (filesUnder('custom/metadata') as $file) {
+    if (substr($file[1], -strlen('MetaData.php')) === 'MetaData.php') {
+        $installdefs['relationships'][] = array('meta_data' => "<basepath>/{$file[1]}");
+    }
+}
+
 // scripts/ reaches the instance only through the lifecycle installdefs above.
 
 $manifestContent = sprintf(

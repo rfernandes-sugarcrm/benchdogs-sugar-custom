@@ -1,3 +1,12 @@
+# 0.9.46-rc132 — the package registers its relationships, so the relate fields save
+
+rc132 = rc131 + one fix. rc129 to rc131 shipped the four relationship files (`erp_companies_products`,
+`erp_products_sales_cat`, `erp_orderlines_sales_cat`, `erp_orderlines_prodcat`) that Sugar never registered: they
+were only copied into `custom/metadata`, so the relate fields loaded but never saved, and linking answered 404
+"Could not find a relationship named". `pack.php` now lists every `custom/metadata/*MetaData.php` as a manifest
+`relationships` entry (`meta_data`), the way ERP-Epicor does, so the install writes the TableDictionary entry and
+rebuilds the relationship cache. Guard: `test_relationships_are_registered.py`.
+
 # 0.9.46-rc131 — the order-line category fields finally load (vardef filed under the right dictionary key)
 
 rc131 = rc130 + one fix. rc129 and rc130 shipped `ERP_OrderLines` Sales Category and Product Category under
