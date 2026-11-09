@@ -15,6 +15,8 @@ $app_list_strings['erp_lookup_type_list']['BdMarketingEvents'] = 'Marketing Even
 $app_list_strings['erp_lookup_type_list']['BdCustomerGroups'] = 'Customer Group (ADM)';
 // Published by the Bench connector extension (erp_adm_sales_categories, ADM connection only).
 $app_list_strings['erp_lookup_type_list']['BdSalesCategories'] = 'Sales Category (ADM)';
+// Published by the Bench connector extension (erp_adm_product_categories, ADM connection only).
+$app_list_strings['erp_lookup_type_list']['BdProductCategories'] = 'Product Category (ADM)';
 
 // NO company list (🔒 1724b: "ADM" from one source). A quote is an ADM quote
 // when its ERP company has published BdLeadSources rows - which only the ADM
