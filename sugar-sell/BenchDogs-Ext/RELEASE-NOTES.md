@@ -1,3 +1,13 @@
+# 0.9.46-rc133 — each relationship has a link on both modules, so the relates save and read back
+
+rc133 = rc132 + one fix. rc132 registered the relationships (the link POST answered 200) but the relates read back
+empty and the id fields did not save: the package declared each relationship's link on the holding module only. ERP-Core's
+working `erp_quotes_fob` declares a link on BOTH modules (the lookup side `side` left, `link-type` many), and Sugar needs
+the left link to write the join row. rc133 restores them: `erp_products_sales_cat` and `erp_orderlines_sales_cat` on
+ERP_LookupValues, `erp_companies_products` on ERP_Companies, `erp_orderlines_prodcat` on ProductCategories. Everything
+else compared equal to the FOB definitions (metadata arrays, link, relate and id vardefs, join key naming). Guard:
+`test_relationships_are_registered.py` checks both links and that every id_name is a join key.
+
 # 0.9.46-rc132 — the package registers its relationships, so the relate fields save
 
 rc132 = rc131 + one fix. rc129 to rc131 shipped the four relationship files (`erp_companies_products`,

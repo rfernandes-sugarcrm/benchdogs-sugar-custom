@@ -40,5 +40,29 @@ class RelationshipsAreRegistered(unittest.TestCase):
             self.assertIn(f"$dictionary[\"{name}\"]", f.read_text(), f"{f.name} declares another name")
 
 
+    def test_every_relationship_has_a_link_on_both_modules_named_by_its_join_keys(self):
+        """The naming rule: ERP-Core's erp_quotes_fob declares a link on BOTH modules, and every id name is the join key.
+
+        A relationship with a link on one module only registers (the link POST answers 200) but the relate reads back
+        empty and its id does not save. Each link's id_name must be one of the relationship's join_key_lhs/rhs, and the
+        relate and id fields on the holding module must use that same name.
+        """
+        ext = PACKAGE / "custom" / "Extension" / "modules"
+        text = "\n".join(p.read_text() for p in ext.glob("*/Ext/Vardefs/*.php"))
+        for f in sorted((PACKAGE / "custom" / "metadata").glob("*MetaData.php")):
+            name = f.name[: -len("MetaData.php")]
+            meta = f.read_text()
+            keys = set(re.findall(r"'join_key_(?:lhs|rhs)' => '([^']+)'", meta))
+            if not keys:  # a one-to-many keeps its key on the rhs table; its id field is named by the rhs_key
+                keys = set(re.findall(r"'rhs_key' => '([^']+)'", meta)) - {"id"}
+            links = re.findall(r"\['fields'\]\['" + name + r"'\] = array\((.*?)\n\);", text, re.S)
+            sides = {m for body in links for m in re.findall(r"'side' => '(\w+)'", body)}
+            self.assertGreaterEqual(len(links), 2, f"{name}: needs a link vardef on both modules, found {len(links)}")
+            self.assertEqual(sides, {"left", "right"}, f"{name}: one link must be side left, one side right")
+            for body in links:
+                (id_name,) = re.findall(r"'id_name' => '([^']+)'", body)
+                self.assertIn(id_name, keys, f"{name}: link id_name {id_name} is not a join/rhs key of its metadata")
+
+
 if __name__ == "__main__":
     sys.exit(unittest.main())

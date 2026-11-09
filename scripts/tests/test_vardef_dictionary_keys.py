@@ -26,6 +26,9 @@ OBJECT_NAMES = {
     "Quotes": {"Quote"},
     "ERP_Orders": {"ERP_Order"},
     "ERP_OrderLines": {"ERP_OrderLine"},
+    "ERP_LookupValues": {"ERP_LookupValue"},
+    "ERP_Companies": {"ERP_Company"},
+    "ProductCategories": {"ProductCategory"},
 }
 
 KEY = re.compile(r"\$dictionary\[\s*['\"]([A-Za-z_]+)['\"]\s*\]")
