@@ -2,7 +2,7 @@
 
 /** Bench Dogs: the order line's two read-only categories, Sales Category relates to ERP_LookupValues (BdSalesCategories, filtered by the line's ERP company) and Product Category to the standard ProductCategories module ERP Core syncs. The Bench connector extension writes the lookup ids from Kinetic's OrderDtl. Read-only in Sugar: Kinetic is the only writer. */
 
-$dictionary['ERP_OrderLines']['fields']['erp_orderlines_sales_cat'] = array(
+$dictionary['ERP_OrderLine']['fields']['erp_orderlines_sales_cat'] = array(
     'name' => 'erp_orderlines_sales_cat',
     'type' => 'link',
     'relationship' => 'erp_orderlines_sales_cat',
@@ -15,7 +15,7 @@ $dictionary['ERP_OrderLines']['fields']['erp_orderlines_sales_cat'] = array(
     'link-type' => 'one',
 );
 
-$dictionary['ERP_OrderLines']['fields']['e_sales_category_c'] = array(
+$dictionary['ERP_OrderLine']['fields']['e_sales_category_c'] = array(
     'name' => 'e_sales_category_c',
     'type' => 'relate',
     'source' => 'non-db',
@@ -31,7 +31,7 @@ $dictionary['ERP_OrderLines']['fields']['e_sales_category_c'] = array(
     'prefilter_conditions' => '[{"type":{"$in":["BdSalesCategories"]}},{"is_active":{"$equals":"1"}}]',
 );
 
-$dictionary['ERP_OrderLines']['fields']['erp_orderlines_sales_catlookupvalues_idb'] = array(
+$dictionary['ERP_OrderLine']['fields']['erp_orderlines_sales_catlookupvalues_idb'] = array(
     'name' => 'erp_orderlines_sales_catlookupvalues_idb',
     'type' => 'id',
     'source' => 'non-db',
@@ -48,7 +48,7 @@ $dictionary['ERP_OrderLines']['fields']['erp_orderlines_sales_catlookupvalues_id
     'hideacl' => true,
 );
 
-$dictionary['ERP_OrderLines']['fields']['erp_orderlines_prodcat'] = array(
+$dictionary['ERP_OrderLine']['fields']['erp_orderlines_prodcat'] = array(
     'name' => 'erp_orderlines_prodcat',
     'type' => 'link',
     'relationship' => 'erp_orderlines_prodcat',
@@ -61,7 +61,7 @@ $dictionary['ERP_OrderLines']['fields']['erp_orderlines_prodcat'] = array(
     'link-type' => 'one',
 );
 
-$dictionary['ERP_OrderLines']['fields']['e_product_category_c'] = array(
+$dictionary['ERP_OrderLine']['fields']['e_product_category_c'] = array(
     'name' => 'e_product_category_c',
     'type' => 'relate',
     'source' => 'non-db',
@@ -75,7 +75,7 @@ $dictionary['ERP_OrderLines']['fields']['e_product_category_c'] = array(
     'readonly' => true,
 );
 
-$dictionary['ERP_OrderLines']['fields']['erp_orderlines_prodcatproductcategories_idb'] = array(
+$dictionary['ERP_OrderLine']['fields']['erp_orderlines_prodcatproductcategories_idb'] = array(
     'name' => 'erp_orderlines_prodcatproductcategories_idb',
     'type' => 'id',
     'source' => 'non-db',

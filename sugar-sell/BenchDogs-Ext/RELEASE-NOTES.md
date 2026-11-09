@@ -1,3 +1,11 @@
+# 0.9.46-rc131 — the order-line category fields finally load (vardef filed under the right dictionary key)
+
+rc131 = rc130 + one fix. rc129 and rc130 shipped `ERP_OrderLines` Sales Category and Product Category under
+`$dictionary['ERP_OrderLines']` (the module name); ERP-Core's bean and dictionary key is `ERP_OrderLine`, so Sugar
+silently ignored the vardef and the fields installed cleanly but never loaded. rc131 files all six definitions under
+`ERP_OrderLine`. A guard test (`test_vardef_dictionary_keys.py`) now fails any vardef extension filed under a key that
+is not its module's object name. Every other Bench vardef extension already used the right key.
+
 # 0.9.46-rc130 — the order line's Product Category relates to the standard ProductCategories module
 
 rc130 = rc129 + this change only. Install order on a Bench tenant: unchanged.
