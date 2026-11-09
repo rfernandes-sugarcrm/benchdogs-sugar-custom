@@ -6,11 +6,9 @@ import unittest
 import zipfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any
 from unittest.mock import patch
 
 import bd_retirement
-import test_g243_kinetic_opportunity_pairing_retired as pairing
 
 
 class RetirementBuildIsolationTest(unittest.TestCase):
@@ -40,6 +38,7 @@ class RetirementBuildIsolationTest(unittest.TestCase):
             capture_output=True,
             text=True,
             check=True,
+            env=bd_retirement.scratch_build_env(),
         )
 
     def test_cold_reader_builds_current_source_without_writing_releases(
@@ -56,33 +55,6 @@ class RetirementBuildIsolationTest(unittest.TestCase):
                 )
         self.assertFalse(self.shared.exists())
         self.assertEqual(archive, bd_retirement.built_zip())
-
-    def test_reader_survives_actual_pairing_delete_before_rebuild(
-        self,
-    ) -> None:
-        """Force a reader into the real writer's unlink-to-build interval."""
-        self.build_shared()
-        before = bd_retirement.zip_names()
-        run = subprocess.run
-        observed = []
-
-        def read_during_rebuild(
-            args: list[str], **kwargs: Any
-        ) -> subprocess.CompletedProcess[str]:
-            if args[1:] == ["pack.php"] and kwargs.get("cwd") == self.package:
-                self.assertFalse(self.shared.exists())
-                observed.append(bd_retirement.zip_names())
-            # Forward the real callers' check values unchanged.
-            return run(args, **kwargs)  # pylint: disable=subprocess-run-check
-
-        with (
-            patch.object(pairing, "PACKAGE", self.package),
-            patch.object(subprocess, "run", side_effect=read_during_rebuild),
-        ):
-            # The existing unittest setup has no type annotations.
-            writer = pairing.TheRetirementShipsAndOverwrites
-            writer.setUpClass()  # type: ignore[no-untyped-call]
-        self.assertEqual(observed, [before])
 
     def test_reader_ignores_a_replaced_shared_archive(self) -> None:
         """Replacing the public release cannot alter a reader's artifact."""

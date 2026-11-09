@@ -1,0 +1,32 @@
+{{!-- Recorded from SugarEnt 26.1.0 (build 319): clients/base/fields/actiondropdown/detail.hbs; sha256 c46f50b64f5f5a2d25e34ad6d76c5a912e7931132f962a2c204102c55b15d804 of the stock file, which follows unchanged. --}}
+{{!--
+/*
+ * Your installation or use of this SugarCRM file is subject to the applicable
+ * terms available at
+ * http://support.sugarcrm.com/Resources/Master_Subscription_Agreements/.
+ * If you do not agree to all of the applicable terms or do not have the
+ * authority to bind the entity as an authorized representative, then do not
+ * install or use this SugarCRM file.
+ *
+ * Copyright (C) SugarCRM Inc. All rights reserved.
+ */
+--}}
+{{#if def.buttons}}
+    {{#unless def.no_default_action}}
+        {{defaultActionBtn.placeholder}}
+    {{/unless}}
+    {{#if dropdownFields}}
+        <a track="click:actiondropdown"
+           class="btn dropdown-toggle{{#if def.no_default_action}} btn-invisible{{/if}}{{#if def.primary}} btn-primary{{/if}}"
+           data-bs-toggle="dropdown"
+           role="button" tabindex="{{tabIndex}}" aria-haspopup="true" aria-expanded="false"
+           aria-label="{{str 'LBL_LISTVIEW_ACTIONS'}}"
+           data-bs-display="static"
+           data-key-action="press"
+        >
+            <span class="{{buildIcon caretIcon}}"></span>
+            {{tooltipTemplate (str tooltip) 'bottom'}}
+        </a>
+        <ul data-menu="dropdown" class="dropdown-menu" role="menu"></ul>
+    {{/if}}
+{{/if}}

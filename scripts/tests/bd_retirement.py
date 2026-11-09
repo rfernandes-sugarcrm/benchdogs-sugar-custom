@@ -38,6 +38,15 @@ from tempfile import TemporaryDirectory
 ROOT = Path(__file__).resolve().parents[2]
 PKG = Path(os.environ.get("BD_PKG", ROOT / "sugar-sell/BenchDogs-Ext"))
 
+#: The date a test build of a scratch copy is stamped with (2023-11-14 22:13:20 UTC). A copy outside
+#: the repository has no git history for pack.php to date the package by, so the build is given one.
+SCRATCH_SOURCE_DATE = "1700000000"
+
+
+def scratch_build_env() -> dict[str, str]:
+    """The environment pack.php runs in over a scratch copy of the package: this one, plus its date."""
+    return {**os.environ, "SOURCE_DATE_EPOCH": SCRATCH_SOURCE_DATE}
+
 
 @cache
 def _private_build(package: Path) -> tuple[TemporaryDirectory[str], Path]:
@@ -62,6 +71,7 @@ def _private_build(package: Path) -> tuple[TemporaryDirectory[str], Path]:
             capture_output=True,
             text=True,
             check=True,
+            env=scratch_build_env(),
         )
         version = (source / "version").read_text().strip()
         archive = source / "releases" / f"sugarai_benchdogs_ext-{version}.zip"

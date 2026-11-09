@@ -1,0 +1,85 @@
+{
+ "recorded": "Recorded from SugarEnt 26.1.0 (build 319): include/SugarObjects/implements/currency/vardefs.php; sha256 76ec648cf689fb1ac37257793aa2286a64b15cb54f7e589406a7a2290a007141 of the stock file. $vardefs as php fills it, whole.",
+ "kept": "all",
+ "as": {
+  "module": "Products",
+  "object_name": "Product",
+  "_object_name": "product",
+  "table_name": "products"
+ },
+ "vardefs": {
+  "fields": {
+   "currency_id": {
+    "name": "currency_id",
+    "dbType": "id",
+    "vname": "LBL_CURRENCY_ID",
+    "type": "currency_id",
+    "function": "getCurrencies",
+    "function_bean": "Currencies",
+    "required": false,
+    "reportable": false,
+    "default": "-99"
+   },
+   "base_rate": {
+    "name": "base_rate",
+    "vname": "LBL_CURRENCY_RATE",
+    "type": "text",
+    "dbType": "decimal",
+    "len": "26,6",
+    "readonly": true
+   },
+   "currency_name": {
+    "name": "currency_name",
+    "rname": "name",
+    "id_name": "currency_id",
+    "vname": "LBL_CURRENCY_NAME",
+    "type": "relate",
+    "link": "currencies",
+    "isnull": true,
+    "table": "currencies",
+    "module": "Currencies",
+    "source": "non-db",
+    "studio": false,
+    "duplicate_merge": "disabled",
+    "function": "getCurrencies",
+    "function_bean": "Currencies",
+    "massupdate": false
+   },
+   "currency_symbol": {
+    "name": "currency_symbol",
+    "rname": "symbol",
+    "id_name": "currency_id",
+    "vname": "LBL_CURRENCY_SYMBOL",
+    "type": "relate",
+    "link": "currencies",
+    "isnull": true,
+    "table": "currencies",
+    "module": "Currencies",
+    "source": "non-db",
+    "studio": false,
+    "duplicate_merge": "disabled",
+    "function": "getCurrencySymbols",
+    "function_bean": "Currencies",
+    "massupdate": false
+   },
+   "currencies": {
+    "name": "currencies",
+    "type": "link",
+    "relationship": "products_currencies",
+    "source": "non-db",
+    "vname": "LBL_CURRENCIES"
+   }
+  },
+  "relationships": {
+   "products_currencies": {
+    "lhs_module": "Currencies",
+    "lhs_table": "currencies",
+    "lhs_key": "id",
+    "rhs_module": "Products",
+    "rhs_table": "products",
+    "rhs_key": "currency_id",
+    "relationship_type": "one-to-many"
+   }
+  }
+ }
+}

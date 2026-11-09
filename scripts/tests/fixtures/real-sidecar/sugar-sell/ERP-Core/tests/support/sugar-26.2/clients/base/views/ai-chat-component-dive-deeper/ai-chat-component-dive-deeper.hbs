@@ -1,0 +1,51 @@
+{{!-- Recorded from SugarEnt 26.2.0 (build 296): clients/base/views/ai-chat-component-dive-deeper/ai-chat-component-dive-deeper.hbs; sha256 558c69a1e78238f949cdd9fbafc54bd69e4fedd147bc28f962a9ae63d7658214 of the stock file, which follows unchanged. --}}
+{{!--
+/*
+ * Your installation or use of this SugarCRM file is subject to the applicable
+ * terms available at
+ * http://support.sugarcrm.com/Resources/Master_Subscription_Agreements/.
+ * If you do not agree to all of the applicable terms or do not have the
+ * authority to bind the entity as an authorized representative, then do not
+ * install or use this SugarCRM file.
+ *
+ * Copyright (C) SugarCRM Inc. All rights reserved.
+ */
+--}}
+<div data-type="dive-deeper" class="overflow-hidden -mx-4 border-y border-gray-300 bg-gray-50 dark:bg-gray-900 dark:border-gray-700">
+        <div class="grid gap-2 px-4 py-4">
+            {{#each items}}
+                {{#if separator}}
+                    <div class="dive-deeper-separator w-full border-t border-gray-300 [&&&&&&&&]:my-4"></div>
+                {{else}}
+                    <div
+                        class="flex items-center gap-1 px-3 py-1 rounded-[24px] transition-colors pill-button min-w-0
+                            max-w-fit
+                            {{#if disabled}}
+                                opacity-50 cursor-default bg-gray-200 border border-gray-200 text-gray-600
+                            {{else}}
+                                bg-white text-blue-600 border border-gray-300 hover:bg-white hover:border-gray-600
+                                hover:text-blue-800 cursor-pointer dark:bg-gray-900 dark:text-blue-400 dark:border-gray-700 dark:hover:bg-gray-800 dark:hover:border-gray-500 dark:hover:text-blue-300
+                            {{/if}}"
+                        data-action="dive-deeper-item"
+                        data-prompt-text="{{prompt}}"
+                        {{#if key}}data-key="{{key}}"{{/if}}
+                        {{#if disabled}}
+                            data-disabled="true"
+                            aria-disabled="true"
+                        {{/if}}>
+                        {{#if icon}}
+                            {{moduleLabel icon 'sm' class='[&&&&&&&&&&]:rounded-full mr-1 dive-deeper-item-icon'}}
+                        {{/if}}
+                        <span class="text-[14px] font-normal ellipsis_inline min-w-0"
+                                data-bs-toggle="tooltip"
+                                data-bs-placement="bottom"
+                                data-bs-custom-class="flow-action-tooltip"
+                                title="{{#if description}}{{text}} - {{description}}{{else}}{{text}}{{/if}}">
+                            {{text}}{{#if description}} - {{description}}{{/if}}
+                        </span>
+                    </div>
+                {{/if}}
+            {{/each}}
+        </div>
+    </div>
+</div>

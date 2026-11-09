@@ -1,0 +1,507 @@
+<?php
+$module_name = 'ERP_Orders';
+$viewdefs[$module_name] =
+array (
+  'base' =>
+  array (
+    'view' =>
+    array (
+      'record' =>
+      array (
+        'buttons' =>
+        array (
+          0 =>
+          array (
+            'type' => 'button',
+            'name' => 'cancel_button',
+            'label' => 'LBL_CANCEL_BUTTON_LABEL',
+            'css_class' => 'btn-invisible btn-link',
+            'showOn' => 'edit',
+            'events' =>
+            array (
+              'click' => 'button:cancel_button:click',
+            ),
+          ),
+          1 =>
+          array (
+            'type' => 'rowaction',
+            'event' => 'button:save_button:click',
+            'name' => 'save_button',
+            'label' => 'LBL_SAVE_BUTTON_LABEL',
+            'css_class' => 'btn btn-primary',
+            'showOn' => 'edit',
+            'acl_action' => 'edit',
+          ),
+          2 =>
+          array (
+            'type' => 'actiondropdown',
+            'name' => 'main_dropdown',
+            'primary' => true,
+            'showOn' => 'view',
+            'buttons' =>
+            array (
+              0 =>
+              array (
+                'type' => 'rowaction',
+                'event' => 'button:edit_button:click',
+                'name' => 'edit_button',
+                'label' => 'LBL_EDIT_BUTTON_LABEL',
+                'acl_action' => 'edit',
+              ),
+              1 =>
+              array (
+                'type' => 'shareaction',
+                'name' => 'share',
+                'label' => 'LBL_RECORD_SHARE_BUTTON',
+                'acl_action' => 'view',
+              ),
+              2 =>
+              array (
+                'type' => 'erp-pdf-action',
+                'name' => 'download-pdf',
+                'label' => 'LBL_PDF_VIEW',
+                'action' => 'download',
+                'acl_action' => 'view',
+              ),
+              3 =>
+              array (
+                'type' => 'erp-pdf-action',
+                'name' => 'email-pdf',
+                'label' => 'LBL_PDF_EMAIL',
+                'action' => 'email',
+                'acl_action' => 'view',
+              ),
+              4 =>
+              array (
+                'type' => 'divider',
+              ),
+              5 =>
+              array (
+                'type' => 'rowaction',
+                'event' => 'button:find_duplicates_button:click',
+                'name' => 'find_duplicates_button',
+                'label' => 'LBL_DUP_MERGE',
+                'acl_action' => 'edit',
+              ),
+              6 =>
+              array (
+                'type' => 'rowaction',
+                'event' => 'button:duplicate_button:click',
+                'name' => 'duplicate_button',
+                'label' => 'LBL_DUPLICATE_BUTTON_LABEL',
+                'acl_module' => 'ERP_Orders',
+                'acl_action' => 'create',
+              ),
+              7 =>
+              array (
+                'type' => 'rowaction',
+                'event' => 'button:audit_button:click',
+                'name' => 'audit_button',
+                'label' => 'LNK_VIEW_CHANGE_LOG',
+                'acl_action' => 'view',
+              ),
+              8 =>
+              array (
+                'type' => 'divider',
+              ),
+              9 =>
+              array (
+                'type' => 'rowaction',
+                'event' => 'button:delete_button:click',
+                'name' => 'delete_button',
+                'label' => 'LBL_DELETE_BUTTON_LABEL',
+                'acl_action' => 'delete',
+              ),
+            ),
+          ),
+          3 =>
+          array (
+            'name' => 'sidebar_toggle',
+            'type' => 'sidebartoggle',
+          ),
+        ),
+        'panels' =>
+        array (
+          0 =>
+          array (
+            'name' => 'panel_header',
+            'label' => 'LBL_RECORD_HEADER',
+            'header' => true,
+            'fields' =>
+            array (
+              0 =>
+              array (
+                'name' => 'picture',
+                'type' => 'avatar',
+                'width' => 32,
+                'height' => 32,
+                'dismiss_label' => true,
+                'readonly' => true,
+                'size' => 'medium',
+              ),
+              1 => 'name',
+              2 =>
+              array (
+                'name' => 'favorite',
+                'label' => 'LBL_FAVORITE',
+                'type' => 'favorite',
+                'readonly' => true,
+                'dismiss_label' => true,
+              ),
+              3 =>
+              array (
+                'name' => 'follow',
+                'label' => 'LBL_FOLLOW',
+                'type' => 'follow',
+                'readonly' => true,
+                'dismiss_label' => true,
+              ),
+            ),
+          ),
+          1 =>
+          array (
+            'name' => 'panel_body',
+            'label' => 'LBL_RECORD_BODY',
+            'columns' => 2,
+            'placeholders' => true,
+            'newTab' => true,
+            'panelDefault' => 'expanded',
+            'fields' =>
+            array (
+              0 =>
+              array (
+                'name' => 'erp_orders_accounts_name',
+                'readonly' => true,
+              ),
+              1 => 'assigned_user_name',
+              2 =>
+              array (
+                'name' => 'quotes_erp_orders_name',
+                'label' => 'LBL_QUOTES_ERP_ORDERS_FROM_QUOTES_TITLE',
+                'link' => true,
+                'readonly' => true,
+              ),
+              3 =>
+              array (
+                'name' => 'purchase_order_num',
+                'readonly' => true,
+              ),
+              4 =>
+              array (
+                'name' => 'erp_companies_erp_orders_name',
+                'readonly' => true,
+              ),
+              5 =>
+              array (
+                'name' => 'erp_display_sync_key',
+                'label' => 'LBL_ERP_ORDER_NUM',
+                'type' => 'erp-id-link',
+                'readonly' => true,
+                // G737: the ERP # is the link to Epicor; its URL is fetched here rather than shown as a raw 'Epicor Link' row.
+                'related_fields' =>
+                array (
+                  0 => 'epicor_deeplink_url',
+                ),
+              ),
+            ),
+          ),
+          2 =>
+          array (
+            'newTab' => false,
+            'panelDefault' => 'expanded',
+            'name' => 'LBL_RECORDVIEW_PANEL_ORDER_DETAIL',
+            'label' => 'LBL_RECORDVIEW_PANEL_ORDER_DETAIL',
+            'columns' => 2,
+            'placeholders' => 1,
+            'fields' =>
+            array (
+              0 =>
+              array (
+                'name' => 'order_date',
+                'readonly' => true,
+              ),
+              1 =>
+              array (
+                'name' => 'status',
+                'type' => 'erp-status-badge',
+                'label' => 'LBL_ORDER_STATUS',
+                'readonly' => true,
+              ),
+              2 =>
+              array (
+                'name' => 'currency_id',
+                'type' => 'erp-currency-type-dropdown',
+                'label' => 'LBL_CURRENCY',
+                'readonly' => true,
+                'related_fields' =>
+                array (
+                  0 => 'currency_id',
+                  1 => 'base_rate',
+                ),
+                'currency_field' => 'currency_id',
+                'base_rate_field' => 'base_rate',
+              ),
+              3 =>
+              array (
+                'name' => 'erp_orders_erp_lookupvalues_name',
+                'readonly' => true,
+              ),
+              4 =>
+              array (
+                'name' => 'order_total',
+                'readonly' => true,
+              ),
+              // Epicor's own tax and order-level charges, so the total can be read off the record.
+              5 =>
+              array (
+                'name' => 'erp_tax_amount',
+                'readonly' => true,
+              ),
+              6 =>
+              array (
+                'name' => 'erp_misc_amount',
+                'readonly' => true,
+              ),
+              // The lines total beside the misc charges, so the two read apart.
+              7 =>
+              array (
+                'name' => 'erp_line_total',
+                'readonly' => true,
+              ),
+              8 =>
+              array (
+                'name' => 'discount_perc',
+                'readonly' => true,
+              ),
+            ),
+          ),
+          3 =>
+          array (
+            'newTab' => false,
+            'panelDefault' => 'expanded',
+            'name' => 'LBL_RECORDVIEW_PANEL_BILLING_DETAIL',
+            'label' => 'LBL_RECORDVIEW_PANEL_BILLING_DETAIL',
+            'columns' => 2,
+            'placeholders' => 1,
+            'fields' =>
+            array (
+              0 =>
+              array (
+                'name' => 'erp_orders_accounts_1_name',
+                'readonly' => true,
+              ),
+              1 =>
+              array (
+                'name' => 'erp_orders_erp_lookupvalues_2_name',
+                'readonly' => true,
+              ),
+              2 =>
+              array (
+                'name' => 'bill_to_address',
+                'type' => 'fieldset',
+                'css_class' => 'address',
+                'label' => 'LBL_BILLING_ADDRESS',
+                'readonly' => true,
+                'fields' =>
+                array (
+                  0 =>
+                  array (
+                    'name' => 'bill_to_address_street',
+                    'css_class' => 'address_street',
+                    'placeholder' => 'LBL_BILL_TO_ADDRESS_STREET',
+                    'readonly' => true,
+                  ),
+                  1 =>
+                  array (
+                    'name' => 'bill_to_address_city',
+                    'css_class' => 'address_city',
+                    'placeholder' => 'LBL_BILL_TO_ADDRESS_CITY',
+                    'readonly' => true,
+                  ),
+                  2 =>
+                  array (
+                    'name' => 'bill_to_address_state',
+                    'css_class' => 'address_state',
+                    'placeholder' => 'LBL_BILL_TO_ADDRESS_STATE',
+                    'readonly' => true,
+                  ),
+                  3 =>
+                  array (
+                    'name' => 'bill_to_address_postalcode',
+                    'css_class' => 'address_zip',
+                    'placeholder' => 'LBL_BILL_TO_ADDRESS_POSTALCODE',
+                    'readonly' => true,
+                  ),
+                  4 =>
+                  array (
+                    'name' => 'bill_to_address_country',
+                    'css_class' => 'address_country',
+                    'placeholder' => 'LBL_BILL_TO_ADDRESS_COUNTRY',
+                    'readonly' => true,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          4 =>
+          array (
+            'newTab' => false,
+            'panelDefault' => 'expanded',
+            'name' => 'LBL_RECORDVIEW_PANEL_SHIPPING_DETAIL',
+            'label' => 'LBL_RECORDVIEW_PANEL_SHIPPING_DETAIL',
+            'columns' => 2,
+            'placeholders' => 1,
+            'fields' =>
+            array (
+              0 =>
+              array (
+                'name' => 'request_ship_date',
+                'readonly' => true,
+              ),
+              1 =>
+              array (
+                'name' => 'need_by_date',
+                'readonly' => true,
+              ),
+              2 =>
+              array (
+                'name' => 'erp_orders_erp_lookupvalues_1_name',
+                'readonly' => true,
+              ),
+              3 =>
+              array (
+                'name' => 'erp_orders_accounts_2_name',
+                'readonly' => true,
+              ),
+              4 =>
+              array (
+                'name' => 'ship_to_address',
+                'type' => 'fieldset',
+                'css_class' => 'address',
+                'label' => 'LBL_SHIPPING_ADDRESS',
+                'readonly' => true,
+                'fields' =>
+                array (
+                  0 =>
+                  array (
+                    'name' => 'ship_to_address_street',
+                    'css_class' => 'address_street',
+                    'placeholder' => 'LBL_SHIP_TO_ADDRESS_STREET',
+                    'readonly' => true,
+                  ),
+                  1 =>
+                  array (
+                    'name' => 'ship_to_address_city',
+                    'css_class' => 'address_city',
+                    'placeholder' => 'LBL_SHIP_TO_ADDRESS_CITY',
+                    'readonly' => true,
+                  ),
+                  2 =>
+                  array (
+                    'name' => 'ship_to_address_state',
+                    'css_class' => 'address_state',
+                    'placeholder' => 'LBL_SHIP_TO_ADDRESS_STATE',
+                    'readonly' => true,
+                  ),
+                  3 =>
+                  array (
+                    'name' => 'ship_to_address_postalcode',
+                    'css_class' => 'address_zip',
+                    'placeholder' => 'LBL_SHIP_TO_ADDRESS_POSTALCODE',
+                    'readonly' => true,
+                  ),
+                  4 =>
+                  array (
+                    'name' => 'ship_to_address_country',
+                    'css_class' => 'address_country',
+                    'placeholder' => 'LBL_SHIP_TO_ADDRESS_COUNTRY',
+                    'readonly' => true,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          5 =>
+          array (
+            'name' => 'panel_hidden',
+            'label' => 'LBL_SHOW_MORE',
+            'hide' => true,
+            'columns' => 2,
+            'placeholders' => true,
+            'newTab' => true,
+            'panelDefault' => 'expanded',
+            'fields' =>
+            array (
+              0 => 'team_name',
+              1 =>
+              array (
+                'name' => 'date_entered_by',
+                'readonly' => true,
+                'inline' => true,
+                'type' => 'fieldset',
+                'label' => 'LBL_DATE_ENTERED',
+                'fields' =>
+                array (
+                  0 =>
+                  array (
+                    'name' => 'date_entered',
+                  ),
+                  1 =>
+                  array (
+                    'type' => 'label',
+                    'default_value' => 'LBL_BY',
+                  ),
+                  2 =>
+                  array (
+                    'name' => 'created_by_name',
+                  ),
+                ),
+              ),
+              2 =>
+              array (
+                'name' => 'date_modified_by',
+                'readonly' => true,
+                'inline' => true,
+                'type' => 'fieldset',
+                'label' => 'LBL_DATE_MODIFIED',
+                'fields' =>
+                array (
+                  0 =>
+                  array (
+                    'name' => 'date_modified',
+                  ),
+                  1 =>
+                  array (
+                    'type' => 'label',
+                    'default_value' => 'LBL_BY',
+                  ),
+                  2 =>
+                  array (
+                    'name' => 'modified_by_name',
+                  ),
+                ),
+              ),
+              3 =>
+              array (
+                'name' => 'tag',
+                'enabled' => true,
+                'default' => false,
+              ),
+              4 =>
+              array (
+                'name' => 'description',
+                'span' => 12,
+                'enabled' => true,
+                'default' => false,
+              ),
+            ),
+          ),
+        ),
+        'templateMeta' =>
+        array (
+          'useTabs' => true,
+        ),
+      ),
+    ),
+  ),
+);

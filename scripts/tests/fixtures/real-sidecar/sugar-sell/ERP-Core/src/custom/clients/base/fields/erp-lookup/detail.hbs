@@ -1,0 +1,8 @@
+{{!--
+    G527: a lookup value reads like a dropdown value - plain text, no link to
+    the ERP_LookupValues record, no focus icon - with "(Inactive)" beside a
+    value the ERP has since deactivated.
+--}}
+<span class="ellipsis_inline" data-bs-placement="bottom"
+    title="{{#unless value}}{{#if def.placeholder}}{{str def.placeholder this.model.module}}{{/if}}{{/unless}}{{value}}"
+>{{value}}{{#if erpLookupInactive}} <span class="erp-lookup-inactive">{{str 'LBL_ERP_LOOKUP_INACTIVE' module}}</span>{{/if}}</span>

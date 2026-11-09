@@ -1,0 +1,10 @@
+{
+  "name": "sugar-page-tests-dom",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The DOM the real-Sugar page tests run in (scripts/tests/_real_sugar_page.cjs). Test support only, never shipped.",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "jsdom": "24.1.3"
+  }
+}

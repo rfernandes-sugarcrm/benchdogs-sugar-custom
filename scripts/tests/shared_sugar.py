@@ -63,11 +63,13 @@ SOURCES = {
     # longer require_once's its enforcer, it autoloads it.
     "QuoteOpportunityAmount.php":
         "sugar-sell/ERP-Core/src/custom/src/Erp/QuoteOpportunityAmount.php",
+    # ERP-Epicor-PartialFulfillment (erp-integration-sugar ee81f58a, pinned at
+    # b1f6e023) moved these two into custom/src/Erp under the same namespace.
     "ErpOpportunityValuation.php":
-        "sugar-sell/ERP-Epicor-PartialFulfillment/custom/modules/Quotes/"
+        "sugar-sell/ERP-Epicor-PartialFulfillment/custom/src/Erp/"
         "ErpOpportunityValuation.php",
     "ErpQuoteLineRollup.php":
-        "sugar-sell/ERP-Epicor-PartialFulfillment/custom/modules/Quotes/"
+        "sugar-sell/ERP-Epicor-PartialFulfillment/custom/src/Erp/"
         "ErpQuoteLineRollup.php",
     # Added 0.9.42-rc65 for G276: the Quotes record-view buttons are CORE's to
     # add back after this package stopped stripping them, and the proof has to
@@ -81,17 +83,23 @@ SOURCES = {
     # mirrored pin tree and the pinned autoloader provide.)
     "QuotePrimaryQuoteSoleEnforcer.php":
         "sugar-sell/ERP-Core/src/custom/src/Erp/QuotePrimaryQuoteSoleEnforcer.php",
+    # ERP-Epicor 1.2.121 line: the primary-quote enforcer reads which session is
+    # the connector's (ErpConnectorSession, autoloaded), and the Opportunity
+    # valuation reads the committed quote stages from one place
+    # (ErpQuoteStageRules). Without these two pinned, every amount refresh
+    # fails with "class not found" whenever the sibling checkout is absent.
+    "ErpConnectorSession.php":
+        "sugar-sell/ERP-Core/src/custom/src/Erp/ErpConnectorSession.php",
+    "ErpQuoteStageRules.php":
+        "sugar-sell/ERP-Core/src/custom/src/Erp/ErpQuoteStageRules.php",
     # Pinned 0.9.42-rc65 so the CORE-side controls run in CI rather than
-    # skipping: core's billing-country guard (this package ships none),
+    # skipping: core's billing-country guard (this package ships none) and
     # ERP-Epicor's createOppQuote (G243's control - the seller's button must
-    # still create its Opportunity) and the label that collides with the
-    # retired Bench button (G15's root cause).
+    # still create its Opportunity).
     "ErpAccountCountryGuard.php":
         "sugar-sell/ERP-Core/src/custom/src/Erp/ErpAccountCountryGuard.php",
     "AccountsErpActionsApi.php":
         "sugar-sell/ERP-Epicor/src/custom/clients/base/api/AccountsErpActionsApi.php",
-    "en_us.erp_create_opp_quote.php":
-        "sugar-sell/ERP-Epicor/src/custom/Extension/modules/Accounts/Ext/Language/en_us.erp_create_opp_quote.php",
     "BaseErpLayout.php":
         "sugar-sell/ERP-Core/scripts/BaseErpLayout.php",
     "QuotesLayout.php":
@@ -103,10 +111,8 @@ SOURCES = {
     # after. Pinned from the LANDED Sugar target a0f6b632, so rc70's tests run
     # against lane D's real code, not stand-ins. From 0.9.42-rc83 this is
     # ERP-Epicor 1.2.0's Sugarcrm\Sugarcrm\custom\Erp\ErpQuoteFacts (in
-    # ERP-EPICOR's custom/src, not ERP-Core's). The GLOBAL class every ERP-Epicor
-    # before 1.2.0 ships is gone from the sibling tree, so it is pinned to its
-    # last commit under fixtures/erp-epicor-1.1/ instead (see
-    # test_erp_epicor_1_1_fixture_pin.py): BdAdmRules must keep working on both.
+    # ERP-EPICOR's custom/src, not ERP-Core's). The package refuses to install
+    # below ERP-Epicor 1.2.4, so the 1.1 global class is not pinned.
     "ErpQuoteFacts.php":
         "sugar-sell/ERP-Epicor/src/custom/src/Erp/ErpQuoteFacts.php",
     "ErpLayoutExtraFields.php":
@@ -134,6 +140,39 @@ SOURCES = {
         "sugar-sell/ERP-Core/src/custom/Extension/modules/Quotes/Ext/Language/en_us.erp_quote_charges.php",
     "en_us.erp_quote_grid_money_labels.php":
         "sugar-sell/ERP-Core/src/custom/Extension/modules/Products/Ext/Language/en_us.erp_quote_grid_money_labels.php",
+    # 0.9.42-rc94: ERP-Core's rule that a quote line's Part Number is read-only. The Bench rule rewrites it for a new
+    # product that is not in the catalog, so the test merges the two the way Sugar does and reads ERP-Core's real one.
+    "erp_part_number_read_only.php":
+        "sugar-sell/ERP-Core/src/custom/Extension/modules/Products/Ext/Dependencies/erp_part_number_read_only.php",
+    # 0.9.46-rc101: ERP-Core's pick list field, which reads this package's required keys on the quote pickers and
+    # decides on the page whether each one is required. The Project test runs it in Sugar's own record view.
+    "erp-dependent-enum.js":
+        "sugar-sell/ERP-Core/src/custom/clients/base/fields/erp-dependent-enum/erp-dependent-enum.js",
+    # 0.9.46-rc114: ERP-Epicor's rule for which quantity ladder a quoted line item belongs to (ladderGroupOf). The
+    # Bench quote PDF template groups a line's price breaks by the same rule, written in Smarty because a PDF Manager
+    # template cannot call PHP; the render test holds the two to the same answer on every shape of line.
+    "ErpLineRole.php":
+        "sugar-sell/ERP-Epicor/src/custom/src/Erp/ErpLineRole.php",
+    # rc117: the quick search over the Product Catalog. ERP-Core adds the part number to
+    # ProductTemplates' quick-search fields, so the Bench package adds only the column.
+    "erp_part_number.php":
+        "sugar-sell/ERP-Core/src/custom/Extension/modules/ProductTemplates/Ext/clients/base/filters/basic/"
+        "erp_part_number.php",
+    # rc118: ERP-Core's five billing address vardefs (required, a Customer-only required_formula, no placeholder).
+    # The Bench override makes the formula of four of them 'true'; the test merges these real files with the
+    # override in Sugar's extension order and checks what the merged dictionary holds.
+    "billing_address_street_required_formula.php":
+        "sugar-sell/ERP-Core/src/custom/Extension/modules/Accounts/Ext/Vardefs/billing_address_street_required_formula.php",
+    "billing_address_city_required_formula.php":
+        "sugar-sell/ERP-Core/src/custom/Extension/modules/Accounts/Ext/Vardefs/billing_address_city_required_formula.php",
+    "billing_address_state_required_formula.php":
+        "sugar-sell/ERP-Core/src/custom/Extension/modules/Accounts/Ext/Vardefs/billing_address_state_required_formula.php",
+    "billing_address_postalcode_required_formula.php":
+        "sugar-sell/ERP-Core/src/custom/Extension/modules/Accounts/Ext/Vardefs/"
+        "billing_address_postalcode_required_formula.php",
+    "billing_address_country_required_formula.php":
+        "sugar-sell/ERP-Core/src/custom/Extension/modules/Accounts/Ext/Vardefs/"
+        "billing_address_country_required_formula.php",
 }
 
 

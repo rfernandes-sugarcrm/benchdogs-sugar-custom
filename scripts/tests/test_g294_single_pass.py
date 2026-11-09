@@ -66,6 +66,8 @@ import unittest
 import zipfile
 from pathlib import Path
 
+import bd_retirement
+
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = Path(os.environ.get("BD_PKG", ROOT / "sugar-sell/BenchDogs-Ext"))
 VERSION = "0.9.42-rcSINGLEPASS"
@@ -96,7 +98,7 @@ def build_and_extract(scratch: Path) -> Path:
     src = scratch / "src"
     shutil.copytree(PACKAGE, src, ignore=shutil.ignore_patterns("releases"))
     subprocess.run(["php", "pack.php", VERSION], cwd=src, check=True,
-                   capture_output=True, text=True)
+                   capture_output=True, text=True, env=bd_retirement.scratch_build_env())
     zips = list((src / "releases").glob("*.zip"))
     assert len(zips) == 1, zips
     pkg = scratch / "pkg"
@@ -158,6 +160,8 @@ class ModuleInstaller {
 HARNESS = r'''<?php
 // SugarAutoLoader's $dirMap rule for a global class: custom/include/Foo.php (rc87: the scripts autoload ErpLayoutExtraFields).
 spl_autoload_register(function ($c) { if (is_file("custom/include/$c.php")) { require_once "custom/include/$c.php"; } });
+// And its PSR-4 rule (vendor/composer/autoload_psr4.php): Sugarcrm\Sugarcrm\custom\ -> custom/src/ (rc100's Kinetic step).
+spl_autoload_register(function ($c) { $p = 'Sugarcrm\\Sugarcrm\\custom\\'; if (strpos($c, $p) === 0) { $f = 'custom/src/' . str_replace('\\', '/', substr($c, strlen($p))) . '.php'; if (is_file($f)) { require_once $f; } } });
 $MODE = MODE_JSON;
 $PKG = PKG_JSON;
 $FAIL_ON_CALL = FAIL_JSON;          // [helper, nth call] or null
@@ -258,11 +262,46 @@ HELPER_FILES = {
     # calls once per module. Recorded WITH the module, so "each step runs once"
     # still means one call per step.
     "custom/include/ErpLayoutExtraFields.php": "ErpLayoutExtraFields",
+    # rc100: the Kinetic fields step, once per install; what it creates is bd_kinetic_fields_test.php's.
+    "custom/src/BenchDogs/BdKineticFields.php": "BdKineticFields",
+    "custom/src/BenchDogs/BdStudioFields.php": "BdStudioFields",
+    # rc112: the quote PDF template step; its record writes are bd_quote_pdf_test.php's.
+    "custom/src/BenchDogs/BdQuotePdf.php": "BdQuotePdf",
+    # rc117: the install history read and the two one-time steps it decides (their rules are tested elsewhere:
+    # bd_line_project_test.php, test_post_install_step_report.py, bd_button_quote_project_test.php).
+    "custom/src/BenchDogs/BdInstallHistory.php": "BdInstallHistory",
+    "custom/src/BenchDogs/BdLineProject.php": "BdLineProject",
+    "custom/src/BenchDogs/BdQuoteTypeDefault.php": "BdQuoteTypeDefault",
 }
 HELPER_METHODS = ("write", "writeCustomerGroupField", "remove", "place")
 
 
 def helper_source(cls: str) -> str:
+    if cls == "BdKineticFields":
+        return ("<?php namespace Sugarcrm\\Sugarcrm\\custom\\BenchDogs; class BdKineticFields {"
+                " public static function createMissing($s) { \\bd_helper_called('BdKineticFields::createMissing');"
+                " return ['created' => [], 'kept' => [], 'failed' => []]; } }")
+    if cls == "BdStudioFields":
+        return "<?php namespace Sugarcrm\\Sugarcrm\\custom\\BenchDogs; class BdStudioFields {}"
+    if cls == "BdQuotePdf":
+        return ("<?php namespace Sugarcrm\\Sugarcrm\\custom\\BenchDogs; class BdQuotePdf {"
+                " public static function install(): string { return 'unchanged'; }"
+                " public static function uninstall(): string { return 'unpublished'; } }")
+    if cls == "BdInstallHistory":
+        return ("<?php namespace Sugarcrm\\Sugarcrm\\custom\\BenchDogs; class BdInstallHistory {"
+                " const LINE_PROJECT_RELEASE = '0.9.46-rc117';"
+                " public static function installedVersions(): array {"
+                " \\bd_helper_called('BdInstallHistory::installedVersions'); return ['0.9.46-rc116']; }"
+                " public static function firstInstallOf(string $release, array $installed): bool { return true; } }")
+    if cls == "BdLineProject":
+        return ("<?php namespace Sugarcrm\\Sugarcrm\\custom\\BenchDogs; class BdLineProject {"
+                " public static function copyFromQuotes(): array { \\bd_helper_called('BdLineProject::copyFromQuotes');"
+                " return ['quotes' => 0, 'lines' => 0, 'filled' => 0, 'kept' => 0, 'failed' => 0, 'named' => []]; }"
+                " public static function summary(array $r): string { return 'nothing to copy'; } }")
+    if cls == "BdQuoteTypeDefault":
+        return ("<?php namespace Sugarcrm\\Sugarcrm\\custom\\BenchDogs; class BdQuoteTypeDefault {"
+                " public static function apply($admin): string { \\bd_helper_called('BdQuoteTypeDefault::apply');"
+                " return 'set'; } }")
     if cls == "ErpLayoutExtraFields":
         return ("<?php class ErpLayoutExtraFields { public static function sync($m) {"
                 " bd_helper_called('ErpLayoutExtraFields::sync(' . $m . ')');"

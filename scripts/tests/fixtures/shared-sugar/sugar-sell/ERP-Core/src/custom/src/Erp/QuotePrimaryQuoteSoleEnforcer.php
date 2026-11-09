@@ -3,6 +3,7 @@
 namespace Sugarcrm\Sugarcrm\custom\Erp;
 
 use BeanFactory;
+use Closure;
 use DBManagerFactory;
 use SugarApiException;
 use SugarApiExceptionInvalidParameter;
@@ -25,6 +26,9 @@ class QuotePrimaryQuoteSoleEnforcer
     /** G167 I4 — why the primary flag last moved, keyed by quote id. (G67(b)) */
     private static $primaryMoveTriggers = array();
 
+    /** While demoteAndSave() saves a quote: that quote's id => the id of the quote taking the flag from it. */
+    private static $demotionWinners = array();
+
     /** G167 I4: the first quote on a deal, made primary by construction (🔒 710). */
     public const TRIGGER_FIRST_PICK = 'first-created pick';
 
@@ -41,7 +45,7 @@ class QuotePrimaryQuoteSoleEnforcer
     /**
      * The OAuth platforms that write Epicor's quotes into Sugar, so a quote they create is born 'erp_sync': sugarai_erp_connector the connector. (G832, 🔒 1474)
      */
-    public const SYNC_PLATFORMS = array('sugarai_erp_connector', 'epicor_seed');
+    public const SYNC_PLATFORMS = ErpConnectorSession::ERP_WRITERS;
 
     /** Record why this quote just became - or stayed - the primary one. */
     public static function noteTrigger(string $quoteId, string $trigger): void
@@ -63,15 +67,25 @@ class QuotePrimaryQuoteSoleEnforcer
     /**
      * 🔒 709 — the only sanctioned way to clear the flag, and the reason the illegal state is unreachable rather than merely detected.
      */
-    public static function demoteAndSave(SugarBean $quote): void
+    public static function demoteAndSave(SugarBean $quote, SugarBean $winner): void
     {
         $quote->erp_is_primary_quote = false;
         self::$sanctionedDemotion = true;
+        // Hooks inside this save may run before the winner's own row is written, so it is named here.
+        $quoteId = (string) $quote->id;
+        self::$demotionWinners[$quoteId] = (string) $winner->id;
         try {
             $quote->save();
         } finally {
             self::$sanctionedDemotion = false;
+            unset(self::$demotionWinners[$quoteId]);
         }
+    }
+
+    /** While this quote's demotion is being saved, the id of the quote taking the flag from it; '' otherwise. */
+    public static function demotedInFavourOf(string $quoteId): string
+    {
+        return (string) (self::$demotionWinners[$quoteId] ?? '');
     }
 
     /**
@@ -195,6 +209,12 @@ class QuotePrimaryQuoteSoleEnforcer
         }
 
         $bean->erp_is_primary_quote = true;
+        if (!self::withholdRefusedClear($bean)) {
+            $GLOBALS['log']->warn(
+                'QuotePrimaryQuoteSoleEnforcer: quote ' . $bean->id . ' keeps its primary flag, but this Sugar'
+                . ' keeps its audit state differently, so the refused clear may still show in the audit log'
+            );
+        }
         $GLOBALS['log']->error(
             'QuotePrimaryQuoteSoleEnforcer: refused to clear erp_is_primary_quote on quote '
             . $bean->id . ' - primary is a radio across the Opportunity\'s quotes (decision 709).'
@@ -204,13 +224,51 @@ class QuotePrimaryQuoteSoleEnforcer
         return true;
     }
 
+    /** SugarBean's private audit state: the changes queued for this save, and the values the next change is measured from. */
+    const AUDIT_STATE = array('auditedStateQueue', 'lastAuditedState');
+
+    /**
+     * Sugar queues a save's audit rows before any before_save hook and folds a hook's change into them, so the
+     * restored flag would leave a row whose before and after are both 1. The clear never reaches the row: take it
+     * out of the queue and measure from the restored value. False when this Sugar keeps its audit state differently.
+     */
+    private static function withholdRefusedClear(SugarBean $bean): bool
+    {
+        foreach (self::AUDIT_STATE as $property) {
+            if (!property_exists(SugarBean::class, $property)) {
+                return false;
+            }
+        }
+        $withhold = Closure::bind(function (string $field): bool {
+            if (!is_array($this->auditedStateQueue) || !is_array($this->lastAuditedState)) {
+                return false;
+            }
+            $queue = array();
+            foreach ($this->auditedStateQueue as $item) {
+                if (isset($item['changes'][$field])) {
+                    unset($item['changes'][$field]);
+                    if ($item['changes'] === array()) {
+                        continue;
+                    }
+                }
+                $queue[] = $item;
+            }
+            $this->auditedStateQueue = $queue;
+            $this->lastAuditedState[$field] = $this->{$field};
+
+            return true;
+        }, $bean, SugarBean::class);
+
+        return $withhold instanceof Closure && $withhold->__invoke('erp_is_primary_quote');
+    }
+
     /** 🔒 1472 — stamp who created this quote, once, in its creating save. */
     private function stampOriginAtBirth(SugarBean $bean, string $event): void
     {
         if ($event !== 'before_save' || !method_exists($bean, 'isUpdate') || $bean->isUpdate()) {
             return;
         }
-        $platform = isset($_SESSION['platform']) ? (string) $_SESSION['platform'] : '';
+        $platform = (string) ErpConnectorSession::platform();
         $bean->erp_quote_origin = in_array($platform, self::SYNC_PLATFORMS, true)
             ? self::ORIGIN_SYNC
             : self::ORIGIN_SUGAR;
@@ -462,7 +520,7 @@ class QuotePrimaryQuoteSoleEnforcer
                     continue;
                 }
                 // 🔒 709: the one sanctioned demotion site.
-                self::demoteAndSave($loser);
+                self::demoteAndSave($loser, $winner);
 
                 // Decision 145/146 both require the move to be logged: a forecast can change with no human action behind it, and on 146 nobody clicked anything at all.
                 $GLOBALS['log']->info(

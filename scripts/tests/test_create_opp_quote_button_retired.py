@@ -42,33 +42,21 @@ ErpLayoutExtraFields places them. So the guard is stronger than "this class
 leaves buttons alone": NO shipped file of this package touches a record view -
 no ViewdefManager, no saveViewdef, no `buttons` key - and so none can inject or
 strip a button.
+
+🔁 rc98: the cases that held the retired layout writer and the Bench button's
+label file out of the package are gone (test_g280_minimal_footprint pins the
+whole package to its kept list, so either coming back fails there), with the
+check on ERP-Epicor's own label. What stays is the live rule: no shipped file
+touches a record view, and the two customer-group fields are declared and placed
+by their `erp_layout` marker.
 """
 
 import re
 import unittest
 from pathlib import Path
 
-import shared_sugar
-
 ROOT = Path(__file__).resolve().parents[2]
 PKG = ROOT / "sugar-sell/BenchDogs-Ext"
-LAYOUT = PKG / "custom/modules/Accounts/BdAccountsLayoutExtensions.php"
-BD_LABELS = PKG / "custom/Extension/modules/Accounts/Ext/Language/en_us.bd_action_buttons.php"
-#: ERP-Epicor lives in a sibling checkout; the label collision is only assertable
-#: when it is present, so that one case skips rather than fails when it is not.
-_EPICOR_REL = (
-    "erp-integration-sugar/sugar-sell/ERP-Epicor/src/custom/Extension"
-    "/modules/Accounts/Ext/Language/en_us.erp_create_opp_quote.php"
-)
-
-
-#: ERP-Epicor's label file, from the pin under fixtures/shared-sugar, so this
-#: runs in CI instead of skipping. The old walk-up finder could not see the
-#: sibling from a git worktree either.
-EPICOR_LABELS = shared_sugar.resolve("en_us.erp_create_opp_quote.php")
-
-BD_BUTTON = "bd_create_opp_quote_button"
-ERP_BUTTON = "erp_create_opp_quote_button"
 
 #: Anything a shipped file would need in order to read or write a record view's
 #: buttons (or any of it). None may appear in this package since rc70.
@@ -87,9 +75,6 @@ def code_only(path) -> str:
 
 
 class CreateOppQuoteButtonRetiredStatic(unittest.TestCase):
-    def test_the_layout_writer_is_gone(self):
-        self.assertFalse(LAYOUT.exists(), "BdAccountsLayoutExtensions ships again (🔒 1724b)")
-
     def test_no_shipped_file_touches_a_record_view(self):
         """The shape that ADDED the button - and every shape that could - is gone:
         no shipped file loads, saves or edits a record view."""
@@ -107,29 +92,6 @@ class CreateOppQuoteButtonRetiredStatic(unittest.TestCase):
         for field in ("bd_customer_group", "bd_customer_group_code"):
             self.assertIn(f"$dictionary['Account']['fields']['{field}']", src)
         self.assertEqual(src.count("'erp_layout' => array("), 2)
-
-    def test_the_bench_label_is_gone_and_cores_is_not(self):
-        """THE ROOT CAUSE, retired rather than merely pinned.
-
-        The duplicate reached a seller because the two packages' buttons had
-        DIFFERENT names and the SAME label, so a name-keyed dedupe guard could
-        not see it. rc64 empties this package's label file (G276 / 🔒 1504): with
-        no Bench button and no Bench button logic, a Bench label could only make
-        a retired action read as supported. From rc69 (G280 / 🔒 1567) the file
-        no longer ships at all (the one-off that deleted the tenant's copy was
-        withdrawn, 🔒2173b). Core
-        keeps its own label, so the action the seller actually presses is still
-        named.
-        """
-        from bd_retirement import assert_not_shipped
-        assert_not_shipped(self, str(BD_LABELS.relative_to(PKG)),
-                           "the Bench button label; core's button owns this action")
-        for php in PKG.rglob("*.php"):
-            self.assertNotIn("LBL_BD_CREATE_OPP_QUOTE_BUTTON'] =", php.read_text(encoding="utf-8"),
-                             f"{php.name} labels the retired Bench button again")
-        erp = EPICOR_LABELS.read_text(encoding="utf-8")
-        self.assertRegex(erp, r"\$mod_strings\['LBL_ERP_CREATE_OPP_QUOTE_BUTTON'\]\s*=\s*'[^']+'",
-                         "core no longer labels its own Create Opportunity & Quote button")
 
 
 if __name__ == "__main__":

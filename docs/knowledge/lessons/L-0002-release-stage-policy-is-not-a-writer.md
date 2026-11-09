@@ -45,4 +45,4 @@ declare that minimum dependency, and verify those versions inside the built
 manifest. Keep missing configuration distinct from an explicitly configured
 unknown stage without returning either value. Bench rc9 changes dependency
 declarations for this diagnostic contract, not its customer decision policy;
-see the [candidate evidence](../../../sugar-sell/BenchDogs-Ext/docs/release-0.9.42-rc9.md).
+see the [candidate evidence](https://github.com/ophirsw76/benchdogs-sugar-custom/blob/7c3efcee23dee3ebcc01a7307086ab182018556c/sugar-sell/BenchDogs-Ext/docs/release-0.9.42-rc9.md).

@@ -20,6 +20,9 @@ abstract class BaseErpLayout
         'syspro_telephone_ext_c',
     ];
 
+    /** The ERP order's lines total cell as the module's own record view ships it; a test holds the two equal. */
+    private const ORDER_LINE_TOTAL_CELL = ['name' => 'erp_line_total', 'readonly' => true];
+
     protected bool $replace;
 
     public function __construct(bool $replace = false)
@@ -903,10 +906,14 @@ abstract class BaseErpLayout
                 return;
             }
             $panels = $viewdefs['base']['view']['record']['panels'];
-            $patched = self::applyErpDocumentRecordLayout($panels, $module === 'ERP_Invoices');
+            $patched = self::applyErpDocumentRecordLayout($panels, $module === 'ERP_Invoices', $module === 'ERP_Orders');
             if ($patched !== $panels) {
                 $viewdefs['base']['view']['record']['panels'] = $patched;
                 $this->deployView($module, 'record', $viewdefs);
+            }
+            if ($module === 'ERP_Orders' && !self::panelsPlaceField($patched, self::ORDER_LINE_TOTAL_CELL['name'])) {
+                $GLOBALS['log']->fatal('[BaseErpLayout] ERP_Orders record view has neither erp_misc_amount nor the Order Detail'
+                    . ' panel, so erp_line_total was not placed; add it in Studio');
             }
         } catch (\Throwable $e) {
             $GLOBALS['log']->fatal(
@@ -917,7 +924,7 @@ abstract class BaseErpLayout
     }
 
     /** The pure half of setErpDocumentRecordLayout(), over a view's panels. */
-    public static function applyErpDocumentRecordLayout(array $panels, bool $placeInvoiceDiscount): array
+    public static function applyErpDocumentRecordLayout(array $panels, bool $placeInvoiceDiscount, bool $placeOrderLineTotal): array
     {
         $numberLinks = false;
         foreach ($panels as $p => $panel) {
@@ -976,6 +983,26 @@ abstract class BaseErpLayout
             if ($at !== null) {
                 $fields = array_values((array) ($panels[$at[0]]['fields'] ?? []));
                 array_splice($fields, $at[1], 0, [$discount]);
+                $panels[$at[0]]['fields'] = $fields;
+            }
+        }
+
+        // An upgrade keeps the order view an older version stored, so its lines total goes right after the misc charges.
+        if ($placeOrderLineTotal && !self::panelsPlaceField($panels, self::ORDER_LINE_TOTAL_CELL['name'])) {
+            $at = self::topLevelCellPosition($panels, 'erp_misc_amount');
+            if ($at !== null) {
+                $at[1]++;
+            } else {
+                foreach ($panels as $p => $panel) {
+                    if (is_array($panel) && ($panel['name'] ?? '') === 'LBL_RECORDVIEW_PANEL_ORDER_DETAIL') {
+                        $at = [$p, count((array) ($panel['fields'] ?? []))];
+                        break;
+                    }
+                }
+            }
+            if ($at !== null) {
+                $fields = array_values((array) ($panels[$at[0]]['fields'] ?? []));
+                array_splice($fields, $at[1], 0, [self::ORDER_LINE_TOTAL_CELL]);
                 $panels[$at[0]]['fields'] = $fields;
             }
         }
@@ -1285,6 +1312,30 @@ abstract class BaseErpLayout
 
         $panels[$panelIndex]['newTab'] = true;
         $this->deployView($module, 'record', $viewdefs);
+    }
+
+    /** Set properties on one record-view panel where it sits; a missing panel, or one already holding them, is left alone. */
+    protected function setRecordViewPanelProperties(string $module, string $panelName, array $properties): void
+    {
+        $viewdefs = $this->loadView($module, 'record');
+        if ($viewdefs === null) {
+            return;
+        }
+        $panels =& $viewdefs['base']['view']['record']['panels'];
+        $panelIndex = array_search($panelName, array_column($panels, 'name'));
+        if ($panelIndex === false) {
+            return;
+        }
+        $changed = false;
+        foreach ($properties as $key => $value) {
+            if (($panels[$panelIndex][$key] ?? null) !== $value) {
+                $panels[$panelIndex][$key] = $value;
+                $changed = true;
+            }
+        }
+        if ($changed) {
+            $this->deployView($module, 'record', $viewdefs);
+        }
     }
 
     /** G606 / G608 — is $fieldName on any panel of the deployed record view. */

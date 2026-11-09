@@ -1,0 +1,284 @@
+<?php
+
+/**
+ * Your installation or use of this SugarCRM file is subject to the applicable terms available at http://support.sugarcrm.com/Resources/Master_Subscription_Agreements/.
+ */
+
+$dictionary['ERP_Order'] = array(
+    'table' => 'erp_orders',
+    'audited' => true,
+    'activity_enabled' => false,
+    'duplicate_merge' => true,
+    // Refuse user/API edits to ERP-owned (readonly) fields unless the request comes from the connector's own platform - see SugarACLErpOwnedFields.
+    'acls' => array('SugarACLErpOwnedFields' => true),
+    'fields' => array(
+        'erp_sync_key' => array(
+            'name'            => 'erp_sync_key',
+            'duplicate_on_record_copy' => 'no',
+            'is_sync_key'     => true,
+            'vname'           => 'LBL_ERP_SYNC_KEY',
+            'type'            => 'varchar',
+                        'comment'         => 'The id of the record from Epicor',
+            'default_value'   => '',
+            'max_size'        => 255,
+            'required'        => false,
+            'readonly'        => true,
+            'reportable'      => true,
+            'audited'         => false,
+            'importable'      => 'true',
+            'duplicate_merge' => false,
+        ),
+        // Defect D1 — the archive half of the soft-delete key release.
+        'erp_deleted_sync_key' => array(
+            'name'            => 'erp_deleted_sync_key',
+            'vname'           => 'LBL_ERP_DELETED_SYNC_KEY',
+            'type'            => 'varchar',
+            'comment'         => 'The erp_sync_key this row held before it was deleted (D1 release)',
+            'default_value'   => '',
+            'max_size'        => 255,
+            'required'        => false,
+            'readonly'        => true,
+            'reportable'      => false,
+            'audited'         => false,
+            'importable'      => 'false',
+            'duplicate_merge' => false,
+        ),
+        'erp_display_sync_key' => array(
+            'name'            => 'erp_display_sync_key',
+            'duplicate_on_record_copy' => 'no',
+            'vname'           => 'LBL_ERP_ORDER_NUM',
+            'type'            => 'varchar',
+            'comment'         => 'Display id of the record from Epicor',
+            'default_value'   => '',
+            'max_size'        => 255,
+            'required'        => false,
+            'readonly'        => true,
+            'reportable'      => true,
+            'audited'         => false,
+            'importable'      => 'true',
+            'duplicate_merge' => false,
+            // Sorted as a number, not as text.
+            'sort_on'         => array('erp_order_num'),
+        ),
+        // The Epicor order number as an integer, so the number column sorts numerically; set by ErpDocumentNumber.
+        'erp_order_num' => array(
+            'name'            => 'erp_order_num',
+            'vname'           => 'LBL_ERP_ORDER_NUM',
+            'type'            => 'int',
+            'len'             => 11,
+            'comment'         => 'Epicor order number as an integer, for numeric sorting',
+            'required'        => false,
+            'readonly'        => true,
+            'reportable'      => true,
+            'audited'         => false,
+            'importable'      => false,
+            'massupdate'      => false,
+            'duplicate_merge' => 'disabled',
+        ),
+        'epicor_deeplink_url' => array(
+            'name'            => 'epicor_deeplink_url',
+            'vname'           => 'LBL_EPICOR_DEEPLINK_URL',
+            'type'            => 'url',
+            'dbType'          => 'varchar',
+            'len'             => 4000,
+            'comment'         => 'Deep link back to the corresponding record in Epicor',
+            'default_value'   => '',
+            'max_size'        => 4000,
+            'required'        => false,
+            'readonly'        => true,
+            'reportable'      => true,
+            'audited'         => false,
+            'importable'      => 'true',
+            'duplicate_merge' => false,
+            'link_target'     => '_blank',
+        ),
+        'status' => array(
+            'name' => 'status', 'vname' => 'LBL_ORDER_STATUS', 'type' => 'enum',
+            'options' => 'erp_order_status_list', 'len' => 100,
+            'readonly' => true, 'reportable' => true, 'audited' => true,
+            'comment' => 'Composite of OpenOrder/VoidOrder/OrderHeld/ReadyToFulfill/ReadyToCalc',
+        ),
+        'purchase_order_num' => array(
+            'name' => 'purchase_order_num', 'vname' => 'LBL_PURCHASE_ORDER_NUM',
+            'type' => 'varchar', 'len' => 100, 'readonly' => true, 'reportable' => true,
+            'comment' => 'Epicor PONum',
+        ),
+        'order_total' => array(
+            'name' => 'order_total', 'vname' => 'LBL_ORDER_TOTAL',
+            'type' => 'currency', 'dbType' => 'currency',
+            // No 'default': an ERP-owned (readonly) field refused by SugarACLErpOwnedFields must not have one.
+            'len' => 26, 'precision' => 6,
+            'readonly' => true, 'reportable' => true, 'audited' => true,
+            'convertToBase' => true, 'showTransactionalAmount' => true,
+            'related_fields' => array('currency_id', 'base_rate'),
+            'comment' => 'Epicor OrderAmt',
+        ),
+        // Epicor's own base-currency figure for order_total, stored rather than derived (user decision 50).
+        'order_total_usdollar' => array(
+            'name' => 'order_total_usdollar', 'vname' => 'LBL_ORDER_TOTAL_USDOLLAR',
+            'type' => 'currency', 'dbType' => 'currency',
+            'len' => 26, 'precision' => 6,
+            'readonly' => true, 'reportable' => true, 'audited' => true,
+            'is_base_currency' => true,
+            'related_fields' => array('currency_id', 'base_rate'),
+            'comment' => 'Epicor OrderHed.OrderAmt (company base currency), stored not derived',
+        ),
+        // Epicor's OrderHed.LockRate: the order's conversion rate is locked on the document and Epicor will not re-derive it. (decision 53)
+        'lock_rate' => array(
+            'name' => 'lock_rate', 'vname' => 'LBL_LOCK_RATE',
+            'type' => 'bool',
+            'readonly' => true, 'reportable' => true,
+            'comment' => 'Epicor OrderHed.LockRate - the booked rate is pinned on the document',
+        ),
+        // ── Epicor's own stated charges on the order header. (decision 50, decision 576, decision 340)
+        'erp_tax_amount' => array(
+            'name' => 'erp_tax_amount', 'vname' => 'LBL_ERP_TAX_AMOUNT',
+            'type' => 'currency', 'dbType' => 'currency',
+            'len' => 26, 'precision' => 6,
+            'readonly' => true, 'reportable' => true, 'audited' => true,
+            'convertToBase' => true, 'showTransactionalAmount' => true,
+            'related_fields' => array('currency_id', 'base_rate'),
+            'comment' => 'Epicor OrderHed.DocTotalTax (document currency)',
+        ),
+        'erp_tax_amount_usdollar' => array(
+            'name' => 'erp_tax_amount_usdollar', 'vname' => 'LBL_ERP_TAX_AMOUNT_USDOLLAR',
+            'type' => 'currency', 'dbType' => 'currency',
+            'len' => 26, 'precision' => 6,
+            'readonly' => true, 'reportable' => true, 'audited' => true,
+            'is_base_currency' => true,
+            'related_fields' => array('currency_id', 'base_rate'),
+            'comment' => 'Epicor OrderHed.TotalTax (company base currency), stored not derived',
+        ),
+        'erp_misc_amount' => array(
+            'name' => 'erp_misc_amount', 'vname' => 'LBL_ERP_MISC_AMOUNT',
+            'type' => 'currency', 'dbType' => 'currency',
+            'len' => 26, 'precision' => 6,
+            'readonly' => true, 'reportable' => true, 'audited' => true,
+            'convertToBase' => true, 'showTransactionalAmount' => true,
+            'related_fields' => array('currency_id', 'base_rate'),
+            'comment' => 'Epicor OrderHed.DocTotalMisc - ALL misc charges incl. FRGT freight (document currency)',
+        ),
+        'erp_misc_amount_usdollar' => array(
+            'name' => 'erp_misc_amount_usdollar', 'vname' => 'LBL_ERP_MISC_AMOUNT_USDOLLAR',
+            'type' => 'currency', 'dbType' => 'currency',
+            'len' => 26, 'precision' => 6,
+            'readonly' => true, 'reportable' => true, 'audited' => true,
+            'is_base_currency' => true,
+            'related_fields' => array('currency_id', 'base_rate'),
+            'comment' => 'Epicor OrderHed.TotalMisc (company base currency), stored not derived',
+        ),
+        // The order lines' total as Epicor booked it; an order-level discount sits between it and the order total.
+        'erp_line_total' => array(
+            'name' => 'erp_line_total', 'vname' => 'LBL_ERP_LINE_TOTAL',
+            'type' => 'currency', 'dbType' => 'currency',
+            'len' => 26, 'precision' => 6,
+            'readonly' => true, 'reportable' => true, 'audited' => true,
+            'convertToBase' => true, 'showTransactionalAmount' => true,
+            'related_fields' => array('currency_id', 'base_rate'),
+            'comment' => 'Epicor OrderHed.DocTotalCharges - the lines before discount, misc charges and tax (document currency)',
+        ),
+        'erp_line_total_usdollar' => array(
+            'name' => 'erp_line_total_usdollar', 'vname' => 'LBL_ERP_LINE_TOTAL_USDOLLAR',
+            'type' => 'currency', 'dbType' => 'currency',
+            'len' => 26, 'precision' => 6,
+            'readonly' => true, 'reportable' => true, 'audited' => true,
+            'is_base_currency' => true,
+            'related_fields' => array('currency_id', 'base_rate'),
+            'comment' => 'Epicor OrderHed.TotalCharges (company base currency), stored not derived',
+        ),
+        // ── The order's shipped total, summed from its lines (owner decision 587) ── Epicor states no order-level shipped figure. (decision 585, decision 59)
+        'erp_shipped_quantity' => array(
+            'name' => 'erp_shipped_quantity', 'vname' => 'LBL_ERP_SHIPPED_QUANTITY',
+            'type' => 'decimal', 'len' => 18, 'precision' => 4,
+            'readonly' => true, 'reportable' => true, 'audited' => true,
+            'comment' => 'Sum of this order lines shipped_quantity - see erp_shipped_quantity_uom',
+        ),
+        'erp_shipped_quantity_uom' => array(
+            'name' => 'erp_shipped_quantity_uom', 'vname' => 'LBL_ERP_SHIPPED_QUANTITY_UOM',
+            'type' => 'varchar', 'len' => 20,
+            'readonly' => true, 'reportable' => true,
+            'comment' => 'Unit the shipped total is in; BLANK when the lines disagree',
+        ),
+        // Names the originating Quote per row, and - the whole point - names its absence explicitly rather than leaving a cell empty. (decision 43, decision 39)
+        'quote_origin' => array(
+            'name' => 'quote_origin', 'vname' => 'LBL_QUOTE_ORIGIN',
+            'type' => 'varchar', 'len' => 255,
+            'readonly' => true, 'reportable' => true,
+            'calculated' => true, 'enforced' => true,
+            'formula' => 'ifElse(equal(count($quotes_erp_orders),0),"Direct - No Quote",related($quotes_erp_orders,"name"))',
+            'comment' => 'Originating Quote name, or the literal "Direct - No Quote" when there is none',
+        ),
+        // Retired in this release (user decision 55): 'shipped_value_total', rollupSum($erp_orders_erp_orderlines,"shipped_value").
+        'order_date' => array(
+            'name' => 'order_date', 'vname' => 'LBL_ORDER_DATE', 'type' => 'date',
+            'readonly' => true, 'reportable' => true, 'audited' => true, 'comment' => 'Epicor OrderDate',
+        ),
+        'request_ship_date' => array(
+            'name' => 'request_ship_date', 'vname' => 'LBL_REQUEST_SHIP_DATE',
+            'type' => 'date', 'readonly' => true, 'reportable' => true, 'comment' => 'Epicor RequestDate',
+        ),
+        // G463 (🔒 1758b): Kinetic's own OrderHed.NeedByDate, read back by the connector (erp-integration-core fix/g463-need-by-dates).
+        'need_by_date' => array(
+            'name' => 'need_by_date', 'vname' => 'LBL_NEED_BY_DATE',
+            'type' => 'date', 'readonly' => true, 'reportable' => true, 'comment' => 'Epicor NeedByDate',
+        ),
+        // How many lines the ERP order has, as the ERP states it. Read-only and on no layout: the quote's stage waits
+        // for that many of the order's lines to reach Sugar before it settles from them (ErpOrderLiveStage).
+        'erp_line_count' => array(
+            'name' => 'erp_line_count', 'vname' => 'LBL_ERP_LINE_COUNT',
+            'type' => 'int', 'readonly' => true, 'reportable' => true, 'comment' => 'Epicor TotalLines',
+        ),
+        'discount_perc' => array(
+            'name' => 'discount_perc', 'vname' => 'LBL_DISCOUNT_PERC',
+            'type' => 'decimal', 'len' => 8, 'precision' => 2,
+            'readonly' => true, 'reportable' => true, 'comment' => 'Epicor DiscountPercent',
+        ),
+        'bill_to_address_street' => array('name' => 'bill_to_address_street', 'vname' => 'LBL_BILL_TO_ADDRESS_STREET', 'type' => 'text', 'dbType' => 'varchar', 'group' => 'billing_address', 'group_label' => 'LBL_BILLING_ADDRESS', 'len' => 150, 'readonly' => true, 'reportable' => true),
+        'bill_to_address_city' => array('name' => 'bill_to_address_city', 'vname' => 'LBL_BILL_TO_ADDRESS_CITY', 'type' => 'varchar', 'group' => 'billing_address', 'len' => 100, 'readonly' => true, 'reportable' => true),
+        'bill_to_address_state' => array('name' => 'bill_to_address_state', 'vname' => 'LBL_BILL_TO_ADDRESS_STATE', 'type' => 'varchar', 'group' => 'billing_address', 'len' => 100, 'readonly' => true, 'reportable' => true),
+        'bill_to_address_country' => array('name' => 'bill_to_address_country', 'vname' => 'LBL_BILL_TO_ADDRESS_COUNTRY', 'type' => 'varchar', 'group' => 'billing_address', 'len' => 100, 'readonly' => true, 'reportable' => true),
+        'bill_to_address_postalcode' => array('name' => 'bill_to_address_postalcode', 'vname' => 'LBL_BILL_TO_ADDRESS_POSTALCODE', 'type' => 'varchar', 'group' => 'billing_address', 'len' => 20, 'readonly' => true, 'reportable' => true),
+        'ship_to_address_street' => array('name' => 'ship_to_address_street', 'vname' => 'LBL_SHIP_TO_ADDRESS_STREET', 'type' => 'text', 'dbType' => 'varchar', 'group' => 'shipping_address', 'group_label' => 'LBL_SHIPPING_ADDRESS', 'len' => 150, 'readonly' => true, 'reportable' => true),
+        'ship_to_address_city' => array('name' => 'ship_to_address_city', 'vname' => 'LBL_SHIP_TO_ADDRESS_CITY', 'type' => 'varchar', 'group' => 'shipping_address', 'len' => 100, 'readonly' => true, 'reportable' => true),
+        'ship_to_address_state' => array('name' => 'ship_to_address_state', 'vname' => 'LBL_SHIP_TO_ADDRESS_STATE', 'type' => 'varchar', 'group' => 'shipping_address', 'len' => 100, 'readonly' => true, 'reportable' => true),
+        'ship_to_address_country' => array('name' => 'ship_to_address_country', 'vname' => 'LBL_SHIP_TO_ADDRESS_COUNTRY', 'type' => 'varchar', 'group' => 'shipping_address', 'len' => 100, 'readonly' => true, 'reportable' => true),
+        'ship_to_address_postalcode' => array('name' => 'ship_to_address_postalcode', 'vname' => 'LBL_SHIP_TO_ADDRESS_POSTALCODE', 'type' => 'varchar', 'group' => 'shipping_address', 'len' => 20, 'readonly' => true, 'reportable' => true),
+        // Non-db stub matching the fieldset's own name - required for the fieldset's viewdef readonly to actually be honored.
+        'bill_to_address' => array('name' => 'bill_to_address', 'type' => 'varchar', 'source' => 'non-db', 'reportable' => false),
+        'ship_to_address' => array('name' => 'ship_to_address', 'type' => 'varchar', 'source' => 'non-db', 'reportable' => false),
+
+        // Req-31 c4 — where each release ships, when an order's releases disagree. (decision 785, decision 150)
+        'erp_release_ship_to_summary' => array(
+            'name' => 'erp_release_ship_to_summary',
+            'vname' => 'LBL_ERP_RELEASE_SHIP_TO_SUMMARY',
+            'type' => 'text',
+            'dbType' => 'varchar',
+            'len' => 500,
+            'group' => 'shipping_address',
+            'group_label' => 'LBL_SHIPPING_ADDRESS',
+            'readonly' => true,
+            'reportable' => true,
+        ),
+    ),
+    'indices' => array(
+        array(
+            'name' => 'idx_erp_orders_erp_sync_key',
+            'type' => 'unique',
+            'fields' => array('erp_sync_key'),
+        ),
+    ),
+    'relationships' => array(),
+    'optimistic_locking' => true,
+    'unified_search' => true,
+    'full_text_search' => true,
+);
+
+if (!class_exists('VardefManager')){
+}
+VardefManager::createVardef('ERP_Orders','ERP_Order', array('basic','team_security','assignable','taggable','currency'));
+
+// currency_id is declared by the SugarObjects 'currency' implementation template.
+$dictionary['ERP_Order']['fields']['currency_id']['readonly'] = true;
+
+// The number column shows the text name and sorts by the integer number.
+$dictionary['ERP_Order']['fields']['name']['sort_on'] = array('erp_order_num');

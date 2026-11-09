@@ -16,6 +16,14 @@ class ErpLayoutExtraFields
         'Accounts' => 'LBL_RECORDVIEW_PANEL_ERP',
     );
 
+    /** The fields that close a module's ERP panel, in this order: the quote's ERP status block. */
+    const LAST_IN_PANEL = array(
+        'Quotes' => array(
+            'panel' => 'LBL_RECORDVIEW_PANEL_ERP',
+            'fields' => array('erp_writeback_status', 'erp_writeback_at', 'erp_writeback_msg', 'erp_comment_log_status'),
+        ),
+    );
+
     /** Config category for the record of marked fields (Administration settings). */
     const SETTINGS_CATEGORY = 'erp_layout';
 
@@ -133,7 +141,10 @@ class ErpLayoutExtraFields
                 }
             }
 
-            if ($result['added'] !== array() || $result['removed'] !== array() || $typed) {
+            // The ERP status block stays last on its panel, below every other package's fields.
+            $reordered = self::keepLast($defs['panels'], $module);
+
+            if ($result['added'] !== array() || $result['removed'] !== array() || $typed || $reordered) {
                 $manager->saveViewdef($defs, $module, 'base', self::VIEW);
             }
 
@@ -204,6 +215,54 @@ class ErpLayoutExtraFields
         $fields = $GLOBALS['dictionary'][$object]['fields'] ?? array();
 
         return is_array($fields) ? $fields : array();
+    }
+
+    /**
+     * Move the module's closing fields to the end of their panel, in their own order; true when anything moved.
+     * @param array $panels
+     * @param string $module
+     * @return bool
+     */
+    private static function keepLast(array &$panels, string $module): bool
+    {
+        if (!isset(self::LAST_IN_PANEL[$module])) {
+            return false;
+        }
+        $last = self::LAST_IN_PANEL[$module];
+        foreach ($panels as $i => $panel) {
+            if ((string) ($panel['name'] ?? '') !== $last['panel'] || empty($panel['fields']) || !is_array($panel['fields'])) {
+                continue;
+            }
+            $rest = array();
+            foreach ($panel['fields'] as $entry) {
+                if (!in_array(self::entryName($entry), $last['fields'], true)) {
+                    $rest[] = $entry;
+                }
+            }
+            // The block in its own order, each field's entries as they stand.
+            $closing = array();
+            foreach ($last['fields'] as $wanted) {
+                foreach ($panel['fields'] as $entry) {
+                    if (self::entryName($entry) === $wanted) {
+                        $closing[] = $entry;
+                    }
+                }
+            }
+            // Empty cells a customer left at the very bottom stay there, below the block.
+            $content = count($rest);
+            while ($content > 0 && self::entryName($rest[$content - 1]) === '') {
+                $content--;
+            }
+            $fields = array_merge(array_slice($rest, 0, $content), $closing, array_slice($rest, $content));
+            if ($fields === $panel['fields']) {
+                return false;
+            }
+            $panels[$i]['fields'] = $fields;
+
+            return true;
+        }
+
+        return false;
     }
 
     /** @return string[] */

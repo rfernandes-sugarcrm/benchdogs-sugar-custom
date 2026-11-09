@@ -29,6 +29,10 @@ alone: the disposable one-off repair packages were withdrawn and deleted, and
 `pack.php` needs PHP's `zip` extension. The stock `php:8.2-cli` image does not
 ship it; `composer:2` does, which is the quickest way to build locally.
 
+`pack.php` dates the zip by the commit that last changed the package's
+`version` file, so it needs git and the full history (CI's checkout fetches it
+with `fetch-depth: 0`). Outside a git clone, set `SOURCE_DATE_EPOCH`.
+
 ## Where these came from
 
 Both scripts are taken from `sugarcrm/erp-integration-sugar`, where they were

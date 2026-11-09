@@ -5,7 +5,7 @@
 // Proof of life - see the matching note in pre_uninstall.php.
 $GLOBALS['log']->fatal('BenchDogs-Ext: post_uninstall running - rebuilding caches');
 
-// The stock modules this package extends (G280, 🔒 1567, G380, G381).
+// The modules whose placed fields are taken off the record view below (G280, 🔒 1567, G380, G381).
 $bdModules = array(
     'Accounts',
     'Quotes',
@@ -38,9 +38,8 @@ foreach (array('Accounts', 'Quotes') as $bdModule) {
     }
 }
 
-// No TableDictionary or relationship rebuild any more (0.9.42-rc69). It existed
-// for the quotes_erp_orders cardinality override, whose file this package
-// stopped shipping long ago; this package declares no relationship at all.
+// No TableDictionary or relationship rebuild here. The one relationship this package declares (the Opportunity
+// on ERP_Orders) has no table of its own: it is the bd_opportunity_id column, which stays, like every bd_* column.
 
 // Last, so it refreshes what the rebuild above has settled on rather than what was there when this script started.
 try {

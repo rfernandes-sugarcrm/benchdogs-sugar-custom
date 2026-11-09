@@ -3,27 +3,25 @@
 /**
  * G380 / G381 (🔒 1705b, 🔒 1724b): the Bench Dogs ADM rules, Sugar half, EXECUTED.
  *
- * Run:  BD_QUOTE_FACTS=<ERP-Epicor 1.1's global ErpQuoteFacts.php> php scripts/tests/bd_adm_rules_test.php
- *       BD_NO_QUOTE_FACTS=1 php scripts/tests/bd_adm_rules_test.php   (section O)
+ * Run:  BD_NO_QUOTE_FACTS=1 php scripts/tests/bd_adm_rules_test.php   (section O)
  *       BD_ERP_AUTOLOADER=<ERP-Core/tests/support/sugar_autoloader.php of an
  *         ERP-Epicor 1.2.0 checkout> php scripts/tests/bd_adm_rules_test.php
  *                                                                (section T)
- *       (scripts/tests/test_php_suites.py runs all three: the first with the
- *       last global class ERP-Epicor shipped (1.1.179, pinned under
- *       fixtures/erp-epicor-1.1/); the third with the sibling checkout's
+ *       (scripts/tests/test_php_suites.py runs both: the second with the sibling checkout's
  *       autoloader when present, else the pin of 1.2.0 (erp-integration-sugar
  *       280e0929) under fixtures/shared-sugar/)
  * Exit: 0 all passed, 1 one or more failed.
  *
  * What is proved, each against the real shipped file:
- *   A. which companies are ADM: the ones that published BdLeadSources rows,
- *      split at the FIRST "__" in PHP (never SQL LIKE), one query per request
+ *   A. which companies are ADM: the ones the connector extension publishes as
+ *      ACTIVE BdAdmCompanies rows (never a company that merely has lead
+ *      sources), split at the FIRST "__" in PHP (never SQL LIKE), one query per
+ *      request
  *   B. Reference defaults to "CITY STATE", shortened to the ERP's limit (G530)
- *   E. the Project default: unanimous groups only; the list is tenant data
- *   F. an admin's Dropdown Editor list survives a package reinstall, either order
- *   G. erp_lookup_type_list is extended key by key; there is no company list
- *   H. applyDefaults: fills EMPTY erp_reference / bd_project_id on unsent ADM
- *      quotes, nothing else - and exits in cost order, loading nothing for a
+ *   G. erp_lookup_type_list is extended key by key; there is no company list,
+ *      and (rc108) no product group -> project list
+ *   H. applyDefaults: fills an EMPTY erp_reference on unsent ADM quotes, never
+ *      the Project (rc108) - and exits in cost order, loading nothing for a
  *      quote it cannot touch
  *   I. the pickers' options: active rows of one type, "CODE - Name", '' first
  *   J. the five option functions answer the same list whatever Sugar passes
@@ -33,6 +31,11 @@
  *   M. the vardefs: five fields, no 'required', the erp_layout markers, and
  *      (G571/G570) the erp-dependent-enum keys on the Event and the Project
  *   N. the before_save registration points at a real class and method
+ *   W. (rc108) a Project the seller left blank stays blank on every save; the
+ *      Reference, lead and campaign defaults still fill; a picked Project stays
+ *   X. (rc110) a new quote created with no Project sent at all (the Account's
+ *      create button) takes the account's newest offered one, once; cleared on a
+ *      later save it stays empty; another company's quote takes none
  *   O. (BD_NO_QUOTE_FACTS=1) an ERP-Epicor without ErpQuoteFacts: defaults
  *      skipped and logged, the save never fails
  *   T. (BD_ERP_AUTOLOADER) ERP-Epicor 1.2.0, T2 of the Rafael review
@@ -51,7 +54,7 @@
  * faked - it serves the records and COUNTS every read, which is what makes the
  * exit ORDER observable (a quote the hook cannot touch reads nothing).
  * Measured facts the real class brings that a stand-in hid: companyCode has
- * NO erp_sync_key-prefix fallback (A8), and productGroup trims (A9).
+ * NO erp_sync_key-prefix fallback (A8).
  */
 
 namespace {
@@ -76,7 +79,7 @@ namespace {
     // has an autoloader: it records each Sugarcrm\Sugarcrm\custom\ class asked
     // for and, in the 1.2.0 run, loads it by ERP-Core's rule
     // (erp_test_class_file(), over the roots the stand-in registered), so what
-    // was LOADED is recorded too. In the other two runs no 1.2.0 is installed
+    // was LOADED is recorded too. In the other run no 1.2.0 is installed
     // and the stand-in is never required - its roots would be 1.2.0's - so the
     // lookup misses the way it does on a tenant whose ERP-Epicor predates T2.
     $GLOBALS['bd_autoload_asked'] = [];
@@ -155,6 +158,9 @@ namespace {
         public static function retrieveBean($module, $id)
         {
             self::$reads[] = $module . ':' . $id;
+            if ($id === 'acct-unreadable') {
+                throw new RuntimeException('account unreadable');
+            }
             return self::$beans[$module][$id] ?? null;
         }
 
@@ -285,7 +291,6 @@ namespace {
     $referenceVardef = getenv('BD_ERP_REFERENCE') ?: (__DIR__ . '/fixtures/shared-sugar/sugar-sell/'
         . 'ERP-Core/src/custom/Extension/modules/Quotes/Ext/Vardefs/erp_reference.php');
 
-    $factsFile = getenv('BD_QUOTE_FACTS');
     if ($nsFacts) {
         // Asked of the stand-in's rule without loading anything: T1 needs the
         // class NOT loaded until BdAdmRules asks for it.
@@ -294,11 +299,8 @@ namespace {
             exit(2);
         }
     } elseif (!$noFacts) {
-        if (!is_string($factsFile) || !is_file($factsFile)) {
-            fwrite(STDERR, "BD_QUOTE_FACTS must name ERP-Epicor 1.1's global ErpQuoteFacts.php\n");
-            exit(2);
-        }
-        require $factsFile;
+        fwrite(STDERR, "set BD_ERP_AUTOLOADER (ERP-Epicor 1.2.x) or BD_NO_QUOTE_FACTS=1\n");
+        exit(2);
     }
 
     function return_app_list_strings_language($lang)
@@ -326,9 +328,17 @@ namespace {
 
     require 'custom/src/BenchDogs/BdAdmRules.php';
 
-    // What core publishes for the ADM connection's code lists (core's scoped
-    // key: <company>__<type>_<code>), plus rows that must not be read as ADM.
+    // What the connector extension publishes for the companies that get ADM's
+    // rules, and what core publishes for the ADM connection's code lists (core's
+    // scoped key: <company>__<type>_<code>), plus rows that must not be read as ADM.
     $ADM_ROWS = [
+        ['type' => 'BdAdmCompanies', 'is_active' => 1, 'erp_sync_key' => 'ADM__BdAdmCompanies_ADM',
+         'erp_display_sync_key' => 'ADM', 'name' => 'BENCH DOGS'],
+        ['type' => 'BdAdmCompanies', 'is_active' => 0, 'erp_sync_key' => 'OLDCO__BdAdmCompanies_OLDCO',
+         'erp_display_sync_key' => 'OLDCO', 'name' => 'Taken out of the setting'],
+        // A company with lead sources that the extension does not publish: not ADM's.
+        ['type' => 'BdLeadSources', 'is_active' => 1, 'erp_sync_key' => 'EPIC06__BdLeadSources_WEB',
+         'erp_display_sync_key' => 'WEB', 'name' => 'Web'],
         ['type' => 'BdLeadSources', 'is_active' => 1, 'erp_sync_key' => 'ADM__BdLeadSources_DIRMAIL',
          'erp_display_sync_key' => 'DIRMAIL', 'name' => 'Direct mail'],
         ['type' => 'BdLeadSources', 'is_active' => 0, 'erp_sync_key' => 'ADM__BdLeadSources_OLD',
@@ -400,8 +410,8 @@ namespace {
         }
         $check('O1 no 1.2.0 ErpQuoteFacts: nothing is defaulted, nothing throws', [null, [], null],
             [$threw, $set ?? null, $q->erp_reference ?? null]);
-        $check('O2 this run has the 1.1 global class exactly when BD_QUOTE_FACTS installed it (never used)',
-            !$noFacts, class_exists('ErpQuoteFacts', false));
+        $check('O2 no global ErpQuoteFacts class is declared in this run', false,
+            class_exists('ErpQuoteFacts', false));
         $check('O3 and the reason is logged, naming the 1.2.0 requirement and the quote', true,
             (bool) array_filter($GLOBALS['log']->lines, fn($l) => $l[0] === 'error'
                 && str_contains($l[1], 'requires ERP-Epicor >= 1.2.0')
@@ -419,32 +429,39 @@ namespace {
         // ── A. which companies are ADM ──────────────────────────────────────
         $check('A1 the company is the text before the FIRST "__"', ['ADM', 'ADM2', 'EPIC06'],
             BdAdmRules::companiesFromKeys([
-                ['erp_sync_key' => 'ADM__BdLeadSources_DIRMAIL'],
-                ['erp_sync_key' => 'adm__BdLeadSources_PHONE'],       // case folds to ADM
-                ['erp_sync_key' => 'ADM2__BdLeadSources_X'],          // a distinct company
-                ['erp_sync_key' => 'EPIC06__BdLeadSources_Y'],
+                ['erp_sync_key' => 'ADM__BdAdmCompanies_ADM'],
+                ['erp_sync_key' => 'adm__BdAdmCompanies_adm'],        // case folds to ADM
+                ['erp_sync_key' => 'ADM2__BdAdmCompanies_ADM2'],      // a distinct company
+                ['erp_sync_key' => 'EPIC06__BdAdmCompanies_EPIC06'],
             ]));
         $check('A2 no "__", a leading "__", or no key: no company', [],
             BdAdmRules::companiesFromKeys([
-                ['erp_sync_key' => 'ADMX_BdLeadSources_Y'],           // the LIKE 'ADM__%' trap
-                ['erp_sync_key' => '__BdLeadSources_Q'],
+                ['erp_sync_key' => 'ADMX_BdAdmCompanies_Y'],          // the LIKE 'ADM__%' trap
+                ['erp_sync_key' => '__BdAdmCompanies_Q'],
                 ['erp_sync_key' => ''],
                 [],
             ]));
         SugarQuery::$rows = $ADM_ROWS;
         $freshQuery();
-        $check('A3 ADM published lead sources: ADM, and only ADM', ['ADM'], BdAdmRules::admCompanies());
-        $check('A4 the query reads BdLeadSources keys across teams, bounded',
-            [['type' => 'BdLeadSources'], ['team_security' => false], ['erp_sync_key'], BdAdmRules::MAX_LEAD_SOURCE_ROWS],
+        $check('A3 the extension publishes ADM: ADM, and only ADM', ['ADM'], BdAdmRules::admCompanies());
+        $check('A4 the query reads ACTIVE BdAdmCompanies keys across teams, bounded',
+            [['type' => 'BdAdmCompanies', 'is_active' => 1], ['team_security' => false], ['erp_sync_key'],
+             BdAdmRules::MAX_ADM_COMPANY_ROWS],
             [SugarQuery::$last->whereObj->equals, SugarQuery::$last->fromOptions, SugarQuery::$last->select,
              SugarQuery::$last->limit]);
         BdAdmRules::admCompanies();
         BdAdmRules::isAdmCompany('EPIC06');
         $check('A5 one query per request, however often it is asked', 1, SugarQuery::$constructed);
-        $check('A6 case and padding do not matter; EPIC06 (no lead sources) is not ADM', [true, false, false],
+        $check('A6 case and padding do not matter; EPIC06 (lead sources, not published) is not ADM', [true, false, false],
             [BdAdmRules::isAdmCompany(' adm '), BdAdmRules::isAdmCompany('EPIC06'), BdAdmRules::isAdmCompany('')]);
-        $check('A7 an inactive-only company still counts (it published the type)', ['ADM'],
-            BdAdmRules::companiesFromKeys([$ADM_ROWS[1]]));
+        $check('A7 a company whose row is inactive is not ADM', false, BdAdmRules::isAdmCompany('OLDCO'));
+        // Lead sources alone (what decided it before this release) make no company ADM's.
+        SugarQuery::$rows = array_values(array_filter($ADM_ROWS, fn($r) => $r['type'] !== 'BdAdmCompanies'));
+        $freshQuery();
+        $check('A10 lead sources published but no BdAdmCompanies row: no company is ADM', [[], false],
+            [BdAdmRules::admCompanies(), BdAdmRules::isAdmCompany('ADM')]);
+        SugarQuery::$rows = $ADM_ROWS;
+        $freshQuery();
 
         // ── B. Reference ────────────────────────────────────────────────────
         $check('B1 city and state', 'WAYNE NJ', BdAdmRules::defaultReference('WAYNE', 'NJ'));
@@ -468,31 +485,6 @@ namespace {
             array_map(fn($c) => mb_strlen(BdAdmRules::defaultReference($c[0], $c[1], $c[2]), 'UTF-8') <= $c[2],
                 [['HARRISBURG', 'PA', 10], ['SALT LAKE CITY', 'UT', 10], ['', 'PENNSYLVANIA', 10], ['X', 'NY', 3]]));
 
-        // ── E. the Project default ──────────────────────────────────────────
-        $check('E1 CMI -> 20065 (the shipped starting entry)', '20065', BdAdmRules::defaultProject(['CMI']));
-        $check('E2 every line CMI: still 20065', '20065', BdAdmRules::defaultProject(['CMI', 'cmi']));
-        $check('E3 CMI mixed with DISPLAYS (no dominant project): the seller picks', '',
-            BdAdmRules::defaultProject(['CMI', 'DISPLAYS']));
-        $check('E4 a line with no group: the seller picks', '', BdAdmRules::defaultProject(['CMI', '']));
-        $check('E5 no lines: nothing', '', BdAdmRules::defaultProject([]));
-        $saved = $GLOBALS['app_list_strings']['bd_adm_project_by_group_list'];
-        $GLOBALS['app_list_strings']['bd_adm_project_by_group_list'] = ['CMI' => '20065', 'STL' => '20065', 'RET' => '30001'];
-        $check('E6 two groups on ONE project pre-fill it', '20065', BdAdmRules::defaultProject(['CMI', 'STL']));
-        $check('E7 two groups on two projects do not', '', BdAdmRules::defaultProject(['CMI', 'RET']));
-        $GLOBALS['app_list_strings']['bd_adm_project_by_group_list'] = $saved;
-
-        // ── F. the admin's list survives a reinstall, in either merge order ─
-        $admin = ['CMI' => '20065', 'DISPLAYS' => '41000'];
-        $GLOBALS['app_list_strings'] = ['erp_lookup_type_list' => ['' => '']];
-        $GLOBALS['app_list_strings']['bd_adm_project_by_group_list'] = $admin; // admin fragment first
-        $loadLists();                                                          // then the reinstalled package
-        $check('F1 admin first, package after: the admin list stands', $admin,
-            $GLOBALS['app_list_strings']['bd_adm_project_by_group_list']);
-        $GLOBALS['app_list_strings'] = ['erp_lookup_type_list' => ['' => '']];
-        $loadLists();                                                          // package first
-        $GLOBALS['app_list_strings']['bd_adm_project_by_group_list'] = $admin; // then the admin's whole list
-        $check('F2 package first, admin after: the admin list stands', '41000', BdAdmRules::defaultProject(['DISPLAYS']));
-
         // ── G. core's lookup-type list is extended, never replaced ─────────
         $GLOBALS['app_list_strings'] = ['erp_lookup_type_list' => ['' => '', 'Country' => 'Country', 'Reason' => 'Reason']];
         $loadLists();
@@ -503,8 +495,8 @@ namespace {
             'BdCustomerGroups'];
         $check('G2 the six Bench types are added (G460: the two marketing lists; G804: customer groups)', $bdTypes,
             array_values(array_intersect($bdTypes, array_keys($types))));
-        $check('G3 the shipped project default is in place', ['CMI' => '20065'],
-            $GLOBALS['app_list_strings']['bd_adm_project_by_group_list']);
+        $check('G3 rc108: no product group -> project list is shipped (nothing defaults a Project on save)', false,
+            isset($GLOBALS['app_list_strings']['bd_adm_project_by_group_list']));
         $check('G4 there is NO company list any more (🔒 1724b: one source for "ADM")', false,
             isset($GLOBALS['app_list_strings']['bd_adm_companies_list']));
 
@@ -522,13 +514,12 @@ namespace {
         // below names the class itself, so a later read would prove nothing).
         $autoloadedByRules = array_values(array_unique($GLOBALS['bd_autoloaded']));
         $nsAskedByRules = count(array_keys($GLOBALS['bd_autoload_asked'], $NS_FACTS, true));
-        $check('H1 an unsent ADM quote gets Reference and Project', ['erp_reference', 'bd_project_id'], $set);
+        $check('H1 an unsent ADM quote with all-CMI lines gets its Reference, never a Project', ['erp_reference'], $set);
         $check('H2 Reference is the ship-to city and state, in the GENERIC field', ['WAYNE NJ', null],
             [$fresh->erp_reference, $fresh->bd_reference ?? null]);
-        $check('H3 Project is the default for its all-CMI lines', '20065', $fresh->bd_project_id);
-        $check('H4 the company and each line\'s group were read through ErpQuoteFacts, in that order',
-            ['Accounts', 'ERP_Companies', 'ProductTemplates', 'ProductCategories', 'ProductTemplates',
-             'ProductCategories'], $readModules());
+        $check('H3 rc108: its Project stays empty (no product group default)', null, $fresh->bd_project_id ?? null);
+        $check('H4 the company was read through ErpQuoteFacts, and no line', ['Accounts', 'ERP_Companies'],
+            $readModules());
 
         $freshQuery();
         $typed = $quote('ADM', ['shipping_address_city' => 'WAYNE', 'shipping_address_state' => 'NJ',
@@ -544,9 +535,10 @@ namespace {
             [BdAdmRules::applyDefaults($sent), SugarQuery::$constructed, BeanFactory::$reads]);
 
         $freshQuery();
-        SugarQuery::$rows = [$ADM_ROWS[3]];                  // a tenant with no lead sources at all
+        // A tenant where the extension publishes no company (no ADM connection): its lead sources do not count.
+        SugarQuery::$rows = array_values(array_filter($ADM_ROWS, fn($r) => $r['type'] !== 'BdAdmCompanies'));
         $stock = $quote('ADM', ['shipping_address_city' => 'WAYNE', 'lines' => [$lCmi]]);
-        $check('H7 no company published lead sources: one query, no company lookup (exit 3)', [[], 1, []],
+        $check('H7 no company published as ADM\'s: one query, no company lookup (exit 3)', [[], 1, []],
             [BdAdmRules::applyDefaults($stock), SugarQuery::$constructed, BeanFactory::$reads]);
         SugarQuery::$rows = $ADM_ROWS;
 
@@ -562,18 +554,18 @@ namespace {
         $check('A8 an ADM-keyed account with no company relate is NOT ADM (the payload sends no company '
             . 'for it; ErpQuoteFacts has no key-prefix fallback)', [[], null],
             [BdAdmRules::applyDefaults($nolink), $nolink->erp_reference ?? null]);
-        $check('A9 a padded category code is trimmed by ErpQuoteFacts, so it still maps', '20065',
-            BdAdmRules::defaultProject([$factsClass::productGroup($lCmi)]));
 
         $freshQuery();
         $mixed = $quote('ADM', ['shipping_address_city' => 'WAYNE', 'lines' => [$lCmi, $l49]]);
-        $check('H9 CMI + DISPLAYS lines: Reference only, the seller picks the Project', ['erp_reference'],
+        $check('H9 CMI + DISPLAYS lines: Reference only', ['erp_reference'],
             BdAdmRules::applyDefaults($mixed));
         $noLines = $quote('ADM', ['shipping_address_city' => 'WAYNE', 'shipping_address_state' => 'NJ']);
         $check('H10 a quote with no lines yet: Reference only', ['erp_reference'], BdAdmRules::applyDefaults($noLines));
+        $freshQuery();
         $onlyProject = $quote('ADM', ['erp_reference' => 'X', 'lines' => [$lCmi]]);
-        $check('H11 Reference set, Project empty: Project only', ['bd_project_id'],
-            BdAdmRules::applyDefaults($onlyProject));
+        $check('H11 rc108: Reference set, Project empty, all-CMI lines: nothing filled and NOTHING read', [[], null, 0, []],
+            [BdAdmRules::applyDefaults($onlyProject), $onlyProject->bd_project_id ?? null, SugarQuery::$constructed,
+             BeanFactory::$reads]);
         $check('H12 🔒 1499: the before_save hook creates no record, ever', 0, BeanFactory::$created - $createdBefore);
 
         // G530, end to end: the limit is ERP-Epicor's (ErpQuoteFacts::referenceMaxLength(), the REAL
@@ -585,7 +577,7 @@ namespace {
         $long = $quote('ADM', ['shipping_address_city' => 'HARRISBURG', 'shipping_address_state' => 'PA',
                                'field_defs' => $referenceDefs, 'lines' => [$lCmi]]);
         $check('H13 G530 the sandbox #36 ship-to (HARRISBURG PA) defaults to a Reference ADM takes',
-            [['erp_reference', 'bd_project_id'], 'HARRISB PA'],
+            [['erp_reference'], 'HARRISB PA'],
             [BdAdmRules::applyDefaults($long), $long->erp_reference ?? null]);
         $check('H14 G530 the limit came from the field (the real vardef states 10)', 10,
             BdAdmRules::referenceMaxLength($long));
@@ -611,18 +603,17 @@ namespace {
         $GLOBALS['log']->lines = [];
         $threw = null;
         try {
-            (new BdAdmRules())->beforeSave(new class {
-                public $id = 'q-broken';
-                public $billing_account_id = 'acct-adm';
-                public function load_relationship($n) { throw new RuntimeException('link table unreadable'); }
-            }, 'before_save', []);
+            // The account's read fails half way through the defaults (its company is looked up first).
+            (new BdAdmRules())->beforeSave($b(['id' => 'q-broken', 'billing_account_id' => 'acct-unreadable',
+                                               'lines' => [$lCmi]]), 'before_save', []);
         } catch (\Throwable $e) {
             $threw = get_class($e);
         }
         $check('H14 a defaults failure never fails the seller\'s save (MLP004)', null, $threw);
         $check('H15 and it is logged, naming the quote', true,
             (bool) array_filter($GLOBALS['log']->lines, fn($l) => $l[0] === 'error'
-                && str_contains($l[1], 'q-broken') && str_contains($l[1], 'link table unreadable')));
+                && str_contains($l[1], 'ADM quote defaults failed for quote q-broken')
+                && str_contains($l[1], 'account unreadable')));
 
         // ── I. the pickers' options ─────────────────────────────────────────
         SugarQuery::$rows = [
@@ -779,9 +770,10 @@ namespace {
             [$picks($new), $set]);
         $reads = $quoteReads();
         $pairRead = end($reads);
-        $check('Q2 four reads (Lead Source, Lead Type, Project, the pair): this account\'s quotes, the field(s) not '
-            . 'empty, newest first, up to 20 rows (the first usable wins, Q15), never this quote',
-            [4, [['bd_lead_source'], ['bd_lead_type'], ['bd_project_id'], ['bd_marketing_campaign', 'bd_marketing_event']],
+        $check('Q2 three reads (Lead Source, Lead Type, the pair; rc117: never the Project, which is each line\'s own): '
+            . 'this account\'s quotes, the field(s) not empty, newest first, up to 20 rows (the first usable wins, Q15), '
+            . 'never this quote',
+            [3, [['bd_lead_source'], ['bd_lead_type'], ['bd_marketing_campaign', 'bd_marketing_event']],
              ['billing_account_id' => 'acct-adm'], ['id' => $new->id], ['date_entered', 'DESC'], 20],
             [count($reads), array_map(fn($q) => $q->whereObj->notEmpty, $reads), $pairRead->whereObj->equals,
              $pairRead->whereObj->notEquals, $pairRead->order, $pairRead->limit]);
@@ -898,9 +890,9 @@ namespace {
         ]);
         $skip = $quote('ADM', ['id' => 'q-skip', 'lines' => []]);
         BdAdmRules::applyDefaults($skip, true);
-        $check('Q15 the NEWEST quote holds only retired codes (LOYPROG, GONE, project 11111, 24CGINST/1): each field '
-            . 'from the next newest quote holding an OFFERED one; the pair from that ONE quote',
-            ['E-MAIL', 'BROKER', '17879', '26DISCNV', '26DISCNV/2'], $picks5($skip));
+        $check('Q15 the NEWEST quote holds only retired codes (LOYPROG, GONE, 11111, 24CGINST/1): each field from the '
+            . 'next newest quote holding an OFFERED one; the pair from that ONE quote; rc117: no quote-level Project',
+            ['E-MAIL', 'BROKER', null, '26DISCNV', '26DISCNV/2'], $picks5($skip));
 
         // THE MEASURED SHAPE: 7647 (newest, Sugar-only) holds Lead Source and
         // Lead Type but no pair; ADM__7178 holds 24CGINST / 24CGINST/1.
@@ -941,10 +933,8 @@ namespace {
             [[$mixed->bd_marketing_campaign ?? null, $mixed->bd_marketing_event ?? null],
              [$chosen->bd_marketing_campaign ?? null, $chosen->bd_marketing_event ?? null]]);
 
-        // G809, owner scope (2026-09-29T21:05Z): Project prefills from the
-        // account's history like the other four. 🔒 1712b's product-group
-        // default is applied FIRST (it fills only an empty Project, as before);
-        // the history fills only what that left empty. Both only into EMPTY.
+        // rc108: a Project is never defaulted on save from the lines' product group; rc110: from the account's quotes
+        // only on a create that sends no Project at all.
         $projectHistory = [
             $qRow('j-new', 'acct-adm', '2026-09-01 10:00:00', ['bd_project_id' => '11111']),
             $qRow('j-old', 'acct-adm', '2026-06-01 10:00:00', ['bd_project_id' => '17879']),
@@ -953,16 +943,66 @@ namespace {
         $pNew = $quote('ADM', ['id' => 'q-pnew', 'lines' => []]);
         $pCmi = $quote('ADM', ['id' => 'q-pcmi', 'lines' => [$lCmi]]);
         $pTyped = $quote('ADM', ['id' => 'q-ptyped', 'bd_project_id' => '20065', 'lines' => []]);
-        $pUpd = $quote('ADM', ['id' => 'q-pupd', 'lines' => []]);
+        $pUpd = $quote('ADM', ['id' => 'q-pupd', 'lines' => [$lCmi]]);
         BdAdmRules::applyDefaults($pNew, true);
         BdAdmRules::applyDefaults($pCmi, true);
         BdAdmRules::applyDefaults($pTyped, true);
         BdAdmRules::applyDefaults($pUpd);
-        $check('Q18 Project: a new quote gets the newest OFFERED project of the account (retired 11111 skipped); a '
-            . 'CMI quote keeps 🔒 1712b\'s 20065; the seller\'s pick stays; an update copies nothing',
-            ['17879', '20065', '20065', null],
+        $check('Q18 rc117: a new quote and a new all-CMI quote that send no Project get none (the account\'s quotes '
+            . 'hold 17879); an all-CMI update stays empty; a Project a create sends stays',
+            [null, null, '20065', null],
             [$pNew->bd_project_id ?? null, $pCmi->bd_project_id ?? null, $pTyped->bd_project_id ?? null,
              $pUpd->bd_project_id ?? null]);
+
+        // ── W. rc108: the Project a seller clears stays clear (a new ADM quote, measured 2026-10-21) ──
+        // The create form prefilled the account's newest Project; the seller cleared it and saved.
+        $withHistory(array_merge($HISTORY, [$qRow('w-1', 'acct-adm', '2026-10-20 23:00:00', ['bd_project_id' => '17879'])]));
+        $cleared = $quote('ADM', ['id' => 'q-cleared', 'bd_project_id' => '', 'shipping_address_city' => 'YORK',
+                                  'shipping_address_state' => 'PA', 'lines' => [$lCmi]]);
+        (new BdAdmRules())->beforeSave($cleared, 'before_save', ['isUpdate' => false]);
+        $check('W1 a NEW ADM quote saved with Project blank keeps it blank (all-CMI lines, the account\'s newest '
+            . 'quote holding 17879)', '', $cleared->bd_project_id);
+        $check('W2 control: the same save still fills Reference, Lead Source, Lead Type and the Campaign + Event pair',
+            ['YORK PA', 'E-MAIL', 'BROKER', '26DISCNV', '26DISCNV/2'],
+            array_merge([$cleared->erp_reference ?? null], $picks($cleared)));
+        (new BdAdmRules())->beforeSave($cleared, 'before_save', ['isUpdate' => true]);
+        $check('W3 saved again (an update), still blank', '', $cleared->bd_project_id);
+        $picked = $quote('ADM', ['id' => 'q-picked', 'bd_project_id' => '20065', 'lines' => [$lCmi]]);
+        (new BdAdmRules())->beforeSave($picked, 'before_save', ['isUpdate' => false]);
+        $pickedOnCreate = $picked->bd_project_id;
+        $picked->bd_project_id = '17879';
+        (new BdAdmRules())->beforeSave($picked, 'before_save', ['isUpdate' => true]);
+        $check('W4 control: a Project the seller picks is kept, on create and on a later change',
+            ['20065', '17879'], [$pickedOnCreate, $picked->bd_project_id]);
+        $check('W5 the package has no Project default left to call', [false, false],
+            [method_exists(BdAdmRules::class, 'defaultProject'), defined(BdAdmRules::class . '::LIST_PROJECT_BY_GROUP')]);
+
+        // ── X. rc110: a quote created with no Project sent at all takes the account's newest one, once ──
+        // The Account's create button makes the quote on the server: no form, so no Project is sent.
+        $withHistory(array_merge($HISTORY, [$qRow('x-1', 'acct-adm', '2026-10-20 23:00:00', ['bd_project_id' => '17879'])]));
+        $made = $quote('ADM', ['id' => 'q-made', 'shipping_address_city' => 'YORK', 'shipping_address_state' => 'PA',
+                               'lines' => [$lCmi]]);
+        (new BdAdmRules())->beforeSave($made, 'before_save', ['isUpdate' => false]);
+        $check('X1 rc117: a NEW ADM quote saved with no Project sent gets no quote-level Project (the account\'s newest '
+            . 'quote holds 17879; the Project is each line\'s own)', null, $made->bd_project_id ?? null);
+        $check('X2 control: the same save fills Reference, Lead Source, Lead Type and the pair as before',
+            ['YORK PA', 'E-MAIL', 'BROKER', '26DISCNV', '26DISCNV/2'],
+            array_merge([$made->erp_reference ?? null], $picks($made)));
+        $made->bd_project_id = '';
+        (new BdAdmRules())->beforeSave($made, 'before_save', ['isUpdate' => true]);
+        $check('X3 cleared by the seller and saved again (an update), it stays empty', '', $made->bd_project_id);
+        $withHistory(array_merge($HISTORY, [$qRow('x-2', 'acct-epic', '2026-10-20 23:00:00', ['bd_project_id' => '17879'])]));
+        $epicMade = $quote('EPIC06', ['id' => 'q-epic-made', 'lines' => []]);
+        (new BdAdmRules())->beforeSave($epicMade, 'before_save', ['isUpdate' => false]);
+        $check('X4 control: an EPIC06 quote made the same way takes no Project', null, $epicMade->bd_project_id ?? null);
+        $withHistory(array_merge($HISTORY, [$qRow('x-3', 'acct-adm', '2026-10-20 23:00:00', ['bd_project_id' => '17879'])]));
+        $allSent = $quote('ADM', ['id' => 'q-all-sent', 'erp_reference' => 'BOOTH 4', 'bd_lead_source' => 'ADVERTISE',
+                                  'bd_lead_type' => 'DIRFOOD', 'bd_marketing_campaign' => '26BREHC',
+                                  'bd_marketing_event' => '26BREHC/4', 'lines' => []]);
+        (new BdAdmRules())->beforeSave($allSent, 'before_save', ['isUpdate' => false]);
+        $check('X5 rc117: a create that sends every other picker and the Reference but no Project gets no Project, '
+            . 'and keeps what it sent', [null, 'BOOTH 4', 'ADVERTISE', 'DIRFOOD', '26BREHC', '26BREHC/4'],
+            array_merge([$allSent->bd_project_id ?? null, $allSent->erp_reference], $picks($allSent)));
 
         // ── M. the vardefs ──────────────────────────────────────────────────
         $dictionary = [];
@@ -983,14 +1023,14 @@ namespace {
              'bd_marketing_campaign' => true, 'bd_marketing_event' => true], $fnOk);
         // G809: all five carry ERP-Core's erp-dependent-enum (it reads the
         // required-until-synced and prefill keys); before G809 only Project and Event did.
-        $check('M4 each carries ERP-Epicor\'s marker: record view, ERP panel, after Reference in order', [
+        $check('M4 each picker carries ERP-Epicor\'s marker: record view, ERP panel, after Reference in order; rc117: '
+            . 'not the quote-level Project, which no quote view draws (the campaign follows Lead Type)', [
                 'bd_lead_source' => ['view' => 'record', 'panel' => 'LBL_RECORDVIEW_PANEL_ERP', 'after' => 'erp_reference',
                     'type' => 'erp-dependent-enum'],
                 'bd_lead_type' => ['view' => 'record', 'panel' => 'LBL_RECORDVIEW_PANEL_ERP', 'after' => 'bd_lead_source',
                     'type' => 'erp-dependent-enum'],
-                'bd_project_id' => ['view' => 'record', 'panel' => 'LBL_RECORDVIEW_PANEL_ERP', 'after' => 'bd_lead_type',
-                    'type' => 'erp-dependent-enum'],
-                'bd_marketing_campaign' => ['view' => 'record', 'panel' => 'LBL_RECORDVIEW_PANEL_ERP', 'after' => 'bd_project_id',
+                'bd_project_id' => null,
+                'bd_marketing_campaign' => ['view' => 'record', 'panel' => 'LBL_RECORDVIEW_PANEL_ERP', 'after' => 'bd_lead_type',
                     'type' => 'erp-dependent-enum'],
                 'bd_marketing_event' => ['view' => 'record', 'panel' => 'LBL_RECORDVIEW_PANEL_ERP', 'after' => 'bd_marketing_campaign',
                     'type' => 'erp-dependent-enum'],
@@ -1031,9 +1071,9 @@ namespace {
         // client code is ERP-Core's (lane D19), this package only declares them.
         $depKeys = ['erp_lookup_parent', 'erp_lookup_parent_separator', 'erp_lookup_parent_empty_label',
             'erp_required_when_options'];
-        $check('M8 G571 the Event follows the Campaign, split at the ext\'s separator; G570 Project is required '
-            . 'when ADM projects exist; no other picker carries a key, and none a custom_type',
-            ['bd_lead_source' => [], 'bd_lead_type' => [], 'bd_project_id' => ['erp_required_when_options' => true],
+        $check('M8 G571 the Event follows the Campaign, split at the ext\'s separator; no picker is required on '
+            . 'every quote (rc101: Project moved to required-until-synced, M9); none carries a custom_type',
+            ['bd_lead_source' => [], 'bd_lead_type' => [], 'bd_project_id' => [],
              'bd_marketing_campaign' => [],
              'bd_marketing_event' => ['erp_lookup_parent' => 'bd_marketing_campaign',
                  'erp_lookup_parent_separator' => BdAdmRules::EVENT_KEY_SEPARATOR,
@@ -1055,12 +1095,12 @@ namespace {
         // (the Event fills the Campaign + Event pair). None carries a vardef
         // 'required' (M2): the served flag is what the connector's schema reads.
         $g809Keys = ['erp_required_until_synced', 'erp_prefill_from_account_latest'];
-        $check('M9 G809 the ERP-Core keys: required-until-synced on Lead Source, Lead Type, Campaign, Event (not '
-            . 'Project, which keeps G570\'s rule); prefill from billing_account_id on Lead Source, Lead Type, Project '
-            . '(owner scope, 2026-09-29) and the Event',
+        $check('M9 G809 the ERP-Core keys: required-until-synced on four pickers, NOT Project (G1279, rc106: owner '
+            . 'ruled it optional on the quote); prefill from billing_account_id on Lead Source, Lead Type and the Event; '
+            . 'rc117: none on the quote-level Project (it is each line\'s own)',
             ['bd_lead_source' => ['erp_required_until_synced' => true, 'erp_prefill_from_account_latest' => 'billing_account_id'],
              'bd_lead_type' => ['erp_required_until_synced' => true, 'erp_prefill_from_account_latest' => 'billing_account_id'],
-             'bd_project_id' => ['erp_prefill_from_account_latest' => 'billing_account_id'],
+             'bd_project_id' => [],
              'bd_marketing_campaign' => ['erp_required_until_synced' => true],
              'bd_marketing_event' => ['erp_required_until_synced' => true, 'erp_prefill_from_account_latest' => 'billing_account_id']],
             array_map(fn($f) => array_intersect_key($f, array_flip($g809Keys)), $fields));

@@ -1,0 +1,33 @@
+{
+ "recorded": "Recorded from SugarEnt 26.1.0 (build 319): modules/ProductBundles/clients/base/views/quote-data-group-list/quote-data-group-list.php; sha256 5c02e410f9f6a40ab78784a4635a45c2d1e71d89924904f840e588af20cc6b02 of the stock file. $viewdefs as php fills it, whole.",
+ "kept": "all",
+ "viewdefs": {
+  "ProductBundles": {
+   "base": {
+    "view": {
+     "quote-data-group-list": {
+      "selection": {
+       "type": "multi",
+       "actions": [
+        {
+         "type": "rowaction",
+         "name": "edit_row_button",
+         "label": "LBL_EDIT_BUTTON",
+         "tooltip": "LBL_EDIT_BUTTON",
+         "acl_action": "edit"
+        },
+        {
+         "type": "rowaction",
+         "name": "delete_row_button",
+         "label": "LBL_DELETE_BUTTON",
+         "tooltip": "LBL_DELETE_BUTTON",
+         "acl_action": "delete"
+        }
+       ]
+      }
+     }
+    }
+   }
+  }
+ }
+}

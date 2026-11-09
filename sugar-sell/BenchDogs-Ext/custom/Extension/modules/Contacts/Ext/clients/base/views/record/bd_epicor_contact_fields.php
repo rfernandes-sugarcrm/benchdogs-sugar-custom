@@ -1,6 +1,6 @@
 <?php
 
-/** G458 (🔒2102b): the five Epicor contact fields, read-only on the Contacts record view, and nothing on a tenant that does not have them. */
+/** The five Epicor contact fields on the Contacts record view, and nothing on a tenant that does not have them: Role editable, the other four read-only. */
 $bdContactPanels = $viewdefs['Contacts']['base']['view']['record']['panels'] ?? null;
 if (is_array($bdContactPanels) && $bdContactPanels !== array()) {
     try {
@@ -12,6 +12,8 @@ if (is_array($bdContactPanels) && $bdContactPanels !== array()) {
             'primary_purchasing_c',
             'primary_shipping_c',
         );
+        // The seller edits a contact's Role (from Kinetic's own role list); the other four stay Epicor's.
+        $bdEditable = array('role_c' => true);
 
         // THE GUARD: the merged vardefs, field by field.
         VardefManager::loadVardef('Contacts', 'Contact');
@@ -27,9 +29,9 @@ if (is_array($bdContactPanels) && $bdContactPanels !== array()) {
         }
 
         if ($bdHave !== array()) {
-            // 1. READ-ONLY on every entry already on the view (an admin's
-            // placement included, fieldset members one level down), and note
-            // where each one already is. Nothing is moved.
+            // 1. READ-ONLY (Role: editable) on every entry already on the view
+            // (an admin's placement included, fieldset members one level
+            // down), and note where each one already is. Nothing is moved.
             $bdPlaced = array();
             foreach ($bdContactPanels as $bdPanelKey => $bdPanel) {
                 if (!is_array($bdPanel) || !isset($bdPanel['fields']) || !is_array($bdPanel['fields'])) {
@@ -40,7 +42,7 @@ if (is_array($bdContactPanels) && $bdContactPanels !== array()) {
                         : ((is_array($bdEntry) && isset($bdEntry['name']) && is_string($bdEntry['name'])) ? $bdEntry['name'] : '');
                     if (isset($bdHave[$bdName]) && !isset($bdEntry['fields'])) {
                         $bdEntry = is_string($bdEntry) ? array('name' => $bdEntry) : $bdEntry;
-                        $bdEntry['readonly'] = true;
+                        $bdEntry['readonly'] = !isset($bdEditable[$bdName]);
                         $bdContactPanels[$bdPanelKey]['fields'][$bdEntryKey] = $bdEntry;
                         $bdPlaced[$bdName] = true;
                     }
@@ -52,7 +54,7 @@ if (is_array($bdContactPanels) && $bdContactPanels !== array()) {
                                 continue;
                             }
                             $bdMember = is_string($bdMember) ? array('name' => $bdMember) : $bdMember;
-                            $bdMember['readonly'] = true;
+                            $bdMember['readonly'] = !isset($bdEditable[$bdMemberName]);
                             $bdContactPanels[$bdPanelKey]['fields'][$bdEntryKey]['fields'][$bdMemberKey] = $bdMember;
                             $bdPlaced[$bdMemberName] = true;
                         }
@@ -86,7 +88,7 @@ if (is_array($bdContactPanels) && $bdContactPanels !== array()) {
                     if (isset($bdPlaced[$bdField])) {
                         continue;
                     }
-                    $bdEntry = array('name' => $bdField, 'readonly' => true);
+                    $bdEntry = array('name' => $bdField, 'readonly' => !isset($bdEditable[$bdField]));
                     if ($bdLabel !== '') {
                         $bdEntry['label'] = $bdLabel;
                     }
@@ -105,6 +107,6 @@ if (is_array($bdContactPanels) && $bdContactPanels !== array()) {
         }
     }
 }
-unset($bdContactPanels, $bdEpicorContactFields, $bdContactDefs, $bdHave, $bdField, $bdDef, $bdPlaced, $bdPanelKey,
+unset($bdContactPanels, $bdEpicorContactFields, $bdEditable, $bdContactDefs, $bdHave, $bdField, $bdDef, $bdPlaced, $bdPanelKey,
     $bdPanel, $bdEntryKey, $bdEntry, $bdName, $bdMemberKey, $bdMember, $bdMemberName, $bdTarget, $bdWanted, $bdLabel,
     $bdError);

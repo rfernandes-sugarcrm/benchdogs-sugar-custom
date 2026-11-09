@@ -1,0 +1,17 @@
+{{!--
+    G527: RelateField's disabled input, unchanged apart from the inactive
+    marker - erp-lookup.js renders it with RelateField._renderDisabledDropdown.
+--}}
+<input type="hidden"
+       name="{{name}}"
+       disabled="disabled"
+       readonly
+       class="select2 inherit-width"
+       value="{{formattedIds}}"
+    {{#if def.tabindex}} tabindex="{{def.tabindex}}"{{/if}}
+       data-rname="{{#if hasErasedPlaceholder}}{{str 'LBL_VALUE_ERASED' module}}{{else}}{{formattedRname}}{{#if erpLookupInactive}} {{str 'LBL_ERP_LOOKUP_INACTIVE' module}}{{/if}}{{/if}}">
+{{#unless hideHelp}}
+    {{#if def.help}}
+        <p class="help-block">{{str def.help module}}</p>
+    {{/if}}
+{{/unless}}

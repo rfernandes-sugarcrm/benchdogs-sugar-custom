@@ -1,0 +1,31 @@
+{
+ "recorded": "Recorded from SugarEnt 26.1.0 (build 319): include/language/en_us.lang.php; sha256 4e904c628428190df1a0c05c26adc3370e0ea9c931227e1cb4306b4d7b5ad97e of the stock file. $app_strings as php fills it, only the keys under \"kept\".",
+ "kept": [
+  "LBL_DELETE_BUTTON_LABEL",
+  "LBL_EDIT_BUTTON_LABEL",
+  "LBL_DUP_MERGE",
+  "LBL_DUPLICATE_BUTTON_LABEL",
+  "LBL_DELETE_BUTTON",
+  "LBL_EDIT_BUTTON",
+  "LBL_PREVIEW",
+  "LBL_MORE",
+  "LBL_LISTVIEW_ACTIONS",
+  "LBL_NO_DATA",
+  "LBL_REQUIRED_FIELD",
+  "ERR_RESOLVE_ERRORS"
+ ],
+ "app_strings": {
+  "LBL_DELETE_BUTTON_LABEL": "Delete",
+  "LBL_EDIT_BUTTON_LABEL": "Edit",
+  "LBL_DUP_MERGE": "Find Duplicates",
+  "LBL_DUPLICATE_BUTTON_LABEL": "Copy",
+  "LBL_DELETE_BUTTON": "Delete",
+  "LBL_EDIT_BUTTON": "Edit",
+  "LBL_PREVIEW": "Preview",
+  "LBL_MORE": "More",
+  "LBL_LISTVIEW_ACTIONS": "Actions",
+  "LBL_NO_DATA": "No data",
+  "LBL_REQUIRED_FIELD": "Required",
+  "ERR_RESOLVE_ERRORS": "Please complete all required fields before saving."
+ }
+}

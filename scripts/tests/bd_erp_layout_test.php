@@ -33,7 +33,9 @@
  *   T5  uninstall rc70 on the UPGRADED tenant (Module Loader restores rc69's
  *       backed-up Account vardef, so those two fields are NOT orphans)
  *   T6  G460: an rc72 tenant (its three pickers placed) upgraded to this build:
- *       the two marketing pickers land after Project, nothing placed moves
+ *       the two marketing pickers land after Lead Type, nothing placed moves
+ *       (since rc117 the quote-level Project is unmarked: sync() leaves the one
+ *       rc72 placed, and the record view overlay takes it off the screen)
  *
  * "rc70" in the names below is THIS BUILD's files (rc70's shape: marked vardefs,
  * no layout code); since G460 its Quote vardef carries five pickers.
@@ -199,7 +201,8 @@ namespace {
     $rc69Accounts = file_get_contents(__DIR__ . '/fixtures/rc69/bd_customer_group.php.txt');
     // G460: rc72's Quote vardef (three pickers), a byte copy (fixtures/rc72/PROVENANCE.md).
     $rc72Quotes = file_get_contents(__DIR__ . '/fixtures/rc72/bd_adm_required_fields.php.txt');
-    $PICKERS = ['bd_lead_source', 'bd_lead_type', 'bd_project_id', 'bd_marketing_campaign', 'bd_marketing_event'];
+    // rc117: the Project is each quote line's own, so the quote-level one is no longer marked for placement.
+    $PICKERS = ['bd_lead_source', 'bd_lead_type', 'bd_marketing_campaign', 'bd_marketing_event'];
 
     // A throwaway tenant docroot: ERP-Core's class at its fixed path, and the
     // Extension files the compiler reads.
@@ -210,8 +213,58 @@ namespace {
     @mkdir("$root/include/TemplateHandler", 0777, true);
     file_put_contents("$root/include/TemplateHandler/TemplateHandler.php", "<?php\n");
     copy($layoutFile, "$root/custom/include/ErpLayoutExtraFields.php");
+    // rc100's Kinetic fields step: the REAL rule, over a tenant that already holds every field (so it creates
+    // none); bd_kinetic_fields_test.php covers what it creates and when.
+    @mkdir("$root/custom/src/BenchDogs", 0777, true);
+    copy("$pkg/custom/src/BenchDogs/BdKineticFields.php", "$root/custom/src/BenchDogs/BdKineticFields.php");
+    file_put_contents("$root/custom/src/BenchDogs/BdStudioFields.php", '<?php
+namespace Sugarcrm\\Sugarcrm\\custom\\BenchDogs;
+class BdStudioFields {
+    public function fieldNames(string $module): array { return array_keys(BdKineticFields::FIELDS[$module]); }
+    public function create(string $module, string $name, array $spec): void { throw new \\RuntimeException("no create expected"); }
+    public function labelValue(string $module, string $key): ?string { return null; }
+    public function setLabel(string $module, string $key, string $value): void { throw new \\RuntimeException("no relabel expected"); }
+}
+');
+    // rc112's quote PDF template step: its record writes are bd_quote_pdf_test.php's; here it only answers.
+    file_put_contents("$root/custom/src/BenchDogs/BdQuotePdf.php", '<?php
+namespace Sugarcrm\\Sugarcrm\\custom\\BenchDogs;
+class BdQuotePdf {
+    public static function install(): string { return "unchanged"; }
+    public static function uninstall(): string { return "unpublished"; }
+}
+');
+    // rc117's one-time steps: the history says rc117 is already installed, so neither runs here (their own tests
+    // are bd_line_project_test.php and test_post_install_step_report.py).
+    file_put_contents("$root/custom/src/BenchDogs/BdInstallHistory.php", '<?php
+namespace Sugarcrm\\Sugarcrm\\custom\\BenchDogs;
+class BdInstallHistory {
+    const LINE_PROJECT_RELEASE = "0.9.46-rc117";
+    public static function installedVersions(): array { return array("0.9.46-rc117"); }
+    public static function firstInstallOf(string $release, array $installed): bool { return false; }
+}
+');
+    file_put_contents("$root/custom/src/BenchDogs/BdLineProject.php", '<?php
+namespace Sugarcrm\\Sugarcrm\\custom\\BenchDogs;
+class BdLineProject {
+    public static function copyFromQuotes(): array { throw new \\RuntimeException("no copy expected"); }
+}
+');
+    file_put_contents("$root/custom/src/BenchDogs/BdQuoteTypeDefault.php", '<?php
+namespace Sugarcrm\\Sugarcrm\\custom\\BenchDogs;
+class BdQuoteTypeDefault {
+    public static function apply($admin): string { throw new \\RuntimeException("no setting expected"); }
+}
+');
     chdir($root);
     set_include_path($root . PATH_SEPARATOR . get_include_path());
+    // Sugar's PSR-4 rule for a package class: Sugarcrm\Sugarcrm\custom\ -> custom/src/ (rc100's Kinetic step).
+    spl_autoload_register(function ($c) {
+        $p = 'Sugarcrm\\Sugarcrm\\custom\\';
+        if (strpos($c, $p) === 0 && is_file($f = 'custom/src/' . str_replace('\\', '/', substr($c, strlen($p))) . '.php')) {
+            require_once $f;
+        }
+    });
 
     $QV = 'custom/Extension/modules/Quotes/Ext/Vardefs/';
     $AV = 'custom/Extension/modules/Accounts/Ext/Vardefs/';
@@ -288,9 +341,11 @@ namespace {
     ViewdefManager::$saves = [];
     $lifecycle('post_execute.php');
     $check('T1a every post_install step applied',
-        ['repair_rebuild' => 'ok', 'accounts_erp_layout' => 'ok', 'quotes_erp_layout' => 'ok'],
+        ['kinetic_fields' => 'ok', 'kinetic_labels' => 'ok', 'repair_rebuild' => 'ok', 'accounts_erp_layout' => 'ok',
+            'quotes_erp_layout' => 'ok', 'install_history' => 'ok', 'line_project_copy' => 'ok',
+            'opp_quote_type' => 'ok', 'quote_pdf_template' => 'ok'],
         $report()['steps'] ?? null);
-    $check('T1b the five pickers land on the ERP panel, after Reference, in order',
+    $check('T1b the four pickers land on the ERP panel, after Reference, in order (rc117: not the quote-level Project)',
         array_merge(['erp_quote_type', 'erp_quotes_ship_via_name', 'erp_reference'], $PICKERS),
         $panel('Quotes', 'LBL_RECORDVIEW_PANEL_ERP'));
     $labels = [];
@@ -300,7 +355,7 @@ namespace {
         }
     }
     $check('T1c each with its own label',
-        ['bd_lead_source' => 'LBL_BD_LEAD_SOURCE', 'bd_lead_type' => 'LBL_BD_LEAD_TYPE', 'bd_project_id' => 'LBL_BD_PROJECT_ID',
+        ['bd_lead_source' => 'LBL_BD_LEAD_SOURCE', 'bd_lead_type' => 'LBL_BD_LEAD_TYPE',
          'bd_marketing_campaign' => 'LBL_BD_MARKETING_CAMPAIGN', 'bd_marketing_event' => 'LBL_BD_MARKETING_EVENT'],
         $labels);
     $check('T1d the Account fields rc69 placed stay exactly where they were (no Accounts write)',
@@ -308,7 +363,7 @@ namespace {
         [$panel('Accounts', 'panel_body'), ViewdefManager::$saves]);
     $check('T1e and are RECORDED now, so an uninstall can retire them',
         [['bd_customer_group', 'bd_customer_group_code'],
-         ['bd_lead_source', 'bd_lead_type', 'bd_marketing_campaign', 'bd_marketing_event', 'bd_project_id', 'erp_reference']],
+         ['bd_lead_source', 'bd_lead_type', 'bd_marketing_campaign', 'bd_marketing_event', 'erp_reference']],
         [$recorded('Accounts'), $recorded('Quotes')]);
 
     // ── T2: reinstall rc70 ─────────────────────────────────────────────────
@@ -400,9 +455,10 @@ namespace {
     $installFiles([$QV . 'bd_adm_required_fields.php' => $rc70Quotes,
         $QV . '_override_bd_erp_reference.php' => $referenceClaim]);
     $lifecycle('post_execute.php');
-    $check('T6b the two marketing pickers land after Project, in order; the admin\'s placement stays',
-        ['erp_quote_type', 'erp_quotes_ship_via_name', 'bd_lead_type', 'erp_reference', 'bd_lead_source', 'bd_project_id',
-         'bd_marketing_campaign', 'bd_marketing_event'],
+    $check('T6b the two marketing pickers land after Lead Type, in order; the admin\'s placement stays (rc117: the '
+        . 'Project rc72 placed is left where it is, the view overlay keeps it off the screen)',
+        ['erp_quote_type', 'erp_quotes_ship_via_name', 'bd_lead_type', 'bd_marketing_campaign', 'bd_marketing_event',
+         'erp_reference', 'bd_lead_source', 'bd_project_id'],
         $panel('Quotes', 'LBL_RECORDVIEW_PANEL_ERP'));
     $check('T6c one Quotes write, and both are recorded so an uninstall retires them',
         [['Quotes'], true, true],
@@ -427,10 +483,11 @@ namespace {
             $types[$e['name']] = $e['type'] ?? null;
         }
     }
-    $check('T6f G571/G570/G809 every Bench picker entry, placed before or now, carries erp-dependent-enum',
-        ['bd_lead_type' => 'erp-dependent-enum', 'bd_lead_source' => 'erp-dependent-enum',
-         'bd_project_id' => 'erp-dependent-enum', 'bd_marketing_campaign' => 'erp-dependent-enum',
-         'bd_marketing_event' => 'erp-dependent-enum'],
+    $check('T6f G571/G570/G809 every Bench picker entry, placed before or now, carries erp-dependent-enum (rc117: '
+        . 'the unmarked quote-level Project is given no type)',
+        ['bd_lead_type' => 'erp-dependent-enum', 'bd_marketing_campaign' => 'erp-dependent-enum',
+         'bd_marketing_event' => 'erp-dependent-enum', 'bd_lead_source' => 'erp-dependent-enum',
+         'bd_project_id' => null],
         $types);
 
     // ── report ──────────────────────────────────────────────────────────────

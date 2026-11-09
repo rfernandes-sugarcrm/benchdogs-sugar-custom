@@ -51,8 +51,6 @@ class QuotesLayout extends BaseErpLayout
         'label' => 'LBL_ERP_REFERENCE',
     ];
 
-    /** Req-30's Comments tab - retired by G517 (🔒 1778b). */
-    const COMMENTS_PANEL_NAME = 'LBL_RECORDVIEW_PANEL_ERP_COMMENTS';
     const DISCOUNT_PANEL_NAME = 'LBL_RECORDVIEW_PANEL_ERP_DISCOUNT';
 
     /**
@@ -60,19 +58,6 @@ class QuotesLayout extends BaseErpLayout
      */
     const BUSINESS_CARD_SECTIONS = ['panel_hidden', self::DISCOUNT_PANEL_NAME];
     const BUSINESS_CARD_SECTION_PROPERTIES = ['newTab' => false, 'panelDefault' => 'collapsed'];
-
-    /** G517 — every field this package has ever put on the Comments tab. (G396) */
-    const COMMENTS_TAB_PACKAGE_FIELDS = [
-        'erp_quote_comment',
-        'erp_comment_log_status',
-        'erp_comment_text',
-        'update_erp_comment_button',
-        'erp_comment_queue',
-        'erp_comment_requested_at',
-    ];
-
-    /** G517 — where an admin's field on the retired Comments tab goes: Sugar's stock Quote Settings panel. */
-    const COMMENTS_TAB_FOREIGN_FIELDS_TARGET = 'panel_setting_body';
 
     /**
      * G396 — the Comment Log status line, which replaced the Add Comment box, the Update button and the queue receipt (🔒 1702b Q1). (G517)
@@ -90,6 +75,12 @@ class QuotesLayout extends BaseErpLayout
     /** G677: G585 shipped in 1.1.134. Module Loader's existing installed history is the migration marker. */
     private function stockQuoteCleanupAlreadyInstalled(): bool
     {
+        return $this->installedAtLeast('1.1.134');
+    }
+
+    /** Has this package already been installed at $minimum or later? Module Loader's history says. */
+    private function installedAtLeast(string $minimum): bool
+    {
         if (!isset($GLOBALS['db'])) {
             return false;
         }
@@ -99,7 +90,7 @@ class QuotesLayout extends BaseErpLayout
         $query->select(['version']);
         $query->where()->equals('id_name', 'sugarai_erp_epicor')->equals('status', 'installed');
         foreach ($query->execute() as $row) {
-            if (version_compare(ltrim((string) $row['version'], 'v'), '1.1.134', '>=')) {
+            if (version_compare(ltrim((string) $row['version'], 'v'), $minimum, '>=')) {
                 return true;
             }
         }
@@ -117,8 +108,6 @@ class QuotesLayout extends BaseErpLayout
         $erpPanelFromDefinition = $this->replace || $this->deployedRecordPanel(self::ERP_PANEL_NAME) === null;
         // Insert ERP panel as 2nd panel (before panel_shipping_body)
         $this->addPanelToRecordViewBefore('Quotes', $this->erpPanel(), 'panel_shipping_body');
-        // Outside replace mode an already-deployed ERP panel is kept as-is, so a field retired from erpPanel() would stay on every upgraded tenant.
-        $this->removeFieldsFromRecordViewPanel('Quotes', ['name' => self::ERP_PANEL_NAME], $this->retiredErpPanelFields());
         // And bring the panel's own field definitions up to date. (G114, 🔒 774)
         $this->reconcileFieldsInRecordViewPanel('Quotes', ['name' => self::ERP_PANEL_NAME], $this->erpPanel()['fields']);
         // G75: the reconcile above only updates fields a tenant already has, and addPanelToRecordViewBefore() returned early wherever the ERP panel exists.
@@ -135,7 +124,7 @@ class QuotesLayout extends BaseErpLayout
             'Quotes',
             [self::ERP_DISCOUNT_REFUSAL_FIELD],
             ['name' => self::ERP_PANEL_NAME],
-            'erp_quote_type'
+            self::ERP_PARENT_QUOTE_NUM_FIELD['name']
         );
         // Its own rule as well, never a target appended to erpPanelEmptyFieldDependencies() - G78 again: that shape is serialized once.
         $this->addDependenciesToRecordView('Quotes', $this->erpDiscountRefusalDependency());
@@ -146,11 +135,16 @@ class QuotesLayout extends BaseErpLayout
         }
         // And its definition stays current there (the G114 reconcile above covers the ERP panel only).
         $this->reconcileFieldsInRecordViewPanel('Quotes', ['name' => 'panel_body'], [self::ERP_DISPLAY_SYNC_KEY_FIELD]);
+        // The quote type is one switch at the top of the quote, and a label beside the name in view mode.
+        $this->placeQuoteTypeSwitch();
+        $this->addFieldsToRecordView('Quotes', [self::QUOTE_TYPE_BADGE_FIELD], ['header' => true], 'name');
+        $this->reconcileFieldsInRecordViewPanel('Quotes', ['header' => true], [self::QUOTE_TYPE_BADGE_FIELD]);
+        // The quote screen's save checks, hidden, in the header the record and the create view both render.
+        $this->addFieldsToRecordView('Quotes', [self::QUOTE_CHECKS_FIELD], ['header' => true], self::QUOTE_TYPE_BADGE_FIELD['name']);
+        $this->reconcileFieldsInRecordViewPanel('Quotes', ['header' => true], [self::QUOTE_CHECKS_FIELD]);
 
         // Quote settings stays a tab. panel_setting_body is Sugar's stock "Quote Settings" panel. (G315, 🔒 693, 🔒 672)
         $this->setPanelAsNewTab('Quotes', 'panel_setting_body');
-        // G517 (🔒 1778b) — the comments tab is retired, on every tenant. (G396, G421, G515)
-        $this->retireCommentsTab();
         // The status line's new home, on an upgraded tenant: add-if-absent.
         $this->addFieldsToRecordView(
             'Quotes',
@@ -158,40 +152,6 @@ class QuotesLayout extends BaseErpLayout
             ['name' => self::ERP_PANEL_NAME],
             'erp_writeback_msg'
         );
-        // G396 Q4 — the rollout copies no history.
-        if (!class_exists('QuoteCommentMirrorBaseline', false)) {
-            @include_once 'custom/include/scripts/Modules/QuoteCommentMirrorBaseline.php';
-        }
-        if (class_exists('QuoteCommentMirrorBaseline', false)) {
-            (new QuoteCommentMirrorBaseline())->install();
-        } elseif (isset($GLOBALS['log']) && is_object($GLOBALS['log'])) {
-            $GLOBALS['log']->fatal('[QuotesLayout] QuoteCommentMirrorBaseline is missing: the Comment Log mirror '
-                . 'baseline was NOT set, so the first ERP comment change on an existing quote is diffed against '
-                . 'the value before that save instead (ErpCommentNotificationHook).');
-        }
-        // G638: runs for both append and replace installs/upgrades. (G622)
-        if (!class_exists('ErpQuoteBookedBaseSchema', false)) {
-            @include_once 'custom/include/scripts/Migrations/ErpQuoteBookedBaseSchema.php';
-        }
-        if (class_exists('ErpQuoteBookedBaseSchema', false)) {
-            (new ErpQuoteBookedBaseSchema())->install();
-        } elseif (isset($GLOBALS['log']) && is_object($GLOBALS['log'])) {
-            $GLOBALS['log']->fatal('[QuotesLayout] Quote booked base schema installer is missing.');
-        }
-        if (!class_exists('ErpBookedLineSnapshotSchema', false)) {
-            @include_once 'custom/include/scripts/Migrations/ErpBookedLineSnapshotSchema.php';
-        }
-        if (class_exists('ErpBookedLineSnapshotSchema', false)) {
-            (new ErpBookedLineSnapshotSchema())->install();
-        }
-        if (!class_exists('ErpDocumentDiscountPercentSchema', false)) {
-            @include_once 'custom/include/scripts/Migrations/ErpDocumentDiscountPercentSchema.php';
-        }
-        if (class_exists('ErpDocumentDiscountPercentSchema', false)) {
-            (new ErpDocumentDiscountPercentSchema())->install();
-        } elseif (isset($GLOBALS['log']) && is_object($GLOBALS['log'])) {
-            $GLOBALS['log']->fatal('[QuotesLayout] Percent discount schema installer is missing.');
-        }
         // G515 (🔒 1776b) — sugar's stock comment log dashlet on the quote's record dashboard: the shared default.
         if (!class_exists('QuotesCommentLogDashlet', false)) {
             @include_once 'custom/include/scripts/Modules/QuotesCommentLogDashlet.php';
@@ -204,7 +164,7 @@ class QuotesLayout extends BaseErpLayout
         }
         $this->addFieldsToListView('Quotes', $this->listViewFields());
         $this->moveRecordViewFieldsToHidden('Quotes', $this->recordViewCleanupFields());
-        // Every tenant installed before 687.1 carries order_stage in panel_hidden, i.e.
+        // order_stage is on the stock record view (Show more), and a quote does not show it.
         $this->removeFieldsFromRecordView('Quotes', ['order_stage']);
         // G737: epicor_deeplink_url is no longer placed here - panel_hidden is the "Show more" section, so a row there is rendered.
         $this->addFieldsToRecordView(
@@ -216,13 +176,13 @@ class QuotesLayout extends BaseErpLayout
         );
         // G585 - and bring their definitions up to date where they already sit (the add above is add-if-absent): both are read-only.
         $this->reconcileFieldsInRecordViewPanel('Quotes', ['name' => 'panel_hidden'], $this->hiddenRecordViewFields());
-        // G737: the raw 'Epicor Link' row every earlier version placed under Show more comes off - only there, where the package put it. (G452)
-        if ($this->recordViewHasField('Quotes', 'erp_display_sync_key')) {
-            $this->removeFieldsFromRecordViewPanel('Quotes', ['name' => 'panel_hidden'], ['epicor_deeplink_url']);
-        }
         // G585 (owner, 2026-09-25): "a quote field is either populated from the ERP (shown, read-only) or not shown." Measured 2026-09-25 (REST counts).
         if (!$this->stockQuoteCleanupAlreadyInstalled()) {
             $this->removeFieldsFromRecordView('Quotes', self::QUOTE_FIELDS_NOTHING_FILLS);
+        }
+        // The stock quote Description syncs nowhere, so it comes off the quote screen once; a later Studio placement stays.
+        if (!$this->installedAtLeast(self::QUOTE_DESCRIPTION_REMOVED_IN)) {
+            $this->removeFieldsFromRecordView('Quotes', [self::QUOTE_DESCRIPTION_FIELD]);
         }
         // G586 (owner): tax comes from the ERP, so Sugar's stock Tax Rate is not shown; nor are the Currency Rate / Lock Conversion Rates pair.
         $this->removeFieldsFromRecordView('Quotes', self::QUOTE_STOCK_RATE_FIELDS);
@@ -233,22 +193,16 @@ class QuotesLayout extends BaseErpLayout
         $this->addDependenciesToRecordView('Quotes', $this->purchaseOrderNumVisibilityDependency());
         // Must run after addPanelToRecordViewBefore(), which unsets 'buttons' on every deploy.
         $this->addButtonsToRecordView('Quotes', $this->erpActionButtons(), 'main_dropdown');
+        // The old "Needs Price Estimate" Edit-menu action comes off an upgraded quote: the quote type switch replaced it.
+        $this->removeButtonsFromDropdown('Quotes', 'main_dropdown', [self::RETIRED_MENU_ENTRY]);
         // G422: "Sync Now with ERP" in the Edit menu.
         $this->addButtonsToDropdown('Quotes', 'main_dropdown', [$this->syncWithErpMenuEntry()]);
         // erp_display_sync_key only applies to advanced quotes, not sales orders; hide it for sales orders via a real Sidecar dependency.
         $this->addDependenciesToRecordView('Quotes', $this->erpFieldVisibilityDependencies());
-        // The ERP-estimate fields (named for the retired quote mirror that once reflected them) only ever carry a value on an advanced quote.
-        $this->removeDependenciesFromRecordView('Quotes', $this->legacyErpEstimateVisibilityDependencies());
-        // G78: and the four-target shape of that same rule, which the five-target removal above cannot match.
-        $this->removeDependenciesFromRecordView('Quotes', $this->legacyErpEstimateVisibilityDependenciesFourTarget());
-        // G78: delete the isEmpty() forms 1.1.53 deployed before adding the corrected equal($f,"") ones.
-        $this->removeDependenciesFromRecordView('Quotes', $this->legacyIsEmptyEstimateVisibilityDependencies());
         $this->addDependenciesToRecordView('Quotes', $this->erpEstimateVisibilityDependencies());
+        $this->addDependenciesToRecordView('Quotes', $this->erpReasonVisibilityDependency());
         // Advanced quotes only (req-30, owner: "update button on advanced quote only"). (G517, G78)
-        $this->removeDependenciesFromRecordView('Quotes', $this->erpCommentVisibilityDependencies());
         $this->addDependenciesToRecordView('Quotes', $this->erpCommentLogStatusVisibilityDependency());
-        // The discount panel (owner decision 701: "instead of dosciontun as a button can it be a pannel"). (G104, G105, G106)
-        $this->removeButtonsFromRecordView('Quotes', ['erp_discount_button']);
         // G718 (1.1.163): rebuilt where it stands, and - on a view laid out as the Business Card page (G606) - settled before Quote Settings in the same write.
         $this->addPanelToRecordViewKeepingPlace(
             'Quotes',
@@ -260,24 +214,16 @@ class QuotesLayout extends BaseErpLayout
             self::BUSINESS_CARD_SECTION_PROPERTIES
         );
         // G212: the discount panel is offered on sales orders too (owner, quote 287). (G106, decision 702, G78)
-        $this->removeDependenciesFromRecordView('Quotes', $this->erpDiscountVisibilityDependencies());
         $this->addDependenciesToRecordView('Quotes', $this->erpDiscountTypeVisibilityDependencies());
         // 🔒 638: blank/diagnostic ERP-panel rows hidden until the ERP fills them.
-        $this->removeDependenciesFromRecordView('Quotes', $this->legacyIsEmptyPanelEmptyFieldDependencies());
-        // R24: the shape that still held the three lookups, removed by value (G78).
-        $this->removeDependenciesFromRecordView('Quotes', $this->legacyPanelEmptyFieldDependenciesWithLookups());
         $this->addDependenciesToRecordView('Quotes', $this->erpPanelEmptyFieldDependencies());
-        // 🔒 1393 / G79: once an advanced quote has been sent to estimating. (G781)
-        $this->removeDependenciesFromRecordView('Quotes', $this->legacyIsEmptySendToEstimationRatchetDependency());
-        $this->removeDependenciesFromRecordView('Quotes', $this->sendToEstimationRatchetDependency());
         // The quote record view's own 'bundles' -> 'product_bundle_items' nested collection field carries an explicit sub-field allowlist.
         $this->addFieldsToNestedCollection('Quotes', 'product_bundle_items', $this->priceAvailabilityLineItemFields());
         $this->addFieldsToNestedCollection('Quotes', 'product_bundle_items', $this->erpLineDeeplinkLineItemFields());
         $this->addFieldsToNestedCollection('Quotes', 'product_bundle_items', $this->unitOfMeasureLineItemFields());
         $this->addFieldsToNestedCollection('Quotes', 'product_bundle_items', $this->orderPriceGuardLineItemFields());
         $this->addFieldsToNestedCollection('Quotes', 'product_bundle_items', $this->lineDateLineItemFields());
-        // 🔒 2029b: part revisions are gone from quotes. (decision 693)
-        $this->removeFieldsFromNestedCollection('Quotes', 'product_bundle_items', $this->retiredRevisionLineItemFields());
+        $this->addFieldsToNestedCollection('Quotes', 'product_bundle_items', $this->productGroupLineItemFields());
         // Epicor's own stated tax, on the totals footer the seller actually reads.
         $this->removeFieldsFromTotalsFooter(
             'Quotes',
@@ -306,6 +252,91 @@ class QuotesLayout extends BaseErpLayout
         $this->placeReferenceOnlyWhereClaimed();
         // G380 (f) — last: every package's `erp_layout`-marked Quotes field.
         self::syncExtraFields('Quotes');
+        // After every step that places a field: each field shows once, whatever placed it a second time.
+        $this->placeEachRecordViewFieldOnce();
+    }
+
+    /**
+     * A field placed twice renders as two identical inputs (Sugar's Multiple Shipping Addresses switch, which
+     * pre_install turns on, repeats the Ship-To picker in a view that already exists): keep the first, drop the rest.
+     */
+    private function placeEachRecordViewFieldOnce(): void
+    {
+        try {
+            if (!class_exists(\Sugarcrm\Sugarcrm\MetaData\ViewdefManager::class)) {
+                return;
+            }
+            self::forgetCompiledViewdef('Quotes', 'record');
+            $manager = new \Sugarcrm\Sugarcrm\MetaData\ViewdefManager();
+            $defs = $manager->loadViewdef('base', 'Quotes', 'record');
+            if (!is_array($defs) || !isset($defs['panels']) || !is_array($defs['panels'])) {
+                return;
+            }
+            $result = self::withoutRepeatedRecordViewFields($defs['panels']);
+            if ($result['dropped'] === []) {
+                return;
+            }
+            $defs['panels'] = $result['panels'];
+            $manager->saveViewdef($defs, 'Quotes', 'base', 'record');
+            self::forgetCompiledViewdef('Quotes', 'record');
+            MetaDataFiles::clearModuleClientCache('Quotes', 'view');
+            MetaDataFiles::clearModuleClientCache('Quotes', 'layout');
+            include_once 'include/TemplateHandler/TemplateHandler.php';
+            TemplateHandler::clearCache('Quotes');
+            $line = 'ERP-Epicor layouts: the Quotes record view placed a field more than once; kept the first '
+                . 'placement and removed ' . count($result['dropped']) . ' repeat(s): '
+                . implode(', ', $result['dropped']);
+            echo $line . "\n";
+            if (isset($GLOBALS['log']) && is_object($GLOBALS['log'])) {
+                $GLOBALS['log']->fatal($line);
+            }
+        } catch (\Throwable $e) {
+            // A layout tidy-up never fails the install.
+            if (isset($GLOBALS['log']) && is_object($GLOBALS['log'])) {
+                $GLOBALS['log']->fatal('ERP-Epicor layouts: the repeated-field check on the Quotes record view '
+                    . 'was skipped: ' . get_class($e) . ': ' . $e->getMessage());
+            }
+        }
+    }
+
+    /**
+     * The record view's panels with every top-level field kept at its first placement only, and the names of
+     * the later placements removed. Empty cells ('', [], ['span' => N], '(empty)', '(filler)') are layout, not
+     * fields, so they always stay.
+     *
+     * @param array $panels
+     * @return array{panels: array, dropped: string[]}
+     */
+    public static function withoutRepeatedRecordViewFields(array $panels): array
+    {
+        $seen = [];
+        $dropped = [];
+        foreach ($panels as $i => $panel) {
+            if (!is_array($panel) || !isset($panel['fields']) || !is_array($panel['fields'])) {
+                continue;
+            }
+            $kept = [];
+            $changed = false;
+            foreach ($panel['fields'] as $cell) {
+                $name = is_array($cell) ? (string) ($cell['name'] ?? '') : (is_string($cell) ? $cell : '');
+                if ($name === '' || $name[0] === '(') {
+                    $kept[] = $cell;
+                    continue;
+                }
+                if (isset($seen[$name])) {
+                    $dropped[] = $name;
+                    $changed = true;
+                    continue;
+                }
+                $seen[$name] = true;
+                $kept[] = $cell;
+            }
+            if ($changed) {
+                $panels[$i]['fields'] = $kept;
+            }
+        }
+
+        return ['panels' => $panels, 'dropped' => $dropped];
     }
 
     /** G606 (G608 absorbed; owner, 2026-09-25): reference is not core's to place. (G530) */
@@ -428,28 +459,25 @@ class QuotesLayout extends BaseErpLayout
         $this->movePanelsBefore('Quotes', ['panel_setting_body'], 'panel_hidden');
         $this->removePanelFromRecordView('Quotes');
         $this->removeErpFieldsFromListView('Quotes');
-        $this->removeButtonsFromRecordView('Quotes', ['create_erp_order_button', 'advanced_quote_button', 'refresh_price_availability_button', 'erp_discount_button']);
-        // G422: the Edit menu entry this package added.
+        $this->removeButtonsFromRecordView('Quotes', ['create_erp_order_button', 'advanced_quote_button', 'refresh_price_availability_button']);
+        // G422: the Edit menu entries this package added.
         $this->removeButtonsFromDropdown('Quotes', 'main_dropdown', [$this->syncWithErpMenuEntry()['name']]);
-        // G212's rule. The legacy advanced-only shape is still removed below, for a tenant that never ran the install that swapped it.
+        $this->removeButtonsFromDropdown('Quotes', 'main_dropdown', [self::RETIRED_MENU_ENTRY]);
+        // The quote type switch and its view-mode label: both field types leave with this package.
+        $this->removeFieldsFromRecordViewPanel('Quotes', ['name' => 'panel_body'], [self::QUOTE_TYPE_SWITCH_FIELD['name']]);
+        $this->removeFieldsFromRecordViewPanel('Quotes', ['header' => true], [self::QUOTE_TYPE_BADGE_FIELD['name']]);
+        $this->removeFieldsFromRecordViewPanel('Quotes', ['header' => true], [self::QUOTE_CHECKS_FIELD['name']]);
+        // The discount panel's visibility rule.
         $this->removeDependenciesFromRecordView('Quotes', $this->erpDiscountTypeVisibilityDependencies());
         // G75's rule. The row itself leaves with the ERP panel (removePanelFromRecordView).
         $this->removeDependenciesFromRecordView('Quotes', $this->erpParentQuoteNumDependency());
         $this->removeDependenciesFromRecordView('Quotes', $this->erpFieldVisibilityDependencies());
         $this->removeDependenciesFromRecordView('Quotes', $this->erpEstimateVisibilityDependencies());
-        $this->removeDependenciesFromRecordView('Quotes', $this->erpCommentVisibilityDependencies());
+        $this->removeDependenciesFromRecordView('Quotes', $this->erpReasonVisibilityDependency());
         // G517's rule. The status line itself leaves with the ERP panel above.
         $this->removeDependenciesFromRecordView('Quotes', $this->erpCommentLogStatusVisibilityDependency());
-        $this->removeDependenciesFromRecordView('Quotes', $this->erpDiscountVisibilityDependencies());
         $this->removePanelsFromRecordView('Quotes', [self::DISCOUNT_PANEL_NAME]);
-        // G189 / G517: a field this package placed, this package takes back. (🔒 1778b)
-        $this->removeFieldsFromRecordViewPanel(
-            'Quotes',
-            ['name' => self::COMMENTS_PANEL_NAME],
-            ['erp_comment_queue', self::COMMENT_LOG_STATUS_FIELD['name']]
-        );
         $this->removeDependenciesFromRecordView('Quotes', $this->erpPanelEmptyFieldDependencies());
-        $this->removeDependenciesFromRecordView('Quotes', $this->legacyPanelEmptyFieldDependenciesWithLookups());
         // G585 / G586: the rule this package added, and the stock rows it took off the view, put back (add-if-absent, stock definitions).
         $this->removeDependenciesFromRecordView('Quotes', $this->erpStampedFieldsVisibilityDependency());
         // 🔒 1795b: Purchase Order Num editable and always shown again, as stock.
@@ -458,14 +486,11 @@ class QuotesLayout extends BaseErpLayout
         foreach (self::STOCK_QUOTE_ROWS as $panelName => $rows) {
             $this->addFieldsToRecordView('Quotes', $rows, ['name' => $panelName]);
         }
-        $this->removeDependenciesFromRecordView('Quotes', $this->sendToEstimationRatchetDependency());
-        $this->removeDependenciesFromRecordView('Quotes', $this->legacyErpEstimateVisibilityDependencies());
-        $this->removeDependenciesFromRecordView('Quotes', $this->legacyErpEstimateVisibilityDependenciesFourTarget());
         $this->removeFieldsFromNestedCollection('Quotes', 'product_bundle_items', $this->priceAvailabilityLineItemFields());
         $this->removeFieldsFromNestedCollection('Quotes', 'product_bundle_items', $this->erpLineDeeplinkLineItemFields());
         $this->removeFieldsFromNestedCollection('Quotes', 'product_bundle_items', $this->unitOfMeasureLineItemFields());
         $this->removeFieldsFromNestedCollection('Quotes', 'product_bundle_items', $this->lineDateLineItemFields());
-        $this->removeFieldsFromNestedCollection('Quotes', 'product_bundle_items', $this->retiredRevisionLineItemFields());
+        $this->removeFieldsFromNestedCollection('Quotes', 'product_bundle_items', $this->productGroupLineItemFields());
         $this->removeFieldsFromTotalsFooter('Quotes', array('erp_tax_amount', 'erp_document_discount_amount'));
         // G274: the header's copy of the ERP tax row leaves with the package too.
         $this->removeFieldsFromTotalsFooter('Quotes', array('erp_tax_amount'), self::TOTALS_HEADER_VIEW);
@@ -577,13 +602,7 @@ class QuotesLayout extends BaseErpLayout
             'newTab' => false,
             'panelDefault' => 'expanded',
             'fields' => [
-                // order_stage is fetched here and rendered nowhere (G114) — see erpPanelFetchOnlyFields() below for the whole reasoning.
-                [
-                    'name' => 'erp_quote_type',
-                    'label' => 'LBL_ERP_QUOTE_TYPE',
-                    'required' => true,
-                    'related_fields' => self::FETCH_ONLY_RECORD_VIEW_FIELDS,
-                ],
+                // The quote type is not here: it is the switch at the top of the quote (QUOTE_TYPE_SWITCH_FIELD).
                 // Set by the connector when this Quote is Accepted (sibling Quotes on the same Opportunity get auto-unset).
                 ['name' => 'erp_is_primary_quote', 'label' => 'LBL_ERP_IS_PRIMARY_QUOTE'],
                 ['name' => 'erp_companies_quotes_name', 'label' => 'LBL_ERP_COMPANIES_QUOTES_FROM_ERP_COMPANIES_TITLE'],
@@ -598,14 +617,21 @@ class QuotesLayout extends BaseErpLayout
                 // G402 — a read-only datetime that reads as one in edit mode too. (G114)
                 self::ERP_READONLY_DATETIME_FIELDS['erp_priced_at'],
                 // G172 — render the resolved label, falling back to the code.
+                // Not read-only here: the record view opens it only while the seller closes the quote as Closed Lost.
                 [
                     'name' => 'erp_reason_code',
                     'label' => 'LBL_ERP_REASON_CODE',
                     'type' => 'erp-reason',
                     'related_fields' => ['erp_reason_label'],
-                    'readonly' => true,
+                    'readonly' => false,
                 ],
-                ['name' => 'erp_writeback_status', 'readonly' => true, 'label' => 'LBL_ERP_WRITEBACK_STATUS'],
+                // It also carries the fields the record fetches and renders nowhere (FETCH_ONLY_RECORD_VIEW_FIELDS).
+                [
+                    'name' => 'erp_writeback_status',
+                    'readonly' => true,
+                    'label' => 'LBL_ERP_WRITEBACK_STATUS',
+                    'related_fields' => self::FETCH_ONLY_RECORD_VIEW_FIELDS,
+                ],
                 // G402 — "ERP Status At", the same fix as erp_priced_at above.
                 self::ERP_READONLY_DATETIME_FIELDS['erp_writeback_at'],
                 ['name' => 'erp_writeback_msg', 'readonly' => true, 'label' => 'LBL_ERP_WRITEBACK_MSG', 'span' => 12],
@@ -623,15 +649,22 @@ class QuotesLayout extends BaseErpLayout
         'payment_terms',
     ];
 
+    /** The stock quote Description: nothing reads it (the ERP comment is the Comment Log), so it is not shown. */
+    const QUOTE_DESCRIPTION_FIELD = 'description';
+
+    /** The version that first took it off; installs after that leave the record view as the admin keeps it. */
+    const QUOTE_DESCRIPTION_REMOVED_IN = '1.2.30';
+
     /** G586 - the stock tax-rate and conversion-rate rows (Quote Settings). */
     const QUOTE_STOCK_RATE_FIELDS = [
         'taxrate_name',
         'conversion_rate_lock',
     ];
 
-    /** Where uninstall() puts the G585 / G586 rows back: panel => stock defs. */
+    /** Where uninstall() puts the stock rows back (Description, G585, G586): panel => stock defs. */
     const STOCK_QUOTE_ROWS = [
         'panel_hidden' => [
+            ['name' => 'description', 'span' => 12],
             ['name' => 'original_po_date', 'type' => 'date', 'label' => 'LBL_ORIGINAL_PO_DATE'],
             ['name' => 'date_quote_closed', 'type' => 'date', 'label' => 'LBL_DATE_QUOTE_CLOSED'],
             ['name' => 'date_order_shipped', 'type' => 'date', 'label' => 'LBL_LIST_DATE_QUOTE_CLOSED'],
@@ -673,6 +706,9 @@ class QuotesLayout extends BaseErpLayout
         'lock_conversion_rates',
         // G737 (owner): the ERP Quote # is the link to Epicor, and no raw 'Epicor Link' row is shown (it came off panel_hidden, install()).
         'epicor_deeplink_url',
+        // The Grand Total's formula reads the shipping the ERP states. Without it on the model, a recalculation in
+        // the browser (after a line edit) cannot read it and takes the formula's branch for Sugar's own shipping.
+        'erp_shipping_amount',
     ];
 
     private function listViewFields(): array
@@ -787,6 +823,88 @@ class QuotesLayout extends BaseErpLayout
         ];
     }
 
+    /** The Edit menu entry the quote type switch replaced; an install takes it off, never adds it. */
+    const RETIRED_MENU_ENTRY = 'needs_price_estimate_button';
+
+    /**
+     * The quote type as one on/off switch, first in the quote's top section, shown in edit and create (the
+     * record view hides it in view mode). It carries the fetch-only fields as it did in the ERP panel; the ERP panel's
+     * status row carries them too, so they are fetched wherever either cell survives.
+     */
+    const QUOTE_TYPE_SWITCH_FIELD = [
+        'name' => 'erp_quote_type',
+        'type' => 'erp-quote-type-switch',
+        'label' => 'LBL_ERP_QUOTE_TYPE_SWITCH',
+        'required' => true,
+        'span' => 12,
+        'related_fields' => self::FETCH_ONLY_RECORD_VIEW_FIELDS,
+    ];
+
+    /** The hidden field that runs the quote screen's own save checks (erp-quote-checks.js); no vardef owns it. */
+    const QUOTE_CHECKS_FIELD = [
+        'name' => 'erp_quote_checks',
+        'type' => 'erp-quote-checks',
+        'readonly' => true,
+        'dismiss_label' => true,
+    ];
+
+    /** The view-mode label beside the quote name: a header entry no vardef owns, as the account's credit badge. */
+    const QUOTE_TYPE_BADGE_FIELD = [
+        'name' => 'erp_quote_type_badge',
+        'type' => 'erp-quote-type-badge',
+        'readonly' => true,
+        'dismiss_label' => true,
+        'related_fields' => ['erp_quote_type', 'erp_display_sync_key', 'erp_sent_to_estimating_at', 'erp_priced_at'],
+    ];
+
+    /**
+     * The quote type switch goes first in the top section, above Quote Number. Not under the name: the record
+     * header is one row (stock headerpane.hbs, every header cell inside one h1; headerpane.less, that h1 a flex row).
+     * An earlier version's ERP-panel row is taken out; a place an admin chose elsewhere is kept, made the switch.
+     */
+    private function placeQuoteTypeSwitch(): void
+    {
+        $name = self::QUOTE_TYPE_SWITCH_FIELD['name'];
+        $this->removeFieldsFromRecordViewPanel('Quotes', ['name' => self::ERP_PANEL_NAME], [$name]);
+        if (!$this->recordViewHasField('Quotes', $name)) {
+            $this->addFieldFirstInRecordViewPanel('panel_body', self::QUOTE_TYPE_SWITCH_FIELD);
+        }
+        $this->reconcileFieldsInRecordViewPanel('Quotes', ['name' => 'panel_body'], [self::QUOTE_TYPE_SWITCH_FIELD]);
+        $this->setFieldTypeInRecordView('Quotes', $name, self::QUOTE_TYPE_SWITCH_FIELD['type']);
+    }
+
+    /**
+     * Put one cell first in a panel of the deployed Quotes record view, written the way BaseErpLayout deploys a
+     * view; its own adders only append or insert after a named cell.
+     */
+    private function addFieldFirstInRecordViewPanel(string $panelName, array $field): void
+    {
+        if (!class_exists(\Sugarcrm\Sugarcrm\MetaData\ViewdefManager::class)) {
+            return;
+        }
+        self::forgetCompiledViewdef('Quotes', 'record');
+        $manager = new \Sugarcrm\Sugarcrm\MetaData\ViewdefManager();
+        $defs = $manager->loadViewdef('base', 'Quotes', 'record');
+        if (!is_array($defs) || !isset($defs['panels']) || !is_array($defs['panels'])) {
+            return;
+        }
+        foreach ($defs['panels'] as $i => $panel) {
+            if (!is_array($panel) || ($panel['name'] ?? '') !== $panelName) {
+                continue;
+            }
+            $fields = array_values((array) ($panel['fields'] ?? []));
+            array_unshift($fields, $field);
+            $defs['panels'][$i]['fields'] = $fields;
+            $manager->saveViewdef($defs, 'Quotes', 'base', 'record');
+            self::forgetCompiledViewdef('Quotes', 'record');
+            MetaDataFiles::clearModuleClientCache('Quotes', 'view');
+            MetaDataFiles::clearModuleClientCache('Quotes', 'layout');
+            include_once 'include/TemplateHandler/TemplateHandler.php';
+            TemplateHandler::clearCache('Quotes');
+            return;
+        }
+    }
+
     /** G422 — the Edit menu's "Sync Now with ERP" (owner, 2026-09-23). */
     private function syncWithErpMenuEntry(): array
     {
@@ -830,10 +948,32 @@ class QuotesLayout extends BaseErpLayout
                 'erp_estimate_stage',
                 'erp_estimate_total',
                 'erp_priced_at',
-                'erp_reason_code',
             ],
             'equal($erp_quote_type, "advanced_quote")'
         );
+    }
+
+    /** The reason shows once the ERP states one on an advanced quote, and whenever the quote is Closed Lost. */
+    private function erpReasonVisibilityDependency(): array
+    {
+        return [
+            [
+                'hooks' => ['all'],
+                'trigger' => 'true',
+                'triggerFields' => ['erp_reason_code', 'erp_quote_type', 'quote_stage'],
+                'onload' => true,
+                'actions' => [
+                    [
+                        'action' => 'SetVisibility',
+                        'params' => [
+                            'target' => 'erp_reason_code',
+                            'value' => 'or(equal($quote_stage, "Closed Lost"), '
+                                . 'and(equal($erp_quote_type, "advanced_quote"), not(equal($erp_reason_code, ""))))',
+                        ],
+                    ],
+                ],
+            ],
+        ];
     }
 
     // Req-30's Comments tab is meaningful only on an advanced quote: the comment it shows and appends to lives on QuoteHed. (🔒 670, 🔒 668)
@@ -903,51 +1043,6 @@ class QuotesLayout extends BaseErpLayout
         ];
     }
 
-    /** The gate its siblings already had (G106 / decision 702). */
-    private function erpDiscountVisibilityDependencies(): array
-    {
-        return $this->advancedQuoteOnlyDependency([
-            self::DISCOUNT_PANEL_NAME,
-            'erp_discount_panel',
-        ]);
-    }
-
-    /** Req-30's advanced-quote gate for the Comments tab, in its shipped shape. (G517, G78) */
-    private function erpCommentVisibilityDependencies(): array
-    {
-        return $this->advancedQuoteOnlyDependency([
-            // The panel first: hides the whole tab, not just its contents.
-            self::COMMENTS_PANEL_NAME,
-            'erp_quote_comment',
-            'erp_comment_text',
-            'update_erp_comment_button',
-            'erp_comment_requested_at',
-        ]);
-    }
-
-    // The shape installed before erp_governing_line was retired.
-    private function legacyErpEstimateVisibilityDependencies(): array
-    {
-        return $this->advancedQuoteOnlyDependency([
-            'erp_estimate_stage',
-            'erp_estimate_total',
-            'erp_priced_at',
-            'erp_reason_code',
-            'erp_governing_line',
-        ]);
-    }
-
-    /** The older four-target shape of the same legacy rule (G78). (decision 638) */
-    private function legacyErpEstimateVisibilityDependenciesFourTarget(): array
-    {
-        return $this->advancedQuoteOnlyDependency([
-            'erp_estimate_stage',
-            'erp_estimate_total',
-            'erp_priced_at',
-            'erp_reason_code',
-        ]);
-    }
-
     // Fields erpPanel() once placed that nothing writes any more. erp_governing_line was the retired quote mirror's reflection of its governing ERP_QuoteLines row.
     /** G517 — the status line's own advanced-quote rule, in a new shape. (G78) */
     private function erpCommentLogStatusVisibilityDependency(): array
@@ -955,50 +1050,6 @@ class QuotesLayout extends BaseErpLayout
         return $this->advancedQuoteOnlyDependency([
             self::COMMENT_LOG_STATUS_FIELD['name'],
         ]);
-    }
-
-    /** G517 (🔒 1778b) — take the comments tab off the deployed record view, losing nobody's field. */
-    private function retireCommentsTab(): void
-    {
-        $panel = $this->deployedRecordPanel(self::COMMENTS_PANEL_NAME);
-        if ($panel === null) {
-            return;
-        }
-
-        $foreign = [];
-        foreach ((array) ($panel['fields'] ?? []) as $field) {
-            $name = is_array($field) ? (string) ($field['name'] ?? '') : (is_string($field) ? $field : '');
-            if ($name === '' || $name[0] === '(' || in_array($name, self::COMMENTS_TAB_PACKAGE_FIELDS, true)) {
-                continue;
-            }
-            $foreign[] = $field;
-        }
-
-        if ($foreign !== []) {
-            $this->addFieldsToRecordView('Quotes', $foreign, ['name' => self::COMMENTS_TAB_FOREIGN_FIELDS_TARGET]);
-            $stranded = [];
-            foreach ($this->collectFieldNames($foreign) as $name) {
-                if (!$this->isOnRecordViewOutside($name, self::COMMENTS_PANEL_NAME)) {
-                    $stranded[] = $name;
-                }
-            }
-            if ($stranded !== []) {
-                $this->logInstall(sprintf(
-                    'ERP layout: the Quotes Comments tab was NOT removed - %s could not be moved to %s (G517)',
-                    implode(', ', $stranded),
-                    self::COMMENTS_TAB_FOREIGN_FIELDS_TARGET
-                ));
-                return;
-            }
-            $this->logInstall(sprintf(
-                'ERP layout: moved %d field(s) from the retired Quotes Comments tab to %s: %s (G517)',
-                count($foreign),
-                self::COMMENTS_TAB_FOREIGN_FIELDS_TARGET,
-                implode(', ', $this->collectFieldNames($foreign))
-            ));
-        }
-
-        $this->removePanelsFromRecordView('Quotes', [self::COMMENTS_PANEL_NAME]);
     }
 
     /** The deployed Quotes record view's panel of that name, or null. */
@@ -1013,21 +1064,6 @@ class QuotesLayout extends BaseErpLayout
         return null;
     }
 
-    /** Is the field placed on the deployed Quotes record view, in any panel but that one? */
-    private function isOnRecordViewOutside(string $fieldName, string $panelName): bool
-    {
-        foreach ($this->deployedRecordPanels() as $panel) {
-            if (!is_array($panel) || ($panel['name'] ?? '') === $panelName) {
-                continue;
-            }
-            if (in_array($fieldName, $this->collectFieldNames($panel['fields'] ?? []), true)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     /**
      * The guard is not an off switch on a tenant: class_exists() autoloads (ViewdefManager is namespaced under src/).
      */
@@ -1040,122 +1076,6 @@ class QuotesLayout extends BaseErpLayout
         $defs = (new \Sugarcrm\Sugarcrm\MetaData\ViewdefManager())->loadViewdef('base', 'Quotes', 'record');
 
         return is_array($defs) && isset($defs['panels']) && is_array($defs['panels']) ? $defs['panels'] : [];
-    }
-
-    /** fatal: the level sugarcrm.log keeps by default, so the install record says what happened. */
-    private function logInstall(string $message): void
-    {
-        if (isset($GLOBALS['log']) && is_object($GLOBALS['log'])) {
-            $GLOBALS['log']->fatal($message);
-        }
-    }
-
-    private function retiredErpPanelFields(): array
-    {
-        // Retired this way, not by deleting the erpPanel() entry alone: outside replace mode an already-deployed ERP panel is kept as-is. (decision 536, decision 539)
-        return ['erp_governing_line', 'erp_estimate_total'];
-    }
-
-    /** The isEmpty() shapes 1.1.53 deployed. (decision 638, G78) */
-    private function legacyIsEmptyNotEmptyDependency(array $targets, ?string $and = null): array
-    {
-        $actions = [];
-        foreach ($targets as $target) {
-            $notEmpty = 'not(isEmpty($' . $target . '))';
-            $actions[] = [
-                'action' => 'SetVisibility',
-                'params' => [
-                    'target' => $target,
-                    'value' => $and === null ? $notEmpty : 'and(' . $and . ', ' . $notEmpty . ')',
-                ],
-            ];
-        }
-
-        return [
-            [
-                'hooks' => ['all'],
-                'trigger' => 'true',
-                'triggerFields' => array_values(array_unique(
-                    array_merge($targets, ['erp_quote_type'])
-                )),
-                'onload' => true,
-                'actions' => $actions,
-            ],
-        ];
-    }
-
-    /** The isEmpty form of erpPanelEmptyFieldDependencies(). */
-    private function legacyIsEmptyPanelEmptyFieldDependencies(): array
-    {
-        return $this->legacyIsEmptyNotEmptyDependency([
-            'erp_companies_quotes_name',
-            'erp_quotes_billing_terms_name',
-            'erp_quotes_ship_via_name',
-            'erp_display_sync_key',
-            'erp_writeback_status',
-            'erp_writeback_at',
-            'erp_writeback_msg',
-        ]);
-    }
-
-    /**
-     * The equal() form of erpPanelEmptyFieldDependencies() up to R24, with the three lookups the record view now hides itself.
-     */
-    private function legacyPanelEmptyFieldDependenciesWithLookups(): array
-    {
-        return $this->visibleWhenNotEmptyDependency([
-            'erp_companies_quotes_name',
-            'erp_quotes_billing_terms_name',
-            'erp_quotes_ship_via_name',
-            'erp_display_sync_key',
-            'erp_writeback_status',
-            'erp_writeback_at',
-            'erp_writeback_msg',
-        ]);
-    }
-
-    /** The isEmpty form of erpEstimateVisibilityDependencies(). */
-    private function legacyIsEmptyEstimateVisibilityDependencies(): array
-    {
-        return $this->legacyIsEmptyNotEmptyDependency(
-            [
-                'erp_estimate_stage',
-                'erp_estimate_total',
-                'erp_priced_at',
-                'erp_reason_code',
-            ],
-            'equal($erp_quote_type, "advanced_quote")'
-        );
-    }
-
-    /** The isEmpty form of sendToEstimationRatchetDependency(). */
-    private function legacyIsEmptySendToEstimationRatchetDependency(): array
-    {
-        return [
-            [
-                'hooks' => ['all'],
-                'trigger' => 'true',
-                'triggerFields' => [
-                    'erp_quote_type',
-                    'erp_display_sync_key',
-                    'erp_sent_to_estimating_at',
-                    'erp_priced_at',
-                ],
-                'onload' => true,
-                'actions' => [
-                    [
-                        'action' => 'SetVisibility',
-                        'params' => [
-                            'target' => 'advanced_quote_button',
-                            'value' => 'and(equal($erp_quote_type, "advanced_quote"), '
-                                . 'and(isEmpty($erp_display_sync_key), '
-                                . 'and(isEmpty($erp_sent_to_estimating_at), '
-                                . 'isEmpty($erp_priced_at))))',
-                        ],
-                    ],
-                ],
-            ],
-        ];
     }
 
     private function visibleWhenNotEmptyDependency(array $targets, ?string $and = null): array
@@ -1197,37 +1117,6 @@ class QuotesLayout extends BaseErpLayout
             'erp_writeback_at',                     // 4/138
             'erp_writeback_msg',                    // 4/138
         ]);
-    }
-
-    /** Retired by G781: install() removes this rule and no longer adds it. (G210, 🔒 1393, G79) */
-    private function sendToEstimationRatchetDependency(): array
-    {
-        return [
-            [
-                'hooks' => ['all'],
-                'trigger' => 'true',
-                'triggerFields' => [
-                    'erp_quote_type',
-                    'erp_display_sync_key',
-                    'erp_sent_to_estimating_at',
-                    'erp_priced_at',
-                ],
-                'onload' => true,
-                'actions' => [
-                    [
-                        'action' => 'SetVisibility',
-                        'params' => [
-                            'target' => 'advanced_quote_button',
-                            // Show only while this quote has no Epicor quote and neither estimating stamp.
-                            'value' => 'and(equal($erp_quote_type, "advanced_quote"), '
-                                . 'and(equal($erp_display_sync_key, ""), '
-                                . 'and(equal($erp_sent_to_estimating_at, ""), '
-                                . 'equal($erp_priced_at, ""))))',
-                        ],
-                    ],
-                ],
-            ],
-        ];
     }
 
     private function advancedQuoteOnlyDependency(array $targets): array
@@ -1279,16 +1168,16 @@ class QuotesLayout extends BaseErpLayout
         return ['erp_unit_of_measure'];
     }
 
-    // 🔒 2029b — retired. The Part Revision allowlist entry (G740, 1.1.158- 1.1.167).
-    private function retiredRevisionLineItemFields(): array
-    {
-        return ['erp_revision'];
-    }
-
     // G463 (🔒 1758b) — the line's own Need By / Ship By. (🔒 673)
     private function lineDateLineItemFields(): array
     {
         return ['erp_need_by_date', 'erp_ship_by_date'];
+    }
+
+    // G854 (🔒2174b) — a new product's Product Group, the line's own stock category, read and saved by the grid. (🔒 673)
+    private function productGroupLineItemFields(): array
+    {
+        return ['category_id', 'category_name'];
     }
 
     // G415 — the order buttons refuse a seller line with no Unit Price (QuotesErpAction::_erpRefuseUnpricedOrder, ERP-Core) with G379 (c)'s exemptions.

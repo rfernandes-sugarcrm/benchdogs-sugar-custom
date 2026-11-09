@@ -55,9 +55,14 @@ echo json_encode($app_dropdowns_style['sales_stage_dom_style']);
 """
         result = subprocess.run(["php"], input=fixture, text=True, capture_output=True, check=True)
         styles = json.loads(result.stdout)
-        self.assertEqual(styles, {"Customer Stage": {"backgroundColor": "#123456"},
-                                  "applyFormatting": True},
-                         "this package is styling stage keys again; PF owns them")
+        # rc100 (the owner's stage list, 2026-10-17): the three stages Sugar and
+        # PF have no style for are styled, append-only; nothing else is touched.
+        # rc125 adds On Hold: Sugar styles On Hold for quotes only, not as a sales stage.
+        bench = {"Estimating", "Negotiation/Revision", "Verbal commit/PO Pending", "On Hold"}
+        self.assertEqual(set(styles) - bench, {"Customer Stage", "applyFormatting"},
+                         "this package styles a stage key it does not own; PF and Sugar own the rest")
+        self.assertEqual(styles["Customer Stage"], {"backgroundColor": "#123456"})
+        self.assertTrue(all("backgroundColor" in styles[key] for key in bench), styles)
 
     def test_the_style_fragment_never_ships_again(self):
         """Not shipped, not in the built zip. Dropping the path alone leaves

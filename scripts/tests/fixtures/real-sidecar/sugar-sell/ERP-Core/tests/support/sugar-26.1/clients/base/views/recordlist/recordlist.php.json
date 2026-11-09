@@ -1,0 +1,104 @@
+{
+ "recorded": "Recorded from SugarEnt 26.1.0 (build 319): clients/base/views/recordlist/recordlist.php; sha256 c20415240879ba4605489be36003a99401628de870aa71c26c8fd82abf09a3ce of the stock file. $viewdefs as php fills it, whole.",
+ "kept": "all",
+ "viewdefs": {
+  "base": {
+   "view": {
+    "recordlist": {
+     "favorite": true,
+     "following": true,
+     "sticky_resizable_columns": true,
+     "selection": {
+      "type": "multi",
+      "actions": [
+       {
+        "name": "massupdate_button",
+        "type": "button",
+        "label": "LBL_MASS_UPDATE",
+        "primary": true,
+        "events": {
+         "click": "list:massupdate:fire"
+        },
+        "acl_action": "massupdate"
+       },
+       {
+        "name": "calc_field_button",
+        "type": "button",
+        "label": "LBL_UPDATE_CALC_FIELDS",
+        "events": {
+         "click": "list:updatecalcfields:fire"
+        },
+        "acl_action": "massupdate"
+       },
+       {
+        "name": "merge_button",
+        "type": "button",
+        "label": "LBL_MERGE",
+        "primary": true,
+        "events": {
+         "click": "list:mergeduplicates:fire"
+        },
+        "acl_action": "edit"
+       },
+       {
+        "name": "massdelete_button",
+        "type": "button",
+        "label": "LBL_DELETE",
+        "acl_action": "delete",
+        "primary": true,
+        "events": {
+         "click": "list:massdelete:fire"
+        }
+       },
+       {
+        "name": "export_button",
+        "type": "button",
+        "label": "LBL_EXPORT",
+        "acl_action": "export",
+        "primary": true,
+        "events": {
+         "click": "list:massexport:fire"
+        }
+       }
+      ]
+     },
+     "rowactions": {
+      "actions": [
+       {
+        "type": "rowaction",
+        "css_class": "btn",
+        "tooltip": "LBL_PREVIEW",
+        "event": "list:preview:fire",
+        "icon": "sicon-preview",
+        "acl_action": "view"
+       },
+       {
+        "type": "rowaction",
+        "name": "edit_button",
+        "label": "LBL_EDIT_BUTTON",
+        "event": "list:editrow:fire",
+        "acl_action": "edit"
+       },
+       {
+        "type": "follow",
+        "name": "follow_button",
+        "event": "list:follow:fire",
+        "acl_action": "view"
+       },
+       {
+        "type": "rowaction",
+        "name": "delete_button",
+        "event": "list:deleterow:fire",
+        "label": "LBL_DELETE_BUTTON",
+        "acl_action": "delete"
+       }
+      ]
+     },
+     "last_state": {
+      "id": "record-list"
+     }
+    }
+   }
+  }
+ }
+}

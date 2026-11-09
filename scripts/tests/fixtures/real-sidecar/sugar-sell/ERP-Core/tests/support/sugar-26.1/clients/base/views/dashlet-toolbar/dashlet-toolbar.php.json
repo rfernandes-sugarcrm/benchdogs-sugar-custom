@@ -1,0 +1,56 @@
+{
+ "recorded": "Recorded from SugarEnt 26.1.0 (build 319): clients/base/views/dashlet-toolbar/dashlet-toolbar.php; sha256 46c055b0e50c25638cd9d435f3060db3ae26ad4ed89f97c7ba92eab191f4c237 of the stock file. $viewdefs as php fills it, whole.",
+ "kept": "all",
+ "viewdefs": {
+  "base": {
+   "view": {
+    "dashlet-toolbar": {
+     "buttons": [
+      {
+       "type": "dashletaction",
+       "css_class": "btn btn-invisible dashlet-toggle minify",
+       "icon": "sicon-chevron-up",
+       "action": "toggleMinify",
+       "tooltip": "LBL_DASHLET_TOGGLE",
+       "disallowed_layouts": [
+        {
+         "name": "omnichannel-dashboard"
+        },
+        {
+         "name": "portal-preview"
+        }
+       ]
+      },
+      {
+       "dropdown_buttons": [
+        {
+         "type": "dashletaction",
+         "action": "editClicked",
+         "label": "LBL_DASHLET_CONFIG_EDIT_LABEL",
+         "name": "edit_button"
+        },
+        {
+         "type": "dashletaction",
+         "action": "refreshClicked",
+         "label": "LBL_DASHLET_REFRESH_LABEL",
+         "name": "refresh_button"
+        },
+        {
+         "type": "dashletaction",
+         "action": "removeClicked",
+         "label": "LBL_DASHLET_REMOVE_LABEL",
+         "name": "remove_button",
+         "disallowed_layouts": [
+          {
+           "name": "omnichannel-dashboard"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   }
+  }
+ }
+}

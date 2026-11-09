@@ -13,6 +13,9 @@ $dictionary['Quote']['fields']['bd_lead_source'] = array(
     'comment' => 'ERP QuoteHed.LeadSrc_c: an ADM LEADSRC code the seller picks (G380)',
     'reportable' => true,
     'audited' => true,
+    // Read-only once the quote is ordered or closed: Epicor keeps its own value there and discards an edit.
+    'readonly' => true,
+    'readonly_formula' => 'isInList($quote_stage, createList("Closed Accepted", "Partially Fulfilled", "Closed Lost", "Closed Dead"))',
     'massupdate' => false,
     // G574: never pre-picked by the browser (see the docblock).
     'defaultToBlank' => true,
@@ -39,6 +42,9 @@ $dictionary['Quote']['fields']['bd_lead_type'] = array(
     'comment' => 'ERP QuoteHed.LeadType_c: an ADM LEADTYPE code the seller picks (G380)',
     'reportable' => true,
     'audited' => true,
+    // Read-only once the quote is ordered or closed: Epicor keeps its own value there and discards an edit.
+    'readonly' => true,
+    'readonly_formula' => 'isInList($quote_stage, createList("Closed Accepted", "Partially Fulfilled", "Closed Lost", "Closed Dead"))',
     'massupdate' => false,
     // G574: never pre-picked by the browser (see the docblock).
     'defaultToBlank' => true,
@@ -61,23 +67,13 @@ $dictionary['Quote']['fields']['bd_project_id'] = array(
     'function' => array(
         'name' => 'Sugarcrm\\Sugarcrm\\custom\\BenchDogs\\BdAdmRules::projectOptions',
     ),
-    'comment' => 'ERP OrderDtl.ProjectID for every order line: an ADM project (G381)',
+    'comment' => 'The quote-level ADM project of quotes made before each line had its own (Products.bd_project_id)',
     'reportable' => true,
     'audited' => true,
     'massupdate' => false,
-    // G574: never pre-picked by the browser (see the docblock).
+    // Never pre-picked by the browser: the project codes would list before the blank option.
     'defaultToBlank' => true,
-    // G570: required in the browser while ADM projects exist (see the docblock).
-    'erp_required_when_options' => true,
-    // G809 (owner scope): the create form fills it from the account's newest
-    // quote holding an offered project (see the docblock).
-    'erp_prefill_from_account_latest' => 'billing_account_id',
-    'erp_layout' => array(
-        'view' => 'record',
-        'panel' => 'LBL_RECORDVIEW_PANEL_ERP',
-        'after' => 'bd_lead_type',
-        'type' => 'erp-dependent-enum',
-    ),
+    // Since rc117 on no quote screen and never prefilled: the Project is each line's own; the column and its data stay.
 );
 
 $dictionary['Quote']['fields']['bd_marketing_campaign'] = array(
@@ -91,6 +87,9 @@ $dictionary['Quote']['fields']['bd_marketing_campaign'] = array(
     'comment' => 'ERP QuoteHed.MktgCampaignID (and every OrderDtl): an ADM campaign the seller picks (G460)',
     'reportable' => true,
     'audited' => true,
+    // Read-only once the quote is ordered or closed: Epicor keeps its own value there and discards an edit.
+    'readonly' => true,
+    'readonly_formula' => 'isInList($quote_stage, createList("Closed Accepted", "Partially Fulfilled", "Closed Lost", "Closed Dead"))',
     'massupdate' => false,
     // G574: never pre-picked by the browser (see the docblock).
     'defaultToBlank' => true,
@@ -100,7 +99,7 @@ $dictionary['Quote']['fields']['bd_marketing_campaign'] = array(
     'erp_layout' => array(
         'view' => 'record',
         'panel' => 'LBL_RECORDVIEW_PANEL_ERP',
-        'after' => 'bd_project_id',
+        'after' => 'bd_lead_type',
         'type' => 'erp-dependent-enum',
     ),
 );
@@ -116,6 +115,9 @@ $dictionary['Quote']['fields']['bd_marketing_event'] = array(
     'comment' => 'ERP QuoteHed.MktgEvntSeq (and every OrderDtl): "<campaign>/<seq>", an ADM event the seller picks (G460)',
     'reportable' => true,
     'audited' => true,
+    // Read-only once the quote is ordered or closed: Epicor keeps its own value there and discards an edit.
+    'readonly' => true,
+    'readonly_formula' => 'isInList($quote_stage, createList("Closed Accepted", "Partially Fulfilled", "Closed Lost", "Closed Dead"))',
     'massupdate' => false,
     // G574: never pre-picked by the browser (see the docblock).
     'defaultToBlank' => true,

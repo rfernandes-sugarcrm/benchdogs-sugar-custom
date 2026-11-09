@@ -2,8 +2,10 @@
 
 /**
  * G458 (0.9.42-rc82): the five Epicor contact fields - Function, Role, Primary
- * Billing, Primary Purchasing, Primary Shipping - are SHOWN, READ-ONLY, on the
- * Contacts record view, and NOTHING is referenced on a tenant that lacks them.
+ * Billing, Primary Purchasing, Primary Shipping - are SHOWN on the Contacts
+ * record view, and NOTHING is referenced on a tenant that lacks them. Since
+ * rc117 Role is editable (the seller's, from Kinetic's role list); the other
+ * four stay read-only (section J).
  *
  * Run:  php scripts/tests/bd_contact_fields_test.php
  * Exit: 0 all passed, 1 one or more failed.
@@ -71,6 +73,8 @@ namespace {
 
     const BD_OVERLAY = __DIR__ . '/../../sugar-sell/BenchDogs-Ext/custom/Extension/modules/Contacts/Ext/clients/base/views/record/bd_epicor_contact_fields.php';
     const BD_FIVE = ['epicor_function_c', 'role_c', 'primary_billing_c', 'primary_purchasing_c', 'primary_shipping_c'];
+    /** rc117: the seller edits Role in Sugar; the other four stay Epicor's. */
+    const BD_EDITABLE = 'role_c';
 
     $checks = [];
     function check(string $name, bool $ok, string $detail = ''): void
@@ -240,10 +244,12 @@ namespace {
     $labels = true;
     foreach (BD_FIVE as $f) {
         $e = bd_entries($a, $f);
-        $allReadonly = $allReadonly && count($e) === 1 && is_array($e[0]) && ($e[0]['readonly'] ?? null) === true;
+        $allReadonly = $allReadonly && count($e) === 1 && is_array($e[0])
+            && ($e[0]['readonly'] ?? null) === ($f !== BD_EDITABLE);
         $labels = $labels && is_array($e[0] ?? null) && ($e[0]['label'] ?? null) === bd_contact_fields()[$f]['vname'];
     }
-    check('A2 each of the five is on the view ONCE and readonly (Epicor-owned, ERP -> Sugar only)', $allReadonly);
+    check('A2 each of the five is on the view ONCE: Role editable (readonly false), the four Epicor-owned read-only',
+        $allReadonly, json_encode(array_map(static function ($f) use ($a) { return bd_entries($a, $f); }, BD_FIVE)));
     check('A3 each carries its own vardef label (LBL_*_C, the customer package\'s)', $labels);
     $dev = bd_dev_view();
     check('A4 panel_header and panel_body are untouched', $a['panels'][0] === $dev['panels'][0] && $a['panels'][1] === $dev['panels'][1]);
@@ -293,9 +299,9 @@ namespace {
     $each = true;
     foreach (BD_FIVE as $f) {
         $e = bd_entries($d, $f);
-        $each = $each && count($e) === 1 && is_array($e[0]) && ($e[0]['readonly'] ?? null) === true;
+        $each = $each && count($e) === 1 && is_array($e[0]) && ($e[0]['readonly'] ?? null) === ($f !== BD_EDITABLE);
     }
-    check('D3 every one is on the view once, and READ-ONLY where the admin put it too', $each,
+    check('D3 every one is on the view once where the admin put it too: Role editable, the four read-only', $each,
         json_encode(array_map(static function ($f) use ($d) { return bd_entries($d, $f); }, BD_FIVE)));
     check('D4 the admin\'s fieldset keeps its own keys', (static function () use ($d) {
         foreach ($d['panels'][1]['fields'] as $e) {
@@ -416,6 +422,28 @@ namespace {
     [$i2] = bd_include(bd_dev_view());
     check('I2 a dictionary whose field list is not an array -> the view as read, no notice',
         $i2 === bd_dev_view() && $GLOBALS['bd_notices'] === [], json_encode($GLOBALS['bd_notices']));
+
+    // ── J. rc117: Role is editable, everywhere the overlay meets it ─────────────
+    // A Studio entry that was stored read-only, and the customer package's vardef marking Role read-only, both lose
+    // to the view entry the overlay writes (Sidecar lays a view entry's keys over the vardef's).
+    bd_tenant(['role_c' => ['type' => 'enum', 'vname' => 'LBL_ROLE_C', 'options' => 'contact_role_list',
+        'readonly' => true, 'name' => 'role_c', 'source' => 'custom_fields']] + bd_contact_fields(['epicor_function_c']));
+    $stored = bd_dev_view();
+    $stored['panels'][1]['fields'][] = ['name' => 'role_c', 'readonly' => true];
+    [$j] = bd_include($stored);
+    $role = bd_entries($j, 'role_c');
+    check('J1 a Role entry stored read-only is drawn editable (readonly false), in place, once',
+        count($role) === 1 && ($role[0]['readonly'] ?? null) === false
+        && in_array('role_c', bd_panel_names($j, 'panel_body'), true), json_encode($role));
+    check('J2 Role keeps its own list: the overlay sets no type and no options on it (the vardef\'s contact_role_list)',
+        !isset($role[0]['options']) && !isset($role[0]['type']) && !isset($role[0]['function']), json_encode($role));
+    bd_tenant(bd_contact_fields(['role_c']));
+    [$j3] = bd_include(bd_dev_view());
+    check('J3 placed by the overlay (on no panel yet): editable, after the ERP panel\'s own entries',
+        bd_panel_names($j3, $ERP) === array_merge($ERP_BEFORE, ['role_c'])
+        && (bd_entries($j3, 'role_c')[0]['readonly'] ?? null) === false, json_encode(bd_entries($j3, 'role_c')));
+    $fn = bd_entries($j, 'epicor_function_c');
+    check('J4 control: Function, beside it, stays read-only', ($fn[0]['readonly'] ?? null) === true, json_encode($fn));
 
     $failed = count(array_filter($checks, static function ($c) { return !$c[1]; }));
     printf("\n%d checks, %d failed\n", count($checks), $failed);

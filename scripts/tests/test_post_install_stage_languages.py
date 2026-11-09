@@ -17,7 +17,10 @@ ModuleInstaller::post_execute() does):
     DEFAULT_PARTIAL_STAGE, G305 / 🔒 1519), so a tenant without the row already
     behaves as if it had been written; one with the row keeps it. The manifest's
     PF floor is 1.0.43 for exactly this. And the install does not even READ core's
-    erp_integration category any more.
+    erp_integration category any more. (rc117: the one ERP-Epicor setting written
+    is opp_quote_type, once, by the class BdQuoteTypeDefault on the upgrade from
+    below rc117; test_post_install_step_report.py runs it. This harness carries
+    no package class, so it holds post_execute's own code to no config write.)
 
 2.  NO FRAGMENT REMOVAL. Deleting the accumulated
     en_us.zz_bd_stage_doms.php through `uninstall_languages()` was a one-shot;

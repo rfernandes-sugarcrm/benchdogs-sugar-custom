@@ -10,7 +10,7 @@ built independently per product and installed via Module Loader.
 
 | Directory | Product | Description |
 |-----------|---------|-------------|
-| [sugar-sell/](sugar-sell/) | Sugar Sell | BenchDogs' custom extension package for the CRM/sales platform |
+| [sugar-sell/](sugar-sell/) | Sugar Sell | BenchDogs' custom extension package for the CRM/sales platform (`BenchDogs-Ext`), and the UAT configuration package (`BenchDogs-UAT-Config`: Studio layouts, labels, the Interaction Type field, the navigation bar and the Quick Create menu) |
 
 ## How It Works
 
@@ -27,8 +27,12 @@ Build a package:
 
 ```bash
 cd <product>/<PackageName>
-php pack.php <version>
+php pack.php
 ```
+
+`pack.php` reads the package's `version` file and dates the zip by the commit
+that last changed it, so it runs in a full git clone (or with
+`SOURCE_DATE_EPOCH` set).
 
 This produces `releases/sugarcrm-<PackageName>-<version>.zip`, ready for
 **Admin → Module Loader**.

@@ -31,15 +31,21 @@ IF IT WERE BROKEN you would see:
       it should not be (an ERP quote, an Ophir quote, a ship-to with a city or
       a state) or false when it should be.
 
-🔒 2085b adds the Accounts twin: Cust. Group (bd_customer_group_code) is
-required in the edit views on an ADM Customer not yet in the ERP, through
-Ext/Dependencies (never served `required` or `required_formula`):
+rc79 adds the Accounts twin: Cust. Group (bd_customer_group_code) is
+required in the edit views on an ADM account not yet in the ERP, through
+Ext/Dependencies (never served `required` or `required_formula`). rc120 (the
+owner's ruling of 2026-10-29) drops the account type from it: a Prospect or a
+Suspect needs a group too, because Send to Estimation creates it in the ERP:
   test_2085b_the_group_rule_is_a_view_dependency...  FAIL - the rule is gone,
       aimed at another field, or would run on a server save;
+  test_rc120_the_group_rule_reads_no_account_type  FAIL - the formula asks the
+      account type again (a Prospect saves with no group), or drops the ADM or
+      a not-in-the-ERP clause;
   test_2085b_the_connectors_own_check_passes_an_account_without_a_group  FAIL -
       an Account write without a group is refused by the connector;
-  GroupFormulaInSugarsOwnParser  FAIL - the formula blocks a Prospect/Suspect,
-      an ERP account or an Ophir/EPIC06 customer, or misses the ADM Customer.
+  GroupFormulaInSugarsOwnParser  FAIL - the formula lets an ADM account of any
+      type save with no group, or blocks an ERP account, an Ophir/EPIC06 account
+      or one with no company yet.
 
 G817 adds the create prompt's own requirement on the same field (ERP-Core's
 `erp_customer_create_required_formula`, read only by the G805 prompt's route):
@@ -53,6 +59,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import unittest
@@ -65,13 +72,32 @@ from test_g450_suspect_account_type import code_only, sugar_order
 FIVE = ["erp_reference", "bd_lead_source", "bd_lead_type", "bd_marketing_campaign", "bd_marketing_event"]
 ACCOUNT_TWO = ["bd_customer_group", "bd_customer_group_code"]
 DEPENDENCY = PKG / "custom/Extension/modules/Quotes/Ext/Dependencies/bd_adm_reference_required.php"
-#: 🔒 2085b: the Accounts twin - Cust. Group required on an ADM Customer not yet in the ERP.
+#: The Accounts twin (rc79): Cust. Group required on an ADM account not yet in the ERP, of any type since rc120.
 GROUP_DEPENDENCY = PKG / "custom/Extension/modules/Accounts/Ext/Dependencies/bd_adm_customer_group_required.php"
 #: G817: the create prompt's own requirement on Cust. Group (ERP-Core's
 #: erp_customer_create_required_formula, read only by the G805 prompt's route).
 GROUP_VARDEF = PKG / "custom/Extension/modules/Accounts/Ext/Vardefs/bd_customer_group.php"
 CREATE_KEY = "erp_customer_create_required_formula"
 CREATE_FORMULA = 'equal(related($erp_companies_accounts,"erp_sync_key"),"ADM")'
+#: rc120: the view rule, whole - not in the ERP by either key, and an ADM company; no account type.
+GROUP_FORMULA = 'and(equal($erp_display_sync_key,""),equal($erp_sync_key,""),' + CREATE_FORMULA + ')'
+
+LOAD_GROUP_RULE = r"""
+$dependencies = [];
+include $argv[1];
+$def = $dependencies['Accounts']['bd_adm_customer_group_required'];
+$set = array_values(array_filter($def['actions'], function ($a) { return $a['name'] === 'SetRequired'; }));
+echo json_encode(['formula' => $set[0]['params']['value'], 'target' => $set[0]['params']['target'],
+                  'triggerFields' => array_values($def['triggerFields']), 'hooks' => $def['hooks'],
+                  'onload' => $def['onload']]);
+"""
+
+
+def group_rule() -> dict:
+    """The shipped Cust. Group rule as PHP reads it: its SetRequired formula and target, triggers, hooks, onload."""
+    out = subprocess.run([shutil.which("php"), "-r", LOAD_GROUP_RULE, "--", str(GROUP_DEPENDENCY)],
+                         capture_output=True, text=True, check=True)
+    return json.loads(out.stdout)
 
 MERGE = r"""<?php
 $plan = json_decode(file_get_contents('php://stdin'), true);
@@ -151,9 +177,20 @@ class ServedQuoteFieldsAreNotRequired(unittest.TestCase):
         self.assertIn("'target' => 'bd_customer_group_code',", text)
         self.assertIn("'name' => 'SetRequired',", text)
         # it re-evaluates when any input changes, the company relate included
-        for trigger in ("account_type", "erp_display_sync_key", "erp_sync_key",
+        for trigger in ("erp_display_sync_key", "erp_sync_key",
                         "erp_companies_accounts_name", "erp_companies_accountserp_companies_ida"):
             self.assertIn(f"'{trigger}',", text)
+
+    def test_rc120_the_group_rule_reads_no_account_type(self):
+        """rc120: the rule asks only whether the account is in the ERP and whether its ERP company is ADM, whatever its
+        type. Read the way Sugar reads the file (include it, take the SetRequired action's formula), in CI."""
+        rule = group_rule()
+        self.assertEqual(rule["formula"], GROUP_FORMULA)
+        self.assertEqual(sorted(set(re.findall(r"\$(\w+)", rule["formula"]))),
+                         ["erp_companies_accounts", "erp_display_sync_key", "erp_sync_key"])
+        self.assertNotIn("account_type", rule["triggerFields"], "a trigger for a value the rule no longer reads")
+        self.assertEqual(rule["hooks"], ["edit"])
+        self.assertTrue(rule["onload"])
 
 
 #: The connector's Python: an explicit BD_CORE_PYTHON, else the workspace's
@@ -332,15 +369,21 @@ echo json_encode($out);
 
 GROUP_CASES = {
     "a NEW ADM Customer, not in the ERP (the rule)": ({"account_type": "Customer", "company": "ADM"}, True),
-    "an ADM Prospect kept in Sugar": ({"account_type": "Prospect", "company": "ADM"}, False),
-    "an ADM Suspect kept in Sugar": ({"account_type": "Suspect", "company": "ADM"}, False),
+    # rc120: Send to Estimation creates a Prospect in the ERP, and ADM refuses it without a group.
+    "an ADM Prospect, not in the ERP": ({"account_type": "Prospect", "company": "ADM"}, True),
+    "an ADM Suspect, not in the ERP": ({"account_type": "Suspect", "company": "ADM"}, True),
+    "an ADM account with no type, not in the ERP": ({"company": "ADM"}, True),
+    "an ADM Prospect already in the ERP (display key)": (
+        {"account_type": "Prospect", "company": "ADM", "erp_display_sync_key": "1668"}, False),
     "an ADM Customer already in the ERP (display key)": (
         {"account_type": "Customer", "company": "ADM", "erp_display_sync_key": "1668"}, False),
     "an ADM Customer already in the ERP (scoped key only)": (
         {"account_type": "Customer", "company": "ADM", "erp_sync_key": "ADM__1668"}, False),
     "Ophir/stock: an EPIC06 Customer, not in the ERP (no groups to pick)": (
         {"account_type": "Customer", "company": "EPIC06"}, False),
+    "an EPIC06 Prospect, not in the ERP": ({"account_type": "Prospect", "company": "EPIC06"}, False),
     "a Customer with no ERP company yet (ERP-Core requires one first)": ({"account_type": "Customer"}, False),
+    "a Prospect with no ERP company yet": ({"account_type": "Prospect"}, False),
 }
 
 

@@ -44,9 +44,14 @@ in scope, exactly as `_mergeCustomAppListStrings()` does (include/utils.php
 :1415). PF's fragment is the REAL one, read from the sibling checkout.
 
 MUTATION-VERIFIED:
-  keep the zz fragment (skip the removal) -> removal_is_what_retires_them fails
   re-add a stage key to a shipped file    -> package_declares_no_stage_key fails
   drop PF's fragment from the merge       -> core_still_serves_them fails
+
+🔁 rc98: the two cases that replayed the history (the model serving rc61's eight
+keys, and rc65's one-time removal of the accumulated fragment) are gone with the
+rc37 / rc61 fragments only they read. What stays is what holds today: this
+package declares no stage key and installs no languages, and the stages a Bench
+Opportunity may hold are served by Partial Fulfillment's fragment.
 """
 
 from __future__ import annotations
@@ -64,13 +69,9 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 PKG = Path(os.environ.get("BD_PKG", ROOT / "sugar-sell/BenchDogs-Ext"))
 FIX = HERE / "fixtures/g268"
-PRE_RENAME = FIX / "bd_stage_doms.append.rc37.php"   # 84edda2, the last '...Closed'
-RC61 = FIX / "bd_stage_doms.append.rc61.php"         # c4e8874, what Bench installed
 SUGAR_261 = Path.home() / "Documents/Code/SugarEnt-Full-26.1.0"
 
-CORE4 = ["Prospecting", "Proposal/Price Quote", "Closed Won", "Closed Lost"]
 ORDERED = ["Prototype Ordered", "Partial Production Ordered"]
-RETIRED = ["Prototype Closed", "Partial Production Closed"]
 
 PF_STAGE_REL = ("sugar-sell/ERP-Epicor-PartialFulfillment/custom/Extension/application"
                 "/Ext/Language/_override_en_us.partial_fulfillment_sales_stage.php")
@@ -118,15 +119,6 @@ set_error_handler(function ($no, $str, $file, $line) use (&$problems) {
 });
 GET_EXTENSION_FILE_CONTENTS
 
-// install_languages()'s file branch (26.1.0 :1227-1235): copy when absent,
-// otherwise concatenate [existing, template] and write back.
-function bd_install_languages($langFile, $from) {
-    if (!file_exists($langFile)) { copy($from, $langFile); return; }
-    $temp = dirname($langFile) . '/temp.php';
-    copy($from, $temp);
-    file_put_contents($langFile, getExtensionFileContents([$langFile, $temp]));
-}
-
 // cacheExtensionFiles() + _mergeCustomAppListStrings(): the sorted fragments are
 // concatenated into one compiled file, which is then included with the
 // ACCUMULATED global $app_list_strings in scope.
@@ -147,8 +139,7 @@ function bd_serve(array $files, array $seed) {
 $plan = json_decode(file_get_contents('plan.json'), true);
 $served = [];
 foreach ($plan['steps'] as $step) {
-    if ($step[0] === 'install') { bd_install_languages($plan['zz'], $step[1]); }
-    else { $served[] = bd_serve($step[1], $plan['seed']); }
+    $served[] = bd_serve($step[1], $plan['seed']);
 }
 echo json_encode(['served' => $served, 'problems' => $problems]);
 '''.replace("GET_EXTENSION_FILE_CONTENTS", GET_EXTENSION_FILE_CONTENTS)
@@ -218,15 +209,12 @@ def pf_live_text(name: str):
 
 
 def run(steps, fragments, seed=None):
-    """`steps` is a list of ('install', template-key) / ('serve', [fragment-keys])."""
+    """`steps` is a list of ('serve', [fragment-keys])."""
     with tempfile.TemporaryDirectory(prefix="g268-") as tmp:
         t = Path(tmp)
         lang = t / "custom/Extension/application/Ext/Language"
         lang.mkdir(parents=True)
-        tpl = {"pre": t / "tpl.pre.php", "rc61": t / "tpl.rc61.php"}
-        shutil.copy2(PRE_RENAME, tpl["pre"])
-        shutil.copy2(RC61, tpl["rc61"])
-        paths = {"zz": lang / "en_us.zz_bd_stage_doms.php"}
+        paths = {}
         for name, body in fragments.items():
             path = lang / f"en_us.{name}.php" if not name.startswith("_override") \
                 else lang / f"{name}.php"
@@ -234,21 +222,14 @@ def run(steps, fragments, seed=None):
             paths[name] = path
         resolved = []
         for step in steps:
-            if step[0] == "install":
-                resolved.append(["install", str(tpl[step[1]])])
-            else:
-                resolved.append(["serve", [str(paths[f]) for f in step[1]]])
+            resolved.append(["serve", [str(paths[f]) for f in step[1]]])
         (t / "plan.json").write_text(json.dumps({
-            "zz": str(paths["zz"]),
             "seed": seed if seed is not None else STOCK,
             "steps": resolved,
         }))
         out = subprocess.run(["php"], input=HARNESS, text=True, cwd=t,
                              capture_output=True, check=True)
         return json.loads(out.stdout)
-
-
-BENCH_HISTORY = [["install", "pre"], ["install", "rc61"], ["install", "rc61"]]
 
 
 @unittest.skipUnless(shutil.which("php"), "requires php")
@@ -279,26 +260,6 @@ class RetiredStageNames(unittest.TestCase):
             frags["_override_en_us.partial_fulfillment_sales_stage"] = self.pf
         return frags
 
-    def test_control_the_model_reproduces_benchs_eight_keys(self):
-        """Not a claim about rc65: proof the harness models what Bench served
-        under rc61 — same eight keys, same order, as the 11:38Z read."""
-        out = run(BENCH_HISTORY + [["serve", ["bd_stage_doms", "erp_replace", "zz"]]],
-                  self.fragments())
-        self.assertEqual(out["problems"], [])
-        self.assertEqual(list(out["served"][0]["sales_stage_dom"]), CORE4 + RETIRED + ORDERED)
-
-    def test_removal_is_what_retires_them(self):
-        """rc65's install deletes the accumulated fragment. Serving WITHOUT it is
-        what the tenant gets afterwards: no retired pair anywhere, in either dom."""
-        out = run(BENCH_HISTORY + [["serve", ["bd_stage_doms", "erp_replace",
-                                              "_override_en_us.partial_fulfillment_sales_stage"]]],
-                  self.fragments())
-        served = out["served"][0]
-        self.assertEqual(out["problems"], [])
-        for name in RETIRED:
-            self.assertNotIn(name, served["sales_stage_dom"])
-            self.assertNotIn(name, served["sales_probability_dom"] or {})
-
     def test_core_still_serves_the_surviving_pair(self):
         """The half that matters to a seller: Bench declares nothing now, so if
         PF's fragment did not carry the stages, every Bench Opportunity holding
@@ -314,13 +275,21 @@ class RetiredStageNames(unittest.TestCase):
 
     def test_the_package_declares_no_stage_key(self):
         """Executed: every shipped language/style fragment is included with the
-        doms pre-seeded, and none of them may add or change a key."""
+        doms pre-seeded, and none of them may add or change a key, except the
+        ONE fragment that carries Bench Dogs' own stage list (the owner's ruling
+        of 2026-10-17; its list, order and merge are test_bench_opportunity_stages.py)
+        and the ONE style fragment for its three new stages (same file)."""
         seed = {"sales_stage_dom": {"SEED": "SEED"}, "sales_probability_dom": {"SEED": 1},
                 "quote_stage_dom": {"SEED": "SEED"}}
         # EVERY shipped Extension fragment, not only application/: since rc69
         # there is no application fragment left at all, and a stage key could
         # as easily come back from a module-level language file.
-        fragments = sorted(PKG.glob("custom/Extension/**/*.php"))
+        stage_list = {"custom/Extension/application/Ext/Language/_override_en_us.bd_sales_stages.php",
+                      "custom/Extension/application/Ext/DropdownsStyle/bd_sales_stage_style.php"}
+        everything = sorted(PKG.glob("custom/Extension/**/*.php"))
+        self.assertTrue(stage_list <= {str(f.relative_to(PKG)) for f in everything},
+                        "the stage list moved; update this exception with it")
+        fragments = [f for f in everything if str(f.relative_to(PKG)) not in stage_list]
         self.assertTrue(fragments, "no Extension fragments found — wrong package root?")
         files = "[" + ", ".join(json.dumps(str(f)) for f in fragments) + "]"
         probe = (

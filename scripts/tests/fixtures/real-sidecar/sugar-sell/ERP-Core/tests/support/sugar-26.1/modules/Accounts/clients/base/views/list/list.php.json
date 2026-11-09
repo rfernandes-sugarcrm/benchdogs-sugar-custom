@@ -1,0 +1,96 @@
+{
+ "recorded": "Recorded from SugarEnt 26.1.0 (build 319): modules/Accounts/clients/base/views/list/list.php; sha256 71755f08f05628720043186ddb10ae725855ace189892c888594992f21a3249d of the stock file. $viewdefs as php fills it, whole.",
+ "kept": "all",
+ "viewdefs": {
+  "Accounts": {
+   "base": {
+    "view": {
+     "list": {
+      "panels": [
+       {
+        "name": "panel_header",
+        "label": "LBL_PANEL_1",
+        "fields": [
+         {
+          "name": "name",
+          "link": true,
+          "label": "LBL_LIST_ACCOUNT_NAME",
+          "enabled": true,
+          "default": true,
+          "width": "xlarge"
+         },
+         {
+          "name": "billing_address_city",
+          "label": "LBL_LIST_CITY",
+          "enabled": true,
+          "default": true
+         },
+         {
+          "name": "billing_address_country",
+          "label": "LBL_BILLING_ADDRESS_COUNTRY",
+          "enabled": true,
+          "default": true
+         },
+         {
+          "name": "phone_office",
+          "label": "LBL_LIST_PHONE",
+          "enabled": true,
+          "default": true
+         },
+         {
+          "name": "assigned_user_name",
+          "label": "LBL_LIST_ASSIGNED_USER",
+          "id": "ASSIGNED_USER_ID",
+          "enabled": true,
+          "default": true
+         },
+         {
+          "name": "email",
+          "label": "LBL_EMAIL_ADDRESS",
+          "enabled": true,
+          "default": true
+         },
+         {
+          "name": "last_interaction_date",
+          "label": "LBL_LAST_INTERACTION",
+          "type": "last_interaction",
+          "fields": [
+           "last_interaction_parent_type",
+           "last_interaction_parent_id",
+           "last_interaction_parent_name"
+          ],
+          "readonly": true,
+          "enabled": true,
+          "default": true
+         },
+         {
+          "name": "date_modified",
+          "enabled": true,
+          "default": true
+         },
+         {
+          "name": "date_entered",
+          "type": "datetime",
+          "label": "LBL_DATE_ENTERED",
+          "enabled": true,
+          "default": true,
+          "readonly": true
+         },
+         {
+          "name": "is_escalated",
+          "label": "LBL_ESCALATED",
+          "badge_label": "LBL_ESCALATED",
+          "warning_level": "important",
+          "type": "badge",
+          "enabled": true,
+          "default": false
+         }
+        ]
+       }
+      ]
+     }
+    }
+   }
+  }
+ }
+}

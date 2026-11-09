@@ -1,0 +1,17 @@
+{
+  "why": "ERP-Core's ERP Integration admin group and its Opportunity stage template, COPIED from erp-integration-sugar (private, another organisation, absent in CI) so the merge-order tests run everywhere. Read from one commit with git show, never a working tree. Where the sibling checkout is reachable, test_default_owner_admin_link.py and test_bench_opportunity_stages.py compare each copy with the newest commit that touches its path, so a stale copy is loud.",
+  "commit": "2d61055b6426e09d1e077d4266edb44ec7073cde",
+  "branch": "fix/erp-epicor-1.2.56 (ERP-Epicor 1.2.88); both files are byte-identical on main",
+  "files": {
+    "erp_integration_setup.php": {
+      "source": "sugar-sell/ERP-Core/src/custom/Extension/modules/Administration/Ext/Administration/erp_integration_setup.php",
+      "sha256": "938049b00f80ced5855ce1268c96c64d09334e293ba66e8d9fbc76b325d9be8b",
+      "bytes": 1291
+    },
+    "sales_stage_dom.replace.php": {
+      "source": "sugar-sell/ERP-Core/src/custom/dropdowntemplates/sales_stage_dom.replace.php",
+      "sha256": "2918634fd2f26f5fd78e7967ab43e0e09e4976e438cff9429035428a6e9c4aa6",
+      "bytes": 701
+    }
+  }
+}

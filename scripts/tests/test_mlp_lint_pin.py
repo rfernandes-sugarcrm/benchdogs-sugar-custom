@@ -13,8 +13,10 @@ mirror test_shared_fixture_drift.py:
   PinnedLinterIntegrityTest - runs everywhere, and FIRST in CI's `rules` job,
       before the linter is trusted with anything. A vendored file that is not
       the upstream file at the pinned commit fails here.
-  PinnedLinterDriftTest - runs where the erp-integration-sugar checkout is
-      present. The pin must still be upstream's branch head.
+  PinnedLinterUpstreamTest - runs where the erp-integration-sugar checkout is
+      present. The pin's hashes must be upstream's files at the pinned commit.
+      The pin follows that exact commit, not a branch (the branch it was first
+      taken from has since been deleted); moving it is a deliberate refresh.
 
 Run:  python3 scripts/tests/test_mlp_lint_pin.py
 """
@@ -97,6 +99,12 @@ class PinnedLinterIntegrityTest(unittest.TestCase):
                     f"It is VENDORED: never edit it here. Change it upstream, "
                     f"then re-vendor with {REFRESH}.")
 
+    def test_the_pin_names_one_commit_and_no_branch(self):
+        upstream = load_pin()["upstream"]
+        self.assertRegex(upstream.get("commit", ""), r"^[0-9a-f]{40}$")
+        self.assertNotIn("branch", upstream,
+                         "the pin follows one exact commit; a branch can be deleted under it")
+
     def test_the_linter_has_every_rule(self):
         sys.path.insert(0, str(ROOT / "scripts"))
         try:
@@ -116,59 +124,30 @@ def _sibling_git(*args: str) -> subprocess.CompletedProcess:
 
 @unittest.skipUnless(
     shared_sugar.SIBLING.is_dir(),
-    "drift can only be measured where erp-integration-sugar is checked out",
+    "the pin can only be checked against upstream where erp-integration-sugar is checked out",
 )
-class PinnedLinterDriftTest(unittest.TestCase):
-    """Only runs where upstream is reachable. That is the point."""
+class PinnedLinterUpstreamTest(unittest.TestCase):
+    """Only runs where upstream is checked out: the pin's claims hold at its commit."""
 
-    def setUp(self):
-        self.pin = load_pin()
-        ref = f"origin/{self.pin['upstream']['branch']}"
-        r = _sibling_git("rev-parse", "--verify", "-q", f"{ref}^{{commit}}")
-        if r.returncode != 0:
-            self.skipTest(f"{ref} not fetched in {shared_sugar.SIBLING}")
-        self.ref = ref
-        self.head = r.stdout.decode().strip()
-
-    def test_the_pin_is_upstreams_and_still_current(self):
-        """One method, so CI (where this whole class skips) pays one skip.
-
-        Part 1: the hashes in the pin are claims about a commit; check them.
-        Part 2: that commit is still upstream's head for every pinned file.
-        """
-        commit = self.pin["upstream"]["commit"]
-        with self.subTest(part="pinned commit"):
-            if _sibling_git("cat-file", "-e", f"{commit}^{{commit}}").returncode != 0:
-                self.fail(f"pinned commit {commit} is not in {shared_sugar.SIBLING}; "
-                          f"it was never pushed, or the history was rewritten")
-            for path, meta in sorted(self.pin["files"].items()):
+    def test_the_pin_is_upstreams_files_at_its_commit(self):
+        """One method, so CI (where this whole class skips) pays one skip."""
+        pin = load_pin()
+        commit = pin["upstream"]["commit"]
+        if _sibling_git("cat-file", "-e", f"{commit}^{{commit}}").returncode != 0:
+            self.fail(f"pinned commit {commit} is not in {shared_sugar.SIBLING}; {REFRESH} "
+                      f"fetches it by id, and if that fails it was never pushed or the "
+                      f"history was rewritten")
+        for path, meta in sorted(pin["files"].items()):
+            with self.subTest(file=path):
                 blob = _sibling_git("show", f"{commit}:{path}")
                 self.assertEqual(blob.returncode, 0, f"{path} absent at {commit}")
-                self.assertEqual(hashlib.sha256(blob.stdout).hexdigest(),
-                                 meta["sha256"],
+                self.assertEqual(hashlib.sha256(blob.stdout).hexdigest(), meta["sha256"],
                                  f"{path}: the pin misstates {commit[:12]}'s file")
-
-        listing = _sibling_git("ls-tree", "--name-only", f"{self.ref}:{FIXTURE_DIR}")
-        upstream_fixtures = {f"{FIXTURE_DIR}/{n}"
-                             for n in listing.stdout.decode().split()}
-        pinned_fixtures = {f for f in self.pin["files"]
-                           if f.startswith(FIXTURE_DIR + "/")}
-        with self.subTest(part="fixture set"):
-            self.assertEqual(upstream_fixtures, pinned_fixtures,
-                             f"upstream's {FIXTURE_DIR} changed; re-vendor with {REFRESH}")
-        for path, meta in sorted(self.pin["files"].items()):
-            with self.subTest(part="head", file=path):
-                blob = _sibling_git("show", f"{self.ref}:{path}")
-                if blob.returncode != 0:
-                    self.fail(f"{path} has MOVED or been deleted upstream at "
-                              f"{self.head[:12]}; the vendored copy is testing a "
-                              f"file upstream no longer ships")
-                self.assertEqual(
-                    hashlib.sha256(blob.stdout).hexdigest(), meta["sha256"],
-                    f"\n{path} has CHANGED upstream since it was pinned "
-                    f"({commit[:12]} -> {self.head[:12]}).\n"
-                    f"CI is enforcing a stale linter.\n"
-                    f"Fix: {REFRESH}, re-run the suite, commit the result.")
+        listing = _sibling_git("ls-tree", "--name-only", f"{commit}:{FIXTURE_DIR}")
+        upstream_fixtures = {f"{FIXTURE_DIR}/{n}" for n in listing.stdout.decode().split()}
+        pinned_fixtures = {f for f in pin["files"] if f.startswith(FIXTURE_DIR + "/")}
+        self.assertEqual(upstream_fixtures, pinned_fixtures,
+                         f"the pin's {FIXTURE_DIR} set is not upstream's at {commit[:12]}")
 
 
 if __name__ == "__main__":

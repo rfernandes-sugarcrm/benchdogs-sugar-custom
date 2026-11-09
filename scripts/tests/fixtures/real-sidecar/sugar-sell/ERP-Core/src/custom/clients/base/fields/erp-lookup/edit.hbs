@@ -1,0 +1,17 @@
+{{!--
+    G527: the relate's own hidden input, which RelateField renders select2 on.
+    erp-lookup.js gives it a local list (no search box for short lists, no
+    "Search and Select..." drawer). An inactive stored value reads
+    "<name> (Inactive)" and stays selected.
+--}}
+<input type="hidden"
+    name="{{name}}"
+    class="select2 inherit-width"
+    value="{{formattedIds}}"
+    {{#if def.tabindex}} tabindex="{{def.tabindex}}"{{/if}}
+    data-rname="{{#if hasErasedPlaceholder}}{{str 'LBL_VALUE_ERASED' module}}{{else}}{{formattedRname}}{{#if erpLookupInactive}} {{str 'LBL_ERP_LOOKUP_INACTIVE' module}}{{/if}}{{/if}}">
+{{#unless hideHelp}}
+    {{#if def.help}}
+        <p class="help-block">{{str def.help module}}</p>
+    {{/if}}
+{{/unless}}

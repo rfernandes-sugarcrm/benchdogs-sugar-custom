@@ -1,0 +1,733 @@
+{
+  "upstream_commit": "16ec7cd3af8b8089f90e2fe613fc065bd1cc50c1",
+  "files": {
+    "scripts/tests/_real_sugar_page.cjs": {
+      "sha256": "5235398d72a647c4e1f896014e3325962e7a17fcd9d68d14bb4a994475c3092d",
+      "bytes": 12819
+    },
+    "scripts/tests/dom/package-lock.json": {
+      "sha256": "8158bb42cdcf9d6af13453d9136b491447a881b4fa5f1b748ae7f80927fe013b",
+      "bytes": 28073
+    },
+    "scripts/tests/dom/package.json": {
+      "sha256": "b9b2405200c0c1ae1add4a13074a1b062d53b39a822968e4176d74e04cd4124a",
+      "bytes": 285
+    },
+    "sugar-sell/ERP-Core/src/SugarModules/relationships/vardefs/erp_companies_quotes_Quotes.php": {
+      "sha256": "058a0f706acb1276404d418976860830f5b82abdb559589850bc93a54810ec6b",
+      "bytes": 1407
+    },
+    "sugar-sell/ERP-Core/src/SugarModules/relationships/vardefs/erp_quotes_fob_Quotes.php": {
+      "sha256": "10e92a679b6c616d0167f950567961f733aa75ef1fb3dcabfab5eaac006aec5e",
+      "bytes": 1494
+    },
+    "sugar-sell/ERP-Core/src/SugarModules/relationships/vardefs/erp_quotes_ship_via_Quotes.php": {
+      "sha256": "f0281c470db74d851f308a06523c330de6d4b4c4cd5132573dedaee5b66744bf",
+      "bytes": 1579
+    },
+    "sugar-sell/ERP-Core/src/custom/clients/base/fields/erp-lookup/detail.hbs": {
+      "sha256": "d742314b19a6cf8eb86cd2f026bd17b6733fde67df57c12c17655df6a8d8da6f",
+      "bytes": 516
+    },
+    "sugar-sell/ERP-Core/src/custom/clients/base/fields/erp-lookup/disabled.hbs": {
+      "sha256": "ae61e53d58e77f07bf2a9d9ac7226b077ddaefdcc8592f2b44f800f5625c6c37",
+      "bytes": 694
+    },
+    "sugar-sell/ERP-Core/src/custom/clients/base/fields/erp-lookup/edit.hbs": {
+      "sha256": "473e3cb985a34ac3b7f978b60954824c6462ee8f22ccb3771d525e984df7ea75",
+      "bytes": 750
+    },
+    "sugar-sell/ERP-Core/src/custom/clients/base/fields/erp-lookup/erp-lookup.js": {
+      "sha256": "0ccfb633e03dbe3907e55c14f2de4e1fa956f33fbd0b8960b2f973e8695ab181",
+      "bytes": 24859
+    },
+    "sugar-sell/ERP-Core/src/custom/clients/base/fields/erp-lookup/list.hbs": {
+      "sha256": "995a42ecea87d1fdea687da6726cecbfc3286c174f6dd3857f696b76b288394e",
+      "bytes": 463
+    },
+    "sugar-sell/ERP-Core/src/custom/include/javascript/sugar7/erp-lookup-fields.js": {
+      "sha256": "49be24223a84573a2ddc4d612dd457f97d00e49057bdd816d0498b8ed25504f8",
+      "bytes": 12312
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/cache/Expressions/functions_cache.js": {
+      "sha256": "3288bb191dfa3d08e1eedca9983734a49be88cccf2030605841723cab2e5eb09",
+      "bytes": 89375
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/actiondropdown/actiondropdown.js": {
+      "sha256": "5b087971a2ad37b1affc776e51059655dccf6055ecb3424a7e4f3a0eae4fe453",
+      "bytes": 14601
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/actiondropdown/detail.hbs": {
+      "sha256": "56a28b0149399e8e5f882cab5acecf93f5502e692595698932e8f67fd734db37",
+      "bytes": 1446
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/actiondropdown/dropdown.hbs": {
+      "sha256": "b983def0d3cb2a16652edf9af2f566fd4c7d62bc4e84017593ab56459c8c3af9",
+      "bytes": 809
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/actionmenu/actionmenu.js": {
+      "sha256": "ba06ccd80bb7aaa95b91fae6ccfb55c4842d89bfe80b09044b95da686d96a120",
+      "bytes": 13359
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/actionmenu/dropdown.hbs": {
+      "sha256": "04c7257712f1608cea399a08cf0b4ca2ff69ac0e8cacc43444e1ad592504e110",
+      "bytes": 805
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/actionmenu/list.hbs": {
+      "sha256": "6a63a64c07e9cce40a677bc1c1a16030b32bbfdaaacbe2e15021b74326100956",
+      "bytes": 818
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/base/base.js": {
+      "sha256": "8cf4b323f93ce0c7bb76ff32cfc3d70aae27134a8763c608b8778ad16dbdcaed",
+      "bytes": 6176
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/base/detail.hbs": {
+      "sha256": "6c491ce18be1b0898eb9934a4a202bf6d0f0079894e624d756c8856df96795e8",
+      "bytes": 793
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/base/disabled.hbs": {
+      "sha256": "8e63af0a9fe0ff5c83363bde2b0361a748c072873dae5499a4f72e21290d06fa",
+      "bytes": 936
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/base/edit.hbs": {
+      "sha256": "37fe2f1bfa31581ae5cda8e47ae2f202871c740d5340731f0fd7d2a3cb15c245",
+      "bytes": 1024
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/base/list.hbs": {
+      "sha256": "740e679d068940c0a25124bf3d025ddc88fda8e1b08b6dfa4d49660001f2540d",
+      "bytes": 1017
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/base/nodata.hbs": {
+      "sha256": "aec624cfae6ccf92c627231c9a67bd81b0f5331ddb2f5f620629449e73139ccf",
+      "bytes": 683
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/bool/bool.js": {
+      "sha256": "1db107785dc579ec8c48767171ef0c771118934e7b8f510595c2ad4e147825f9",
+      "bytes": 3553
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/bool/detail.hbs": {
+      "sha256": "857047385aa322e6b091c76ece67c5cdde47234383a65d3bf0b2fa1d1835b07b",
+      "bytes": 704
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/bool/edit.hbs": {
+      "sha256": "a21800fc9f678fb15769fe347d02a88221f3aeccb97104c591517176a5a1bb76",
+      "bytes": 1027
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/button/button.js": {
+      "sha256": "a2b4dd618899f32efbcc6cab7c84b76b5592e1ed99909b948d3dbbc8dc4a020a",
+      "bytes": 11803
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/button/detail.hbs": {
+      "sha256": "47a0abc16fb2c200b3a74ff5018add8eb88ec81d22b55ddda60161e82872f0da",
+      "bytes": 1382
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/commentlog/commentlog.js": {
+      "sha256": "95ffddecf992226b9e9d0b0c533e23a2857afb4be6a783ca7414ff19238835ad",
+      "bytes": 11353
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/currency/currency.js": {
+      "sha256": "1d584ca52f30ed5645e15fd8d1b74804c24e13e3e19947ea81a3640bf343d238",
+      "bytes": 18410
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/currency/detail.hbs": {
+      "sha256": "9b2f9107518e5a6c0968bae2eaf7957a332b68379bcba3fa7d7c61fdd0f77f9c",
+      "bytes": 866
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/currency/disabled.hbs": {
+      "sha256": "0e07b4ed4171de7d1446d62766d695640f01ac838fd3cdbba57e1129684b881a",
+      "bytes": 732
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/currency/edit.hbs": {
+      "sha256": "d53e41273a2ac44cef380deb175b3a797c2422208146cfddddfdd45c79819a14",
+      "bytes": 1165
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/currency/list.hbs": {
+      "sha256": "ecd6209cf46586a3c4bae54d7f36e2ec2c78faad82ec0f16dcc36731e765cd25",
+      "bytes": 1042
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/dashletaction/dashletaction.js": {
+      "sha256": "f7338142548f8317b09720434799691a2742281d78a73729b53b74de3e71781b",
+      "bytes": 1983
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/dashletaction/detail.hbs": {
+      "sha256": "1428d1cee84674db3e91943d690260572ee3c8e77da8c9eff69ef9c1003202ea",
+      "bytes": 1318
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/enum/detail.hbs": {
+      "sha256": "3a1e356dc9e4f66f521776d5c52f0cf64a4e5e8fad95873683605b51f5fd7af7",
+      "bytes": 2705
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/enum/disabled.hbs": {
+      "sha256": "d5a0dee6f0037603bdd7ae3b0f385c18c3262b14f50ffb2def2f0c72c18d139f",
+      "bytes": 823
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/enum/edit.hbs": {
+      "sha256": "10ae48487d385b15c7bab1b330d630a09122014a4c9a36b5f90003cabd70b074",
+      "bytes": 854
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/enum/enum.js": {
+      "sha256": "eb926610be23195d18bf32fbe9ad215b2754feea514044dbb2739e6a7aec237b",
+      "bytes": 30772
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/enum/list.hbs": {
+      "sha256": "d506d9b6fcdc78da0112677c21c8e6f2eed41f96d1ef05085869268f7c138661",
+      "bytes": 2947
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/fieldset/detail.hbs": {
+      "sha256": "bb94bf1376950b6db60973d33a239a2723fda71e0f45f2d6edab99626e484f51",
+      "bytes": 801
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/fieldset/fieldset.js": {
+      "sha256": "762ec8a39b124a95fa9a1880bdac151b99f68e9315a901def7d9a54fb9fd7e8b",
+      "bytes": 12864
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/fieldset/record-detail.hbs": {
+      "sha256": "ed583d18a46972c8a95f23de080f3d773b4b547de1d3bcd9a89ca1b57563a855",
+      "bytes": 1050
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/float/float.js": {
+      "sha256": "5d5b405f045e031d7f5af965bcc82c011d92d115dbd9fce5d1f4f9ae8950a4cf",
+      "bytes": 3276
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/int/detail.hbs": {
+      "sha256": "0f1825e885572e0267276d8973f62f51e106be9715ebc7c9f0af4f105004c961",
+      "bytes": 1177
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/int/disabled.hbs": {
+      "sha256": "6fc570f297c1d1a7188c23f4d594bc29b34fd5aa4d7d2f7bb782191e80c517b6",
+      "bytes": 935
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/int/edit.hbs": {
+      "sha256": "627ae9185c958224073d0e77751e8e10374aaa72b3f0a98317c2bd246e76aaba",
+      "bytes": 1041
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/int/int.js": {
+      "sha256": "d5ae28e6ca81214d4fb41c134fa65eca370ab98fd9800d0118b4faee204eb37e",
+      "bytes": 6671
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/int/list.hbs": {
+      "sha256": "6af51e5bd8b417238149f735e63c26582e42cee1ad81e7e8c41a290df11ffa22",
+      "bytes": 1121
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/pdfaction/pdfaction.js": {
+      "sha256": "d5e6737be21839ca9a890d86151c0a16508891a10b4168d07e4c13bcd3e4777a",
+      "bytes": 6604
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/record-decor/record-decor.hbs": {
+      "sha256": "e1464997e45191c2b3bf70574dc5eb65d782d8e8c3507f43115bdf96ce997ea0",
+      "bytes": 4592
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/record-decor/record-decor.js": {
+      "sha256": "80a7bed67e6f5e3c0e2dfd6ea8afb4bbb1f7a02b6638df415a7d5a25376e33dc",
+      "bytes": 9368
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/relate/detail.hbs": {
+      "sha256": "39d9480325f7adb6fd737223a02498265fb9340a7854e5a414050f38ff22a4a4",
+      "bytes": 1478
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/relate/edit.hbs": {
+      "sha256": "d977628be2553a786bfc514698ac1f35fd9dd8a0e5c33158e324fc2445ed6dc0",
+      "bytes": 1044
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/relate/pill.hbs": {
+      "sha256": "f3d7fe361795543555e1295c72e27abbbddb700a26714c44f9326dc9ad6eea57",
+      "bytes": 704
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/relate/relate.js": {
+      "sha256": "79a96340ad7e56b7770809a6d51c700e51fc2c1f15523ffcd01639846b35c3a5",
+      "bytes": 43113
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/rowaction/detail.hbs": {
+      "sha256": "b78ee615a09449525779ff815f081240bf9cddf9df7408d4e75f3519555e2006",
+      "bytes": 1391
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/rowaction/list.hbs": {
+      "sha256": "d960c32ffbfb3bdc6fad0e53524dda1ca5a5d1197081f72cc627f1dbca89fe79",
+      "bytes": 1465
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/rowaction/rowaction.js": {
+      "sha256": "4396d42400a18d70f03268a10efcdacfa4a2f7f622932759f66e136a313a8548",
+      "bytes": 2985
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/rowactions/list.hbs": {
+      "sha256": "25a2f240d36237ebc5772ebe0d8296aab22f240af89563be022e94866aa1dcec",
+      "bytes": 1416
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/rowactions/rowactions.js": {
+      "sha256": "a5db4af3407e3222b8a140fe58c6be29ae23ce5fb705d9620747c2e3e6a8e0c5",
+      "bytes": 1428
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/sidebartoggle/detail.hbs": {
+      "sha256": "9d59459e09e4f32c77f579595044a4cde33c2528d8ceee136ae70c64795190ef",
+      "bytes": 984
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/sidebartoggle/sidebartoggle.js": {
+      "sha256": "91458259cfde4a026357ead45a43a8d0bd737366f158be4ab8a29dc553d0cf16",
+      "bytes": 4848
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/textarea/textarea.js": {
+      "sha256": "09152e9f2454d514a46b20fe29d833e5a7ab83f8f31eaebf600ca3dc70349e1e",
+      "bytes": 9994
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/fields/url/url.js": {
+      "sha256": "50f2bf81185bd6fd0755c032c9a98ff5ad9215fc0df4d2cc525911d3ff39524b",
+      "bytes": 1967
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/layouts/dashlet-grid-wrapper/dashlet-grid-wrapper.hbs": {
+      "sha256": "185682f3c6caa5cb2469d7cfcd5603c6cebf7becb1e7cb77a2524a35a1dfa42e",
+      "bytes": 1013
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/layouts/dashlet-grid-wrapper/dashlet-grid-wrapper.js": {
+      "sha256": "e11e5ae4677e21c16cdb67138f39114beffb4736f33c67551170ea7d42ef815e",
+      "bytes": 2122
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/layouts/dashlet/dashlet.hbs": {
+      "sha256": "c25b29a67f8f99c807abd366a45dd25fb6d56efeedb7262dd604382d79602a0f",
+      "bytes": 1386
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/layouts/dashlet/dashlet.js": {
+      "sha256": "0aed0ca4336627151eb22d7eccb32f9dbc4d1407647b0e9068b35175b558c32b",
+      "bytes": 22314
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/views/create/create.js": {
+      "sha256": "53c940fe4bb5a75b9a088d9d86652e89d7677f96ea6889526ee1f869f2b62ae4",
+      "bytes": 30622
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/views/create/create.php.json": {
+      "sha256": "82c17a2d1ed57c24a05ed218b5d90bfaa835fcbb545977a280811bab02c8df04",
+      "bytes": 1665
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/views/dashlet-toolbar/dashlet-toolbar.hbs": {
+      "sha256": "62a1a077ab7e0c548c74a6bafb040d96a9874f1a5a881899797f0b3424b457b8",
+      "bytes": 3660
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/views/dashlet-toolbar/dashlet-toolbar.js": {
+      "sha256": "eeff062710ec9b9fd72ba351b62901e37f568f5a40c9c1d1f7e0250cc80773d5",
+      "bytes": 14957
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/views/dashlet-toolbar/dashlet-toolbar.php.json": {
+      "sha256": "936a732972f34279853ed03e2a35e41b54ff52180840970055acd4073848df19",
+      "bytes": 1423
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/views/record/businesscard.hbs": {
+      "sha256": "0b77b603e79eae19794fa1b546f9ef2bcb1a64e9d122fc416e0f5383cb771b45",
+      "bytes": 2505
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/views/record/headerpane.hbs": {
+      "sha256": "335d00b46bed79698c44ea70b199b45623f1019d6413e4b22c58006c78b7e621",
+      "bytes": 5041
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/views/record/record.hbs": {
+      "sha256": "5822a60930abdb82111660f3842e80deeb209ddca06e9d2a702c8c9217393282",
+      "bytes": 921
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/views/record/record.js": {
+      "sha256": "4f0fe6f9fdfb6d6e8bf13ba83f77c2a17c923b84e883e04ff9b688a45984fe4d",
+      "bytes": 110270
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/views/record/record.php.json": {
+      "sha256": "608829bb63c4a9c099830c3d6e61d8463028732263981abb0d6c6137d531ca94",
+      "bytes": 2684
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/views/record/tabspanels.hbs": {
+      "sha256": "e5991e1f3c7a21617f0c74dd3e0e0328fc05eab0ea756ce63f536ac58961a38d",
+      "bytes": 5360
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/clients/base/views/recordlist/recordlist.php.json": {
+      "sha256": "fb4d35a117c4decf9fc17618f055b367412d7aa049020ac68173c11919bb7c34",
+      "bytes": 2530
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/include/SugarObjects/implements/currency/vardefs.php.json": {
+      "sha256": "8cd490b7b6682776553145d19c8e7d23e98bca575ee0b426ebc341e0bd37ebb8",
+      "bytes": 2175
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/include/SugarObjects/implements/sales_item/vardefs.php.json": {
+      "sha256": "809a6fb5b52e7b19ca975198fce04d6eed04f5d1882d70c7d1d8cea8d4caa612",
+      "bytes": 9556
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/include/SugarObjects/templates/company/vardefs.php.json": {
+      "sha256": "acded6a3fe038e83967fbca9687af5f290f7d2bc74cae8ce2ce6aa2935f339ba",
+      "bytes": 9995
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/include/javascript/mousetrap/mousetrap.min.js": {
+      "sha256": "ab75b1851778b846a15d62be3078a173fab6b065b4031c2184e4be0583d0e75e",
+      "bytes": 4094
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/include/javascript/select2/select2.js": {
+      "sha256": "eccf3cb4db6f7a8cef42169f3f989e969b27fe81cd01fb27e0a92f63f6744444",
+      "bytes": 150475
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/include/javascript/sugar7/accessibility/accessibility.js": {
+      "sha256": "b369650be70be1eef3a73fc2f35678d2b749ea61b1c2481be286ec95ed6d5ca0",
+      "bytes": 6471
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/include/javascript/sugar7/accessibility/click.js": {
+      "sha256": "25cdf080f2db3e1938f1f54294d2ae52e771dacea55200d7b64854efde611c0d",
+      "bytes": 6297
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/include/javascript/sugar7/field.js": {
+      "sha256": "24c3ea7ec7e0e3940beeb2269f0010e1c4c2ba3e63063f4924e1e3c09c4b59de",
+      "bytes": 25221
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/include/javascript/sugar7/hbs-helpers.js": {
+      "sha256": "df3a7d87764ffbb60ef60a1975428a83c65d5d1f8b082b7858108af1ec3cde9c",
+      "bytes": 23189
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/include/javascript/sugar7/plugins/Dashlet.js": {
+      "sha256": "f332334252e444885b3b9e4fefed7bc79da799803e63fdb0e0b710ddb7e54853",
+      "bytes": 16489
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/include/javascript/sugar7/plugins/DropdownEnhancer.js": {
+      "sha256": "15efb1c6aef716b6ed69f804505676efdf033afcbb13f6e483f0f83431ae1c21",
+      "bytes": 2646
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/include/javascript/sugar7/plugins/Editable.js": {
+      "sha256": "eaec1ade95e5310f92f405b80a05c07516349d127692af2e96c54edf41669d24",
+      "bytes": 28683
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/include/javascript/sugar7/plugins/ErrorDecoration.js": {
+      "sha256": "66439c4ab02f8c298950ba4abffea9af3703c3534a8d85c3b6fed1c08eb62a27",
+      "bytes": 2377
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/include/javascript/sugar7/plugins/FindDuplicates.js": {
+      "sha256": "befabfb029161708404feb7e72b15dea05dae55f6dabec4b35b56f542a2e63b9",
+      "bytes": 7376
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/include/javascript/sugar7/plugins/GridBuilder.js": {
+      "sha256": "2aaf32e863c2a9a15e6c8988a20daf9460d65d8ccade6595b41ec2b2fa841838",
+      "bytes": 15264
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/include/javascript/sugar7/plugins/LinkedModel.js": {
+      "sha256": "70ce6bffd87656fb30b11426de6aa002aa313ed0d7daebdeefe2a9c0365fac59",
+      "bytes": 11281
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/include/javascript/sugar7/plugins/MassCollection.js": {
+      "sha256": "fb48c1b0c2a6457de0c1ff5e974b736ee0c4c0f59a67bf5a2180fd98cbade8b1",
+      "bytes": 16420
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/include/javascript/sugar7/plugins/MetadataEventDriven.js": {
+      "sha256": "8c37d901ebbf5f7e22100ff415775b0cf3918530bd7402e1cec8dd221cc285f2",
+      "bytes": 1669
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/include/javascript/sugar7/plugins/QuotesConversionRateLocking.js": {
+      "sha256": "5b0316d6d614f20b064122fed30444c731bffbd753121c83e3944b2d2132a5c2",
+      "bytes": 3872
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/include/javascript/sugar7/plugins/ToggleMoreLess.js": {
+      "sha256": "38b27886cdb3d1ddf2ba25c10de084a103a573ac6b02311605f95fa7ee11731a",
+      "bytes": 5020
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/include/javascript/sugar7/shortcuts.js": {
+      "sha256": "57f3a88e27a1eb5536d3c68b3691924d15da09f2d853f666d65f9dfb11647690",
+      "bytes": 27078
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/include/javascript/sugar7/tooltip.js": {
+      "sha256": "500cfb652deb45e8d318b4eb337c8297c6e602765248e0a7c30dc769c185e330",
+      "bytes": 6346
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/include/javascript/sugar7/utils-filters.js": {
+      "sha256": "798542d29949b3cdb8b75d230286bd2f7e7a3aa111dfcc5c79ae7eb9f80024e0",
+      "bytes": 9643
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/include/javascript/sugar7/utils.js": {
+      "sha256": "48200b6a313823972087fe34b74819317c65decf98998717ee0ad1b091f1df20",
+      "bytes": 99767
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/include/language/en_us.lang.php.json": {
+      "sha256": "fea8c6b0cab8c170b263faf41eb17ad75109c3603a6d5d0428bdd8a9d38d5100",
+      "bytes": 997
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/jssource/src/build/bootstrap.min.js": {
+      "sha256": "0010b7d862ce3c5a04ad4c857dc41f71f258940e13467e6b9fcad75ec9b14993",
+      "bytes": 81168
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/modules/Accounts/clients/base/views/list/list.php.json": {
+      "sha256": "1cd1b184f40a77e3d18a5ec89984a165a9d1e7e296f0e71b36b8491e72020d47",
+      "bytes": 2464
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/modules/Accounts/clients/base/views/record/record.js": {
+      "sha256": "b502966fcd7bcd3d5667e2ef276d86faf3b3bfe3268051b14985ee41d3ded755",
+      "bytes": 1025
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/modules/Accounts/clients/base/views/record/record.php.json": {
+      "sha256": "5c4a12a8a904e3d9b5ee8e9096d65c0c9f95aca97ad26088b31f5b5f38dc88f2",
+      "bytes": 10664
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/modules/ProductBundleNotes/clients/base/views/quote-data-group-list/quote-data-group-list.php.json": {
+      "sha256": "bfe63b53ab7b56f5158f4b355cfab60b7280d7d66b0b9cd433e1936312b5cdbb",
+      "bytes": 696
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/modules/ProductBundles/clients/base/layouts/quote-data-group/quote-data-group.js": {
+      "sha256": "d21c5ed1ed76f36e9ff98ae6e6111306da32426e1ecf9e6a27b7afb30977daea",
+      "bytes": 8656
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/modules/ProductBundles/clients/base/layouts/quote-data-group/quote-data-group.php.json": {
+      "sha256": "9246305e8d4c9ad624524da4bf96103afb1bd0587adf8c4b72be7d72e3f91f51",
+      "bytes": 615
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/modules/ProductBundles/clients/base/views/quote-data-group-list/quote-data-group-list.hbs": {
+      "sha256": "ee4f0233d9582ba6e4836edacc5087009b39f347df3324526a9caf2d51ff5256",
+      "bytes": 1584
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/modules/ProductBundles/clients/base/views/quote-data-group-list/quote-data-group-list.js": {
+      "sha256": "2d96eaa268e510b567026835bffb694e827fa5a60638b4d6b7e194579ef7bc6e",
+      "bytes": 39713
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/modules/ProductBundles/clients/base/views/quote-data-group-list/quote-data-group-list.php.json": {
+      "sha256": "9be50144f844b4b81230a072f0ef2f5ace3625c6526a89ca08591197c5ebeab3",
+      "bytes": 891
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/modules/ProductBundles/vardefs.php.json": {
+      "sha256": "1f072f5fd636275337568a5b8d0b006b7e7bd56d5958718c0883788a89608490",
+      "bytes": 12129
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/modules/Products/clients/base/fields/currency/currency.js": {
+      "sha256": "cc29329489e3986554d1cebac43f32ae9e7e436ee64301c4efb830af50522198",
+      "bytes": 6370
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/modules/Products/clients/base/fields/quote-data-actionmenu/list.hbs": {
+      "sha256": "8488e8b679913b321d059b7b23be9d69e7cf79b454f7a1f2ee4fbaa559d598e3",
+      "bytes": 1334
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/modules/Products/clients/base/fields/quote-data-actionmenu/quote-data-actionmenu.js": {
+      "sha256": "6d70b16896af230eaa71afaec21d9596661a1d7af33467b868d8beac1d237e9d",
+      "bytes": 1479
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/modules/Products/clients/base/views/quote-data-group-list/quote-data-group-list.php.json": {
+      "sha256": "91231e5f1b5937daa9ee965922a8934e83ec17750990759b896e8c16ba29699a",
+      "bytes": 3332
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/modules/Products/clients/base/views/quote-data-group-list/row.hbs": {
+      "sha256": "c1760fc3b07a6a3fd586313301b1b530a85186e85b235ba6d8b62c524e8c9348",
+      "bytes": 1765
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/modules/Products/metadata/dependencydefs.php.json": {
+      "sha256": "b49d028c3aa0c1edc5d523bfffc27b72122f070b34c20d02f24487186da43ca8",
+      "bytes": 5854
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/modules/Products/vardefs.php.json": {
+      "sha256": "d16ae3a2bfef0743bdd57f4f37f74330f6f290fcdd0ae331ea057ed4715aa3c5",
+      "bytes": 34821
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/modules/Quotes/clients/base/fields/convert-to-opportunity/convert-to-opportunity.js": {
+      "sha256": "9a7969e6a6d6a215ad3699efd27486a51ad4f6a493cf0d4775b03b4d7a5982ac",
+      "bytes": 3346
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/modules/Quotes/clients/base/fields/currency/currency.js": {
+      "sha256": "86ec5cbed979dc444a12117e883b780a7917f183f0755723554520d7c9e0f08b",
+      "bytes": 3493
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/modules/Quotes/clients/base/plugins/QuotesLineNumHelper.js": {
+      "sha256": "62a40a3c00c25040278388c14b11ff7acb235519ac138d9af071258aa0347248",
+      "bytes": 9379
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/modules/Quotes/clients/base/plugins/QuotesViewSaveHelper.js": {
+      "sha256": "68f30c30ded6735c1d0b8ddf611901803710680087faafff6cc73399a568ec1e",
+      "bytes": 7816
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/modules/Quotes/clients/base/views/create/create.js": {
+      "sha256": "345342975a8d7e6d128edfe10b26e24d9751ebdd119a28436043c8303f5ac9ea",
+      "bytes": 18507
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/modules/Quotes/clients/base/views/quote-data-grand-totals-footer/quote-data-grand-totals-footer.php.json": {
+      "sha256": "cc05dd3706702dc8f786bcfbeb5030d411a270848c7cf97d0fb2e9443ad8fc90",
+      "bytes": 1205
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/modules/Quotes/clients/base/views/quote-data-grand-totals-header/quote-data-grand-totals-header.php.json": {
+      "sha256": "dfcfc772975d23f582c189e6bcf37a33541faef6d4a6d6464a959b99343dcc42",
+      "bytes": 2291
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/modules/Quotes/clients/base/views/record/record.js": {
+      "sha256": "de2d2be26eaab36f571a3c3888dd4447d0ac86d134f381fc479c8174f178bc74",
+      "bytes": 12885
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/modules/Quotes/clients/base/views/record/record.php.json": {
+      "sha256": "4be565d64c76e414f94f4d538cedc7839e402d0e79ee993baedd63a8c2f6deaa",
+      "bytes": 13173
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/modules/Quotes/vardefs.php.json": {
+      "sha256": "3a7733c63987526ab783c43d883f83f3ad3abf925576d0c570cb8bb8051fb1a2",
+      "bytes": 29775
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/sidecar/lib/sugarlogic/expressions.js": {
+      "sha256": "8513e138f6e1cededadd4efa80182e246d791b447dbe82bcfe706400b1bec91d",
+      "bytes": 40272
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/sidecar/lib/sugarlogic/sidecarExpressionContext.js": {
+      "sha256": "d64c64192c4d2cf057d9ee364b45234fc6214086207b689c8dcc21e9d58e769b",
+      "bytes": 72819
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.1/sidecar/minified/sidecar.min.js": {
+      "sha256": "84240287acb83f5767905bab203029135548026284423c5ef12f3b6b46336e72",
+      "bytes": 570353
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/DisableDeleteShippingAddress.js": {
+      "sha256": "f940ec065c525affa3073748399e277a9dac7356fbc92bdd7b4e2acaab0affc4",
+      "bytes": 3763
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/ShippingAddresses-rowaction.js": {
+      "sha256": "2c6af5467c9a0519345f62c32935df5a01fc2cfab9318cf480b0466a2af53d32",
+      "bytes": 855
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/clients/base/fields/base/base.js": {
+      "sha256": "ec436ad1c6ea34fd8f0988a308c364ddc016df42741ce8bd9be593038b5e3e42",
+      "bytes": 6176
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/clients/base/fields/base/nodata.hbs": {
+      "sha256": "378197a7828e93c5926c4d1ddfb6bfb1a4a9fb9ae4a198e84e26282baf5c04d4",
+      "bytes": 683
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/clients/base/fields/button/button.js": {
+      "sha256": "e93c1f8980cf5dc8564dd0b20046a97a9bd8bfc6dedd8c24e0a3bd2ffc28a912",
+      "bytes": 11983
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/clients/base/fields/commentlog/commentlog.js": {
+      "sha256": "b86f78440ef7ca6564ea4b60750ef501ce4759d891a2e96c47e1f3ae8949f40e",
+      "bytes": 11353
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/clients/base/fields/currency/currency.js": {
+      "sha256": "ceebdae70e6325c81834482764579c1b78549bbd4385d7c569170f52686d542e",
+      "bytes": 18410
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/clients/base/fields/pdfaction/pdfaction.js": {
+      "sha256": "8d2befa60e367b9d2f9f8e3d3d73db67398ece07052059798650ddfb05e3725b",
+      "bytes": 6604
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/clients/base/fields/relate/relate.js": {
+      "sha256": "518fd547dbf197a3e021d4d05f7194ad17ef80ab72835a32c9cd28db818dfa58",
+      "bytes": 56663
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/clients/base/fields/rowaction/detail.hbs": {
+      "sha256": "52cfd3f3c08f9db79eb9a6bec34b5f30fbac5fd447cb2733a5ac2ec3f4cf325d",
+      "bytes": 1391
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/clients/base/fields/rowaction/rowaction.js": {
+      "sha256": "135c75acda615596e610a6a15b6cfb1a09a0df8d8ec1c68373791a9a2ddfb94e",
+      "bytes": 2985
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/clients/base/fields/textarea/textarea.js": {
+      "sha256": "71bedb489b656b210f4a6f2d42f085faf0235caa5ffd67d1c48091d1917364db",
+      "bytes": 10273
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/clients/base/fields/url/url.js": {
+      "sha256": "5fb737f1d11dfc39bfd1ae13e455b7139fc1852b46e90615660b3bb66a940cac",
+      "bytes": 1967
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/clients/base/views/ai-chat-body/ai-chat-body.js": {
+      "sha256": "6395fc15a9323199fc8920f8ed65af1aac780f1b932befe2a9bb4bc2d6cebf9a",
+      "bytes": 38818
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/clients/base/views/ai-chat-component-dive-deeper/ai-chat-component-dive-deeper.hbs": {
+      "sha256": "8239e94ea0e11638ce3b93a2cc33e572ebd8980eb2da4ac309e9cbb396030aab",
+      "bytes": 2917
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/clients/base/views/ai-chat-component-dive-deeper/ai-chat-component-dive-deeper.js": {
+      "sha256": "d08fe949bb33e557ab4c6e7ade7426a6e343e9df9c060e18f4df0b076a8e2b1f",
+      "bytes": 3487
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/clients/base/views/ai-chat-component-next-best-actions/ai-chat-component-next-best-actions.hbs": {
+      "sha256": "1ea64d101e72f5e5c90e129780344202c65045cd509000b9e6bebdbf05bd408c",
+      "bytes": 2630
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/clients/base/views/ai-chat-component-next-best-actions/ai-chat-component-next-best-actions.js": {
+      "sha256": "b5e408deaf130b9fa0f1b0f11e1ce10cfd6214fa744ed746e90234c571712e3d",
+      "bytes": 9731
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/clients/base/views/ai-chat-component-record-view/ai-chat-component-record-view-left.hbs": {
+      "sha256": "a63c1e7ee237de3b7e3bf01ebbdf1ae3562769ac77841755b12ebaa4cf88bcaf",
+      "bytes": 1246
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/clients/base/views/ai-chat-component-record-view/ai-chat-component-record-view-right.hbs": {
+      "sha256": "f780841d7eb82156edb069f8c6e3274daddd813b6c656b006b3a97eccb19cd58",
+      "bytes": 1117
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/clients/base/views/ai-chat-component-record-view/ai-chat-component-record-view.hbs": {
+      "sha256": "2072d3b8785df38fc94321f2413f8b530907e4bcad9812a4d4fee2c71bf73d3c",
+      "bytes": 8611
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/clients/base/views/ai-chat-component-record-view/ai-chat-component-record-view.js": {
+      "sha256": "7c18e721ec45cd1273a09fe2f3ddb62286622653288b090edc42e53119c0b371",
+      "bytes": 5089
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/clients/base/views/ai-chat-component/ai-chat-component.js": {
+      "sha256": "944548cdc3fbe685ee97d705ec875ac81f346cb649db0620d6d81aa87bb1e8e8",
+      "bytes": 18854
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/clients/base/views/ai-prompt/ai-prompt.js": {
+      "sha256": "9d427f0fa157485a6d516c27d6db0612c01225cdb9bda4e34ed76859c206c0e7",
+      "bytes": 5533
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/include/javascript/sugar7/actions/AiChatPromptSubmitAction.js": {
+      "sha256": "8a57d742d6d3e0c99781e4a362a0e524d285c24261cefbd66538f3c7f977f1bb",
+      "bytes": 3813
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/include/javascript/sugar7/actions/AiChatToggleDetailsAction.js": {
+      "sha256": "bd0fb8c1ca2f1b51bd3ab9f2d98ab0fed8524780f2d1ffdda25d5fcc9b9fc9dd",
+      "bytes": 1994
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/include/javascript/sugar7/actions/Factory.js": {
+      "sha256": "f1e13f2e5ca0ef643d73ec9bd08701b644facb431d2f666cd3a8351dcfcf8fb5",
+      "bytes": 1544
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/include/javascript/sugar7/actions/Runner.js": {
+      "sha256": "d5fe01285a191a225a3435a21e7b9f305ff5f3153b836c0321d71a604dca9b1a",
+      "bytes": 10039
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/include/javascript/sugar7/field.js": {
+      "sha256": "e9c84f4591487577f4bac52b1b373f329704224aa4e627a59fcc33914f0a0915",
+      "bytes": 25203
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/include/javascript/sugar7/hbs-helpers.js": {
+      "sha256": "4a421370d907b2376a225068a5d1ee6078dbd365efe4fc7bb3de612d2eccb756",
+      "bytes": 36867
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/include/javascript/sugar7/plugins/ActionRunner.js": {
+      "sha256": "106bdc414ef3fa47e98d4976c15fdf1d9c14c1b31ee8d494e042587ec5b00825",
+      "bytes": 2612
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/include/javascript/sugar7/plugins/AiChatComponentActions.js": {
+      "sha256": "1a92664ebb48d490eab786973be694fc9527e4a49514509bc67c600b286e0b42",
+      "bytes": 12816
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/include/javascript/sugar7/plugins/AiChatComponentHandler.js": {
+      "sha256": "106b54e6ec717de898963fea19ec1244d5eda7e4bf2460017da93e4c51b8e79c",
+      "bytes": 11215
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/include/javascript/sugar7/plugins/AiChatPaginationManager.js": {
+      "sha256": "7baca1bf1c01e4afb1bcea8957c65090163d063516c1b61a0e85814537b59599",
+      "bytes": 15450
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/include/javascript/sugar7/plugins/AiChatStateManager.js": {
+      "sha256": "fd358c491a15bcc1ded321e7c9b443f447294ffa0b82c9dd58485e49a30855a9",
+      "bytes": 15106
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/include/javascript/sugar7/plugins/AiChatStreaming.js": {
+      "sha256": "639851b21bc98427d34a2d88971e80837c0dc0f5aadf9472cfb71e798a873824",
+      "bytes": 39283
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/include/javascript/sugar7/smart-prompts.js": {
+      "sha256": "817588f2ccd337a9c1c4103b27156f7f8cc2ab2d4e8696265dbc3ba354170a7e",
+      "bytes": 20120
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/include/javascript/sugar7/utils.js": {
+      "sha256": "42d6b6f5a1e94e5a41ae74392f62dd8fa57a12198021a456bcf3d8ec3ee7f8a9",
+      "bytes": 103157
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/modules/Quotes/clients/base/fields/convert-to-opportunity/convert-to-opportunity.js": {
+      "sha256": "a94eb9bd1b9b1c055db69b3d371a5197ad77153b4bec8d648ad1ff0c5e275f28",
+      "bytes": 3346
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/modules/Quotes/clients/base/fields/currency/currency.js": {
+      "sha256": "4a42f3e48139cbfb1fb4f83b4b95a4edbbec4ef114f373f25bd37866b54afcc3",
+      "bytes": 4641
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/relate.js": {
+      "sha256": "c414c7b8351623c00317a11432156e648c1be186c8842f2db31c446e05987b1f",
+      "bytes": 56463
+    },
+    "sugar-sell/ERP-Core/tests/support/sugar-26.2/sidecar/minified/sidecar.min.js": {
+      "sha256": "9936d7258d6e321c1001d3db3f9ae9b63163e386ce52d3669cdb16439754f883",
+      "bytes": 574834
+    }
+  }
+}

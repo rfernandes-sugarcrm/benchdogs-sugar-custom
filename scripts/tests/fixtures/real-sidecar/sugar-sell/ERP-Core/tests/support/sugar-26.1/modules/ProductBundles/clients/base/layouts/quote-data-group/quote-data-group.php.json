@@ -1,0 +1,25 @@
+{
+ "recorded": "Recorded from SugarEnt 26.1.0 (build 319): modules/ProductBundles/clients/base/layouts/quote-data-group/quote-data-group.php; sha256 115fe15837c93f3a52b790e9b951de00dd5c2ca628bb1be06737cb665886398c of the stock file. $viewdefs as php fills it, whole.",
+ "kept": "all",
+ "viewdefs": {
+  "ProductBundles": {
+   "base": {
+    "layout": {
+     "quote-data-group": {
+      "components": [
+       {
+        "view": "quote-data-group-header"
+       },
+       {
+        "view": "quote-data-group-list"
+       },
+       {
+        "view": "quote-data-group-footer"
+       }
+      ]
+     }
+    }
+   }
+  }
+ }
+}

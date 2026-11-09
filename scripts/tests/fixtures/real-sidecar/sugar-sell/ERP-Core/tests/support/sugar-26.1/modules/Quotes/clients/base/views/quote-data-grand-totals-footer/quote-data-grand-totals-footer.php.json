@@ -1,0 +1,46 @@
+{
+ "recorded": "Recorded from SugarEnt 26.1.0 (build 319): modules/Quotes/clients/base/views/quote-data-grand-totals-footer/quote-data-grand-totals-footer.php; sha256 3d6ab54c29f042da3edfbe98073f147f7084c1d7d632b29a731a2cd7071974a3 of the stock file. $viewdefs as php fills it, whole.",
+ "kept": "all",
+ "viewdefs": {
+  "Quotes": {
+   "base": {
+    "view": {
+     "quote-data-grand-totals-footer": {
+      "panels": [
+       {
+        "name": "panel_quote_data_grand_totals_footer",
+        "label": "LBL_QUOTE_DATA_GRAND_TOTALS_FOOTER",
+        "fields": [
+         {
+          "name": "new_sub",
+          "type": "currency"
+         },
+         {
+          "name": "tax",
+          "type": "currency",
+          "related_fields": [
+           "taxrate_value"
+          ]
+         },
+         {
+          "name": "shipping",
+          "type": "quote-footer-currency",
+          "css_class": "quote-footer-currency",
+          "default": "0.00"
+         },
+         {
+          "name": "total",
+          "label": "LBL_LIST_GRAND_TOTAL",
+          "type": "currency",
+          "css_class": "grand-total",
+          "convertToBase": false
+         }
+        ]
+       }
+      ]
+     }
+    }
+   }
+  }
+ }
+}

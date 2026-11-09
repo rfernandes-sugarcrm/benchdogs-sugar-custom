@@ -12,10 +12,8 @@ use SugarQuery;
  */
 class ErpAccountCountryGuard
 {
-    const CONNECTOR_PLATFORM = 'sugarai_erp_connector';
-
     /** The ERP writers: the connector and the seed loader. */
-    const ERP_WRITER_PLATFORMS = array(self::CONNECTOR_PLATFORM, 'epicor_seed');
+    const ERP_WRITER_PLATFORMS = ErpConnectorSession::ERP_WRITERS;
 
     /** App list naming every ERP_LookupValues type that carries countries. */
     const TYPE_LIST = 'erp_country_lookup_type_list';
@@ -28,10 +26,18 @@ class ErpAccountCountryGuard
         $refusal = null;
         $canonical = null;
         try {
-            $platform = isset($_SESSION['platform']) ? (string) $_SESSION['platform'] : null;
+            $platform = ErpConnectorSession::platform();
             $newCountry = (string) ($bean->billing_address_country ?? '');
             $oldCountry = (string) ($bean->fetched_row['billing_address_country'] ?? '');
             if (!self::needsCheck($newCountry, $oldCountry, $platform)) {
+                // The same country retyped in another case or spacing is no new country, but it still takes the ERP's spelling.
+                if (self::retypedOnly($newCountry, $oldCountry, $platform)) {
+                    $canonical = self::canonicalFor($newCountry, static::acceptedSpellings());
+                }
+                if ($canonical === null) {
+                    return;
+                }
+                $bean->billing_address_country = $canonical;
                 return;
             }
             $accepted = static::acceptedSpellings();
@@ -84,6 +90,16 @@ class ErpAccountCountryGuard
         return strtoupper(trim((string) $cleaned));
     }
 
+    /** A seller's edit that changed only the case, spacing or punctuation of the country already on the record. */
+    public static function retypedOnly(string $newCountry, string $oldCountry, ?string $platform): bool
+    {
+        if (in_array($platform, self::ERP_WRITER_PLATFORMS, true) || $newCountry === $oldCountry) {
+            return false;
+        }
+        $new = self::normalize($newCountry);
+        return $new !== '' && $new === self::normalize($oldCountry);
+    }
+
     public static function needsCheck(string $newCountry, string $oldCountry, ?string $platform): bool
     {
         if (in_array($platform, self::ERP_WRITER_PLATFORMS, true)) {
@@ -105,13 +121,89 @@ class ErpAccountCountryGuard
         if (isset($accepted[self::normalize($newCountry)])) {
             return null;
         }
-        $names = array_values(array_unique(array_values($accepted)));
-        sort($names);
+        // One short sentence: what was typed and a few close names, never the whole list.
+        $typed = trim($newCountry);
+        $closest = self::closestNames($newCountry, $accepted);
+        if ($closest !== array()) {
+            return sprintf(
+                '"%s" isn\'t a country in Epicor. Did you mean %s? Pick one of Epicor\'s country names and save again.',
+                $typed,
+                self::orList($closest)
+            );
+        }
         return sprintf(
-            "Billing country '%s' does not match any country in Epicor. Use one of: %s.",
-            $newCountry,
-            implode(', ', $names)
+            '"%s" isn\'t a country in Epicor. Use the country name Epicor has for it (for example %s) and save again.',
+            $typed,
+            self::orList(self::exampleNames($accepted))
         );
+    }
+
+    /** At most this many names are suggested. */
+    const MAX_SUGGESTIONS = 3;
+
+    /** Names offered as examples when nothing typed is close, in this order, if Epicor has them. */
+    const EXAMPLE_NAMES = array('United States', 'USA', 'Canada', 'United Kingdom', 'Germany', 'France');
+
+    /**
+     * Epicor's names closest to what was typed, best first: about one typing slip per four letters, at most three.
+     * @param array<string,string> $accepted
+     * @return string[]
+     */
+    public static function closestNames(string $newCountry, array $accepted): array
+    {
+        $typed = self::normalize($newCountry);
+        if ($typed === '') {
+            return array();
+        }
+        $limit = max(1, intdiv(strlen($typed), 4));
+        $best = array();
+        foreach ($accepted as $spelling => $name) {
+            $distance = levenshtein($typed, (string) $spelling);
+            if ($distance <= $limit && (!isset($best[$name]) || $distance < $best[$name])) {
+                $best[$name] = $distance;
+            }
+        }
+        // Grouped by distance without a callback sort: every sort taking a callable is on ModuleScanner's deny-list.
+        $byDistance = array();
+        foreach ($best as $name => $distance) {
+            $byDistance[$distance][] = (string) $name;
+        }
+        ksort($byDistance);
+        $ordered = array();
+        foreach ($byDistance as $names) {
+            sort($names, SORT_STRING);
+            $ordered = array_merge($ordered, $names);
+        }
+        return array_slice($ordered, 0, self::MAX_SUGGESTIONS);
+    }
+
+    /**
+     * Two familiar names Epicor holds, to show the kind of name it expects.
+     * @param array<string,string> $accepted
+     * @return string[]
+     */
+    public static function exampleNames(array $accepted): array
+    {
+        $names = array_values(array_unique(array_values($accepted)));
+        $examples = array_values(array_intersect(self::EXAMPLE_NAMES, $names));
+        if (count($examples) < 2) {
+            sort($names);
+            $examples = array_values(array_unique(array_merge($examples, $names)));
+        }
+        return array_slice($examples, 0, 2);
+    }
+
+    /**
+     * "A", "A or B", "A, B or C".
+     * @param string[] $names
+     */
+    private static function orList(array $names): string
+    {
+        if (count($names) < 2) {
+            return (string) reset($names);
+        }
+        $last = array_pop($names);
+        return implode(', ', $names) . ' or ' . $last;
     }
 
     /**
