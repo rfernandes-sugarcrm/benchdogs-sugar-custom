@@ -320,6 +320,14 @@ foreach ($viewdefs['ERP_OrderLines']['base']['view']['record']['panels'] as $i =
                 "custom/Extension/modules/ERP_Orders/Ext/clients/base/views/list/bd_kinetic_fields.php",
                 "custom/Extension/modules/ERP_Orders/Ext/clients/base/views/record/bd_kinetic_fields.php",
             ],
+            # The one owner-approved exception (SUG-17, 2026-11-09): the two read-only
+            # category fields on an order line, which carry no shipped quantity or value.
+            # Named exactly, so any other file under these modules still fails here.
+            "ERP_OrderLines": [
+                "custom/Extension/modules/ERP_OrderLines/Ext/Vardefs/bd_order_categories.php",
+                "custom/Extension/modules/ERP_OrderLines/Ext/Language/en_us.bd_order_categories.php",
+                "custom/Extension/modules/ERP_OrderLines/Ext/clients/base/views/record/bd_order_categories.php",
+            ],
         }
         for module in CORE_ORDER_MODULES:
             # ``**/*`` and not ``*``: the fragments would live several
@@ -331,7 +339,7 @@ foreach ($viewdefs['ERP_OrderLines']['base']['view']['record']['panels'] as $i =
                 if p.is_file()
             )
             with self.subTest(module=module):
-                self.assertEqual(approved.get(module, []), found)
+                self.assertEqual(sorted(approved.get(module, [])), found)
 
     def test_no_order_module_fragment_defaults_a_field_to_zero(self):
         """A vardef default manufactures data before the connector speaks.

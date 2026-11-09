@@ -13,5 +13,9 @@ $app_list_strings['erp_lookup_type_list']['BdMarketingEvents'] = 'Marketing Even
 // G804 (🔒 2081b): ADM's customer groups (Epicor CustGrup: GroupCode -> GroupDesc),
 // published by the Bench connector extension; the Account's Cust. Group picker.
 $app_list_strings['erp_lookup_type_list']['BdCustomerGroups'] = 'Customer Group (ADM)';
+// Published by the Bench connector extension (erp_adm_sales_categories, ADM connection only).
+$app_list_strings['erp_lookup_type_list']['BdSalesCategories'] = 'Sales Category (ADM)';
+// Published by the Bench connector extension (erp_adm_product_categories, ADM connection only).
+$app_list_strings['erp_lookup_type_list']['BdProductCategories'] = 'Product Category (ADM)';
 
 // NO company list (🔒 1724b): ADM's companies are the active BdAdmCompanies rows the connector extension publishes (BdAdmRules::isAdmCompany).
