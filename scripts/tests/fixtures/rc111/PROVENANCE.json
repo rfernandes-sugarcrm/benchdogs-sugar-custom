@@ -1,0 +1,45 @@
+{
+  "why": "rc111 retires Bench Dogs' e_total_charges_c from the ERP order's record and list views and draws ERP-Epicor's own erp_line_total right after erp_misc_amount where a stored record view lacks it. bd_order_line_total_test.php builds those views the way a tenant gets them: ERP-Epicor's own install of the ERP_Orders record view (BaseErpLayout's setFlatPdfActions and setErpDocumentRecordLayout, which store the effective view on every install) over ERP-Core's own record view of the release, then the shipped Bench overlays, against ERP-Core's own vardefs of that release. These are byte copies because CI cannot reach the private sibling repository. BaseErpLayout is fixtures/rc107/BaseErpLayout.php.txt: its bytes are the same at e96897e9 (ERP-Epicor 1.2.112), which test_rc111_layout_pins.py checks where the commit is reachable.",
+  "files": {
+    "ERP_Orders.record.1.2.107.php.txt": {
+      "repository": "erp-integration-sugar",
+      "source": "sugar-sell/ERP-Core/src/SugarModules/modules/ERP_Orders/clients/base/views/record/record.php",
+      "commit": "52c2d0eb0e4ac3d3c6fcdabf244a393a0ae26324",
+      "note": "ERP-Epicor 1.2.107: the order's record view before ERP Line Total (unchanged since #227 up to 7e3a69c9), the view an upgraded tenant's stored copy was taken from",
+      "sha256": "fc41a0f57d7b0c51cb50c5afeaa3881a2c3edc7a6ae99590d5ca69652bedccb3",
+      "bytes": 15822
+    },
+    "ERP_Orders.record.1.2.112.php.txt": {
+      "repository": "erp-integration-sugar",
+      "source": "sugar-sell/ERP-Core/src/SugarModules/modules/ERP_Orders/clients/base/views/record/record.php",
+      "commit": "e96897e9528f945ce795364045e271cadd5082fe",
+      "note": "ERP-Epicor 1.2.112: erp_line_total right after erp_misc_amount in the Order Detail panel (7e3a69c9), what a fresh install stores",
+      "sha256": "94701028bfb750420e8e523f5a5a8b1fdfb3d7ffc47be34d6fb96e850e8eb5cb",
+      "bytes": 16041
+    },
+    "ERP_Orders.vardefs.1.2.107.php.txt": {
+      "repository": "erp-integration-sugar",
+      "source": "sugar-sell/ERP-Core/src/SugarModules/modules/ERP_Orders/vardefs.php",
+      "commit": "52c2d0eb0e4ac3d3c6fcdabf244a393a0ae26324",
+      "note": "ERP-Epicor 1.2.107's ERP Orders fields: no erp_line_total (an older ERP-Epicor)",
+      "sha256": "0babba8d9047fea7cc07ba65fdf4c7ad30705be2863fe61a147a0db71af71e53",
+      "bytes": 15958
+    },
+    "ERP_Orders.vardefs.1.2.112.php.txt": {
+      "repository": "erp-integration-sugar",
+      "source": "sugar-sell/ERP-Core/src/SugarModules/modules/ERP_Orders/vardefs.php",
+      "commit": "e96897e9528f945ce795364045e271cadd5082fe",
+      "note": "ERP-Epicor 1.2.112's ERP Orders fields: erp_line_total and erp_line_total_usdollar",
+      "sha256": "96018174753e172d34ef1789f8a4feb19e8fcf7f949f0b90d65fc9316e379f91",
+      "bytes": 17164
+    },
+    "ERP_Orders.list.1.2.112.php.txt": {
+      "repository": "erp-integration-sugar",
+      "source": "sugar-sell/ERP-Core/src/SugarModules/modules/ERP_Orders/clients/base/views/list/list.php",
+      "commit": "e96897e9528f945ce795364045e271cadd5082fe",
+      "note": "ERP-Epicor 1.2.112's ERP Orders list view",
+      "sha256": "a2dcf4b3bd7ab380a7fefadc84594413964a3badf6f04a424015fd8a48ebc652",
+      "bytes": 7599
+    }
+  }
+}

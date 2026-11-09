@@ -293,11 +293,36 @@ foreach ($viewdefs['ERP_OrderLines']['base']['view']['record']['panels'] as $i =
         Through rc68 the package shipped, for these two modules, EXACTLY the six
         retired stubs. From rc69 it ships nothing for them at all. Anything new
         is a deliberate act that has to change this test and explain itself.
+
+        rc95 (owner approval, 2026-10-14): the Opportunity an ERP order sits
+        under, a relate with no amount and no shipped value, and its labels.
+        Nothing on ERP_OrderLines.
+
+        rc99 (owner approval, 2026-10-16): a logic hook that gives an ERP order
+        saved by the integration with no owner the tenant's default owner. It
+        writes only assigned_user_id, never an amount or a shipped value.
+
+        rc100 (owner approval of Bench Dogs' additional mapping, 2026-10-17): a
+        record-view overlay that draws the order's Project Manager, Engineer and
+        Charges, read-only. It stores nothing and draws no shipped figure.
+
+        rc111 (owner ruling, 2026-10-21): the order lines total moved into
+        ERP-Epicor's own erp_line_total. The record overlay takes the retired
+        Bench copy off the view and draws ERP-Epicor's field right after its
+        misc charges; a list overlay takes the copy off the list view. Neither
+        stores anything or draws a shipped figure.
         """
-        # The one owner-approved exception (SUG-17, 2026-11-09): the two read-only
-        # category fields on an order line, which carry no shipped quantity or value.
-        # Named exactly, so any other file under these modules still fails here.
         approved = {
+            "ERP_Orders": [
+                "custom/Extension/modules/ERP_Orders/Ext/Language/en_us.bd_opportunity.php",
+                "custom/Extension/modules/ERP_Orders/Ext/LogicHooks/bd_default_owner.php",
+                "custom/Extension/modules/ERP_Orders/Ext/Vardefs/bd_opportunity.php",
+                "custom/Extension/modules/ERP_Orders/Ext/clients/base/views/list/bd_kinetic_fields.php",
+                "custom/Extension/modules/ERP_Orders/Ext/clients/base/views/record/bd_kinetic_fields.php",
+            ],
+            # The one owner-approved exception (SUG-17, 2026-11-09): the two read-only
+            # category fields on an order line, which carry no shipped quantity or value.
+            # Named exactly, so any other file under these modules still fails here.
             "ERP_OrderLines": [
                 "custom/Extension/modules/ERP_OrderLines/Ext/Vardefs/bd_order_categories.php",
                 "custom/Extension/modules/ERP_OrderLines/Ext/Language/en_us.bd_order_categories.php",

@@ -179,12 +179,18 @@ if (getenv('BD_NO_CLOSED_WON') === '1') {
     unset($GLOBALS['app_list_strings']['sales_stage_dom']['Closed Won']);
 }
 
+// PF's two classes are namespaced and autoloaded since ERP-Epicor-
+// PartialFulfillment moved them to custom/src/Erp: the valuation no longer
+// require_once's its rollup, so the harness loads both, rollup first.
+require getenv('BD_ROLLUP');
+require getenv('BD_STAGE_RULES');
 require getenv('BD_VALUATION');
 
 // Private since PHP 8.1 needs no setAccessible(), and calling it emits a
 // deprecation on 8.5 that would land in stderr.
-$m = new \ReflectionMethod('ErpOpportunityValuation', 'releaseStageDecision');
-$v = new \ErpOpportunityValuation();
+$m = new \ReflectionMethod(
+    'Sugarcrm\\Sugarcrm\\custom\\Erp\\ErpOpportunityValuation', 'releaseStageDecision');
+$v = new \Sugarcrm\Sugarcrm\custom\Erp\ErpOpportunityValuation();
 $quote = new SugarBean();
 
 $out = array('provider_on_disk' => file_exists(getenv('BD_POLICY_REL')));
@@ -214,13 +220,17 @@ class ProviderAbsentMatchesProviderNull(unittest.TestCase):
         """Run PF's releaseStageDecision with cwd where PF looks for the file."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            # PF's own `require_once 'custom/modules/Quotes/ErpQuoteLineRollup.php'`
-            # is relative too, so the neighbour has to sit where PF expects it.
-            (root / "custom/modules/Quotes").mkdir(parents=True)
-            (root / "custom/modules/Quotes/ErpQuoteLineRollup.php").write_text(
-                _read_pf("ErpQuoteLineRollup.php"))
-            valuation = root / "custom/modules/Quotes/ErpOpportunityValuation.php"
+            # PF's classes sit in custom/src/Erp (namespaced, autoloaded); the
+            # harness requires both. Only the provider path is relative to cwd.
+            (root / "custom/src/Erp").mkdir(parents=True)
+            rollup = root / "custom/src/Erp/ErpQuoteLineRollup.php"
+            rollup.write_text(_read_pf("ErpQuoteLineRollup.php"))
+            valuation = root / "custom/src/Erp/ErpOpportunityValuation.php"
             valuation.write_text(_read_pf("ErpOpportunityValuation.php"))
+            # The valuation reads the committed quote stages from ERP-Core's
+            # stage rules (autoloaded on a tenant), so the harness loads it too.
+            stage_rules = root / "custom/src/Erp/ErpQuoteStageRules.php"
+            stage_rules.write_text(_read_pf("ErpQuoteStageRules.php"))
 
             if provider_source is not None:
                 hooks = root / "custom/modules/Quotes/ErpQuoteHooks"
@@ -232,7 +242,9 @@ class ProviderAbsentMatchesProviderNull(unittest.TestCase):
             proc = subprocess.run(
                 ["php", str(script)], cwd=root, capture_output=True, text=True,
                 env={**os.environ,
+                     "BD_ROLLUP": str(rollup),
                      "BD_VALUATION": str(valuation),
+                     "BD_STAGE_RULES": str(stage_rules),
                      "BD_POLICY_REL": POLICY_REL,
                      "BD_NO_CLOSED_WON": "" if closed_won else "1",
                      "BD_NONE_ORDERED": "1" if none_ordered else ""},

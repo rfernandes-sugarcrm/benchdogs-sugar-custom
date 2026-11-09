@@ -1,0 +1,193 @@
+<?php
+
+/**
+ * Your installation or use of this SugarCRM file is subject to the applicable terms available at http://support.sugarcrm.com/Resources/Master_Subscription_Agreements/.
+ */
+$module_name = 'ERP_Orders';
+$viewdefs[$module_name]['base']['view']['list'] = [
+    'panels' => [
+        [
+            'label' => 'LBL_PANEL_1',
+            'fields' => [
+                [
+                    'name' => 'name',
+                    'label' => 'LBL_ORDER_NUMBER',
+                    'default' => true,
+                    'enabled' => true,
+                    'link' => true,
+                ],
+                [
+                    'name' => 'erp_orders_accounts_name',
+                    'label' => 'LBL_ERP_ORDERS_ACCOUNTS_FROM_ACCOUNTS_TITLE',
+                    'enabled' => true,
+                    'id' => 'ERP_ORDERS_ACCOUNTSACCOUNTS_IDA',
+                    'link' => true,
+                    'sortable' => false,
+                    'default' => true,
+                ],
+                [
+                    'name' => 'status',
+                    'label' => 'LBL_ORDER_STATUS',
+                    'type' => 'erp-status-badge',
+                    'default' => true,
+                    'enabled' => true,
+                ],
+                [
+                    'name' => 'order_date',
+                    'label' => 'LBL_ORDER_DATE',
+                    'default' => true,
+                    'enabled' => true,
+                ],
+                [
+                    'name' => 'order_total',
+                    'label' => 'LBL_ORDER_TOTAL',
+                    'related_fields' => [
+                        'currency_id',
+                        'base_rate',
+                    ],
+                    'currency_format' => true,
+                    'default' => true,
+                    'enabled' => true,
+                ],
+                [
+                    'name' => 'erp_display_sync_key',
+                    'label' => 'LBL_ERP_ORDER_NUM',
+                    'type' => 'erp-id-link',
+                    'default' => true,
+                    'enabled' => true,
+                ],
+                [
+                    'name' => 'quotes_erp_orders_name',
+                    'label' => 'LBL_QUOTES_ERP_ORDERS_FROM_QUOTES_TITLE',
+                    'default' => true,
+                    'enabled' => true,
+                    'link' => true,
+                ],
+                [
+                    'name' => 'assigned_user_name',
+                    'label' => 'LBL_ASSIGNED_TO_NAME',
+                    'default' => true,
+                    'enabled' => true,
+                    'link' => true,
+                ],
+                [
+                    'name' => 'date_modified',
+                    'enabled' => true,
+                    'default' => true,
+                ],
+                [
+                    'name' => 'erp_companies_erp_orders_name',
+                    'label' => 'LBL_ERP_COMPANIES_ERP_ORDERS_FROM_ERP_COMPANIES_TITLE',
+                    'enabled' => true,
+                    'id' => 'ERP_COMPANIES_ERP_ORDERSERP_COMPANIES_IDA',
+                    'link' => true,
+                    'sortable' => false,
+                    'default' => false,
+                ],
+                [
+                    'name' => 'purchase_order_num',
+                    'label' => 'LBL_PURCHASE_ORDER_NUM',
+                    'enabled' => true,
+                    'default' => false,
+                ],
+                [
+                    'name' => 'request_ship_date',
+                    'label' => 'LBL_REQUEST_SHIP_DATE',
+                    'enabled' => true,
+                    'default' => false,
+                ],
+                [
+                    'name' => 'discount_perc',
+                    'label' => 'LBL_DISCOUNT_PERC',
+                    'enabled' => true,
+                    'default' => false,
+                ],
+                [
+                    'name' => 'erp_orders_accounts_1_name',
+                    'label' => 'LBL_ERP_ORDERS_ACCOUNTS_1_FROM_ACCOUNTS_TITLE',
+                    'enabled' => true,
+                    'id' => 'ERP_ORDERS_ACCOUNTS_1ACCOUNTS_IDA',
+                    'link' => true,
+                    'sortable' => false,
+                    'default' => false,
+                ],
+                [
+                    'name' => 'erp_orders_erp_lookupvalues_2_name',
+                    'label' => 'LBL_ERP_ORDERS_ERP_LOOKUPVALUES_2_FROM_ERP_LOOKUPVALUES_TITLE',
+                    'enabled' => true,
+                    'id' => 'ERP_ORDERS_ERP_LOOKUPVALUES_2ERP_LOOKUPVALUES_IDA',
+                    'link' => true,
+                    'sortable' => false,
+                    'default' => false,
+                ],
+                [
+                    'name' => 'erp_orders_accounts_2_name',
+                    'label' => 'LBL_ERP_ORDERS_ACCOUNTS_2_FROM_ACCOUNTS_TITLE',
+                    'enabled' => true,
+                    'id' => 'ERP_ORDERS_ACCOUNTS_2ACCOUNTS_IDA',
+                    'link' => true,
+                    'sortable' => false,
+                    'default' => false,
+                ],
+                [
+                    'name' => 'erp_orders_erp_lookupvalues_1_name',
+                    'label' => 'LBL_ERP_ORDERS_ERP_LOOKUPVALUES_1_FROM_ERP_LOOKUPVALUES_TITLE',
+                    'enabled' => true,
+                    'id' => 'ERP_ORDERS_ERP_LOOKUPVALUES_1ERP_LOOKUPVALUES_IDA',
+                    'link' => true,
+                    'sortable' => false,
+                    'default' => false,
+                ],
+                [
+                    'name' => 'erp_orders_erp_lookupvalues_name',
+                    'label' => 'LBL_ERP_ORDERS_ERP_LOOKUPVALUES_FROM_ERP_LOOKUPVALUES_TITLE',
+                    'enabled' => true,
+                    'id' => 'ERP_ORDERS_ERP_LOOKUPVALUESERP_LOOKUPVALUES_IDA',
+                    'link' => true,
+                    'sortable' => false,
+                    'default' => false,
+                ],
+                [
+                    'name' => 'team_name',
+                    'label' => 'LBL_TEAM',
+                    'default' => false,
+                    'enabled' => true,
+                ],
+                [
+                    'name' => 'date_entered',
+                    'enabled' => true,
+                    'default' => false,
+                ],
+                [
+                    'name' => 'created_by_name',
+                    'label' => 'LBL_CREATED',
+                    'enabled' => true,
+                    'id' => 'CREATED_BY',
+                    'link' => true,
+                    'default' => false,
+                ],
+                [
+                    'name' => 'modified_by_name',
+                    'label' => 'LBL_MODIFIED',
+                    'enabled' => true,
+                    'id' => 'MODIFIED_USER_ID',
+                    'link' => true,
+                    'default' => false,
+                ],
+                // Appended last, not near erp_display_sync_key - not a default column, just kept enabled so the value is fetched (erp-id-link needs it).
+                [
+                    'name' => 'epicor_deeplink_url',
+                    'label' => 'LBL_EPICOR_DEEPLINK_URL',
+                    'enabled' => true,
+                    'readonly' => true,
+                    'default' => false,
+                ],
+            ],
+        ],
+    ],
+    // Newest first by the document's own date: the number is text, so sorting by it is not numeric.
+    'orderBy' => [
+        'field' => 'order_date',
+        'direction' => 'desc',
+    ],
+];

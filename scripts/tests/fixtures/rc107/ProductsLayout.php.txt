@@ -1,0 +1,277 @@
+<?php
+
+require_once('custom/include/scripts/BaseErpLayout.php');
+
+class ProductsLayout extends BaseErpLayout
+{
+    /** G467: the Quoted Line Item record's cost worksheet panel (name == label key, like ERP_PANEL_NAME). */
+    const COST_WORKSHEET_PANEL_NAME = 'LBL_RECORDVIEW_PANEL_ERP_COST_WORKSHEET';
+
+    public function install(): void
+    {
+        // 🔒 1436 (G176): the grid's stock column now comes from the product catalog. (decision 693)
+        $this->addFieldsToDataGroupListView('Products', $this->stockAvailabilityFields());
+        $this->addFieldsToDataGroupListView('Products', $this->subtotalFields());
+        // The unit the line was sold in (user decision 211).
+        $this->addFieldsToDataGroupListView('Products', $this->unitOfMeasureFields());
+        // G249 / 🔒 1500 step 2: the unit is also on the Quoted Line Item record view. test3 measured on Bench 2026-09-22 that it was on the grid only.
+        $this->addFieldsToRecordView(
+            'Products',
+            $this->unitOfMeasureRecordFields(),
+            ['name' => 'panel_body'],
+            'mft_part_num'
+        );
+        // G467 (🔒 902, owner 🔒 1758b): the rung's Epicor cost worksheet breakdown, on the Quoted Line Item record view in a panel of its own. (🔒 676, 🔒 1439, G249)
+        $this->addPanelToRecordViewBefore(
+            'Products',
+            $this->costWorksheetPanelDefinition() + ['fields' => $this->costWorksheetRecordFields()],
+            'panel_hidden'
+        );
+        $this->addFieldsToRecordView(
+            'Products',
+            $this->costWorksheetRecordFields(),
+            ['name' => self::COST_WORKSHEET_PANEL_NAME],
+            null,
+            $this->costWorksheetPanelDefinition()
+        );
+        // The panel always shows, with all eight rows, even on a line Epicor never costed; it starts closed and a seller opens it.
+        // Earlier releases hid it until one of them held a number and placed it open; an upgrade takes that rule off and closes it.
+        $this->removeDependenciesFromRecordView('Products', $this->retiredCostWorksheetPanelDependencies());
+        $this->setRecordViewPanelProperties('Products', self::COST_WORKSHEET_PANEL_NAME, ['panelDefault' => 'collapsed']);
+        // G463 (🔒 1758b): the line's own Need By / Ship By, on the Quoted Line Item record view. (G605, 🔒 1792b, decision 693)
+        $this->removeFieldsFromDataGroupListView('Products', $this->lineDateFields());
+        $this->addFieldsToRecordView(
+            'Products',
+            $this->lineDateRecordFields(),
+            ['name' => 'panel_body'],
+            'erp_unit_of_measure'
+        );
+        // G605: the line number links to the line's own record view (#Products/<id>), stock Sidecar's own mechanism.
+        $this->setDataGroupListColumnProperties('Products', 'line_num', ['link' => true]);
+        // The column order is deliberately not set here any more - see orderGridColumns() below and its caller in post_execute.php.
+    }
+
+    /** 🔒 1439 (G175) — the final grid column order, run once after every package has contributed its columns. */
+    public function orderGridColumns(): void
+    {
+        $this->orderAndRelabelDataGroupListColumns(
+            'Products',
+            $this->stockGroupOrder(),
+            'discount_price'
+        );
+        // Anchored on the last column the call above placed.
+        $this->orderAndRelabelDataGroupListColumns(
+            'Products',
+            $this->moneyColumnOrder(),
+            'erp_stock_availability'
+        );
+    }
+
+    /**
+     * The "what is it and have we got it" group, moved as a unit to sit between the unit price and the money columns. (🔒 1439, 🔒 1436)
+     */
+    private function stockGroupOrder(): array
+    {
+        return [
+            ['name' => 'erp_unit_of_measure'],
+            ['name' => 'erp_break_select'],
+            // 🔒 1444 — the type is set here, not in stockAvailabilityFields().
+            [
+                'name' => 'erp_stock_availability',
+                'label' => 'LBL_ERP_STOCK_AVAILABILITY',
+                'labelModule' => 'Products',
+                'type' => 'erp-onhand-qty',
+                // G187 — and the figure links to the part, from here only.
+                'erp_product_link' => 'product_template_id',
+            ],
+        ];
+    }
+
+    /** 🔒 1798b (G605): the quote line grid shows no "Currency Rate" column. */
+    public function removeTenantCurrencyRateColumn(): void
+    {
+        $this->removeFieldsFromDataGroupListView('Products', [['name' => 'base_rate']]);
+    }
+
+    public function uninstall(): void
+    {
+        $this->removeFieldsFromDataGroupListView('Products', $this->stockAvailabilityFields());
+        $this->removeFieldsFromDataGroupListView('Products', $this->subtotalFields());
+        $this->removeFieldsFromDataGroupListView('Products', $this->unitOfMeasureFields());
+        $this->removeFieldsFromRecordView('Products', $this->collectFieldNames($this->unitOfMeasureRecordFields()));
+        // G467: the cost worksheet panel this package created leaves with it, so no labelled box points at vardefs that left too.
+        $this->removePanelsFromRecordView('Products', [self::COST_WORKSHEET_PANEL_NAME]);
+        $this->removeDependenciesFromRecordView('Products', $this->retiredCostWorksheetPanelDependencies());
+        $this->removeFieldsFromDataGroupListView('Products', $this->lineDateFields());
+        $this->removeFieldsFromRecordView('Products', $this->collectFieldNames($this->lineDateRecordFields()));
+        // G605: Sugar's line number back to plain text (its stock column has no link).
+        $this->setDataGroupListColumnProperties('Products', 'line_num', ['link' => null]);
+        // Hand the three stock columns their stock labels back (§cw: a change this package made is a change this package reverts).
+        $this->orderAndRelabelDataGroupListColumns(
+            'Products',
+            $this->stockMoneyColumnLabels(),
+            'discount_price'
+        );
+    }
+
+    // ------------------------------------------------------------------------- Field definitions -------------------------------------------------------------------------
+
+    /**
+     * 🔒 1435, in the owner's own words and order: *"it should be total, lin item disocount, discounted total"*, with column 1 corrected minutes later.
+     */
+    private function moneyColumnOrder(): array
+    {
+        return [
+            ['name' => 'subtotal', 'label' => 'LBL_ERP_EXTENDED_PRICE', 'labelModule' => 'Products'],
+            ['name' => 'discount_field', 'label' => 'LBL_ERP_LINE_DISCOUNT', 'labelModule' => 'Products'],
+            ['name' => 'total_amount', 'label' => 'LBL_ERP_DISCOUNTED_TOTAL', 'labelModule' => 'Products'],
+        ];
+    }
+
+    private function stockMoneyColumnLabels(): array
+    {
+        return [
+            ['name' => 'subtotal', 'label' => 'LBL_SUBTOTAL'],
+            ['name' => 'discount_field', 'label' => 'LBL_DISCOUNT_AMOUNT'],
+            ['name' => 'total_amount', 'label' => 'LBL_LINE_ITEM_TOTAL'],
+        ];
+    }
+
+    /** 🔒 1436 / G176 + 🔒 1438 / G180 — stock from the catalog. */
+    private function stockAvailabilityFields(): array
+    {
+        return [
+            [
+                'name' => 'erp_stock_availability',
+                'label' => 'LBL_ERP_STOCK_AVAILABILITY',
+                'labelModule' => 'Products',
+                // 🔒 1444 — a negative on-hand renders as "-50 (back ordered)" rather than a bare minus. (G187)
+                'type' => 'erp-onhand-qty',
+                // Numbers right-align via CSS keyed on data-type.
+                'css_class' => 'text-right',
+                'readonly' => true,
+            ],
+        ];
+    }
+
+    // Line-level subtotal (quantity x discounted unit price, before the discount fieldset and total_amount) - a plain stock currency column. (🔒 1500, decision 211)
+    private function unitOfMeasureFields(): array
+    {
+        return [
+            [
+                'name' => 'erp_unit_of_measure',
+                'label' => 'LBL_ERP_UNIT_OF_MEASURE',
+                'labelModule' => 'Products',
+                'type' => 'varchar',
+                'readonly' => false,
+            ],
+        ];
+    }
+
+    // G249 / 🔒 1500 step 2 - the same field on the Products record view.
+    private function unitOfMeasureRecordFields(): array
+    {
+        return [
+            ['name' => 'erp_unit_of_measure', 'label' => 'LBL_ERP_UNIT_OF_MEASURE'],
+        ];
+    }
+
+    /** G467 — the rung's Epicor cost worksheet on the Quoted Line Item record. */
+    private function costWorksheetRecordFields(): array
+    {
+        return [
+            ['name' => 'erp_material_cost', 'label' => 'LBL_ERP_MATERIAL_COST'],
+            ['name' => 'erp_labor_cost', 'label' => 'LBL_ERP_LABOR_COST'],
+            ['name' => 'erp_material_burden', 'label' => 'LBL_ERP_MATERIAL_BURDEN'],
+            ['name' => 'erp_labor_burden', 'label' => 'LBL_ERP_LABOR_BURDEN'],
+            ['name' => 'erp_subcontract_cost', 'label' => 'LBL_ERP_SUBCONTRACT_COST'],
+            ['name' => 'erp_misc_cost', 'label' => 'LBL_ERP_MISC_COST'],
+            ['name' => 'erp_quoted_markup_pct', 'label' => 'LBL_ERP_QUOTED_MARKUP_PCT'],
+            ['name' => 'erp_quoted_profit_pct', 'label' => 'LBL_ERP_QUOTED_PROFIT_PCT'],
+        ];
+    }
+
+    /**
+     * The rule earlier releases placed to hide the panel while all eight fields were empty. Never placed any more; built
+     * exactly as those releases built it, because the installer removes it by its serialised value.
+     */
+    private function retiredCostWorksheetPanelDependencies(): array
+    {
+        $fields = $this->collectFieldNames($this->costWorksheetRecordFields());
+        $stated = [];
+        foreach ($fields as $name) {
+            $stated[] = 'isNumeric($' . $name . ')';
+        }
+
+        return [
+            [
+                'hooks' => ['edit', 'view'],
+                'trigger' => 'true',
+                'triggerFields' => $fields,
+                'onload' => true,
+                'actions' => [
+                    [
+                        'action' => 'SetPanelVisibility',
+                        'params' => [
+                            'target' => self::COST_WORKSHEET_PANEL_NAME,
+                            'value' => 'or(' . implode(', ', $stated) . ')',
+                        ],
+                    ],
+                ],
+            ],
+        ];
+    }
+
+    private function costWorksheetPanelDefinition(): array
+    {
+        return [
+            'name' => self::COST_WORKSHEET_PANEL_NAME,
+            'label' => self::COST_WORKSHEET_PANEL_NAME,
+            'columns' => 2,
+            'placeholders' => true,
+            'newTab' => false,
+            'panelDefault' => 'collapsed',
+        ];
+    }
+
+    // G463 (🔒 1758b) - the seller's Need By / Ship By for the line.
+    private function lineDateFields(): array
+    {
+        return [
+            [
+                'name' => 'erp_need_by_date',
+                'label' => 'LBL_ERP_NEED_BY_DATE',
+                'labelModule' => 'Products',
+                'type' => 'date',
+            ],
+            [
+                'name' => 'erp_ship_by_date',
+                'label' => 'LBL_ERP_SHIP_BY_DATE',
+                'labelModule' => 'Products',
+                'type' => 'date',
+            ],
+        ];
+    }
+
+    // The same two on the Quoted Line Item record view, after the unit.
+    private function lineDateRecordFields(): array
+    {
+        return [
+            ['name' => 'erp_need_by_date', 'label' => 'LBL_ERP_NEED_BY_DATE'],
+            ['name' => 'erp_ship_by_date', 'label' => 'LBL_ERP_SHIP_BY_DATE'],
+        ];
+    }
+
+    private function subtotalFields(): array
+    {
+        return [
+            ['name' => 'subtotal', 'type' => 'currency', 'label' => 'LBL_SUBTOTAL', 'labelModule' => 'Products'],
+        ];
+    }
+
+    private function quotedLineItemsCleanupFields(): array
+    {
+        return ['status', 'cost_price', 'service', 'assigned_user_name'];
+    }
+
+}

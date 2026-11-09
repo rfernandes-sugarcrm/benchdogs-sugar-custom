@@ -1,0 +1,30 @@
+{
+  "why": "rc107 places Bench Dogs' Cost & capacity section directly under ERP-Epicor's Epicor Cost Worksheet panel on the quoted line item's record view. bd_cost_capacity_section_test.php runs ERP-Epicor 1.2.107's OWN install of that record view (ERP-Core's ProductsLayout over Sugar's stock view) and then the shipped Bench overlay, the way Sugar builds the view. These are byte copies, because CI cannot reach the private sibling repository. They are not in fixtures/shared-sugar/ because that pin is one older commit (ERP-Epicor 1.2.74) for every shared file, and moving all of it to 1.2.107 changes what fourteen unrelated tests run against. Where the source commit is reachable, test_rc107_layout_pins.py compares each copy to it, so a stale copy is loud.",
+  "files": {
+    "ProductsLayout.php.txt": {
+      "repository": "erp-integration-sugar",
+      "source": "sugar-sell/ERP-Core/scripts/Modules/ProductsLayout.php",
+      "commit": "52c2d0eb0e4ac3d3c6fcdabf244a393a0ae26324",
+      "note": "ERP-Epicor 1.2.107 (the head of erp-integration-sugar #330), the release on every Bench tenant: the cost panel always on the view, collapsed at start",
+      "sha256": "1bcf58461ef7d4c4f6942ac8d4945d4bfbfc9cc1ee245d7cc237375f106ed311",
+      "bytes": 12053
+    },
+    "BaseErpLayout.php.txt": {
+      "repository": "erp-integration-sugar",
+      "source": "sugar-sell/ERP-Core/scripts/BaseErpLayout.php",
+      "commit": "52c2d0eb0e4ac3d3c6fcdabf244a393a0ae26324",
+      "note": "the layout base class the same release installs at custom/include/scripts/BaseErpLayout.php (setRecordViewPanelProperties is new in it)",
+      "sha256": "8c7293fdb2325762736d14774488da1ababb5721899edc6f078a566599ea94bf",
+      "bytes": 100307
+    },
+    "products_record_stock.json": {
+      "repository": "sugarcrm/Mango",
+      "source": "sugarcrm/modules/Products/clients/base/views/record/record.php",
+      "commit": "master",
+      "git_blob": "f61f9e097dcca99e30f397328b25a6228fea7745",
+      "note": "Sugar's stock quoted line item record view (panel_header, panel_body, panel_hidden), read 2026-10-20 and recorded as the $viewdefs php fills from it; its quantity, discount_price and discount_field sit at the lines ERP-Core's Products record.js cites for SugarEnt 26.1.0 (165, 167, 206)",
+      "sha256": "d7a0557e47cc6d4c28b553f41d003954cbb12227c35893232fdcad9630994d50",
+      "bytes": 18238
+    }
+  }
+}

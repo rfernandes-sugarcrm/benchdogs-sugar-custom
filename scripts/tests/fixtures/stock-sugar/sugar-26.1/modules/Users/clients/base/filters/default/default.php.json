@@ -1,0 +1,46 @@
+{
+ "recorded": "Recorded from SugarEnt 26.1.0 (build 319): modules/Users/clients/base/filters/default/default.php; sha256 d752a306f8c935c879eae4196a724f7d1942f5dcf78c4e61e729d7b753ef9b66 of the stock file. $viewdefs as php fills it, whole.",
+ "kept": "all",
+ "viewdefs": {
+  "Users": {
+   "base": {
+    "filter": {
+     "default": {
+      "default_filter": "all_records",
+      "quicksearch_field": [
+       [
+        "first_name",
+        "last_name"
+       ],
+       "email",
+       "phone_work"
+      ],
+      "quicksearch_priority": 2,
+      "fields": {
+       "first_name": [],
+       "last_name": [],
+       "address_city": [],
+       "created_by_name": [],
+       "email": [],
+       "tag": [],
+       "status": [],
+       "$owner": {
+        "predefined_filter": true,
+        "vname": "LBL_CURRENT_USER_FILTER"
+       },
+       "$favorite": {
+        "predefined_filter": true,
+        "vname": "LBL_FAVORITES_FILTER"
+       },
+       "department": [],
+       "title": [],
+       "address_country": [],
+       "user_name": [],
+       "customer_journey_access": []
+      }
+     }
+    }
+   }
+  }
+ }
+}

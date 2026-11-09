@@ -1,0 +1,20 @@
+{{!-- Recorded from SugarEnt 26.1.0 (build 319): clients/base/fields/sidebartoggle/detail.hbs; sha256 c95e18751ea68ecc61930fa28e1d62afe44146c0c0ec7a5247835da2180e4e30 of the stock file, which follows unchanged. --}}
+{{!--
+/*
+ * Your installation or use of this SugarCRM file is subject to the applicable
+ * terms available at
+ * http://support.sugarcrm.com/Resources/Master_Subscription_Agreements/.
+ * If you do not agree to all of the applicable terms or do not have the
+ * authority to bind the entity as an authorized representative, then do not
+ * install or use this SugarCRM file.
+ *
+ * Copyright (C) SugarCRM Inc. All rights reserved.
+ */
+--}}
+<button type="button" class="btn btn-invisible sidebar-toggle ltr:ml-2 rtl:mr-2"
+   rel="tooltip" tabindex="0"
+   title="{{str 'LBL_SIDEPANE_TOGGLE' module}}"
+   data-bs-placement="{{dataPlacement}}"
+   track="click:togglesidebar" aria-label="{{ariaLabel}}">
+    <i class="{{buildIcon iconClass}}" aria-hidden="true"></i>
+</button>

@@ -7,6 +7,7 @@ use ErpQuoteOpportunityContribution;
 use Opportunity;
 use SugarBean;
 use SugarCurrency;
+use SugarQuery;
 
 /** Shared owner of the primary Quote's Opportunity headline amount. */
 class QuoteOpportunityAmount
@@ -21,7 +22,7 @@ class QuoteOpportunityAmount
         }
         try {
             // The invalidation path - owner ruling 787(4), closing review finding 4. (decision 447)
-            if ($this->primaryWasWithdrawn($bean)) {
+            if ($this->primaryWasWithdrawn($bean, (string) $event, (array) $arguments)) {
                 $this->unvalue($bean);
 
                 return;
@@ -38,10 +39,9 @@ class QuoteOpportunityAmount
     }
 
     /** Whether this save withdrew the justification for a published amount. (decision 447) */
-    private function primaryWasWithdrawn(SugarBean $quote): bool
+    private function primaryWasWithdrawn(SugarBean $quote, string $event, array $arguments): bool
     {
-        $was = !empty($quote->fetched_row['erp_is_primary_quote']);
-        if (!$was) {
+        if (!$this->wasPrimary($quote, $event, $arguments)) {
             return false;
         }
         // 🔒 1468 (G215): a quote that was primary with no Opportunity and yielded on joining a deal that already had a primary was never this Opportunity's primary.
@@ -54,6 +54,47 @@ class QuoteOpportunityAmount
         }
 
         return empty($quote->erp_is_primary_quote);
+    }
+
+    /**
+     * Was this quote the primary one before this event? In after_save, fetched_row already holds the saved values,
+     * so the old value comes from the save's own change set; a flag the save did not move kept its value.
+     * A link event runs before the row is written and has no change set, so there fetched_row is the row as read.
+     */
+    private function wasPrimary(SugarBean $quote, string $event, array $arguments): bool
+    {
+        if ($event === 'after_relationship_add') {
+            return !empty($quote->fetched_row['erp_is_primary_quote']);
+        }
+        $change = $arguments['dataChanges']['erp_is_primary_quote'] ?? null;
+        if (is_array($change)) {
+            return !empty($change['before'] ?? null);
+        }
+
+        return !empty($quote->erp_is_primary_quote);
+    }
+
+    /**
+     * Does another live quote on this Opportunity hold the primary flag after this save? Then the flag moved, and that quote's own save values the Opportunity.
+     * A failed read throws, so refresh() logs it and the amount stays: never blank a deal on a read that did not happen.
+     */
+    private function anotherQuoteIsPrimary(SugarBean $quote, string $opportunityId): bool
+    {
+        // A demotion can be saved before the winner's own row is written (an acceptance demotes in the winner's before_save).
+        if (QuotePrimaryQuoteSoleEnforcer::demotedInFavourOf((string) $quote->id) !== '') {
+            return true;
+        }
+        $query = new SugarQuery();
+        $query->from(BeanFactory::newBean('Quotes'), array('team_security' => false));
+        $query->join('opportunities', array('alias' => 'primary_opportunity'));
+        $query->select(array('id'));
+        $query->where()
+            ->equals('primary_opportunity.id', $opportunityId)
+            ->equals('erp_is_primary_quote', 1)
+            ->notEquals('id', (string) $quote->id);
+        $query->limit(1);
+
+        return $query->execute() !== array();
     }
 
     /** Put the Opportunity into the visible unvalued state ruling 787(4) chose. (decision 59) */
@@ -76,6 +117,9 @@ class QuoteOpportunityAmount
         }
         // A closed Opportunity keeps its number.
         if (in_array($opportunity->sales_stage ?? '', ['Closed Won', 'Closed Lost'], true)) {
+            return;
+        }
+        if (empty($quote->deleted) && $this->anotherQuoteIsPrimary($quote, (string) $opportunity->id)) {
             return;
         }
 
@@ -148,14 +192,23 @@ class QuoteOpportunityAmount
         $amount = round($amount, 2);
 
         // G167 I4 — "a change of primary leaves a reason: which quote the amount came from, and the trigger".
-        $source = $this->sourceSentence($quote, $stored);
+        $label = $this->sourceLabel($quote, $stored);
+        $trigger = QuotePrimaryQuoteSoleEnforcer::triggerFor((string) $quote->id);
 
         // The early return now weighs both facts, and that is I4's anti-coincidence clause, not a tidy-up. (G167, G199, 🔒 1428)
         $unvalued = ($opportunity->amount === null || $opportunity->amount === '');
         $amountSame = !$unvalued && ((float) $opportunity->amount === $amount);
-        $sourceSame = ((string) ($opportunity->erp_amount_source ?? '') === $source);
-        if ($amountSame && $sourceSame) {
+        $current = (string) ($opportunity->erp_amount_source ?? '');
+        // No figure from a quote yet: no amount or a zero (what a new Opportunity is created with; an empty amount
+        // casts to zero too), or no recorded source.
+        $firstFigure = (float) $opportunity->amount === 0.0 || $current === '';
+        $source = self::sourceSentence($label, $trigger, $firstFigure);
+        if ($amountSame && $current === $source) {
             // Genuinely nothing to say.
+            return;
+        }
+        // Same amount, same quote named, and the flag did not move in this request: the stored reason is still the true one.
+        if ($amountSame && $trigger === '' && strpos($current, self::sourcePrefix($label)) === 0) {
             return;
         }
 
@@ -169,8 +222,40 @@ class QuoteOpportunityAmount
             . ' - ' . $source);
     }
 
-    /** G167 I4 — the sentence that says where this Opportunity's amount came from and what moved it. (G445, G602) */
-    private function sourceSentence(SugarBean $quote, SugarBean $stored): string
+    /**
+     * G167 I4 — the sentence that says where this Opportunity's amount came from and what moved it. (G445, G602)
+     * Every reason a seller reads is worded here; the enforcer's trigger values are keys and are never shown.
+     */
+    private static function sourceSentence(string $label, string $trigger, bool $firstFigure): string
+    {
+        switch ($trigger) {
+            case QuotePrimaryQuoteSoleEnforcer::TRIGGER_HIJACK:
+                $reason = 'made the primary quote.';
+                break;
+            case QuotePrimaryQuoteSoleEnforcer::TRIGGER_FIRST_PICK:
+                $reason = 'the first quote on this Opportunity.';
+                break;
+            case '':
+            case QuotePrimaryQuoteSoleEnforcer::TRIGGER_YIELDED_ON_JOIN:
+                // Nothing moved the flag to this quote here (a quote that yielded it is not the primary): a deal with
+                // no figure from a quote yet takes the quote's total; only a deal that had one has seen it change.
+                $reason = $firstFigure ? 'taken from the quote\'s total.' : 'the quote\'s own total changed.';
+                break;
+            default:
+                throw new \UnexpectedValueException('No Amount Source reason for the trigger ' . $trigger);
+        }
+
+        return self::sourcePrefix($label) . $reason;
+    }
+
+    /** The part of the sentence that names the quote; the reason follows it. */
+    private static function sourcePrefix(string $label): string
+    {
+        return 'Amount from ' . $label . '; ';
+    }
+
+    /** The quote, as the sentence names it: its Sugar number, its Epicor number and its name. */
+    private function sourceLabel(SugarBean $quote, SugarBean $stored): string
     {
         $num = self::sugarQuoteNumber($stored);
         $erp = self::erpQuoteNumber($quote);
@@ -189,12 +274,7 @@ class QuoteOpportunityAmount
             $label .= ' "' . $name . '"';
         }
 
-        $trigger = QuotePrimaryQuoteSoleEnforcer::triggerFor((string) $quote->id);
-        if ($trigger === '') {
-            return 'Amount from ' . $label . '; the quote\'s own total changed.';
-        }
-
-        return 'Amount from ' . $label . '; ' . $trigger . '.';
+        return $label;
     }
 
     /**

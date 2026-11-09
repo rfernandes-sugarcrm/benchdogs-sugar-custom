@@ -1,0 +1,122 @@
+{
+  "about": [
+    "The two variables PDF Manager hands a Quotes template, shaped as Sugar 26.1 builds them: 'fields' from PdfManagerHelper::parseBeanFields(quote) with SugarpdfPdfmanager::preDisplay's own rewrites (date_quote_expected_closed in the user's date format, ext_price as discount_price x quantity with the currency symbol), and 'product_bundles' with every quoted line item parsed the same way.",
+    "parseBeanFields turns a currency field into '$22.81' (symbol, then the user's separators), a decimal into '2.00', runs nl2br over a string and leaves out a field whose value is null.",
+    "Shaped like the live QA quote whose Epicor quote is 8890: line 1 is 20498P04W x 2 with a three-rung Kinetic price ladder (1 @ 24, 10 @ 22, 50 @ 20), line 2 is 20498P07W x 3 with one rung; 4 quoted line items in all, 22.81 a unit on both lines, Expires printed '2026-11-21' by a Y-m-d user (read off that quote's PDF and its run log).",
+    "Each rung is its own quoted line item. The connector keys it '<company>__<QuoteNum>_<QuoteLine>_<QtyNum>' and does not write erp_ladder_group (the field a copied quote carries once its key is shed), so a synced rung has no erp_ladder_group at all: recorded in erp-integration-core tests/unit/fixtures/quote_line_delivery_calls.json (ADM__6001_1_1..4) and module_several_records_1016.json (PILOT__1016_1_1 and _1_2, erp_ladder_group None).",
+    "The two rungs the seller did not choose carry erp_total_role 'alternative' (ERP-Epicor's ErpLineRole), which is why the live PDF printed two lines from four items.",
+    "Line 1's rungs 2 and 3 sit after line 2, as rungs the sync adds after the seller made both lines would. Line 1 carries a long description (e_line_comment_c, the customer's own field for Kinetic's line comment, with Kinetic's carriage-return line breaks after nl2br). Names, addresses and people are neutral test values."
+  ],
+  "fields": {
+    "id": "q-8890",
+    "name": "Rung grouping fixture quote",
+    "quote_num": "8890",
+    "erp_priced_at": "2026-10-22 14:59:45",
+    "date_quote_expected_closed": "2026-11-21",
+    "currency_id": "-99",
+    "billing_account_name": "Test Account",
+    "billing_address_street": "100 Test Street",
+    "billing_address_city": "York",
+    "billing_address_state": "PA",
+    "billing_address_postalcode": "17401",
+    "billing_address_country": "UNITED STATES",
+    "shipping_account_name": "Test Account",
+    "shipping_address_street": "100 Test Street",
+    "shipping_address_city": "York",
+    "shipping_address_state": "PA",
+    "shipping_address_postalcode": "17401",
+    "shipping_address_country": "UNITED STATES",
+    "billing_contact_name": "",
+    "erp_quotes_billing_terms_name": "FORMS NEEDED",
+    "assigned_user_link": {
+      "name": "Test Seller",
+      "email1": "seller@example.com",
+      "phone_mobile": ""
+    }
+  },
+  "product_bundles": [
+    {
+      "id": "bundle-1",
+      "name": "",
+      "products": {
+        "0": {
+          "id": "line-1-rung-1",
+          "name": "SANCTUARY SAMPLE BOARD-WHITE",
+          "description": "SANCTUARY SAMPLE BOARD-WHITE",
+          "mft_part_num": "20498P04W",
+          "quantity": "2.00",
+          "discount_price": "$22.81",
+          "ext_price": "$45.62",
+          "list_price": "",
+          "currency_id": "-99",
+          "erp_sync_key": "ADM__8890_1_1",
+          "erp_total_role": "",
+          "erp_quote_line_num": "1",
+          "erp_break_quantity": "1.00",
+          "erp_break_unit_price": "$24.00",
+          "erp_unit_of_measure": "EA",
+          "e_customer_part_num_c": "",
+          "e_line_comment_c": "ESSENTIAL TOWER - IMPORT<br />\rINCLUDED:<br />\rSTEEL FRAME WELDMENT, PC-WHITE<br />\rBACK PANELS, PAINTED WHITE<br />\r<br />\rPACKAGING<br />\rPALLET<br />\rLABEL",
+          "discount_select": "0"
+        },
+        "1": {
+          "id": "line-2-rung-1",
+          "name": "APPLIANCE+ SAMPLE BOARD-WHITE",
+          "description": "APPLIANCE+ SAMPLE BOARD-WHITE",
+          "mft_part_num": "20498P07W",
+          "quantity": "3.00",
+          "discount_price": "$22.81",
+          "ext_price": "$68.43",
+          "list_price": "",
+          "currency_id": "-99",
+          "erp_sync_key": "ADM__8890_2_1",
+          "erp_total_role": "",
+          "erp_quote_line_num": "2",
+          "erp_break_quantity": "1.00",
+          "erp_break_unit_price": "$22.81",
+          "erp_unit_of_measure": "EA",
+          "e_customer_part_num_c": "",
+          "discount_select": "0"
+        },
+        "2": {
+          "id": "line-1-rung-2",
+          "name": "SANCTUARY SAMPLE BOARD-WHITE",
+          "description": "SANCTUARY SAMPLE BOARD-WHITE",
+          "mft_part_num": "20498P04W",
+          "quantity": "10.00",
+          "discount_price": "$22.00",
+          "ext_price": "$220.00",
+          "list_price": "",
+          "currency_id": "-99",
+          "erp_sync_key": "ADM__8890_1_2",
+          "erp_total_role": "alternative",
+          "erp_quote_line_num": "1",
+          "erp_break_quantity": "10.00",
+          "erp_break_unit_price": "$22.00",
+          "erp_unit_of_measure": "EA",
+          "e_customer_part_num_c": "",
+          "discount_select": "0"
+        },
+        "3": {
+          "id": "line-1-rung-3",
+          "name": "SANCTUARY SAMPLE BOARD-WHITE",
+          "description": "SANCTUARY SAMPLE BOARD-WHITE",
+          "mft_part_num": "20498P04W",
+          "quantity": "50.00",
+          "discount_price": "$20.00",
+          "ext_price": "$1,000.00",
+          "list_price": "",
+          "currency_id": "-99",
+          "erp_sync_key": "ADM__8890_1_3",
+          "erp_total_role": "alternative",
+          "erp_quote_line_num": "1",
+          "erp_break_quantity": "50.00",
+          "erp_break_unit_price": "$20.00",
+          "erp_unit_of_measure": "EA",
+          "e_customer_part_num_c": "",
+          "discount_select": "0"
+        }
+      }
+    }
+  ]
+}

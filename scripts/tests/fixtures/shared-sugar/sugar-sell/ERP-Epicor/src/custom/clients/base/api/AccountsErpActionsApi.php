@@ -7,6 +7,9 @@ class AccountsErpActionsApi extends BaseErpActionsApi
 {
     private const SUPPORTED_ACTIONS = ['create_customer'];
 
+    /** Account types a quote's price step creates in the ERP as themselves, as Send to Estimation does. */
+    private const OWN_TYPE_ACCOUNT_TYPES = ['Prospect', 'Suspect'];
+
     /** G495 (🔒1759b) - what a seller reads when "Create Customer in Epicor" reaches an account Epicor already holds. */
     public const ALREADY_IN_ERP_MESSAGE = 'This account is already in Epicor, so it cannot be created there again. '
         . 'To make it a Customer, set Type to Customer and save: the change is sent to Epicor.';
@@ -124,7 +127,10 @@ class AccountsErpActionsApi extends BaseErpActionsApi
         }
 
         // Mirrors create-erp-account.js's own flow - the click switches the account to Customer and saves before calling here.
-        if (($bean->account_type ?? '') !== 'Customer') {
+        // A quote's price step instead creates a Prospect or Suspect as its own type, asking for that with as_own_type.
+        $ownType = !empty($args['as_own_type'])
+            && in_array((string) ($bean->account_type ?? ''), self::OWN_TYPE_ACCOUNT_TYPES, true);
+        if (($bean->account_type ?? '') !== 'Customer' && !$ownType) {
             return array(
                 'status' => 'error',
                 'message' => 'Only Customer accounts can be provisioned in ERP.',
@@ -148,20 +154,29 @@ class AccountsErpActionsApi extends BaseErpActionsApi
             );
         }
 
-        $result = $this->provisionAccount($bean, $cfg);
+        $result = $this->provisionAccount($bean, $cfg, $ownType ? 'prospect' : 'customer');
 
         // The connector stamps erp_sync_key/erp_account_id/erp_writeback_* directly on this same Account via its own Sugar Integrate call on success.
         $bean->retrieve($bean->id);
 
         if ($result['status'] === 'error') {
-            // The switch-and-save that got us here already committed account_type = Customer - if the ERP call itself then fails. (G494)
-            $bean->account_type = 'Prospect';
+            // A refused create changes nothing: the type goes back to what the click replaced, never to a fixed one.
+            $changed = false;
+            $before = self::typeBeforeTheClick($args);
+            if ($before !== null && $before !== (string) ($bean->account_type ?? '')) {
+                $bean->account_type = $before;
+                $changed = true;
+            }
             if (!empty($result['error'])) {
                 $bean->erp_writeback_status = $result['status'];
-                $bean->erp_writeback_msg = $result['error'];
+                // The seller-safe sentence, as the quote's panel gets; the raw diagnostic is already in the log.
+                $bean->erp_writeback_msg = (string) ($result['message'] ?? $result['error']);
                 $bean->erp_writeback_at = TimeDate::getInstance()->nowDb();
+                $changed = true;
             }
-            $bean->save();
+            if ($changed) {
+                $bean->save();
+            }
         }
 
         return array(
@@ -583,6 +598,20 @@ class AccountsErpActionsApi extends BaseErpActionsApi
         }
 
         return $default;
+    }
+
+    /** The stored type the click switched to Customer, as the browser names it; null when absent or not a dropdown value. */
+    private static function typeBeforeTheClick(array $args): ?string
+    {
+        $before = $args['account_type_before'] ?? null;
+        if (!is_string($before)) {
+            return null;
+        }
+        if ($before === '' || array_key_exists($before, self::appListStrings('account_type_dom'))) {
+            return $before;
+        }
+
+        return null;
     }
 
     private static function appListStrings(string $dom): array

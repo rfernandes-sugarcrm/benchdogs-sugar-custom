@@ -1,0 +1,37 @@
+<?php
+
+$mod_strings['LNK_NEW_MEETING'] = 'Schedule Interaction';
+$mod_strings['LBL_MODULE_NAME'] = 'Interactions';
+$mod_strings['LBL_MODULE_NAME_SINGULAR'] = 'Interaction';
+$mod_strings['LNK_MEETING_LIST'] = 'View Interactions';
+$mod_strings['LNK_IMPORT_MEETINGS'] = 'Import Interactions';
+$mod_strings['LBL_LIST_FORM_TITLE'] = 'Interaction List';
+$mod_strings['LBL_SEARCH_FORM_TITLE'] = 'Interaction Search';
+$mod_strings['ERR_DELETE_RECORD'] = 'A record number must be specified to delete the Interaction.';
+$mod_strings['LBL_DEFAULT_SUBPANEL_TITLE'] = 'Interactions';
+$mod_strings['LBL_MEETING'] = 'Interaction:';
+$mod_strings['LBL_MODULE_TITLE'] = 'Interactions: Home';
+$mod_strings['LBL_SEQUENCE'] = 'Interaction update sequence';
+$mod_strings['LBL_TYPE'] = 'Interaction Type';
+$mod_strings['LBL_PASSWORD'] = 'Interaction Password';
+$mod_strings['LBL_URL'] = 'Start/Join Interaction';
+$mod_strings['NTC_REMOVE_INVITEE'] = 'Are you sure you want to remove this invitee from the Interaction?';
+$mod_strings['LBL_LIST_JOIN_MEETING'] = 'Join Interaction';
+$mod_strings['LBL_JOIN_EXT_MEETING'] = 'Join Interaction';
+$mod_strings['LBL_HOST_EXT_MEETING'] = 'Start Interaction';
+$mod_strings['LBL_EXTNOT_MAIN'] = 'You are not able to join this Interaction because you are not an Invitee.';
+$mod_strings['LBL_EXTNOT_RECORD_LINK'] = 'View Interaction';
+$mod_strings['LBL_EXTNOSTART_HEADER'] = 'Error: Cannot Start Interaction';
+$mod_strings['LBL_EXTNOSTART_MAIN'] = 'You cannot start this Interaction because you are not an Administrator or the owner of the Interaction.';
+$mod_strings['LBL_RECURRING_LIMIT_ERROR'] = 'This recurring Interaction cannot be scheduled because it exceeds the maximum allowed recurrence of $limit.';
+$mod_strings['LBL_SYNCED_RECURRING_MSG'] = 'This Interaction originated in another system and was synced to Sugar. To make changes, go to the original Interaction within the other system. Changes made in the other system can be synced to this record.';
+$mod_strings['LBL_CREATE_MODULE'] = 'Schedule Interaction';
+$mod_strings['LBL_RELATED_RECORD_DEFAULT_NAME'] = 'Interaction with {{{this}}}';
+$mod_strings['LBL_REMINDER_TITLE'] = 'Interaction:';
+$mod_strings['LBL_LIST_MY_MEETINGS'] = 'My Interactions as Owner';
+$mod_strings['LBL_MY_SCHEDULED_MEETINGS'] = 'Scheduled Interactions as Owner';
+$mod_strings['LBL_GUEST_MEETINGS'] = 'My Interactions as Guest';
+$mod_strings['LBL_GUEST_SCHEDULED_MEETINGS'] = 'Scheduled Interactions as Guest';
+$mod_strings['LBL_MEETINGS_FOCUS_DRAWER_DASHBOARD'] = 'Interactions Focus Dashboard';
+$mod_strings['LBL_MEETINGS_RECORD_DASHBOARD'] = 'Interactions Record Dashboard';
+$mod_strings['LBL_INTERACTION_TYPE'] = 'Interaction Type';

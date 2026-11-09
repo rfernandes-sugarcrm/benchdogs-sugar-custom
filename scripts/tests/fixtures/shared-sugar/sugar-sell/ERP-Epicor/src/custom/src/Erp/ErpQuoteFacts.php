@@ -93,16 +93,16 @@ class ErpQuoteFacts
     );
 
     /**
-     * The Account's ship-tos that are candidates at all: linked through shipping_addresses_accounts, not deleted, not inactive.
+     * The Account's ship-tos that are candidates at all: linked through the native Accounts `shipping_addresses` link, not deleted, not inactive.
      * @param SugarBean|null $account
      * @return SugarBean[]
      */
     public static function activeShipTosOfAccount($account): array
     {
-        if (!$account || !$account->load_relationship('shipping_addresses_accounts')) {
+        if (!$account || !$account->load_relationship('shipping_addresses')) {
             return array();
         }
-        $link = $account->shipping_addresses_accounts ?? null;
+        $link = $account->shipping_addresses ?? null;
         if (!is_object($link)) {
             return array();
         }
@@ -223,15 +223,6 @@ class ErpQuoteFacts
     }
 
     /**
-     * G380 (e): does this quote's ERP company refuse to order a line with no ERP part number?
-     * @param SugarBean $quote
-     */
-    public static function orderRequiresPartNumber($quote): bool
-    {
-        return self::companySwitchIsOn($quote, 'erp_order_requires_part_number');
-    }
-
-    /**
      * G569 (🔒 1912b): does this quote's ERP company refuse to order a quote with no FOB whose customer has no ERP default FOB either?
      * @param SugarBean $quote
      */
@@ -241,7 +232,7 @@ class ErpQuoteFacts
     }
 
     /**
-     * One read of a per-company ordering switch for both rules, so they can never disagree about which company a quote belongs to or what "on" is.
+     * One read of a per-company ordering switch: the quote's billing account's ERP company, and what "on" is.
      * @param SugarBean $quote
      */
     private static function companySwitchIsOn($quote, string $field): bool

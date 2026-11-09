@@ -77,12 +77,16 @@ class PinnedFixtureManifestTest(unittest.TestCase):
         self.assertEqual(on_disk, expected)
 
     def test_the_moved_classes_are_pinned_where_sugar_autoloads_them(self):
-        """ERP-Epicor 1.2.0's four moved classes - and only a class of that
+        """ERP-Epicor 1.2.0's four moved classes, and ErpLineRole (pinned at
+        0.9.46-rc114 for its ladder rule), ErpConnectorSession and
+        ErpQuoteStageRules (pinned on the ERP-Epicor 1.2.121 line, which the
+        enforcer and the valuation now read) - and only a class of that
         shape - sit at <package>/src/custom/src/Erp/<Class>.php declaring
         namespace Sugarcrm\\Sugarcrm\\custom\\Erp and class <Class>: the
         PSR-4 pair the autoloader resolves."""
         self.assertEqual(NAMESPACED, [
-            "ErpAccountCountryGuard.php", "ErpQuoteFacts.php",
+            "ErpAccountCountryGuard.php", "ErpConnectorSession.php", "ErpLineRole.php",
+            "ErpQuoteFacts.php", "ErpQuoteStageRules.php",
             "QuoteOpportunityAmount.php", "QuotePrimaryQuoteSoleEnforcer.php"])
         for name in NAMESPACED:
             with self.subTest(file=name):

@@ -18,6 +18,9 @@ class BdHiddenFields
         'erp_document_discount_percent',
     );
 
+    /** Sugar's Shipping Provider: nothing sends it to Epicor (Ship Via does) and Bench Dogs has no shippers. */
+    public const QUOTE_UNSYNCED_FIELDS = array('shipper_name');
+
     /** The panel ERP-Epicor builds around erp_discount_panel, taken off once empty. */
     public const QUOTE_PANELS = array('LBL_RECORDVIEW_PANEL_ERP_DISCOUNT');
 

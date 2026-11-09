@@ -7,3 +7,6 @@ sugar-predict/*/releases/
 
 __pycache__/
 *.pyc
+
+# The pinned jsdom the real-Sidecar page test runs in: installed from its lock file (npm ci), never committed.
+scripts/tests/fixtures/real-sidecar/scripts/tests/dom/node_modules/

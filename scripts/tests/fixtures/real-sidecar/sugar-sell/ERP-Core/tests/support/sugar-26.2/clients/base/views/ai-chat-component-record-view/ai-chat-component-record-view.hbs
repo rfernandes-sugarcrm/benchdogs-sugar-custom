@@ -1,0 +1,115 @@
+{{!-- Recorded from SugarEnt 26.2.0 (build 296): clients/base/views/ai-chat-component-record-view/ai-chat-component-record-view.hbs; sha256 f59a14f8828231c170ce45a3cc19b94b18c5605cba3b2d7e6c521e79dacde016 of the stock file, which follows unchanged. --}}
+{{!--
+/*
+ * Your installation or use of this SugarCRM file is subject to the applicable
+ * terms available at
+ * http://support.sugarcrm.com/Resources/Master_Subscription_Agreements/.
+ * If you do not agree to all of the applicable terms or do not have the
+ * authority to bind the entity as an authorized representative, then do not
+ * install or use this SugarCRM file.
+ *
+ * Copyright (C) SugarCRM Inc. All rights reserved.
+ */
+--}}
+<div data-type="ai-chat-card" class="group {{#if isExpanded}}is-ai-expanded dark:bg-blue-950 overflow-hidden border border-[3px]{{else}}bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 hover:border-gray-300 transition-colors{{/if}} dark:text-white rounded-lg">
+    <div class="rounded-lg overflow-hidden {{#if isExpanded}}-m-[3px]{{/if}}">
+        <div class="overflow-x-auto">
+            <div class="overflow-y-auto space-y-4">
+                <div class="rounded-lg w-full" data-card-module="{{cardData.module}}" data-card-id="{{cardData.id}}">
+                    <div data-type="card-header" class="flex justify-between items-center {{#if isExpanded}}is-ai-expanded dark:bg-blue-900{{else}}bg-gray-100 dark:bg-gray-950{{/if}} px-4 py-3">
+                       {{partial
+                            'ai-chat-component-record-view-left'
+                            this cardData=cardData
+                        }}
+                        {{partial
+                            'ai-chat-component-record-view-right'
+                            this cardData=cardData
+                        }}
+                    </div>
+                    <div data-type="card-rows" class="px-4 py-3">
+                        <div class="grid gap-4 text-sm w-full {{#unless @first}}mt-3{{/unless}}" style="grid-template-columns: repeat({{cardData.columnsPerRow}}, 1fr);">
+                            {{#each cardData.rows}}
+                                {{#isMultiKeyRow this}}
+                                    {{!-- A row with 2+ keys (e.g. "Open Deals"/"Expected Close") renders as
+                                          its own full-width flex line, split evenly across its cells, instead
+                                          of flowing through the outer grid's auto-placement one cell at a time. --}}
+                                    <div class="flex gap-4 w-full" style="grid-column: 1 / -1;">
+                                        {{#each this}}
+                                            <div class="flex-1 min-w-0 overflow-hidden">
+                                                <div class="text-gray-400 dark:text-gray-300 font-normal text-xs mb-1">{{@key}}</div>
+                                                {{#isArray this}}
+                                                    <div class="flex flex-col">
+                                                        {{#each this}}
+                                                            <div class="text-gray-800 dark:text-gray-100 text-sm line-clamp-4 break-words [&_a]:text-cobalt-600 [&_a:hover]:text-cobalt-800"
+                                                                 data-tooltip-overflow-height="true"
+                                                                 data-bs-placement="bottom"
+                                                                 data-original-title="{{this.text}}">
+                                                                {{{replaceWithLinks this.text this.meta}}}
+                                                            </div>
+                                                        {{/each}}
+                                                    </div>
+                                                {{else}}
+                                                    <div class="text-gray-800 dark:text-gray-100 text-sm line-clamp-4 break-words"
+                                                         data-tooltip-overflow-height="true"
+                                                         data-bs-placement="bottom"
+                                                         data-original-title="{{this}}">
+                                                        {{this}}
+                                                    </div>
+                                                {{/isArray}}
+                                            </div>
+                                        {{/each}}
+                                    </div>
+                                {{else}}
+                                    {{#each this}}
+                                        <div class="w-full overflow-hidden">
+                                            <div class="text-gray-400 dark:text-gray-300 font-normal text-xs mb-1">{{@key}}</div>
+                                            {{#isArray this}}
+                                                <div class="flex flex-col">
+                                                    {{#each this}}
+                                                        <div class="text-gray-800 dark:text-gray-100 text-sm line-clamp-4 break-words [&_a]:text-cobalt-600 [&_a:hover]:text-cobalt-800"
+                                                             data-tooltip-overflow-height="true"
+                                                             data-bs-placement="bottom"
+                                                             data-original-title="{{this.text}}">
+                                                            {{{replaceWithLinks this.text this.meta}}}
+                                                        </div>
+                                                    {{/each}}
+                                                </div>
+                                            {{else}}
+                                                <div class="text-gray-800 dark:text-gray-100 text-sm line-clamp-4 break-words"
+                                                     data-tooltip-overflow-height="true"
+                                                     data-bs-placement="bottom"
+                                                     data-original-title="{{this}}">
+                                                    {{this}}
+                                                </div>
+                                            {{/isArray}}
+                                        </div>
+                                    {{/each}}
+                                {{/isMultiKeyRow}}
+                            {{/each}}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {{#if cardData.nestedComponents}}
+            {{#if isExpanded}}
+
+                <div class="inline-flex items-center gap-2 px-3 py-2 cursor-pointer" data-action="toggle-details-panel" title="{{title}}" data-export-exclude="true">
+                    <span class="sicon sicon-arrow-right rtl:rotate-180 text-base w-4 h-4 inline-flex items-center justify-center leading-none text-gray-500 dark:text-gray-300 group-hover:text-gray-600 dark:group-hover:text-gray-200"></span>
+                    <div class="text-sm text-gray-500 dark:text-gray-300 group-hover:text-gray-600 dark:group-hover:text-gray-200">{{str "LBL_AI_CHAT_HIDE_DETAILS"}}</div>
+                </div>
+            {{else}}
+                <div class="inline-flex items-center gap-2 px-3 py-2 cursor-pointer" data-action="toggle-details-panel" title="{{title}}" data-export-exclude="true">
+                    <span class="sicon sicon-arrow-left rtl:rotate-180 text-base w-4 h-4 inline-flex items-center justify-center leading-none text-cobalt-600 dark:text-cobalt-400 group-hover:text-cobalt-800 dark:group-hover:text-cobalt-300"></span>
+                    <div class="text-sm text-cobalt-600 dark:text-cobalt-400 group-hover:text-cobalt-800 dark:group-hover:text-cobalt-300">{{str "LBL_AI_CHAT_VIEW_MORE_DETAILS"}}</div>
+                </div>
+            {{/if}}
+        {{/if}}
+        {{#if cardData.inlineComponents}}
+            {{!-- Filled by _renderInlineComponents with real child views (e.g. the
+                  next-best-action chips) so they render as part of this card
+                  instead of as a separate one. --}}
+            <div data-type="card-inline-components" data-export-exclude="true"></div>
+        {{/if}}
+    </div>
+</div>

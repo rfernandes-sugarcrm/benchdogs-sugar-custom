@@ -1,0 +1,219 @@
+{
+ "recorded": "Recorded from SugarEnt 26.1.0 (build 319): modules/Products/metadata/dependencydefs.php; sha256 f3ff960870d79a90067773511a3ca8ddfed04862e620c6fa67d2fff3ebefefbe of the stock file. $dependencies as php fills it, whole.",
+ "kept": "all",
+ "dependencies": {
+  "Products": {
+   "read_only_fields": {
+    "hooks": [
+     "edit"
+    ],
+    "trigger": "true",
+    "triggerFields": [
+     "product_template_id"
+    ],
+    "onload": true,
+    "actions": [
+     {
+      "name": "ReadOnly",
+      "params": {
+       "target": "category_name",
+       "label": "category_name_label",
+       "value": "not(equal($product_template_id,\"\"))"
+      }
+     },
+     {
+      "name": "ReadOnly",
+      "params": {
+       "target": "list_price",
+       "label": "list_price_label",
+       "value": "not(equal($product_template_id,\"\"))"
+      }
+     },
+     {
+      "name": "ReadOnly",
+      "params": {
+       "target": "cost_price",
+       "label": "cost_price_label",
+       "value": "not(equal($product_template_id,\"\"))"
+      }
+     },
+     {
+      "name": "ReadOnly",
+      "params": {
+       "target": "tax_class",
+       "label": "tax_class_label",
+       "value": "not(equal($product_template_id,\"\"))"
+      }
+     },
+     {
+      "name": "ReadOnly",
+      "params": {
+       "target": "mft_part_num",
+       "label": "mft_part_num_label",
+       "value": "not(equal($product_template_id,\"\"))"
+      }
+     },
+     {
+      "name": "ReadOnly",
+      "params": {
+       "target": "weight",
+       "label": "weight_label",
+       "value": "not(equal($product_template_id,\"\"))"
+      }
+     }
+    ]
+   },
+   "service_fields_required": {
+    "hooks": [
+     "edit"
+    ],
+    "trigger": "true",
+    "triggerFields": [
+     "service"
+    ],
+    "onload": true,
+    "actions": [
+     {
+      "name": "SetRequired",
+      "params": {
+       "target": "service_start_date",
+       "value": "equal($service,1)"
+      }
+     },
+     {
+      "name": "SetRequired",
+      "params": {
+       "target": "service_duration_value",
+       "value": "equal($service,1)"
+      }
+     },
+     {
+      "name": "SetRequired",
+      "params": {
+       "target": "service_duration_unit",
+       "value": "equal($service,1)"
+      }
+     }
+    ]
+   },
+   "service_fields_values": {
+    "hooks": [
+     "edit"
+    ],
+    "trigger": "true",
+    "triggerFields": [
+     "service"
+    ],
+    "onload": true,
+    "actions": [
+     {
+      "name": "SetValue",
+      "params": {
+       "target": "service_start_date",
+       "value": "ifElse(\n                    equal($service,1),\n                    ifElse(\n                        equal($service_start_date,\"\"),\n                        now(),\n                        $service_start_date\n                    ),\n                    \"\")"
+      }
+     },
+     {
+      "name": "SetValue",
+      "params": {
+       "target": "service_duration_value",
+       "value": "ifElse(\n                    equal($service,1),\n                    ifElse(\n                        equal($service_duration_value,\"\"),\n                        1,\n                        $service_duration_value\n                    ),\n                    \"\")"
+      }
+     },
+     {
+      "name": "SetValue",
+      "params": {
+       "target": "service_duration_unit",
+       "value": "ifElse(\n                    equal($service,1),\n                    ifElse(\n                        equal($service_duration_unit,\"\"),\n                        \"year\",\n                        $service_duration_unit\n                    ),\n                    \"\")"
+      }
+     },
+     {
+      "name": "SetValue",
+      "params": {
+       "target": "renewable",
+       "value": "ifElse(\n                    equal($service, \"1\"),\n                    $renewable,\n                    0)"
+      }
+     },
+     {
+      "name": "SetValue",
+      "params": {
+       "target": "add_on_to_name",
+       "value": "ifElse(\n                    equal($service, \"1\"),\n                    $add_on_to_name,\n                    \"\")"
+      }
+     },
+     {
+      "name": "SetValue",
+      "params": {
+       "target": "add_on_to_id",
+       "value": "ifElse(\n                    equal($service, \"1\"),\n                    $add_on_to_id,\n                    \"\")"
+      }
+     },
+     {
+      "name": "SetValue",
+      "params": {
+       "target": "service_end_date",
+       "value": "ifElse(\n                    equal($service, \"1\"),\n                    $service_end_date,\n                    \"\")"
+      }
+     }
+    ]
+   },
+   "service_fields_read_only": {
+    "hooks": [
+     "edit",
+     "view"
+    ],
+    "trigger": "true",
+    "triggerFields": [
+     "service",
+     "product_template_id",
+     "lock_duration"
+    ],
+    "onload": true,
+    "actions": [
+     {
+      "name": "ReadOnly",
+      "params": {
+       "target": "service",
+       "value": "not(equal($product_template_id,\"\"))"
+      }
+     },
+     {
+      "name": "ReadOnly",
+      "params": {
+       "target": "renewable",
+       "value": "equal($service,0)"
+      }
+     },
+     {
+      "name": "ReadOnly",
+      "params": {
+       "target": "service_start_date",
+       "value": "equal($service,0)"
+      }
+     },
+     {
+      "name": "ReadOnly",
+      "params": {
+       "target": "service_duration_value",
+       "value": "or(equal($service,0),and(not(equal($product_template_id,\"\")),equal($lock_duration,1)), not(equal($add_on_to_id,\"\")))"
+      }
+     },
+     {
+      "name": "ReadOnly",
+      "params": {
+       "target": "service_duration_unit",
+       "value": "or(equal($service,0),and(not(equal($product_template_id,\"\")),equal($lock_duration,1)), not(equal($add_on_to_id,\"\")))"
+      }
+     },
+     {
+      "name": "ReadOnly",
+      "params": {
+       "target": "add_on_to_name",
+       "value": "equal($service, 0)"
+      }
+     }
+    ]
+   }
+  }
+ }
+}

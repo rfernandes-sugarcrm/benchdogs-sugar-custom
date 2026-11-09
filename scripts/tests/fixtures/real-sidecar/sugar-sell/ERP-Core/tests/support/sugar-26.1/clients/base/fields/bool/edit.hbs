@@ -1,0 +1,23 @@
+{{!-- Recorded from SugarEnt 26.1.0 (build 319): clients/base/fields/bool/edit.hbs; sha256 7694bab9c3dc7a8efc99caa2594318cd729bcfcf657ba46125dd96c268fcdcfe of the stock file, which follows unchanged. --}}
+{{!--
+/*
+ * Your installation or use of this SugarCRM file is subject to the applicable
+ * terms available at
+ * http://support.sugarcrm.com/Resources/Master_Subscription_Agreements/.
+ * If you do not agree to all of the applicable terms or do not have the
+ * authority to bind the entity as an authorized representative, then do not
+ * install or use this SugarCRM file.
+ *
+ * Copyright (C) SugarCRM Inc. All rights reserved.
+ */
+--}}
+{{#if def.text}}
+    <label>
+{{/if}}
+<input type="checkbox"{{#eq action 'disabled'}} disabled{{/eq}}{{#if value}} checked{{/if}}
+    {{#if def.tabindex}} tabindex="{{def.tabindex}}"{{/if}}
+    class="outline-solid">
+{{#if def.text}}
+    {{str def.text this.module}}</label>
+{{/if}}
+{{#unless hideHelp}}{{#if def.help}}<p class="help-block">{{str def.help module}}</p>{{/if}}{{/unless}}

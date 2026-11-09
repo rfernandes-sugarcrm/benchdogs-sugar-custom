@@ -1,6 +1,6 @@
 <?php
 
-/** G380 / G381 (🔒 1705b, 🔒 1724b), G460, G804: the lookup-type labels for ADM's six pick lists, and the one piece of tenant data the ADM rules read. */
+/** G380 / G381 (🔒 1705b, 🔒 1724b), G460, G804: the lookup-type labels for ADM's six pick lists. */
 
 // The discriminators core publishes for the ADM connection (its configured lookup_code_lists: LEADSRC -> BdLeadSources, LEADTYPE -> BdLeadTypes, projects -> BdProjects; 🔒 1724b).
 $app_list_strings['erp_lookup_type_list']['BdLeadSources'] = 'Lead Source (ADM)';
@@ -18,13 +18,4 @@ $app_list_strings['erp_lookup_type_list']['BdSalesCategories'] = 'Sales Category
 // Published by the Bench connector extension (erp_adm_product_categories, ADM connection only).
 $app_list_strings['erp_lookup_type_list']['BdProductCategories'] = 'Product Category (ADM)';
 
-// NO company list (🔒 1724b: "ADM" from one source). A quote is an ADM quote
-// when its ERP company has published BdLeadSources rows - which only the ADM
-// connection's own code-list config makes happen (BdAdmRules::isAdmCompany).
-
-// Product group (Epicor ProdCode) -> the ADM project pre-filled on a quote whose lines are all in that group (🔒 1712b, 🔒 1710b).
-if (!isset($app_list_strings['bd_adm_project_by_group_list'])) {
-    $app_list_strings['bd_adm_project_by_group_list'] = array(
-        'CMI' => '20065',
-    );
-}
+// NO company list (🔒 1724b): ADM's companies are the active BdAdmCompanies rows the connector extension publishes (BdAdmRules::isAdmCompany).

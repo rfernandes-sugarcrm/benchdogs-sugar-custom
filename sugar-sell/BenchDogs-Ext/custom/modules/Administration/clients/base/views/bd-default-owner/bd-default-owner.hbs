@@ -1,0 +1,21 @@
+<div class="headerpane">
+    <h1>
+        <span class="record-cell">{{str "LBL_BD_DEFAULT_OWNER" module}}</span>
+        <span class="btn-toolbar pull-right">
+            <button type="button" class="btn btn-invisible btn-link" data-action="bd-cancel">{{str "LBL_CANCEL_BUTTON_LABEL"}}</button>
+            <button type="button" class="btn btn-primary" data-action="bd-save">{{str "LBL_SAVE_BUTTON_LABEL"}}</button>
+        </span>
+    </h1>
+</div>
+<div class="record">
+    <div class="bd-default-owner" style="margin: 10px; max-width: 600px;">
+        {{!-- No help line here: Sugar's field draws its definition's help under the box itself. --}}
+        {{#each meta.fields}}
+            <h5>{{str label ../module}}</h5>
+            {{field ../this model=../model template="edit"}}
+        {{/each}}
+        {{#if ownerInactive}}
+            <div class="alert alert-warning" data-name="bd-default-owner-inactive">{{str "LBL_BD_DEFAULT_OWNER_INACTIVE" module}}</div>
+        {{/if}}
+    </div>
+</div>

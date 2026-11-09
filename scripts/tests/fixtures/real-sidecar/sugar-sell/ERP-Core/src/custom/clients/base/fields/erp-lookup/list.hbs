@@ -1,0 +1,8 @@
+{{!--
+    G527: the list cell of a lookup value - plain text, as detail.hbs.
+--}}
+<div class="ellipsis_inline">
+    <span class="ellipsis_inline" data-bs-placement="bottom" data-container="body"
+        title="{{#unless value}}{{#if def.placeholder}}{{str def.placeholder this.model.module}}{{/if}}{{/unless}}{{value}}"
+    >{{value}}{{#if erpLookupInactive}} <span class="erp-lookup-inactive">{{str 'LBL_ERP_LOOKUP_INACTIVE' module}}</span>{{/if}}</span>
+</div>

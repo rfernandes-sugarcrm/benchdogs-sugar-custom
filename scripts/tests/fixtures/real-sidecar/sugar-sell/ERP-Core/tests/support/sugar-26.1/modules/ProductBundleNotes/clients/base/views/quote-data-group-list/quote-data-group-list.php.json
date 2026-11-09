@@ -1,0 +1,26 @@
+{
+ "recorded": "Recorded from SugarEnt 26.1.0 (build 319): modules/ProductBundleNotes/clients/base/views/quote-data-group-list/quote-data-group-list.php; sha256 34fff3db08c292c99b5f87a342780eadef9b3106358aa0bd517b680e8dc5f600 of the stock file. $viewdefs as php fills it, whole.",
+ "kept": "all",
+ "viewdefs": {
+  "ProductBundleNotes": {
+   "base": {
+    "view": {
+     "quote-data-group-list": {
+      "panels": [
+       {
+        "name": "product_bundle_notes_quote_data_group_list",
+        "label": "LBL_PRODUCT_BUNDLE_NOTES_QUOTE_DATA_LIST",
+        "fields": [
+         {
+          "name": "description",
+          "rows": 3
+         }
+        ]
+       }
+      ]
+     }
+    }
+   }
+  }
+ }
+}

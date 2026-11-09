@@ -9,6 +9,8 @@ $dictionary['Quote']['fields']['erp_reference'] = array(
     // G530: what Epicor accepts in QuoteHed.Reference (see above).
     'erp_max_length'  => 10,
     'required'        => false,
+    // A package that requires it draws no "(Required)" text on it: Sugar's own flag.
+    'no_required_placeholder' => true,
     'comment'         => 'Epicor QuoteHed.Reference: the customer RFQ number or other reference, sent by core on Send to Estimation',
     'reportable'      => true,
     'audited'         => true,

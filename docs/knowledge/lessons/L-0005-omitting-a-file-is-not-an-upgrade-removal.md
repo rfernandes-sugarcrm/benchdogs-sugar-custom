@@ -6,9 +6,8 @@ severity: high
 subsystems: [benchdogs-sugar, module-loader-upgrade, rollback]
 paths:
   - sugar-sell/BenchDogs-Ext/pack.php
-  - sugar-sell/BenchDogs-Ext/scripts/pre_uninstall.php
+  - sugar-sell/BenchDogs-Ext/scripts/bd_pre_uninstall.php
   - sugar-sell/BenchDogs-Ext/scripts/post_uninstall.php
-  - sugar-sell/BenchDogs-Ext/docs/release-0.9.42-rc12.md
 ---
 
 # Omitting a copied file does not remove it on upgrade

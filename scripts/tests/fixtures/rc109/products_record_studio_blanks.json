@@ -1,0 +1,30 @@
+{
+  "why": "The quoted line item's Epicor Cost Worksheet panel as the Bench Sugar with the customer's own field package stores it. The names, in order, are the r45 read (fixtures/rc108). What that read showed as a blank cell is written here as Sugar 26.1's Studio writes one: an empty array, not ''. Studio's save turns a row's filler into getLastFieldSpan()'s array() (or array('span' => N) after a field with a base span) and appends it through _addCell(); it never writes ''. rc108 drops only '' blanks, and the live read after rc108 settles which form that Sugar holds: 16 record cells for the eight values, 8 of them empty, the first row a blank cell before Material Cost. Sugar's record template draws a cell with no name as two record-cell divs (an outer filler-cell and an inner one), so 16 cells are the eight values plus 4 nameless entries that rc108 kept. With '' blanks rc108 leaves none (its own check T3), so its blanks are nameless arrays.",
+  "sources": {
+    "names_in_order": "validation/evidence/session-2026-10-20/r45-rc107-live-read/R45-LIVE-READ.md, Read 2 (the Sugar with the customer's package, 2026-10-20T23:57:50Z, record a55d9d3a-cca6-11f1-bc09-02b131184c4f)",
+    "after_rc108": "U2 browser read on both Bench Sugars, rc108 + ERP-Epicor 1.2.109, about 2026-10-21T03:00Z (validation/GAPS.md G1276, note 2026-10-21T03:17:03Z; lane brief validation/evidence/session-2026-10-21/lanes/brief-bench-rc109-g1276.md)",
+    "studio_writes_a_filler_as": "SugarEnt 26.1.0 modules/ModuleBuilder/parsers/views/SidecarGridLayoutMetaDataParser.php:454-460 (a filler becomes getLastFieldSpan()), :659-686 (getLastFieldSpan returns array() or array('span' => N)), :352-366 (_addCell appends it as it is); sha256 fdf4f1e5acc761af...",
+    "a_nameless_cell_draws_as": "SugarEnt 26.1.0 clients/base/views/record/tabspanels.hbs:80-88 ({{#if name}} else: div.record-cell.filler-cell around div.record-cell); sha256 43aeca8b3f30219b...",
+    "rows_as_drawn": "SugarEnt 26.1.0 include/javascript/sugar7/plugins/GridBuilder.js:88-99 (a new row once a row holds 'columns' cells or the next cell's span does not fit in 12), :117 (columns || 1), :202-219 (span, else 12 / columns); sha256 29b716e987071d65..."
+  },
+  "columns": 2,
+  "cost_worksheet_fields": [
+    "e_quantity_quoted_c", "e_gross_margin_c", [], "e_est_engineering_hours_c",
+    "erp_material_cost", "erp_labor_cost", "erp_material_burden", "erp_labor_burden", "erp_subcontract_cost",
+    "erp_misc_cost",
+    "e_material_pct_c", "e_labor_pct_c", "e_material_labor_pct_c", [],
+    "e_machine_hours_c", "e_finish_hours_c", "e_assembly_hours_c", "e_case_goods_hours_c", "e_install_hours_c", [],
+    "e_total_cost_c", "e_total_markup_c", "e_total_markup_price_c", [],
+    "erp_quoted_markup_pct", "erp_quoted_profit_pct"
+  ],
+  "body_bench_fields": ["e_sales_category_c", "e_expected_qty_c", "e_expected_qty_uom_c"],
+  "after_rc108_read": {
+    "record_cells": 16,
+    "empty_record_cells": 8,
+    "first_row": ["", "erp_material_cost"]
+  },
+  "other_sugar_after_rc108_read": {
+    "record_cells": 8,
+    "empty_record_cells": 0
+  }
+}

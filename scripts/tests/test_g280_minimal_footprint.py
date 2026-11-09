@@ -106,7 +106,8 @@ KEPT = {
     "custom/Extension/modules/Quotes/Ext/Language/en_us.bd_adm_required_fields.php":
         "their five labels, in ADM's own words",
     "custom/Extension/modules/Quotes/Ext/LogicHooks/bd_adm_quote_defaults.php":
-        "G380/G381: before_save fills an EMPTY Reference / Project on an unsent ADM quote",
+        "G380/G381: before_save fills an EMPTY Reference on an unsent ADM quote (rc110: the Project only on a "
+        "create that sends none)",
     # The owner approved this one hidden field (2026-10-02) to replace the
     # connector extension's own state file: it holds what both systems last
     # agreed for the four lead fields, so the ERP read-back keeps a seller's edit.
@@ -115,9 +116,9 @@ KEPT = {
     "custom/Extension/modules/Quotes/Ext/Language/en_us.bd_lead_baseline.php":
         "its one label",
     "custom/Extension/application/Ext/Language/en_us.bd_adm_lists.php":
-        "the five lookup-type labels + the one tenant list (group->project)",
+        "the lookup-type labels (rc108: the group->project list is gone)",
     "custom/src/BenchDogs/BdAdmRules.php":
-        "the ADM rules themselves: which companies are ADM, the two defaults, options (rc86: namespaced, MLP024)",
+        "the ADM rules themselves: which companies are ADM, the quote defaults, options (rc86: namespaced, MLP024)",
     "custom/src/BenchDogs/BdHiddenFields.php":
         "G848 (rc87): the one body the six discount overlays call (Rafael's review of #41, item 3)",
     # ── G860 (0.9.42-rc89): the owner's per-item consent is 🔒2179b (2026-10-01,
@@ -127,7 +128,8 @@ KEPT = {
         "G860: the adapter at ERP-Epicor 1.2.4's OrderRequirements slot (a global class ERP-Epicor "
         "instantiates by name, like PF's ErpQuoteHooks adapters)",
     "custom/src/BenchDogs/BdAdmOrderRequirements.php":
-        "G860: ADM's Ship Via requirement on an order that converts an ADM ERP quote (the extension's G852 rule)",
+        "G860: ADM's Ship Via requirement on an order that converts an ADM ERP quote (the extension's G852 rule) "
+        "and, since rc93, on a Sales Order whose customer has no default Ship Via either",
     # ── G450 (0.9.42-rc74): the owner's per-item consent is his Yes to "a
     # Bench-only third type Suspect, alongside the stock Customer/Prospect,
     # never renaming them" (GAPS.md G450 row; register ~06:55Z 2026-09-24),
@@ -151,9 +153,21 @@ KEPT = {
     # ── 🔒 2085b (0.9.42-rc79): the owner's YES to "Cust. Group required on
     # save for a Customer not yet in the ERP"; 🔒 2086b ruled the ADM gate a
     # Bench-specific rule ("no its benchdogs specific").
+    # rc120: the owner's ruling of 2026-10-29: whatever the account's type (Send to Estimation creates a Prospect).
     "custom/Extension/modules/Accounts/Ext/Dependencies/bd_adm_customer_group_required.php":
-        "🔒2085b: Cust. Group required in the edit views on an ADM Customer not yet in the ERP "
+        "rc79: Cust. Group required in the edit views on an ADM account not yet in the ERP, of any type since rc120 "
         "(a view dependency: never served required, never run on save)",
+    # rc117: the owner's request from the Bench Dogs UAT call (2026-10-26): Kinetic needs a customer's billing
+    # address, so a person saving an account gives it; the sync's own account writes are never refused.
+    "custom/Extension/modules/Accounts/Ext/Dependencies/bd_billing_address_required.php":
+        "rc117: billing street, city, postal code and country required in the Accounts edit views "
+        "(a view dependency: never served required, never run on save)",
+    # rc118: the rc117 rule above reaches the record view only, so an account made in the create form saved with no
+    # billing address. ERP-Core's own vardefs already give the four a module-wide required rule (a Customer not yet in
+    # the ERP); this sets only its formula to 'true'. `required` stays ERP-Core's, so the hub's schema read is unchanged.
+    "custom/Extension/modules/Accounts/Ext/Vardefs/_override_zz_bd_billing_address_required.php":
+        "rc118: ERP-Core's required_formula on billing street, city, postal code and country set to 'true', so the "
+        "create form and the record view ask for them on every save (the `required` key and State untouched)",
     # ── G458 (0.9.42-rc82): the owner's 🔒2102b (build the Bench contact
     # Function / Role / primary flags now, READ-ONLY Epicor -> Sugar) and the
     # coordinator's brief (2026-09-30: the five fields synced by ext 0.3.6 L807
@@ -164,8 +178,8 @@ KEPT = {
     # field another package owns leaves a typeless phantom def where that
     # package is absent (see the file's docblock).
     "custom/Extension/modules/Contacts/Ext/clients/base/views/record/bd_epicor_contact_fields.php":
-        "G458: the customer's five Epicor contact fields shown read-only on the Contacts record "
-        "view (ERP panel), only where the tenant has them (a sidecar overlay; no deployed-view write)",
+        "G458: the customer's five Epicor contact fields shown on the Contacts record view (ERP panel), only where "
+        "the tenant has them (a sidecar overlay; no deployed-view write); rc117: Role editable, the other four read-only",
     # ── G848 (0.9.42-rc84): the owner's order 🔒2151b (2026-09-30: "benchdog dont
     # want seller to apply discount so both the discount pannel and the line
     # item doscounts should be not vissible on benchdog MLP"; the coordinator's
@@ -188,10 +202,181 @@ KEPT = {
     # G848 (0.9.42-rc85, 🔒2159b): the list preview's discount, and two captions relabelled (existing keys, en_us).
     "custom/Extension/modules/Quotes/Ext/clients/base/views/preview/_override_zz_bd_hide_seller_discounts.php":
         "G848: the Quotes list preview draws no Order Discount (deal_tot)",
+    # rc92 (owner): Sugar's Shipping Provider is not sent to Epicor and Bench has no shippers; off the quote screen.
+    "custom/Extension/modules/Quotes/Ext/clients/base/views/record/_override_zz_bd_hide_shipping_provider.php":
+        "rc92: Shipping Provider (shipper_name) off the quote record/create view",
+    "custom/Extension/modules/Quotes/Ext/clients/base/views/preview/_override_zz_bd_hide_shipping_provider.php":
+        "rc92: Shipping Provider (shipper_name) off the Quotes list preview",
     "custom/Extension/modules/Quotes/Ext/Language/_override_en_us.bd_hide_seller_discounts.php":
         "G848: ERP-Core's 'Line Items Discounted Subtotal' (LBL_NEW_SUB) reads 'Subtotal' on Bench",
     "custom/Extension/modules/Products/Ext/Language/_override_en_us.bd_hide_seller_discounts.php":
         "G848: ERP-Core's 'Discounted Total' grid column (LBL_ERP_DISCOUNTED_TOTAL) reads 'Total' on Bench",
+    # rc94: the owner relayed Bench Dogs' ask (2026-10-14, "only their MLP or extension"): the seller types the Part
+    # Number of a new product that is not in the catalog. No field, no setting: ERP-Core's one read-only rule is
+    # rewritten for that line only, and every other customer keeps it as ERP-Core ships it.
+    "custom/Extension/modules/Products/Ext/Dependencies/_override_zz_bd_new_product_part_number.php":
+        "rc94: Part Number typeable on an unsent new product with its Product Group picked (ERP-Core's "
+        "erp_part_number_read_only rewritten in place; read-only on every other line)",
+    # rc95: the owner approved two fields, in this package only (2026-10-14): Bench Dogs wants an Epicor order
+    # with no Sugar quote, and an Epicor-born quote, to carry one Opportunity for Closed Won reporting. The
+    # connector extension creates the Opportunity; these two fields are what it keys and links it by.
+    "custom/Extension/modules/Opportunities/Ext/Vardefs/bd_erp_sync_key.php":
+        "rc95: Opportunities.erp_sync_key (unique), the key the connector upserts and links an Opportunity "
+        "by, and the bd_erp_orders link (no layout)",
+    "custom/Extension/modules/Opportunities/Ext/Language/en_us.bd_erp_sync_key.php":
+        "their two labels",
+    "custom/Extension/modules/ERP_Orders/Ext/Vardefs/bd_opportunity.php":
+        "rc95: the Opportunity relate on ERP_Orders (bd_opportunity_id, a real column; read-only; no layout) "
+        "and its one-to-many relationship",
+    "custom/Extension/modules/ERP_Orders/Ext/Language/en_us.bd_opportunity.php":
+        "their three labels",
+    # rc96: a Quotes override of ERP-Core's erp-lookup field (a label marker, then from rc104 Ship Via required on
+    # every quote). Since rc113 Ship Via is checked at Submit Order and Order Selected Lines only, and the file ships
+    # empty: Module Loader never deletes a file, so only a file at this path takes rc112's rule off a tenant.
+    "custom/modules/Quotes/clients/base/fields/erp-lookup/erp-lookup.js":
+        "rc113: ERP-Core's erp-lookup field on Quotes, unchanged; ships only to overwrite rc104-rc112's "
+        "Ship Via required rule on an upgraded tenant",
+    # rc99: the owner approved one setting, in this package only (2026-10-16): a default owner for the records the
+    # ERP integration creates without one. Sugar fills no owner on a REST create, so the connector's order and
+    # quote Opportunities and its ERP orders arrive unowned; a save hook gives them the user the setting names.
+    "custom/src/BenchDogs/BdDefaultOwner.php":
+        "rc99: the default owner rule (the setting, who may own records, the before_save hook on the "
+        "integration's saves only)",
+    "custom/Extension/modules/Opportunities/Ext/LogicHooks/bd_default_owner.php":
+        "rc99: an Opportunity saved with no owner takes the default owner",
+    "custom/Extension/modules/ERP_Orders/Ext/LogicHooks/bd_default_owner.php":
+        "rc99: an ERP order saved with no owner takes the default owner",
+    # rc99: where an administrator picks that user. Sugar's own Users lookup on a small Admin page; a module client
+    # page, served with the metadata, so no Quick Repair is needed.
+    "custom/Extension/modules/Administration/Ext/Administration/bd_default_owner.php":
+        "rc99's path for the link, shipped EMPTY from rc100: an upgrade keeps a copied file, and its old body "
+        "would draw a second link",
+    # rc100: the owner's request approves exactly Bench Dogs' additional mapping's fields (2026-10-17): created where a
+    # tenant lacks them, as Studio custom fields, and drawn on the three record views where the tenant has them.
+    "custom/src/BenchDogs/BdKineticFields.php":
+        "rc100: the 23 Kinetic fields (names, types, sizes, places, labels) and which a tenant lacks (rc111: 22; the "
+        "order lines total is retired, relabelled 'Line Total (old)' where a tenant has it, never deleted; rc119: "
+        "23, the quote's Due date, one new field approved by the owner on 2026-10-27; rc122: 24, the quote's Project "
+        "Name, a text field for Kinetic's QuoteComment, one new field approved by the owner)",
+    "custom/src/BenchDogs/BdStudioFields.php":
+        "rc100: the two Sugar calls that read a module's fields and create one, through Studio's own field code",
+    # rc112 (G1313): the owner asked for Bench Dogs' quotes in their own layout (2026-10-21, "open a gap to show the
+    # quotes for benchdogs in this format", with their Kinetic quote form as the sample). No field and no setting: a
+    # PDF Manager template the install creates on Quotes, unpublished on uninstall, and the logo it prints.
+    "custom/src/BenchDogs/BdQuotePdf.php":
+        "rc112: the quote layout as a PDF Manager template on Quotes (template_name erp_customer_quote; rc122: its "
+        "Project row prints the quote's Project Name)",
+    "custom/themes/default/images/bd_quote_logo.jpg":
+        "rc112: the logo that layout prints, taken from the sample quote PDF",
+    "custom/src/BenchDogs/BdFieldPlacement.php":
+        "rc100: where the record views draw them (a view overlay; ERP-Epicor's layout files are never written)",
+    # rc116 (G1338): the owner's ruling of 2026-10-25 (yes/no, "only in the Bench Dogs MLP", "no new field"): Lynn
+    # could not see Epicor's Product Group on a quote. It is synced as the stock product category; no field, list or
+    # vardef is added, the category is shown on the quote line grid and its existing labels read "Product Group".
+    "custom/Extension/modules/Products/Ext/clients/base/views/quote-data-group-list/bd_product_group_column.php":
+        "rc116: the quote line grid's Product Group column (category_name), read-only after Part Number "
+        "(BdFieldPlacement::gridColumn, a view overlay; no deployed-view write)",
+    "custom/Extension/modules/Products/Ext/Language/_override_en_us.bd_product_group.php":
+        "rc116: the quoted line item's Category / Category Name read 'Product Group' (existing keys, en_us)",
+    "custom/Extension/modules/ProductTemplates/Ext/Language/_override_en_us.bd_product_group.php":
+        "rc116: the product's Category / Category Name / list Category read 'Product Group' (existing keys, en_us)",
+    # rc117: the owner's request from the Bench Dogs UAT call (2026-10-26): the Product Catalog shows the Kinetic part
+    # number. No field: the stored mft_part_num, drawn as a column; ERP-Core already makes it a quick-search field.
+    "custom/Extension/modules/ProductTemplates/Ext/clients/base/views/list/bd_part_number_column.php":
+        "rc117: the Product Catalog list's Part Number column (mft_part_num), read-only after the name",
+    "custom/Extension/modules/ProductTemplates/Ext/clients/base/views/selection-list/bd_part_number_column.php":
+        "rc117: the same column in the Search and Select list a quote line's product field opens",
+    "custom/Extension/modules/Quotes/Ext/clients/base/views/record/bd_kinetic_fields.php":
+        "rc100: the quote's three header fields, in the ERP panel above the status block (rc119: four, the Due date; "
+        "rc120: the Due right after Expires Date wherever that is drawn; rc122: five, the Project Name on a row of its "
+        "own right after the Due)",
+    # rc117: the owner's request from the Bench Dogs UAT call and his ruling of 2026-10-26: the Project is each quote
+    # line's own (one new field, approved by the request), the quote-level one leaves the quote screen (its column and
+    # data stay), and the install that moves it copies each quote's Project onto its blank lines, once.
+    "custom/Extension/modules/Products/Ext/Vardefs/bd_line_project.php":
+        "rc117: Products.bd_project_id, each quote line's own ADM project (the quote's options, blank by default)",
+    "custom/Extension/modules/Products/Ext/Language/en_us.bd_line_project.php":
+        "rc117: its label, Project",
+    "custom/Extension/modules/Products/Ext/clients/base/views/quote-data-group-list/bd_project_column.php":
+        "rc117: the quote line grid's Project column, editable, after Product Group",
+    # rc120: a UAT ask: the Product column of the quote line grid is too narrow to read a product's name.
+    "custom/Extension/modules/Products/Ext/clients/base/views/quote-data-group-list/bd_product_column_width.php":
+        "rc120: the quote line grid's Product column drawn cell-xxlarge (460px) instead of stock's cell-large "
+        "(BdFieldPlacement::gridColumnWidth, a view overlay; no deployed-view write)",
+    "custom/Extension/modules/Products/Ext/clients/base/views/record/bd_project.php":
+        "rc117: the line's Project on the quoted line item's record view, editable",
+    "custom/Extension/modules/Quotes/Ext/clients/base/views/record/bd_line_project.php":
+        "rc117: the quote-level Project off the quote record/create view, and the lines' Project fetched with them",
+    "custom/Extension/modules/Quotes/Ext/clients/base/views/recorddashlet/bd_line_project.php":
+        "rc117: the same on the quote's dashlet view",
+    "custom/src/BenchDogs/BdInstallHistory.php":
+        "rc117: what Module Loader's history says, so the one-time steps run on the upgrade from below rc117 only",
+    "custom/src/BenchDogs/BdLineProject.php":
+        "rc117: the one-time copy of each quote's Project onto its lines with none (never over a line's own)",
+    # rc117: the owner's request (UAT call, 2026-10-26): Create Opportunity & Quote starts with Needs Price Estimate on.
+    # No new setting: ERP-Epicor's own per-tenant default for that quote's type, set once by the install.
+    "custom/src/BenchDogs/BdQuoteTypeDefault.php":
+        "rc117: ERP-Epicor's erp_integration.opp_quote_type set to advanced_quote, once per tenant",
+    "custom/Extension/modules/Products/Ext/clients/base/views/record/bd_kinetic_fields.php":
+        "rc100: the quoted line item's fields, in a Cost & capacity panel (rc107: directly under ERP-Epicor's Epicor "
+        "Cost Worksheet panel; rc108: ours found inside that panel move to it; rc109: with the blank rows they leave)",
+    "custom/Extension/modules/Products/Ext/Language/en_us.bd_kinetic_fields.php":
+        "rc100: that panel's label",
+    "custom/Extension/modules/ERP_Orders/Ext/clients/base/views/record/bd_kinetic_fields.php":
+        "rc100: the ERP order's Project Manager, Engineer and Charges (rc111: the retired lines total off the view, "
+        "ERP-Epicor's own ERP Line Total right after ERP Misc. Charges where the stored view lacks it)",
+    "custom/Extension/modules/ERP_Orders/Ext/clients/base/views/list/bd_kinetic_fields.php":
+        "rc111: the retired lines total off the ERP Orders list view and its column chooser",
+    "custom/Extension/application/Ext/Language/_override_en_us.bd_sales_category_list.php":
+        "rc100: the Sales Category list, only where a tenant has none of its own",
+    # rc100: the owner's ruling of 2026-10-17 (yes/no): Bench Dogs' Opportunity stage list, over the integration's keys.
+    "custom/Extension/application/Ext/Language/_override_en_us.bd_sales_stages.php":
+        "rc100: Bench Dogs' stage list and probabilities, in order; merged after ERP-Core's template",
+    "custom/Extension/application/Ext/DropdownsStyle/bd_sales_stage_style.php":
+        "rc100: a style for the new stages (a formatted enum draws an unstyled key blank), append-only; On Hold since rc125",
+    # rc100: the owner asked for the link inside Admin -> ERP Integration, beside ERP Sales Reps.
+    "custom/Extension/modules/Administration/Ext/Administration/_override_bd_default_owner.php":
+        "rc100: the default owner link, added to ERP-Core's ERP Integration group (merged after it, as an "
+        "_override_ fragment), else in a Bench Dogs box",
+    "custom/Extension/modules/Administration/Ext/Language/en_us.bd_default_owner.php":
+        "rc99: the page's and the link's words",
+    "custom/modules/Administration/clients/base/layouts/bd-default-owner/bd-default-owner.php":
+        "rc99: the page's layout (#Administration/layout/bd-default-owner)",
+    "custom/modules/Administration/clients/base/views/bd-default-owner/bd-default-owner.php":
+        "rc99: the setting as Sugar's relate field over Users",
+    "custom/modules/Administration/clients/base/views/bd-default-owner/bd-default-owner.js":
+        "rc99: reads the setting, saves the picked user's id (empty for off), shows a refusal",
+    "custom/modules/Administration/clients/base/views/bd-default-owner/bd-default-owner.hbs":
+        "rc99: the page: the lookup, its help, Save and Cancel, a word when the saved user is not active",
+    "custom/modules/Administration/clients/base/api/BdDefaultOwnerApi.php":
+        "rc99: GET and PUT BenchDogs/default-owner, administrators only; refuses an id that is not an active user",
+    # rc121: Bench Dogs' UAT ask: Valid Until and Kinetic's expiry are one date, so Expires Date leaves every quote view
+    # (the field and its data stay: the Bench connector extension still writes it). View overlays only.
+    "custom/Extension/modules/Quotes/Ext/clients/base/views/recorddashlet/bd_expires_date_off.php":
+        "rc121: Expires Date off the quote's dashlet view (BdFieldPlacement::takenOff)",
+    "custom/Extension/modules/Quotes/Ext/clients/base/views/preview/bd_expires_date_off.php":
+        "rc121: Expires Date off the Quotes list preview",
+    "custom/Extension/modules/Quotes/Ext/clients/base/views/list/bd_expires_date_off.php":
+        "rc121: Expires Date off the Quotes list view and its column chooser",
+    # rc121: Bench Dogs' UAT ask: a new Opportunity or Quote is owned by its account's owner, so one entered by an
+    # assistant is the seller's (the quote PDF's Sales Person follows). The form's half is a view with no template,
+    # added to the two create layouts by overlay; the server's half a before_save hook. No field, no setting.
+    "custom/src/BenchDogs/BdAccountOwner.php":
+        "rc121: the account owner rule (creates only, not the integration's, never over a pick) and the create "
+        "layouts' component",
+    "custom/Extension/modules/Opportunities/Ext/LogicHooks/bd_account_owner.php":
+        "rc121: a new Opportunity takes its account's owner",
+    "custom/Extension/modules/Quotes/Ext/LogicHooks/bd_account_owner.php":
+        "rc121: a new Quote takes its account's owner",
+    "custom/Extension/modules/Opportunities/Ext/clients/base/layouts/create/bd_account_owner.php":
+        "rc121: the bd-account-owner view in the Opportunities create layout, after Sugar's create view",
+    "custom/Extension/modules/Quotes/Ext/clients/base/layouts/create/bd_account_owner.php":
+        "rc121: the bd-account-owner view in the Quotes create layout, after Sugar's create view",
+    "custom/modules/Quotes/clients/base/views/bd-account-owner/bd-account-owner.js":
+        "rc121: on a create form, Assigned To follows the account's active owner until the person picks one "
+        "(a module client file, served with the metadata: no Quick Repair)",
+    "custom/modules/Opportunities/clients/base/views/bd-account-owner/bd-account-owner.js":
+        "rc121: the same controller for the Opportunities create form",
 }
 
 ONEOFF = ("the one-off ONEOFF-RetireBdResidue deleted it (🔒 1521) until 🔒2173b "
@@ -317,10 +502,24 @@ class EveryRemovedPathLeavesTheTenant(unittest.TestCase):
         catch can see."""
         offenders = []
         for rel in KEPT:
+            if rel.endswith(".jpg"):
+                continue  # rc112: the quote logo is an image, not code
             code = code_only(PKG / rel)
             for name in REMOVED_CLASSES:
                 if name in code:
                     offenders.append(f"{rel}: {name}")
+        self.assertEqual(offenders, [])
+
+
+class NothingShippedDeclaresAnotherPackagesField(unittest.TestCase):
+    def test_nothing_shipped_names_partial_fulfillments_governing_flag(self):
+        """`Products.erp_governing` is Partial Fulfillment's field. A Bench file
+        declaring or writing it would override that package's own definition on
+        every tenant. Moved here from the retired-mirror suite (rc98), whose
+        other cases held long-retired paths out and are covered by the kept list."""
+        offenders = [rel for rel in KEPT if rel.endswith(".php")
+                     and re.search(r"\berp_governing\b", code_only(PKG / rel))]
+        self.assertTrue([rel for rel in KEPT if rel.endswith(".php")], "anti-vacuity: no PHP file was scanned")
         self.assertEqual(offenders, [])
 
 
@@ -360,7 +559,12 @@ class TheLifecycleDoesOnlyTheKeptWork(unittest.TestCase):
         # rc87: the two layout steps share one loop, keyed by their step names.
         steps = sorted(set(re.findall(r"\$bdStepReport\['([a-z_]+)'\]\s*=\s*'ok'", code))
                        | set(re.findall(r"'[A-Za-z]+' => '([a-z_]+_erp_layout)'", code)))
-        self.assertEqual(steps, ["accounts_erp_layout", "quotes_erp_layout", "repair_rebuild"])
+        # rc106 adds the Kinetic labels step (ERP Line Total).
+        # rc112 adds the quote PDF template step.
+        # rc117 adds the install history read and the two one-time steps it decides.
+        self.assertEqual(steps, ["accounts_erp_layout", "install_history", "kinetic_fields", "kinetic_labels",
+                                 "line_project_copy", "opp_quote_type", "quote_pdf_template", "quotes_erp_layout",
+                                 "repair_rebuild"])
         self.assertEqual(code.count("ErpLayoutExtraFields::sync("), 1)
         self.assertIn("foreach (array('Accounts' => 'accounts_erp_layout', 'Quotes' => 'quotes_erp_layout')", code)
         self.assertLess(code.index("rebuildExtensions"), code.index("ErpLayoutExtraFields::sync("),
@@ -369,8 +573,20 @@ class TheLifecycleDoesOnlyTheKeptWork(unittest.TestCase):
                      "saveSetting('erp_integration'", "rebuild_tabledictionary",
                      "return_app_list_strings_language"):
             self.assertNotIn(gone, code, f"post_install still does '{gone}'")
-        self.assertIn("array('Accounts', 'Quotes')", code,
-                      "the rebuild is not narrowed to the two modules this package extends")
+        self.assertIn("array('Accounts', 'Quotes', 'Products', 'ERP_Orders')", code,
+                      "the rebuild is not narrowed to the four modules this package extends")
+        self.assertLess(code.index("BdKineticFields::createMissing("), code.index("rebuildExtensions"),
+                        "the rebuild must see the fields the step just created")
+        # rc117: the one ERP-Epicor setting the package writes is the Create Opportunity & Quote type, through
+        # BdQuoteTypeDefault, after the rebuild; Partial Fulfillment's partial order stage stays its own (above).
+        self.assertLess(code.index("rebuildExtensions"), code.index("BdLineProject::copyFromQuotes("),
+                        "the copy must read the Products vardefs AFTER the rebuild merged this package's")
+        writer = code_only(PKG / "custom/src/BenchDogs/BdQuoteTypeDefault.php")
+        self.assertEqual(re.findall(r"saveSetting\(([^)]*)\)", writer),
+                         ["self::CATEGORY, self::KEY, self::NEEDS_PRICE_ESTIMATE, 'base'"])
+        others = [rel for rel in KEPT if rel.endswith(".php") and rel != "custom/src/BenchDogs/BdQuoteTypeDefault.php"
+                  and "erp_integration" in code_only(PKG / rel)]
+        self.assertEqual(others, [], "no other shipped file names ERP-Epicor's settings category")
 
     def test_pre_uninstall_undoes_only_the_kept_placements(self):
         """rc70 (🔒 1724b): nothing before the files go. The marked fields are
@@ -378,7 +594,8 @@ class TheLifecycleDoesOnlyTheKeptWork(unittest.TestCase):
         once their vardefs are gone - leaving them would be the
         orphan-on-a-view the G280 grade looks for."""
         pre = code_only(PKG / "scripts/bd_pre_uninstall.php")
-        self.assertEqual(re.findall(r"\b([A-Z][A-Za-z]+)::", pre), [])
+        # rc112: the one call before the files go unpublishes the quote PDF template, whose logo goes with them.
+        self.assertEqual(re.findall(r"\b([A-Z][A-Za-z]+)::", pre), ["BdQuotePdf"])
         post = code_only(PKG / "scripts/post_uninstall.php")
         self.assertIn("ErpLayoutExtraFields::sync($bdModule)", post)
         self.assertIn("foreach (array('Accounts', 'Quotes') as $bdModule)", post)

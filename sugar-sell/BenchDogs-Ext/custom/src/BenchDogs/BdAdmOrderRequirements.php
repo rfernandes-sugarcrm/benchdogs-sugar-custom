@@ -11,29 +11,43 @@ class BdAdmOrderRequirements
     public const SHORT_NO_SHIP_VIA = 'The quote has no Ship Via';
 
     /**
-     * ERP-Epicor's OrderRequirements answer: the Ship Via an order converting an ADM ERP quote would reach ADM without, else [].
-     * A Sales Order (no converted line) is not judged: Sugar does not hold the customer's default Ship Via, and the extension checks it before the send.
+     * ERP-Epicor's OrderRequirements answer: the Ship Via an order for an ADM quote would reach ADM without, else [].
+     * ADM fills a blank one from the ERP quote an order converts, else (a Sales Order) from the customer's default, kept on the billing account's Ship Via.
+     * A failed read throws: the adapter answers nothing missing and the connector extension checks again before the send.
      * @param SugarBean $quote
      * @param SugarBean[] $lines the lines this order carries
      * @return array<int, array{error: string, message: string}>
      */
     public static function missing($quote, array $lines): array
     {
-        $erpQuote = self::convertedErpQuote($lines);
-        if ($erpQuote === 0 || self::quoteShipViaCode($quote) !== '') {
+        if ($lines === array() || self::quoteShipViaCode($quote) !== '') {
             return array();
         }
         if (BdAdmRules::admCompanies() === array() || !BdAdmRules::isAdmCompany(ErpQuoteFacts::companyCode($quote))) {
             return array();
         }
+        $erpQuote = self::convertedErpQuote($lines);
+        if ($erpQuote !== 0) {
+            return array(array('error' => self::SHORT_NO_SHIP_VIA, 'message' => self::noShipViaSentence($erpQuote)));
+        }
+        if (self::customerShipViaCode($quote) !== '') {
+            return array();
+        }
 
-        return array(array('error' => self::SHORT_NO_SHIP_VIA, 'message' => self::noShipViaSentence($erpQuote)));
+        return array(array('error' => self::SHORT_NO_SHIP_VIA, 'message' => self::noCustomerShipViaSentence()));
     }
 
     /** The seller's sentence, in the shape of ERP-Epicor's FOB refusal and the extension's G852 words. */
     public static function noShipViaSentence(int $erpQuote): string
     {
         return 'This quote has no Ship Via and its ERP quote ' . $erpQuote . ' has none either, so it cannot be '
+            . 'ordered. Pick a Ship Via on the quote, then submit again. Nothing was sent to the ERP.';
+    }
+
+    /** The seller's sentence for an order that takes the customer's Ship Via, in the words of ERP-Epicor's FOB refusal. */
+    public static function noCustomerShipViaSentence(): string
+    {
+        return 'This quote has no Ship Via and its customer has no default Ship Via in the ERP, so it cannot be '
             . 'ordered. Pick a Ship Via on the quote, then submit again. Nothing was sent to the ERP.';
     }
 
@@ -90,6 +104,35 @@ class BdAdmOrderRequirements
         } else {
             $id = (string) ($quote->erp_quotes_ship_viaerp_lookupvalues_idb ?? '');
         }
+
+        return self::lookupValueCode($id);
+    }
+
+    /**
+     * The ERP code of the customer's default Ship Via: the billing account's Ship Via, which the connector's account
+     * sync sets from the ERP customer's Ship Via (and clears when the customer has none). '' when it has none.
+     */
+    public static function customerShipViaCode($quote): string
+    {
+        $accountId = trim((string) ($quote->billing_account_id ?? ''));
+        $account = $accountId === '' ? null : BeanFactory::retrieveBean('Accounts', $accountId);
+        if (!$account || empty($account->id)) {
+            return '';
+        }
+        $id = '';
+        if ($account->load_relationship('erp_ship_via') && is_object($account->erp_ship_via ?? null)) {
+            $stored = $account->erp_ship_via->get();
+            $id = is_array($stored) && $stored !== array() ? (string) reset($stored) : '';
+        } else {
+            $id = (string) ($account->erp_ship_viaerp_lookupvalues_idb ?? '');
+        }
+
+        return self::lookupValueCode($id);
+    }
+
+    /** The ERP code of an ERP_LookupValues row, '' for no id, a row that cannot be found, or a row with no code. */
+    private static function lookupValueCode(string $id): string
+    {
         $id = trim($id);
         if ($id === '') {
             return '';

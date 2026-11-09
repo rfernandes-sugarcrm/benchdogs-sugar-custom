@@ -1,0 +1,25 @@
+{{!-- Recorded from SugarEnt 26.2.0 (build 296): clients/base/views/ai-chat-component-record-view/ai-chat-component-record-view-right.hbs; sha256 20c07bf023ba1c2f1c2eb591fb2e48822095bbab9a02a3297ee2bf13cf6538bc of the stock file, which follows unchanged. --}}
+{{!--
+/*
+ * Your installation or use of this SugarCRM file is subject to the applicable
+ * terms available at
+ * http://support.sugarcrm.com/Resources/Master_Subscription_Agreements/.
+ * If you do not agree to all of the applicable terms or do not have the
+ * authority to bind the entity as an authorized representative, then do not
+ * install or use this SugarCRM file.
+ *
+ * Copyright (C) SugarCRM Inc. All rights reserved.
+ */
+--}}
+<div class="card-header-right flex items-center flex-shrink-0">
+    {{#if cardData.pillLabel}}
+        <span class="text-sm text-gray-600 mr-2">{{cardData.pillLabel}}:</span>
+    {{/if}}
+    {{#if cardData.pillText}}
+        <span
+            class="{{cardData.pillColor}} px-2 py-1 rounded-full text-sm font-semibold" 
+            data-field="score">
+            {{cardData.pillText}}
+        </span>
+    {{/if}}
+</div>

@@ -1,0 +1,103 @@
+{{!-- Recorded from SugarEnt 26.1.0 (build 319): clients/base/views/record/tabspanels.hbs; sha256 43aeca8b3f30219bfc8414bbd0c184e4d6c9896fbd460684341ac194bbbf673d of the stock file, which follows unchanged. --}}
+{{!--
+/*
+ * Your installation or use of this SugarCRM file is subject to the applicable
+ * terms available at
+ * http://support.sugarcrm.com/Resources/Master_Subscription_Agreements/.
+ * If you do not agree to all of the applicable terms or do not have the
+ * authority to bind the entity as an authorized representative, then do not
+ * install or use this SugarCRM file.
+ *
+ * Copyright (C) SugarCRM Inc. All rights reserved.
+ */
+--}}
+{{! if the first panel uses panels, then the rest use panels, so don't use tabview }}
+<div class="record tab-layout{{#if view.createMode}} record-create{{/if}}">
+{{#if view.meta.firstPanelIsTab}}
+    <div class="content-tabs">
+        <ul class="nav nav-tabs !ml-5 !mb-0" id="recordTab">
+            {{#each view.meta.panels}}
+                {{#unless header}}
+                    {{#if newTab}}
+                        <li class="tab tab-badgeable {{name}}">
+                            <a href="#{{name}}{{../../../view.cid}}" data-bs-toggle="tab" class="block outline-solid"
+                               role="tab">
+                                <span class="tab-title font-semibold">{{str label ../../../view.module}}</span>
+                            </a>
+                        </li>
+                    {{/if}}
+                {{/unless}}
+            {{/each}}
+            <li class="tab dropdown more hidden">
+                <a class="dropdown-toggle" data-bs-toggle="dropdown">
+                    <b class="sicon sicon-chevron-down"></b>
+                </a>
+                <ul class="dropdown-menu scroll pull-right" role="menu">
+                    {{#each view.meta.panels}}
+                        {{#unless header}}
+                            {{#if newTab}}
+                                <li class="{{name}}">
+                                    <a href="#{{name}}{{../../../view.cid}}" class="ellipsis_inline"
+                                       data-bs-placement="bottom" data-original-title="{{str label ../../../view.module}}">
+                                        {{str label ../../../view.module}}
+                                    </a>
+                                </li>
+                            {{/if}}
+                        {{/unless}}
+                    {{/each}}
+                </ul>
+            </li>
+        </ul>
+    <div id="tabContent" class="tab-content">
+{{/if}}
+{{#each view.meta.panels}}
+    {{#unless header}}
+        {{#if newTab}}
+            {{#notEq @index ../../../view.meta.firstNonHeaderPanelIndex}}
+                </div>
+            {{/notEq}}
+            <div class="tab-pane fade" id="{{name}}{{../../../view.cid}}">
+        {{else}}
+            <div class="row-fluid record-panel{{#if css_class}} {{css_class}}{{/if}}" data-panelName="{{name}}">
+                <div class="row-fluid record-panel-header-container outline-solid {{#eq panelState "collapsed"}}panel-inactive{{/eq}}{{#notEq panelState "collapsed"}}panel-active{{/notEq}}"
+                     role="button" tabindex="0" aria-expanded="{{#eq panelState "collapsed"}}false{{else}}true{{/eq}}"
+                     data-key-action="press">
+                    <span class="record-panel-header">
+                        <button class="btn btn-invisible record-panel-arrow"
+                                aria-hidden="true" tabindex="-1">
+                            <i class="sicon sicon-chevron-{{#eq panelState "collapsed"}}right{{else}}down{{/eq}}"
+                               aria-hidden="true" rel="tooltip" data-container="body"
+                               data-title="{{str "LBL_TOGGLE_VISIBILITY"}}"
+                            ></i>
+                        </button>
+                        <span>{{str label ../../../view.module}}</span>
+                    </span>
+                </div>
+            <div class="row-fluid record-panel-content {{#eq panelState "collapsed"}}hide{{/eq}}">
+        {{/if}}
+        {{#each grid}}
+            <div class="row-fluid {{../name}}">
+                {{#each this}}
+                    {{#if name}}
+                        <div class="{{#if ../../../labelsOnTop}}span{{span}} {{else}}span{{cellSpan}} {{/if}}record-cell{{#if cell_css_class}} {{cell_css_class}}{{/if}}" data-type="{{type}}" data-name="{{name}}">
+                            {{decoratedField  ../../../../../view.decoratorField ../../../../../view model=../../../../../view.model template=../../../../../view.action}}
+                        </div>
+                    {{else}}
+                        <div class="span{{cellSpan}} record-cell filler-cell">
+                            {{#unless ../../../labelsOnTop}}<div class="labels-on-side">{{/unless}}
+                                <div class="record-cell span{{cellSpan}}"></div>
+                            {{#unless ../../../labelsOnTop}}</div>{{/unless}}
+                        </div>
+                    {{/if}}
+                {{/each}}
+            </div>
+        {{/each}}
+        {{#unless newTab}}</div></div>{{/unless}}
+        {{#eq @index ../../view.meta.lastPanelIndex}}</div>{{/eq}}
+    {{/unless}}
+{{/each}}
+{{#if view.meta.firstPanelIsTab}}
+    </div>
+    </div>
+{{/if}}
+</div>

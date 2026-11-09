@@ -1,0 +1,81 @@
+{
+ "recorded": "Recorded from SugarEnt 26.1.0 (build 319): modules/Quotes/clients/base/views/quote-data-grand-totals-header/quote-data-grand-totals-header.php; sha256 e5f25b97f0607bdb7aa6d5dea1aaf4c14a963c56e7f4437637f666e1072f6655 of the stock file. $viewdefs as php fills it, whole.",
+ "kept": "all",
+ "viewdefs": {
+  "Quotes": {
+   "base": {
+    "view": {
+     "quote-data-grand-totals-header": {
+      "buttons": [
+       {
+        "type": "quote-data-actiondropdown",
+        "name": "panel_dropdown",
+        "no_default_action": true,
+        "buttons": [
+         {
+          "type": "button",
+          "icon": "sicon-plus",
+          "name": "create_qli_button",
+          "label": "LBL_CREATE_QLI_BUTTON_LABEL",
+          "acl_action": "create",
+          "tooltip": "LBL_CREATE_QLI_BUTTON_TOOLTIP"
+         },
+         {
+          "type": "button",
+          "icon": "sicon-plus",
+          "name": "create_comment_button",
+          "label": "LBL_CREATE_COMMENT_BUTTON_LABEL",
+          "acl_action": "create",
+          "tooltip": "LBL_CREATE_COMMENT_BUTTON_TOOLTIP"
+         },
+         {
+          "type": "button",
+          "icon": "sicon-plus",
+          "name": "create_group_button",
+          "label": "LBL_CREATE_GROUP_BUTTON_LABEL",
+          "acl_action": "create",
+          "tooltip": "LBL_CREATE_GROUP_BUTTON_TOOLTIP"
+         }
+        ]
+       }
+      ],
+      "panels": [
+       {
+        "name": "panel_quote_data_grand_totals_header",
+        "label": "LBL_QUOTE_DATA_GRAND_TOTALS_HEADER",
+        "fields": [
+         {
+          "name": "deal_tot",
+          "label": "LBL_LIST_DEAL_TOT",
+          "css_class": "quote-totals-row-item",
+          "related_fields": [
+           "deal_tot_discount_percentage"
+          ]
+         },
+         {
+          "name": "new_sub",
+          "css_class": "quote-totals-row-item"
+         },
+         {
+          "name": "tax",
+          "label": "LBL_TAX_TOTAL",
+          "css_class": "quote-totals-row-item"
+         },
+         {
+          "name": "shipping",
+          "css_class": "quote-totals-row-item"
+         },
+         {
+          "name": "total",
+          "label": "LBL_LIST_GRAND_TOTAL",
+          "css_class": "quote-totals-row-item"
+         }
+        ]
+       }
+      ]
+     }
+    }
+   }
+  }
+ }
+}

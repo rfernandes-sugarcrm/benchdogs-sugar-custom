@@ -44,6 +44,8 @@ $dictionary['Account']['fields']['bd_customer_group_code'] = array(
     'readonly_formula' => 'not(and(equal($erp_display_sync_key,""),equal($erp_sync_key,"")))',
     // G817 (🔒 2086b): the create-in-ERP prompt reads this key through ERP-Core's erp-customer-create-requirements, so an ADM account with no group is told to set Cust. Group first.
     'erp_customer_create_required_formula' => 'equal(related($erp_companies_accounts,"erp_sync_key"),"ADM")',
+    // Required by this package's rule: no "(Required)" text on it, Sugar's own flag.
+    'no_required_placeholder' => true,
     'erp_layout' => array(
         'view' => 'record',
         'panel' => 'panel_overview',

@@ -1,0 +1,48 @@
+{{!-- Recorded from SugarEnt 26.2.0 (build 296): clients/base/views/ai-chat-component-next-best-actions/ai-chat-component-next-best-actions.hbs; sha256 02c2f13b5fe9ba78a063623439aba2da56a943fb401aee08d0608eb2d2c31679 of the stock file, which follows unchanged. --}}
+{{!--
+/*
+ * Your installation or use of this SugarCRM file is subject to the applicable
+ * terms available at
+ * http://support.sugarcrm.com/Resources/Master_Subscription_Agreements/.
+ * If you do not agree to all of the applicable terms or do not have the
+ * authority to bind the entity as an authorized representative, then do not
+ * install or use this SugarCRM file.
+ *
+ * Copyright (C) SugarCRM Inc. All rights reserved.
+ */
+--}}
+<div class="rounded-lg bg-white overflow-hidden">
+    <div class="py-4 bg-gray-50 dark:bg-gray-900">
+        <div class="grid gap-1 px-4">
+            {{#each items}}
+                {{#if separator}}
+                    <div class="w-full border-t border-gray-300 [&&&&&&&&]:my-4"></div>
+                {{else}}
+                    <div
+                        class="flex items-center gap-1 h-[34px] px-4 border border-[--pill-border] rounded-full bg-[--pill-background]
+                            font-medium text-[13px] leading-none
+                            {{#unless disabled}}hover:bg-blue-50 dark:hover:bg-blue-700 cursor-pointer{{/unless}}
+                             transition-colors {{#if disabled}}text-gray-400 dark:hover:text-gray-100{{else}}text-[--pill-action] dark:hover:text-gray-200{{/if}} pill-button min-w-0 max-w-fit"
+                        title="{{text}}"
+                        {{#unless disabled}}data-action="next-best-action"{{/unless}}
+                        data-text="{{text}}"
+                        data-description="{{description}}"
+                        data-longDescription="{{longDescription}}"
+                        data-module="{{module}}">
+                        {{#if icon}}
+                            {{#if disabled}}
+                                {{moduleLabel icon 'sm' class='[&&&&&&&&&&]:rounded-full mr-1 bg-gray-300'}}
+                            {{else}}
+                                {{moduleLabel icon 'sm' class='[&&&&&&&&&&]:rounded-full mr-1'}}
+                            {{/if}}
+                        {{/if}}
+                        <span class="truncate min-w-0">{{text}}</span>
+                        {{#if disabled}}
+                            <div class="sicon sicon-check-circle-lg text-green-600"></div>
+                        {{/if}}
+                    </div>
+                {{/if}}
+            {{/each}}
+        </div>
+    </div>
+</div>

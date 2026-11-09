@@ -61,10 +61,15 @@ every QA tenant took a build carrying them, and then the one-off
 ONEOFF-RetireBdResidue DELETED the registration and BLANKED the tombstone on all
 three (et 2026-09-22 22:22Z; stock and Ophir 2026-09-23 00:58Z; failed 0). So
 rc69 ships neither. 🔒2173b (2026-09-30) withdrew the one-off and deleted its
-code, so the suite asserts that neither path is in the source or the built zip,
-plus that NOTHING this package ships registers a hook or reaches the
-Opportunities bean layer at all. A tenant that still carries either path keeps
-it; nothing in this repository removes it any more.
+code. A tenant that still carries either path keeps it; nothing in this
+repository removes it any more.
+
+🔁 rc98: the cases that held the two retired paths out of the source and the
+built zip are gone (test_g280_minimal_footprint pins the whole package to its
+kept list, source and zip, so either path coming back fails there). What this
+suite still holds is the live rule: NOTHING this package ships registers a hook
+beyond the allowed two, or reaches the Opportunities bean layer at all, and the
+seller's button (ERP-Epicor's) still creates its Opportunity.
 
 MUTATION-VERIFIED at rc60-rc68 (each applied, suite re-run, failure observed):
   restore either ``$hook_array[...][] = array(2, ... 'pairOnSave')``
@@ -86,28 +91,12 @@ import shutil
 import subprocess
 import tempfile
 import unittest
-import zipfile
 from pathlib import Path
-
-from bd_retirement import assert_not_shipped
 
 import shared_sugar
 
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = ROOT / "sugar-sell/BenchDogs-Ext"
-
-REGISTRATION = (
-    PACKAGE / "custom/Extension/modules/Quotes/Ext/LogicHooks/bd_kinetic_opportunity.php"
-)
-TOMBSTONE = PACKAGE / "custom/modules/Quotes/BdKineticOpportunityHook.php"
-
-#: The two paths a tenant must end up with, exactly as `installdefs['copy']`
-#: spells them. These are rc39's own paths - overwriting is the whole point, so
-#: a change here that "tidies" either path silently stops retiring anything.
-MUST_OVERWRITE = (
-    "custom/Extension/modules/Quotes/Ext/LogicHooks/bd_kinetic_opportunity.php",
-    "custom/modules/Quotes/BdKineticOpportunityHook.php",
-)
 
 #: No shipped file may create an Opportunity any more. Until rc68 the one
 #: exemption was BdBenchDogsActionsApi.php (the retired account action's
@@ -215,8 +204,20 @@ class TheRegistrationRegistersNothing(unittest.TestCase):
     #:    follows the picked Group Code.
     #: In the order the harness sees them (Accounts' fragment first).
     # rc86 (MLP024): the namespaced class, no file - Sugar autoloads it from custom/src/BenchDogs.
+    #:  - rc99: an Opportunity or ERP order saved with no owner takes the default
+    #:    owner (BdDefaultOwner); it sets the owner field and creates nothing.
+    #:  - rc121: a new Opportunity or Quote takes its account's owner (BdAccountOwner); it sets the owner field on
+    #:    the bean it is handed, reads the account and the user, and creates nothing.
     ALLOWED = [["before_save", None, "Sugarcrm\\Sugarcrm\\custom\\BenchDogs\\BdAdmRules", "accountBeforeSave"],
+               ["before_save", None, "Sugarcrm\\Sugarcrm\\custom\\BenchDogs\\BdDefaultOwner", "beforeSave"],
+               ["before_save", None, "Sugarcrm\\Sugarcrm\\custom\\BenchDogs\\BdAccountOwner", "beforeSave"],
+               ["before_save", None, "Sugarcrm\\Sugarcrm\\custom\\BenchDogs\\BdDefaultOwner", "beforeSave"],
+               ["before_save", None, "Sugarcrm\\Sugarcrm\\custom\\BenchDogs\\BdAccountOwner", "beforeSave"],
                ["before_save", None, "Sugarcrm\\Sugarcrm\\custom\\BenchDogs\\BdAdmRules", "beforeSave"]]
+
+    #: rc121: BdAccountOwner names the Opportunities module as a key (which field holds its account), so the bare
+    #: word is not held against it; what it may read is held instead: Accounts only (users through BdDefaultOwner).
+    NAMES_THE_MODULE = {"Sugarcrm\\Sugarcrm\\custom\\BenchDogs\\BdAccountOwner"}
 
     def test_no_shipped_fragment_registers_a_hook(self):
         """Every Extension fragment this package ships, INCLUDED into a harness
@@ -250,102 +251,32 @@ class TheRegistrationRegistersNothing(unittest.TestCase):
         result = json.loads(done.stdout[done.stdout.find("{"):])
         self.assertEqual(
             self.ALLOWED, result["entries"],
-            f"this package registers {result['entries']}. Only the two BdAdmRules hooks are "
+            f"this package registers {result['entries']}. Only the ALLOWED hooks are "
             "allowed. 🔒 1499: the sync must NEVER create an Opportunity.")
 
     def test_the_one_allowed_hook_creates_and_saves_nothing(self):
         """The allowed hook's class, code only: it may set fields on the bean
         it is handed (before_save), and must never create or save a record."""
         # rc86: the class is registered with no file; Sugar's PSR-4 rule for custom/ names its path.
-        cls = self.ALLOWED[0][2].removeprefix("Sugarcrm\\Sugarcrm\\custom\\").replace("\\", "/")
-        body = (PACKAGE / "custom/src" / f"{cls}.php").read_text(encoding="utf-8")
-        code = re.sub(r"/\*.*?\*/", "", body, flags=re.S)
-        code = re.sub(r"(?m)(^|\s)//[^\n]*", r"\1", code)
-        for forbidden in ("->save(", "::newBean('Opportunities'", "Opportunit"):
-            with self.subTest(forbidden=forbidden):
-                self.assertNotIn(forbidden, code)
-
-    def test_rc39s_registration_never_ships_again(self):
-        """An ABSENT file retires nothing: rc39's copy simply survives - which
-        is exactly how the writer outlived the package that shipped it. Through
-        rc68 an empty file OVERWROTE it; from rc69 the one-off DELETED it. That
-        one-off is withdrawn (🔒2173b), so this holds only the package side."""
-        rel = str(REGISTRATION.relative_to(PACKAGE))
-        assert_not_shipped(self, rel, "rc39's pairOnSave / pairOnAccountLink registration")
-
-
-# ── 2. The class creates nothing ────────────────────────────────────────────
-
-
-
-class TheClassCreatesNoOpportunity(unittest.TestCase):
-    """The second half. Through rc68 the tombstone class was CALLED here against
-    a BeanFactory that counted bean creation. From rc69 the one-off took the
-    tenant's copy away (blanked, then from 1.0.6 deleted); 🔒2173b withdrew it,
-    so what is left to hold is that the package never ships the class again."""
-
-    def test_the_tombstone_never_ships_again(self):
-        rel = str(TOMBSTONE.relative_to(PACKAGE))
-        assert_not_shipped(self, rel, "BdKineticOpportunityHook")
-
-
-# ── 3. Both files actually ship ─────────────────────────────────────────────
-
-
-class TheRetirementShipsAndOverwrites(unittest.TestCase):
-    """A correct source file that pack.php does not copy retires nothing.
-
-    FAILS, never skips, when the package will not build: a guard that disappears
-    when the thing it guards breaks is not a guard
-    (``test_bd01_mirror_retired.py`` learned this the expensive way).
-    """
-
-    @classmethod
-    def setUpClass(cls):
-        version = (PACKAGE / "version").read_text().strip()
-        archive = PACKAGE / "releases" / f"sugarai_benchdogs_ext-{version}.zip"
-        # 🚩 ALWAYS REBUILD. `pack.php` refuses to overwrite an existing zip, so
-        # a "build if absent" guard reads whatever the LAST build produced - and
-        # under mutation that is a stale artifact still containing the file the
-        # mutation just removed, i.e. a pass that proves nothing. Found by
-        # mutation: dropping the `custom/` glob from pack.php left the previous
-        # zip in place and this class went green.
-        if archive.exists():
-            archive.unlink()
-        built = subprocess.run(
-            [_php(), "pack.php"], cwd=PACKAGE,
-            capture_output=True, text=True, check=False,
-        )
-        if built.returncode != 0 or not archive.exists():
-            raise AssertionError(
-                "the package does not build, so the copy entries cannot be "
-                "checked at all:\n" + (built.stdout or "") + (built.stderr or "")
-            )
-        with zipfile.ZipFile(archive) as zf:
-            cls.names = set(zf.namelist())
-            manifest_php = zf.read("manifest.php").decode("utf-8")
-        harness = (
-            "$src = file_get_contents('php://stdin');"
-            "eval('?>' . $src);"
-            "echo json_encode(['installdefs' => $installdefs]);"
-        )
-        done = subprocess.run(
-            [_php(), "-r", harness], input=manifest_php,
-            text=True, capture_output=True, check=True,
-        )
-        cls.copies = {
-            entry["to"]: entry["from"]
-            for entry in json.loads(done.stdout)["installdefs"].get("copy", [])
-        }
-
-    def test_neither_path_ships_any_more(self):
-        """Turned around at rc69: a copy entry for either path would put a body
-        back on every install, and hand Module Loader a backup to restore on
-        uninstall."""
-        for target in MUST_OVERWRITE:
-            with self.subTest(target=target):
-                self.assertNotIn(target, self.names)
-                self.assertNotIn(target, self.copies)
+        # rc99: every allowed hook's class, not only the first.
+        classes = sorted({entry[2] for entry in self.ALLOWED})
+        self.assertEqual(len(classes), 3, classes)
+        for name in classes:
+            cls = name.removeprefix("Sugarcrm\\Sugarcrm\\custom\\").replace("\\", "/")
+            body = (PACKAGE / "custom/src" / f"{cls}.php").read_text(encoding="utf-8")
+            code = re.sub(r"/\*.*?\*/", "", body, flags=re.S)
+            code = re.sub(r"(?m)(^|\s)//[^\n]*", r"\1", code)
+            forbidden = ["->save(", "::newBean(", "Opportunit"]
+            if name in self.NAMES_THE_MODULE:
+                forbidden.remove("Opportunit")
+                with self.subTest(cls=cls, reads="Accounts only"):
+                    self.assertEqual(sorted(set(re.findall(r"(?:retrieveBean|getBean|newBean)\(\s*'(\w+)'", code))),
+                                     ["Accounts"])
+            elif name.endswith("BdAdmRules") or name.endswith("BdDefaultOwner"):
+                forbidden = ["->save(", "::newBean('Opportunities'", "Opportunit"]
+            for word in forbidden:
+                with self.subTest(cls=cls, forbidden=word):
+                    self.assertNotIn(word, code)
 
 
 # ── 4. Nothing else in the package creates one, and the control still does ──

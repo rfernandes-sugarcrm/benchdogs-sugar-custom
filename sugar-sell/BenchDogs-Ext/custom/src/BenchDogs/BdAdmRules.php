@@ -14,6 +14,13 @@ class BdAdmRules
     public const TYPE_LEAD_TYPES = 'BdLeadTypes';
     public const TYPE_PROJECTS = 'BdProjects';
 
+    /**
+     * The companies that get ADM's rules, published by the Bench connector extension from the one setting that
+     * also registers its ADM refusals (erp_adm_companies, one active row per company, key "<company>__BdAdmCompanies_<company>").
+     * A contract with the extension's ADM_COMPANIES_TYPE; the two repositories cannot share the string.
+     */
+    public const TYPE_ADM_COMPANIES = 'BdAdmCompanies';
+
     /** G460: published by the Bench connector extension, a contract with it. */
     public const TYPE_MARKETING_CAMPAIGNS = 'BdMarketingCampaigns';
     public const TYPE_MARKETING_EVENTS = 'BdMarketingEvents';
@@ -35,18 +42,16 @@ class BdAdmRules
     /** G460: an event's picker key is "<campaign>/<seq>" (26DISCNV/2), split at the LAST separator - the contract with the connector extension (adm_rules.EVENT_KEY_SEPARATOR), which splits the seller's pick the same way and refuses a pair whose event is not the campaign's. */
     public const EVENT_KEY_SEPARATOR = '/';
 
-    /** Tenant data (app_list_strings), editable in Admin > Dropdown Editor. */
-    public const LIST_PROJECT_BY_GROUP = 'bd_adm_project_by_group_list';
-
-    /** A quote with more lines than this is not scanned for a project default. */
-    public const MAX_LINES_SCANNED = 500;
-
-    /** G809: the single pickers defaulted from the account's newest quote, field => the lookup type whose ACTIVE rows it may take a value from (🔒 1712b). */
+    /**
+     * The single pickers a new quote takes from the account's newest quote, field => the lookup type whose active rows
+     * it may take a value from. Not the Project: it is each line's own and is never filled.
+     */
     public const ACCOUNT_HISTORY_FIELDS = array(
         'bd_lead_source' => self::TYPE_LEAD_SOURCES,
         'bd_lead_type' => self::TYPE_LEAD_TYPES,
-        'bd_project_id' => self::TYPE_PROJECTS,
     );
+    /** The Project field, on the quote line (and, from before each line had one, on the quote). */
+    public const FIELD_PROJECT = 'bd_project_id';
     public const FIELD_CAMPAIGN = 'bd_marketing_campaign';
     public const FIELD_EVENT = 'bd_marketing_event';
 
@@ -60,8 +65,8 @@ class BdAdmRules
     /** The connector's OAuth platform: its save of a new ERP key is the send. Told by platform, never by user (a connector may write as admin). */
     public const CONNECTOR_PLATFORM = 'sugarai_erp_connector';
 
-    /** Upper bound on the BdLeadSources rows read to learn the ADM companies. */
-    public const MAX_LEAD_SOURCE_ROWS = 5000;
+    /** Upper bound on the BdAdmCompanies rows read to learn the ADM companies. */
+    public const MAX_ADM_COMPANY_ROWS = 5000;
 
     /** @var string[]|null the ADM companies, read once per request */
     private static $admCompanies = null;
@@ -69,7 +74,9 @@ class BdAdmRules
     // ── which quotes are ADM ─────────────────────────────────────────────────
 
     /**
-     * The ERP companies that have published BdLeadSources rows, upper-cased, read ONCE per request (one query, however many quotes are saved).
+     * The ERP companies the connector extension publishes as getting ADM's rules (active BdAdmCompanies rows),
+     * upper-cased, read ONCE per request (one query, however many quotes are saved). None published: no company
+     * is ADM's, so nothing here defaults or refuses, and the extension's own refusals still stand at the send.
      * @return string[]
      */
     public static function admCompanies(): array
@@ -80,8 +87,8 @@ class BdAdmRules
         $query = new SugarQuery();
         $query->from(BeanFactory::newBean('ERP_LookupValues'), array('team_security' => false));
         $query->select(array('erp_sync_key'));
-        $query->where()->equals('type', self::TYPE_LEAD_SOURCES);
-        $query->limit(self::MAX_LEAD_SOURCE_ROWS);
+        $query->where()->equals('type', self::TYPE_ADM_COMPANIES)->equals('is_active', 1);
+        $query->limit(self::MAX_ADM_COMPANY_ROWS);
         self::$admCompanies = self::companiesFromKeys($query->execute());
 
         return self::$admCompanies;
@@ -112,7 +119,7 @@ class BdAdmRules
         return $out;
     }
 
-    /** True when $company has published BdLeadSources rows. */
+    /** True when the connector extension publishes $company as one that gets ADM's rules. */
     public static function isAdmCompany(string $company): bool
     {
         $wanted = strtoupper(trim($company));
@@ -167,34 +174,6 @@ class BdAdmRules
     public static function referenceMaxLength($bean): int
     {
         return ErpQuoteFacts::referenceMaxLength($bean);
-    }
-
-    // ── G381: Project pre-filled from the product-group default list ─────────
-
-    /** The one project the default list gives these product groups, or '' when any group is blank or unmapped, or the groups map to different projects. */
-    public static function defaultProject(array $groups): string
-    {
-        if ($groups === array()) {
-            return '';
-        }
-        $map = array();
-        foreach (self::appList(self::LIST_PROJECT_BY_GROUP) as $group => $project) {
-            $group = strtoupper(trim((string) $group));
-            $project = trim((string) $project);
-            if ($group !== '' && $project !== '') {
-                $map[$group] = $project;
-            }
-        }
-        $chosen = '';
-        foreach ($groups as $group) {
-            $project = $map[strtoupper(trim((string) $group))] ?? '';
-            if ($project === '' || ($chosen !== '' && $project !== $chosen)) {
-                return '';
-            }
-            $chosen = $project;
-        }
-
-        return $chosen;
     }
 
     // ── the before_save hook ─────────────────────────────────────────────────
@@ -269,7 +248,7 @@ class BdAdmRules
         return (string) json_encode($entries, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     }
 
-    /** Fill an EMPTY erp_reference and an EMPTY bd_project_id on an ADM quote that has not reached the ERP yet, and (G809, $isCreate only) an EMPTY Lead Source, Lead Type, Project and Campaign + Event pair from the account's newest quote holding a usable value of each. */
+    /** On an ADM quote not yet in the ERP: an empty Reference from the ship-to, and on a new quote an empty Lead Source, Lead Type and Campaign + Event pair from the account's newest quotes. */
     public static function applyDefaults($bean, bool $isCreate = false): array
     {
         $set = array();
@@ -277,9 +256,8 @@ class BdAdmRules
             return $set;
         }
         $needsReference = trim((string) ($bean->erp_reference ?? '')) === '';
-        $needsProject = trim((string) ($bean->bd_project_id ?? '')) === '';
         $needsHistory = $isCreate && self::historyWanted($bean);
-        if (!$needsReference && !$needsProject && !$needsHistory) {
+        if (!$needsReference && !$needsHistory) {
             return $set;
         }
         if (self::admCompanies() === array()) {
@@ -303,13 +281,6 @@ class BdAdmRules
             if ($reference !== '') {
                 $bean->erp_reference = $reference;
                 $set[] = 'erp_reference';
-            }
-        }
-        if ($needsProject) {
-            $project = self::defaultProject(self::lineGroups($bean));
-            if ($project !== '') {
-                $bean->bd_project_id = $project;
-                $set[] = 'bd_project_id';
             }
         }
         if ($needsHistory) {
@@ -337,7 +308,7 @@ class BdAdmRules
     }
 
     /**
-     * Fill the EMPTY history fields of a new quote, each field on its own: of the account's newest quotes holding that field (HISTORY_SCAN of them, newest first), the FIRST whose value the picker still offers - a code retired since (an inactive lead source, project or campaign) is skipped for the next quote, never copied.
+     * Fill the EMPTY history fields of a new quote, each field on its own: of the account's newest quotes holding that field (HISTORY_SCAN of them, newest first), the FIRST whose value the picker still offers - a code retired since (an inactive lead source or campaign) is skipped for the next quote, never copied.
      * @return string[] the fields set
      */
     public static function applyAccountHistory($bean): array
@@ -451,27 +422,6 @@ class BdAdmRules
     private static function text($bean, string $field): string
     {
         return trim((string) ($bean->$field ?? ''));
-    }
-
-    /** The product group of every live line on the quote, in line order. */
-    private static function lineGroups($bean): array
-    {
-        if (empty($bean->id) || !$bean->load_relationship('products')) {
-            return array();
-        }
-        $groups = array();
-        $lines = $bean->products->getBeans(array('limit' => self::MAX_LINES_SCANNED + 1));
-        if (count($lines) > self::MAX_LINES_SCANNED) {
-            return array();
-        }
-        foreach ($lines as $line) {
-            if (!empty($line->deleted)) {
-                continue;
-            }
-            $groups[] = ErpQuoteFacts::productGroup($line);
-        }
-
-        return $groups;
     }
 
     // ── G804: the Account's Cust. Group ──────────────────────────────────────
@@ -695,17 +645,5 @@ class BdAdmRules
         $query->where()->equals('type', $type)->equals('is_active', 1);
 
         return $query->execute();
-    }
-
-    private static function appList(string $name): array
-    {
-        global $app_list_strings;
-        $list = is_array($app_list_strings) ? ($app_list_strings[$name] ?? null) : null;
-        if (!is_array($list)) {
-            $strings = return_app_list_strings_language($GLOBALS['current_language'] ?? 'en_us');
-            $list = is_array($strings) ? ($strings[$name] ?? array()) : array();
-        }
-
-        return is_array($list) ? $list : array();
     }
 }

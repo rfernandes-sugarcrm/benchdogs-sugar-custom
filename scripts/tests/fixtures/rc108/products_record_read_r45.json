@@ -1,0 +1,34 @@
+{
+  "why": "The quoted line item's record view as two Bench Sugars served it after the rc107 install, read field by field (App.metadata.getView('Products','record').panels, with the client metadata hash equal to the server's, so not a stale browser cache). On the Sugar that also has the customer's own field package, an earlier Studio save had stored Bench Dogs' line fields inside ERP-Epicor's Epicor Cost Worksheet panel, each group padded with a blank cell, and three in the body; rc107 leaves a field it finds drawn where it is, so no Cost & capacity section was drawn there. On the other Sugar nothing of Bench Dogs' is stored and the section is drawn. An empty string is a blank cell, as Studio stores one.",
+  "source": "validation/evidence/session-2026-10-20/r45-rc107-live-read/R45-LIVE-READ.md, Read 2 (run r45)",
+  "with_customer_package": {
+    "read_at": "2026-10-20T23:57:50Z",
+    "metadata_hash": "cee7ee863f082270df799e0034bc30a6",
+    "record": "a55d9d3a-cca6-11f1-bc09-02b131184c4f",
+    "panels": ["panel_header", "panel_body", "LBL_RECORDVIEW_PANEL_ERP_COST_WORKSHEET", "panel_hidden"],
+    "cost_worksheet_fields": [
+      "e_quantity_quoted_c", "e_gross_margin_c", "", "e_est_engineering_hours_c",
+      "erp_material_cost", "erp_labor_cost", "erp_material_burden", "erp_labor_burden", "erp_subcontract_cost",
+      "erp_misc_cost",
+      "e_material_pct_c", "e_labor_pct_c", "e_material_labor_pct_c", "",
+      "e_machine_hours_c", "e_finish_hours_c", "e_assembly_hours_c", "e_case_goods_hours_c", "e_install_hours_c", "",
+      "e_total_cost_c", "e_total_markup_c", "e_total_markup_price_c", "",
+      "erp_quoted_markup_pct", "erp_quoted_profit_pct"
+    ],
+    "body_bench_fields": ["e_sales_category_c", "e_expected_qty_c", "e_expected_qty_uom_c"]
+  },
+  "without_customer_package": {
+    "read_at": "2026-10-20T23:58:50Z",
+    "metadata_hash": "c3bd36852d1ff4238bd384ba83479fb2",
+    "record": "c26e218e-cb97-11f1-81e4-0a86535280d7",
+    "panels": ["panel_header", "panel_body", "LBL_RECORDVIEW_PANEL_ERP_COST_WORKSHEET", "LBL_BD_PANEL_COST_CAPACITY",
+      "panel_hidden"],
+    "cost_worksheet_fields": ["erp_material_cost", "erp_labor_cost", "erp_material_burden", "erp_labor_burden",
+      "erp_subcontract_cost", "erp_misc_cost", "erp_quoted_markup_pct", "erp_quoted_profit_pct"],
+    "section_fields": ["e_expected_qty_c", "e_expected_qty_uom_c", "e_sales_category_c", "e_quantity_quoted_c",
+      "e_gross_margin_c", "e_est_engineering_hours_c", "e_material_pct_c", "e_labor_pct_c", "e_material_labor_pct_c",
+      "e_machine_hours_c", "e_finish_hours_c", "e_assembly_hours_c", "e_case_goods_hours_c", "e_install_hours_c",
+      "e_total_cost_c", "e_total_markup_c", "e_total_markup_price_c"],
+    "section_editable": ["e_sales_category_c", "e_quantity_quoted_c"]
+  }
+}

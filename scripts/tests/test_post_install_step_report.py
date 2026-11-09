@@ -131,6 +131,8 @@ class ModuleInstaller {
 HARNESS = r'''<?php
 // SugarAutoLoader's $dirMap rule for a global class: include/Foo.php, custom/ first (rc87: the script autoloads ErpLayoutExtraFields).
 spl_autoload_register(function ($c) { if (is_file("custom/include/$c.php")) { require_once "custom/include/$c.php"; } });
+// And its PSR-4 rule (vendor/composer/autoload_psr4.php): Sugarcrm\Sugarcrm\custom\ -> custom/src/ (rc100's Kinetic step).
+spl_autoload_register(function ($c) { $p = 'Sugarcrm\\Sugarcrm\\custom\\'; if (strpos($c, $p) === 0) { $f = 'custom/src/' . str_replace('\\', '/', substr($c, strlen($p))) . '.php'; if (is_file($f)) { require_once $f; } } });
 $scenario = SCENARIO;
 $GLOBALS['scenario'] = $scenario;
 $events = [];
@@ -155,9 +157,25 @@ class TestAdmin {
 class BeanFactory {
     public static function newBean($module) {
         if ($module === 'Administration') { return new TestAdmin(); }
+        if ($module === 'UpgradeHistory') { return (object) ['module_name' => 'UpgradeHistory']; }
         throw new Exception('no bean writes allowed: ' . $module);
     }
     public static function getBean() { throw new Exception('No bean reads allowed'); }
+}
+// rc117: Module Loader's history, as the one-time steps read it (the new version's own row is still staged).
+class UpgradeHistory { const STATUS_INSTALLED = 'installed'; }
+class SugarQuery {
+    private $where = [];
+    public function from($bean, $options = []) {}
+    public function select($fields) {}
+    public function where() { return $this; }
+    public function equals($field, $value) { $this->where[$field] = $value; return $this; }
+    public function execute() {
+        if ($GLOBALS['scenario'] === 'history_unreadable') { throw new RuntimeException('upgrade_history unreadable'); }
+        $installed = $GLOBALS['scenario'] === 'already_rc117' ? '0.9.46-rc117' : '0.9.46-rc116';
+        $GLOBALS['events'][] = ['history_read', $this->where];
+        return [['version' => $installed]];
+    }
 }
 class SugarAutoLoader { public static function load($p) {} }
 class RepairAndClear {
@@ -203,6 +221,33 @@ _SYNC_OK = "return ['added' => [], 'removed' => []];"
 HELPERS = {
     ACCOUNTS_HELPER:
         "<?php class ErpLayoutExtraFields { public static function sync($m) { " + _SYNC_OK + " } }",
+    # rc100's Kinetic fields step: the REAL rule over a tenant holding every field, so it creates none
+    # (bd_kinetic_fields_test.php covers what it creates and when).
+    "custom/src/BenchDogs/BdKineticFields.php":
+        (PACKAGE / "custom/src/BenchDogs/BdKineticFields.php").read_text(encoding="utf-8"),
+    "custom/src/BenchDogs/BdStudioFields.php":
+        "<?php namespace Sugarcrm\\Sugarcrm\\custom\\BenchDogs; class BdStudioFields {"
+        " public function fieldNames(string $module): array { return array_keys(BdKineticFields::FIELDS[$module]); }"
+        " public function create(string $module, string $name, array $spec): void {}"
+        " public function labelValue(string $module, string $key): ?string { return null; }"
+        " public function setLabel(string $module, string $key, string $value): void {} }",
+    # rc112's quote PDF template step: its record writes are bd_quote_pdf_test.php's; here it only answers.
+    "custom/src/BenchDogs/BdQuotePdf.php":
+        "<?php namespace Sugarcrm\\Sugarcrm\\custom\\BenchDogs; class BdQuotePdf {"
+        " public static function install(): string { return 'unchanged'; } }",
+    # rc117's one-time steps: the REAL history rule and the REAL Needs Price Estimate default; the copy itself is
+    # bd_line_project_test.php's, so here it only records that it ran.
+    "custom/src/BenchDogs/BdInstallHistory.php":
+        (PACKAGE / "custom/src/BenchDogs/BdInstallHistory.php").read_text(encoding="utf-8"),
+    "custom/src/BenchDogs/BdQuoteTypeDefault.php":
+        (PACKAGE / "custom/src/BenchDogs/BdQuoteTypeDefault.php").read_text(encoding="utf-8"),
+    "custom/src/BenchDogs/BdLineProject.php":
+        "<?php namespace Sugarcrm\\Sugarcrm\\custom\\BenchDogs; class BdLineProject {"
+        " public static function copyFromQuotes(): array { $GLOBALS['events'][] = ['line_copy'];"
+        " $failed = $GLOBALS['scenario'] === 'line_copy_fails' ? 1 : 0;"
+        " return ['quotes' => 2, 'lines' => 4, 'filled' => 3 - $failed, 'kept' => 1, 'failed' => $failed,"
+        " 'named' => $failed ? ['l-a2 (deadlock)'] : []]; }"
+        " public static function summary(array $r): string { return $r['filled'] . ' filled, ' . $r['failed'] . ' failed'; } }",
 }
 
 # 🚩 NOT a synthetic exception. A private method reached from another class makes
@@ -228,10 +273,12 @@ HELPER_OVERRIDES = {
 }
 HELPER_ABSENT = {"accounts_layout_missing"}
 
-# repair_rebuild, accounts_erp_layout, quotes_erp_layout (rc70, 🔒 1724b)
-STEP_COUNT = 3
-# rc87: the two layout steps share one loop, so the script holds two step blocks (one catch and one 'ok' each).
-STEP_BLOCKS = 2
+# kinetic_fields (rc100), kinetic_labels (rc106), repair_rebuild, accounts_erp_layout, quotes_erp_layout (rc70, 🔒 1724b),
+# quote_pdf_template (rc112), install_history, line_project_copy, opp_quote_type (rc117)
+STEP_COUNT = 9
+# rc87: the two layout steps share one loop; rc106 adds the Kinetic labels step and rc112 the quote PDF template step;
+# rc117 the install history read and the two one-time steps it decides, so eight step blocks (one catch and one 'ok' each).
+STEP_BLOCKS = 8
 STEP = "accounts_erp_layout"
 
 
@@ -306,6 +353,56 @@ class StepReportTest(unittest.TestCase):
         self.assertEqual(row["version"], "0.9.42-rcTEST")
         self.assertIsInstance(row["pid"], int)
         self.assertRegex(row["utc"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+
+    # -- rc117: the one-time steps of the upgrade that moves the Project onto the lines --------
+
+    @staticmethod
+    def erp_integration_writes(observed):
+        return [e[1:] for e in observed["events"]
+                if isinstance(e, list) and e[0] == "write_config" and e[1] == "erp_integration"]
+
+    def test_the_upgrade_from_below_rc117_runs_both_one_time_steps(self):
+        observed = self.execute("clean")
+        events = observed["events"]
+        self.assertIn(["history_read", {"id_name": "sugarai_benchdogs_ext", "status": "installed"}], events)
+        self.assertEqual(events.count(["line_copy"]), 1, "the line Project copy ran once")
+        self.assertEqual(self.erp_integration_writes(observed), [["erp_integration", "opp_quote_type", "advanced_quote"]],
+                         "exactly one ERP-Epicor setting: Needs Price Estimate as the button's default")
+        steps = self.report_row(observed)["steps"]
+        self.assertEqual([steps[k] for k in ("install_history", "line_project_copy", "opp_quote_type")], ["ok"] * 3)
+        self.assertTrue(any("line Project copy: 3 filled, 0 failed" in line for line in observed["errors"]),
+                        "the copy's counts are logged")
+
+    def test_a_later_install_runs_neither(self):
+        """rc117 already installed: the copy would refill what sellers cleared, and the default would undo an
+        administrator's choice, so neither runs; both report ok and say why."""
+        observed = self.execute("already_rc117")
+        self.assertNotIn(["line_copy"], observed["events"])
+        self.assertEqual(self.erp_integration_writes(observed), [])
+        self.assertEqual(sorted(set(self.report_row(observed)["steps"].values())), ["ok"])
+        self.assertTrue(any("not due" in line for line in observed["errors"]))
+
+    def test_an_unreadable_history_runs_neither_and_says_so(self):
+        """Unknown is never "below rc117": nothing is copied or set, and every channel names it."""
+        observed = self.execute("history_unreadable")
+        self.assertIsNone(observed["failure"], "post_execute threw (Module Loader would force-uninstall)")
+        self.assertNotIn(["line_copy"], observed["events"])
+        self.assertEqual(self.erp_integration_writes(observed), [])
+        steps = self.report_row(observed)["steps"]
+        self.assertTrue(steps["install_history"].startswith("FAILED: "), steps)
+        self.assertTrue(steps["line_project_copy"].startswith("NOT RUN"), steps)
+        self.assertTrue(steps["opp_quote_type"].startswith("NOT RUN"), steps)
+        error = self.installation_error(observed)
+        self.assertIsNotNone(error)
+        for name in ("install_history", "line_project_copy", "opp_quote_type"):
+            self.assertIn(name, error)
+
+    def test_a_copy_with_a_failed_line_is_reported(self):
+        observed = self.execute("line_copy_fails")
+        steps = self.report_row(observed)["steps"]
+        self.assertTrue(steps["line_project_copy"].startswith("FAILED, "), steps)
+        self.assertIn("line_project_copy", self.installation_error(observed) or "")
+        self.assertEqual(steps["opp_quote_type"], "ok", "the other step still runs")
 
     def test_a_clean_install_writes_nothing_to_installation_status(self):
         """Deliberate asymmetry, and it is stated in the file's own header:
