@@ -91,8 +91,8 @@ KEPT = {
         "the quote line's link to ERP_LookupValues (Sales Category), the shape of ERP-Core's erp_quotes_fob",
     "custom/metadata/erp_orderlines_sales_catMetaData.php":
         "the order line's link to ERP_LookupValues (Sales Category)",
-    "custom/metadata/erp_orderlines_product_catMetaData.php":
-        "the order line's link to ERP_LookupValues (Product Category)",
+    "custom/metadata/erp_orderlines_prodcatMetaData.php":
+        "the order line's link to the standard ProductCategories module (Product Category)",
     "custom/metadata/erp_companies_productsMetaData.php":
         "the quote line's ERP company link, the pre-filter anchor for its lookup relates",
     "custom/Extension/modules/Products/Ext/Vardefs/bd_quote_line_company.php":

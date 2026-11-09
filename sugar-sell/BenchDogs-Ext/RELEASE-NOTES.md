@@ -1,3 +1,17 @@
+# 0.9.46-rc130 — the order line's Product Category relates to the standard ProductCategories module
+
+rc130 = rc129 + this change only. Install order on a Bench tenant: unchanged.
+
+- **What changes.** `ERP_OrderLines.e_product_category_c` (read-only, same place in the record view) now relates to the
+  standard `ProductCategories` module, which ERP Core already syncs company-scoped, through the new relationship
+  `erp_orderlines_prodcat` (join table `erp_orderlines_prodcat_c`). Quote lines add nothing: Products already carry the
+  out-of-box category link. Sales Category stays on ERP_LookupValues.
+- **Removed.** The rc129 `BdProductCategories` lookup relate (`erp_orderlines_product_cat`), the
+  `BdProductCategories` type label, and `BdAdmRules::TYPE_PRODUCT_CATEGORIES` / `productCategoryOptions`.
+- **Upgrade.** The old join table `erp_orderlines_product_cat_c` is not dropped: its rows stay, unread. Order lines show an
+  empty Product Category until the connector writes the ProductCategories id through the new relationship.
+- **Tests:** footprint KEPT list names the new metadata file in place of the old one.
+
 # 0.9.46-rc128 — the Sales Category picker and read-only ERP Order Line categories (SUG-17)
 
 rc128 = rc127 + these changes only. Install order on a Bench tenant: unchanged (ERP-Epicor → PF → rc128).
