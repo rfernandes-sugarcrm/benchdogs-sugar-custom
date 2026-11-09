@@ -97,10 +97,6 @@ KEPT = {
         "the quote line's ERP company link, the pre-filter anchor for its lookup relates",
     "custom/Extension/modules/Products/Ext/Vardefs/bd_quote_line_company.php":
         "the quote line's ERP company relate, copied from the quote",
-    "custom/Extension/modules/ERP_LookupValues/Ext/Vardefs/bd_lookup_links.php":
-        "the lookup side of the quote line and order line category links",
-    "custom/Extension/modules/ERP_Companies/Ext/Vardefs/bd_companies_products.php":
-        "the company side of the quote line's company link",
     "scripts/post_execute.php": "lifecycle",
     "scripts/bd_pre_uninstall.php": "lifecycle",
     "scripts/post_uninstall.php": "lifecycle",
