@@ -33,7 +33,7 @@ class BdAdmRules
     public const FIELD_GROUP_CODE = 'bd_customer_group_code';
 
     /** ADM's sales categories (Epicor SalesCats: SalesCatID -> Description), published by the Bench connector extension. */
-    public const TYPE_SALES_CATEGORIES = 'SalesCategories';
+    public const TYPE_SALES_CATEGORIES = 'BdSalesCategories';
 
     /** ADM's product groups (Epicor ProdGrups: ProdCode -> Description), published by the Bench connector extension. */
     public const TYPE_PRODUCT_CATEGORIES = 'BdProductCategories';

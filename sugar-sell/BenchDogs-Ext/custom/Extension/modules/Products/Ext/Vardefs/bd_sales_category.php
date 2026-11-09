@@ -1,6 +1,6 @@
 <?php
 
-/** Bench Dogs: the quote line's Sales Category, a relate to ERP_LookupValues (SalesCategories), filtered by the line's ERP company. The Bench connector extension writes the lookup id for Kinetic's SalesCatID. */
+/** Bench Dogs: the quote line's Sales Category, a relate to ERP_LookupValues (BdSalesCategories), filtered by the line's ERP company. The Bench connector extension writes the lookup id for Kinetic's SalesCatID. */
 
 $dictionary['Product']['fields']['erp_products_sales_cat'] = array(
     'name' => 'erp_products_sales_cat',
@@ -27,7 +27,7 @@ $dictionary['Product']['fields']['e_sales_category_c'] = array(
     'module' => 'ERP_LookupValues',
     'rname' => 'name',
     'prefilter_field' => 'erp_companies_products_name',
-    'prefilter_conditions' => '[{"type":{"$in":["SalesCategories"]}},{"is_active":{"$equals":"1"}}]',
+    'prefilter_conditions' => '[{"type":{"$in":["BdSalesCategories"]}},{"is_active":{"$equals":"1"}}]',
 );
 
 $dictionary['Product']['fields']['erp_products_sales_catlookupvalues_idb'] = array(

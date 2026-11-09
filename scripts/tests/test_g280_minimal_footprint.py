@@ -78,7 +78,7 @@ KEPT = {
     "custom/Extension/modules/Accounts/Ext/Language/en_us.bd_customer_group.php":
         "their two labels",
     "custom/Extension/modules/Products/Ext/Vardefs/bd_sales_category.php":
-        "the quote line's Sales Category (e_sales_category_c): an enum picker of ADM's SalesCategories lookup values, replacing the free-text field the Bench connector writes SalesCatID into (owner-approved 2026-11-09)",
+        "the quote line's Sales Category (e_sales_category_c): an enum picker of ADM's BdSalesCategories lookup values, replacing the free-text field the Bench connector writes SalesCatID into (owner-approved 2026-11-09)",
     "custom/Extension/modules/Products/Ext/Language/en_us.bd_sales_category.php":
         "its label",
     "custom/Extension/modules/ERP_OrderLines/Ext/Vardefs/bd_order_categories.php":
