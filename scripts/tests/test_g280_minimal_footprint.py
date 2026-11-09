@@ -81,6 +81,12 @@ KEPT = {
         "the quote line's Sales Category (e_sales_category_c): an enum picker of ADM's BdSalesCategories lookup values, replacing the free-text field the Bench connector writes SalesCatID into (owner-approved 2026-11-09)",
     "custom/Extension/modules/Products/Ext/Language/en_us.bd_sales_category.php":
         "its label",
+    "custom/Extension/modules/ERP_OrderLines/Ext/Vardefs/bd_order_categories.php":
+        "the order line's read-only Sales Category and Product Category (e_sales_category_c, e_product_category_c), kept equal to Kinetic's OrderDtl by the Bench connector extension (ticket SUG-17)",
+    "custom/Extension/modules/ERP_OrderLines/Ext/Language/en_us.bd_order_categories.php":
+        "their two labels",
+    "custom/Extension/modules/ERP_OrderLines/Ext/clients/base/views/record/bd_order_categories.php":
+        "their read-only placement on the order line's record view",
     "scripts/post_execute.php": "lifecycle",
     "scripts/bd_pre_uninstall.php": "lifecycle",
     "scripts/post_uninstall.php": "lifecycle",
